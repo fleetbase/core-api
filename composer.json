@@ -1,0 +1,59 @@
+{
+    "name": "fleetbase/core-api",
+    "description": "Core Framework and Resources for Fleetbase API",
+    "keywords": ["php", "skeleton", "package"],
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Ronald A. Richardson",
+            "email": "ron@fleetbase.io"
+        }
+    ],
+    "require": {
+        "php": "^7.4"
+    },
+    "require-dev": {
+        "pestphp/pest": "^0.3.8",
+        "friendsofphp/php-cs-fixer": "^2.16.4",
+        "phpstan/phpstan": "^0.12.48",
+        "symfony/var-dumper": "^5.2.0",
+        "spatie/laravel-sluggable": "^2.6"
+    },
+    "autoload": {
+        "psr-4": {
+            "Fleetbase\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Fleetbase\\Tests\\": "tests/"
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Fleetbase\\Providers\\CoreServiceProvider"
+            ]
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "preferred-install": "dist",
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "scripts": {
+        "lint": "php-cs-fixer fix -v",
+        "test:lint": "php-cs-fixer fix -v --dry-run",
+        "test:types": "phpstan analyse --ansi --memory-limit=0",
+        "test:unit": "pest --colors=always",
+        "test": [
+            "@test:lint",
+            "@test:types",
+            "@test:unit"
+        ]
+    }
+}
