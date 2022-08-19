@@ -1,22 +1,21 @@
 <p align="center">
-    <img src="https://raw.githubusercontent.com/nunomaduro/skeleton-php/master/docs/example.png" height="300" alt="Skeleton Php">
     <p align="center">
-        <a href="https://github.com/nunomaduro/skeleton-php/actions"><img alt="GitHub Workflow Status (master)" src="https://img.shields.io/github/workflow/status/nunomaduro/skeleton-php/Tests/master"></a>
-        <a href="https://packagist.org/packages/nunomaduro/skeleton-php"><img alt="Total Downloads" src="https://img.shields.io/packagist/dt/nunomaduro/skeleton-php"></a>
-        <a href="https://packagist.org/packages/nunomaduro/skeleton-php"><img alt="Latest Version" src="https://img.shields.io/packagist/v/nunomaduro/skeleton-php"></a>
-        <a href="https://packagist.org/packages/nunomaduro/skeleton-php"><img alt="License" src="https://img.shields.io/packagist/l/nunomaduro/skeleton-php"></a>
+        <img src="https://flb-assets.s3.ap-southeast-1.amazonaws.com/static/fleetbase-logo-svg.svg" width="380" height="100" />
+    </p>
+    <p align="center">
+        API Core and Framework for Fleetbase, an open-source supply chain operating system.
     </p>
 </p>
 
 ------
-This package provides a wonderful **PHP Skeleton** to start building your next package idea.
+This package provides the base framework and API resources required by Fleetbase API.
 
 > **Requires [PHP 7.3.0+](https://php.net/releases/)**
 
-⚡️ Create your package using [Composer](https://getcomposer.org):
+⚡️ Install the Fleetbase Core API [Composer](https://getcomposer.org):
 
 ```bash
-composer create-project nunomaduro/skeleton-php --prefer-source PackageName
+composer require fleetbase/core-api
 ```
 
 🧹 Keep a modern codebase with **PHP CS Fixer**:
@@ -38,5 +37,3 @@ composer test:unit
 ```bash
 composer test
 ```
-
-**Skeleton PHP** was created by **[Nuno Maduro](https://twitter.com/enunomaduro)** under the **[MIT license](https://opensource.org/licenses/MIT)**.
