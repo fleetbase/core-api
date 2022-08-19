@@ -13,7 +13,7 @@ class Route
      *
      * @return Closure
      */
-    public function registerFleetbaseREST()
+    public function registerFleetbaseRest()
     {
         /**
          * Registers a REST complicit collection of routes.
@@ -37,6 +37,29 @@ class Route
 
             return new PendingResourceRegistration($registrar, $name, $controller, $options);
         };
+    }
+
+    public function registerFleetbaseAuthRoutes()
+    {
+        return function () {
+            return $this->group(['prefix' => 'auth'], function () {
+                $this->post('/login', 'AuthController@login');
+                $this->post('/sign-up', 'AuthController@signUp');
+                $this->post('/logout', 'AuthController@logout');
+                $this->post('/get-magic-reset-link', 'AuthController@createPasswordReset');
+                $this->post('/reset-password', 'AuthController@resetPassword');
+                $this->post('/switch-organization', 'AuthController@switchOrganization')->middleware('auth:sanctum');
+                $this->post('/join-organization', 'AuthController@joinOrganization')->middleware('auth:sanctum');
+                $this->post('/create-organization', 'AuthController@createOrganization')->middleware('auth:sanctum');
+                $this->get('/session', 'AuthController@session')->middleware('auth:sanctum');
+                $this->get('/organizations', 'AuthController@getUserOrganizations')->middleware('auth:sanctum');
+                $this->options('/{action}', 'AuthController@options')->where('action', '[A-Za-z-]+');
+            });
+        };
+    }
+
+    public function registerFleetbaseOnboardRoutes()
+    {
     }
 
     /**

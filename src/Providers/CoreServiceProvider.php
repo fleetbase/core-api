@@ -2,6 +2,8 @@
 
 namespace Fleetbase\Providers;
 
+require __DIR__ . '/../../vendor/autoload.php';
+
 use Fleetbase\Support\Blade;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Http\Resources\Json\JsonResource;

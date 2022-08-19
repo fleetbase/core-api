@@ -26,16 +26,17 @@ Route::prefix(InternalConfig::get('api.routing.prefix', 'flb'))->namespace('Flee
     */
     $router->prefix(InternalConfig::get('api.routing.internal_prefix', 'int'))->namespace('Internal')->group(function ($router) {
         $router->prefix('v1')->namespace('v1')->group(function ($router) {
-            $router->registerFleetbaseREST('companies');
-            $router->registerFleetbaseREST('users');
-            $router->registerFleetbaseREST('user-devices');
-            $router->registerFleetbaseREST('groups');
-            $router->registerFleetbaseREST('roles');
-            $router->registerFleetbaseREST('policies');
-            $router->registerFleetbaseREST('permissions');
-            $router->registerFleetbaseREST('extensions');
-            $router->registerFleetbaseREST('files');
-            $router->registerFleetbaseREST('transactions');
+            $router->registerFleetbaseAuthRoutes();
+            $router->registerFleetbaseRest('companies');
+            $router->registerFleetbaseRest('users');
+            $router->registerFleetbaseRest('user-devices');
+            $router->registerFleetbaseRest('groups');
+            $router->registerFleetbaseRest('roles');
+            $router->registerFleetbaseRest('policies');
+            $router->registerFleetbaseRest('permissions');
+            $router->registerFleetbaseRest('extensions');
+            $router->registerFleetbaseRest('files');
+            $router->registerFleetbaseRest('transactions');
         });
     });
 });

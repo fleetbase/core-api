@@ -226,48 +226,48 @@ class User extends Authenticatable
         return $this->belongsTo(File::class);
     }
 
-    /**
-     * @return \Illuminate\Database\Eloquent\Relations\HasOne
-     */
-    public function driver()
-    {
-        return $this->hasOne(Driver::class)
-            ->without('user')
-            ->withoutGlobalScopes();
-    }
+    // /**
+    //  * @return \Illuminate\Database\Eloquent\Relations\HasOne
+    //  */
+    // public function driver()
+    // {
+    //     return $this->hasOne(Driver::class)
+    //         ->without('user')
+    //         ->withoutGlobalScopes();
+    // }
 
 
-    /**
-     * @return \Illuminate\Database\Eloquent\Relations\HasOne
-     */
-    public function currentDriverSession()
-    {
-        return $this->hasOne(Driver::class)
-            ->where('company_uuid', session('company'))
-            ->without('user')
-            ->withoutGlobalScopes();
-    }
+    // /**
+    //  * @return \Illuminate\Database\Eloquent\Relations\HasOne
+    //  */
+    // public function currentDriverSession()
+    // {
+    //     return $this->hasOne(Driver::class)
+    //         ->where('company_uuid', session('company'))
+    //         ->without('user')
+    //         ->withoutGlobalScopes();
+    // }
 
-    /**
-     * @return \Illuminate\Database\Eloquent\Relations\HasMany
-     */
-    public function driverProfiles()
-    {
-        return $this->hasMany(Driver::class)
-            ->without('user')
-            ->withoutGlobalScopes();
-    }
+    // /**
+    //  * @return \Illuminate\Database\Eloquent\Relations\HasMany
+    //  */
+    // public function driverProfiles()
+    // {
+    //     return $this->hasMany(Driver::class)
+    //         ->without('user')
+    //         ->withoutGlobalScopes();
+    // }
 
-    /**
-     * @return \Illuminate\Database\Eloquent\Relations\HasOne
-     */
-    public function customer()
-    {
-        return $this->hasOne(Contact::class)
-            ->where('type', 'customer')
-            ->without('user')
-            ->withoutGlobalScopes();
-    }
+    // /**
+    //  * @return \Illuminate\Database\Eloquent\Relations\HasOne
+    //  */
+    // public function customer()
+    // {
+    //     return $this->hasOne(Contact::class)
+    //         ->where('type', 'customer')
+    //         ->without('user')
+    //         ->withoutGlobalScopes();
+    // }
 
     /**
      * @return \Illuminate\Database\Eloquent\Relations\HasMany
@@ -458,16 +458,20 @@ class User extends Authenticatable
         $driver = false;
         $customer = false;
 
-        try {
-            $driver = $this->driver()->exists();
-        } catch (QueryException $e) {
-            // keep silent
+        if (method_exists($this, 'driver')) {
+            try {
+                $driver = $this->driver()->exists();
+            } catch (QueryException $e) {
+                // keep silent
+            }
         }
 
-        try {
-            $customer = $this->customer()->exists();
-        } catch (QueryException $e) {
-            // keep silent
+        if (method_exists($this, 'customer')) {
+            try {
+                $customer = $this->customer()->exists();
+            } catch (QueryException $e) {
+                // keep silent
+            }
         }
 
         $types = [$this->type];
