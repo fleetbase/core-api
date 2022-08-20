@@ -1,13 +1,24 @@
 <?php
 
-namespace Fleetbase\Macros;
+namespace Fleetbase\Expansions;
 
+use Fleetbase\Build\Expansion;
 use Fleetbase\Routing\RESTRegistrar;
 use Illuminate\Routing\PendingResourceRegistration;
 use Illuminate\Support\Str;
 
-class Route
+class Route implements Expansion
 {
+    /**
+     * Get the target class to expand.
+     *
+     * @return string|Class
+     */
+    public static function target()
+    {
+        return \Illuminate\Support\Facades\Route::class;
+    }
+
     /**
      * Registers a REST complicit collection of routes.
      *
@@ -60,15 +71,8 @@ class Route
 
     public function registerFleetbaseOnboardRoutes()
     {
-    }
-
-    /**
-     * Return the facade to mixin macros to.
-     *
-     * @return void
-     */
-    public static function target()
-    {
-        return \Illuminate\Support\Facades\Route::class;
+        return function () {
+            return $this;
+        };
     }
 }

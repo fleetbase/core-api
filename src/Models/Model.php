@@ -7,10 +7,11 @@ use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Fleetbase\Traits\HasCacheableAttributes;
 use Fleetbase\Traits\ClearsHttpCache;
+use Fleetbase\Traits\Expandable;
 
 class Model extends EloquentModel
 {
-    use SoftDeletes, HasCacheableAttributes, ClearsHttpCache;
+    use SoftDeletes, HasCacheableAttributes, ClearsHttpCache, Expandable;
 
     public function resolveChildRouteBinding($childType, $value, $field)
     {

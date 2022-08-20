@@ -2,8 +2,20 @@
 
 namespace Fleetbase\Macros;
 
-class Request
+use Fleetbase\Build\Expansion;
+
+class Request implements Expansion
 {
+    /**
+     * Get the target class to expand.
+     *
+     * @return string|Class
+     */
+    public static function target()
+    {
+        return \Illuminate\Support\Facades\Request::class;
+    }
+
     /**
      * Iterates request params until a param is found.
      *
@@ -63,10 +75,5 @@ class Request
             $filters = is_array($additionalFilters) ? array_merge($defaultFilters, $additionalFilters) : $defaultFilters;
             return $this->except($filters);
         };
-    }
-
-    public static function target()
-    {
-        return \Illuminate\Support\Facades\Request::class;
     }
 }

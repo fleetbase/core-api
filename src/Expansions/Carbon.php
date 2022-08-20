@@ -2,9 +2,21 @@
 
 namespace Fleetbase\Macros;
 
+use Fleetbase\Build\Expansion;
 use Illuminate\Support\Str;
 
-class Carbon {
+class Carbon implements Expansion
+{
+    /**
+     * Get the target class to expand.
+     *
+     * @return string|Class
+     */
+    public static function target()
+    {
+        return \Illuminate\Support\Carbon::class;
+    }
+
     public function fromString()
     {
         return function ($string) {
@@ -22,10 +34,5 @@ class Carbon {
 
             return static::parse($string);
         };
-    }
-
-    public static function target()
-    {
-        return \Illuminate\Support\Carbon::class;
     }
 }

@@ -11,7 +11,7 @@ class Arr
         };
     }
 
-    public static function getFacade()
+    public static function target()
     {
         return \Illuminate\Support\Arr::class;
     }
