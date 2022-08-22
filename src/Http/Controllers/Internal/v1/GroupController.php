@@ -3,7 +3,7 @@
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Exports\GroupExport;
-use Fleetbase\Http\Controllers\ApiController;
+use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Http\Requests\ExportRequest;
 use Fleetbase\Models\GroupUser;
 use Fleetbase\Support\Utils;
@@ -11,7 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Maatwebsite\Excel\Facades\Excel;
 
-class GroupController extends ApiController
+class GroupController extends FleetbaseController
 {
     /**
      * The resource to query

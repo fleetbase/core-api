@@ -22,18 +22,7 @@ class Controller extends BaseController
             'version' => '2.0.0',
         ]);
     }
-
-    /**
-     * Welcome message only
-     */
-    public function helloInternal()
-    {
-        return response()->json([
-            'message' => 'Fleetbase Internal API',
-            'version' => '2.0.0',
-        ]);
-    }
-
+    
     /**
      * Response time only
      */

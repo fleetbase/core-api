@@ -2,7 +2,6 @@
 
 namespace Fleetbase\Providers;
 
-use Fleetbase\Support\Blade;
 use Fleetbase\Support\Expansion;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Arr;
@@ -14,6 +13,15 @@ use DirectoryIterator;
  */
 class CoreServiceProvider extends ServiceProvider
 {
+    public $middleware = [
+        'fleetbase.protected' => [
+            \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
+            \Illuminate\Session\Middleware\StartSession::class,
+            'auth:sanctum',
+            \Fleetbase\Http\Middleware\SetupFleetbaseSession::class
+        ]
+    ];
+
     /**
      * Bootstrap any package services.
      *
@@ -24,7 +32,7 @@ class CoreServiceProvider extends ServiceProvider
         JsonResource::withoutWrapping();
 
         $this->registerExpansionsFrom();
-        $this->registerBladeDirectives();
+        $this->registerMiddleware();
         $this->loadRoutesFrom(__DIR__ . '/../routes.php');
         $this->mergeConfigFrom(__DIR__ . '/../../config/fleetbase.php', 'fleetbase');
     }
@@ -75,21 +83,17 @@ class CoreServiceProvider extends ServiceProvider
                 continue;
             }
 
-            if (Expansion::isExpandable($target)) {
-                $target::expand(new $class);
-            } else {
-                $target::mixin(new $class);
-            }
+            $method = $class::$method ?? Expansion::isExpandable($target) ? 'expand' : 'mixin';
+            $target::$method(new $class);
         }
     }
 
-    /**
-     * Registers all blade directives.
-     *
-     * @return void
-     */
-    public function registerBladeDirectives()
+    public function registerMiddleware()
     {
-        Blade::registerBladeDirectives();
+        foreach ($this->middleware as $group => $middlewares) {
+            foreach ($middlewares as $middleware) {
+                $this->app->router->pushMiddlewareToGroup($group, $middleware);
+            }
+        }
     }
 }

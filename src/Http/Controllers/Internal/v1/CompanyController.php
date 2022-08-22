@@ -2,12 +2,12 @@
 
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
-use Fleetbase\Http\Controllers\ApiController;
+use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\Invite;
 use Illuminate\Support\Str;
 
-class CompanyController extends ApiController
+class CompanyController extends FleetbaseController
 {
     /**
      * The resource to query

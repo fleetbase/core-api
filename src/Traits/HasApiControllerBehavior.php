@@ -9,7 +9,9 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
-use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Symfony\Component\HttpKernelException\NotFoundHttpException;
+use Exception;
+use Error;
 
 trait HasApiControllerBehavior
 {
@@ -44,7 +46,7 @@ trait HasApiControllerBehavior
     /**
      * The target API Resource.
      * 
-     * @var \Fleetbase\Http\Resources\ApiResource
+     * @var \Fleetbase\Http\Resources\FleetbaseResource
      */
     public $resource;
 
@@ -73,6 +75,10 @@ trait HasApiControllerBehavior
         $requestNS = "\\Fleetbase\\Http\\Requests";
         $modelClassName = $this->modelClassName;
 
+        if ($this->model->resource) {
+            $this->resource = $this->model->resource;
+        }
+
         if (!$this->resource || !Str::startsWith($resource, '\\')) {
 
             if ($resource) {
@@ -87,10 +93,10 @@ trait HasApiControllerBehavior
 
             try {
                 if (!class_exists($this->resource)) {
-                    throw new \Exception('Missing resource');
+                    throw new Exception('Missing resource');
                 }
-            } catch (\Error | \Exception $e) {
-                $this->resource = $resourceNS . "\\ApiResource";
+            } catch (Error | Exception $e) {
+                $this->resource = $resourceNS . "\\FleetbaseResource";
             }
         }
 
@@ -99,10 +105,10 @@ trait HasApiControllerBehavior
 
             try {
                 if (!class_exists($this->request)) {
-                    throw new \Exception('Missing request');
+                    throw new Exception('Missing request');
                 }
-            } catch (\Error | \Exception $e) {
-                $this->request = $requestNS . "\\ApiRequest";
+            } catch (Error | Exception $e) {
+                $this->request = $requestNS . "\\FleetbaseRequest";
             }
         }
     }
@@ -132,7 +138,7 @@ trait HasApiControllerBehavior
      *
      * @param \Illuminate\Database\Eloquent\Model $model - The Model Instance
      */
-    public function setApiModel(?Model $model = null)
+    public function setApiModel(?Model $model = null, ?string $namespace = null)
     {
         if ($model === null) {
             $model = $this->resolveModelFromString();
@@ -158,7 +164,7 @@ trait HasApiControllerBehavior
      *
      * @queryParam limit Total items to return e.g. `?limit=15`. Example: 3
      * @queryParam page Page of items to return e.g. `?page=1`. Example: 1
-     * @queryParam sort Sorting options e.g. `?sort=field1:asc,field2:asc` OR `?sort=latest/oldest`. Example: latest
+     * @queryParam sort Sorting options e.g. `?sort=field1:asc,field2:asc` OR `?sort=latest/oldest` OR `?sort=-created,created`. Example: latest
      * @queryParam count Count related models. Alternatively `with_count` e.g. `?count=relation1,relation2`. No-example
      * @queryParam contain Contain data from related model e.g. `?contain=relation1,relation2`. No-example
      * @queryParam fieldName Pass any field and value to filter results e.g. `name=John&email=any@aol.com`. No-example
@@ -172,10 +178,40 @@ trait HasApiControllerBehavior
 
         if (Http::isInternalRequest($request)) {
             $this->resource::wrap($this->resourcePluralName);
-            return $this->resource::collection($data)->additional(['meta' => ['time' => LARAVEL_START - time()]]);
+            return $this->resource::collection($data);
         }
-        
+
         return $this->resource::collection($data);
+    }
+
+    /**
+     * View Resource
+     *
+     * Returns information about a specific record in this resource. You can return related data or counts of related data
+     * in the response using the `count` and `contain` query params
+     *
+     * @authenticated
+     * @queryParam count Count related models. Alternatively `with_count` e.g. `?count=relation1,relation2`. No-example
+     * @queryParam contain Contain data from related model e.g. `?contain=relation1,relation2`. No-example
+     * @urlParam id integer required The id of the resource to view
+     *
+     * @response 404 {
+     *  "status": "failed",
+     *  "message": "Resource not found"
+     * }
+     *
+     * @param  int  $id
+     * @return \Illuminate\Http\Response
+     */
+    public function findRecord(Request $request, $id)
+    {
+        $dataModel = $this->model->getById($id, $request);
+
+        if ($dataModel) {
+            return new $this->resource($dataModel);
+        }
+
+        return response()->error('Resource not found', 404);
     }
 
     /**
@@ -220,45 +256,12 @@ trait HasApiControllerBehavior
 
             $dataModel = $this->model->store($request);
             return new $this->resource($dataModel);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             return response()->json([
                 'status' => 'error',
                 'message' => $e->getMessage(),
             ], 500);
         }
-    }
-
-    /**
-     * View Resource
-     *
-     * Returns information about a specific record in this resource. You can return related data or counts of related data
-     * in the response using the `count` and `contain` query params
-     *
-     * @authenticated
-     * @queryParam count Count related models. Alternatively `with_count` e.g. `?count=relation1,relation2`. No-example
-     * @queryParam contain Contain data from related model e.g. `?contain=relation1,relation2`. No-example
-     * @urlParam id integer required The id of the resource to view
-     *
-     * @response 404 {
-     *  "status": "failed",
-     *  "message": "Resource not found"
-     * }
-     *
-     * @param  int  $id
-     * @return \Illuminate\Http\Response
-     */
-    public function show(Request $request, $id)
-    {
-        $dataModel = $this->model->getById($id, $request);
-
-        if ($dataModel) {
-            return new $this->resource($dataModel);
-        }
-
-        return response()->json([
-            'status' => 'failed',
-            'message' => 'Resource not found',
-        ], 404);
     }
 
     /**
@@ -314,7 +317,7 @@ trait HasApiControllerBehavior
                 'status' => 'failed',
                 'message' => 'Resource not found',
             ], 404);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             return response()->json([
                 'status' => 'error',
                 'message' => $e->getTrace(),

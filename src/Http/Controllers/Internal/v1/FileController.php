@@ -2,14 +2,14 @@
 
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
-use Fleetbase\Http\Controllers\ApiController;
+use Fleetbase\Http\Controllers\FleetbaseController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Fleetbase\Models\File;
 use Fleetbase\Support\Utils;
 use Vinkla\Hashids\Facades\Hashids;
 
-class FileController extends ApiController
+class FileController extends FleetbaseController
 {
     /**
      * The resource to query

@@ -32,9 +32,20 @@ class Route implements Expansion
          * @param string $name
          * @param string|null $controller
          * @param array $options
+         * @param Closure $callback Can be use to define additional routes
          * @return PendingResourceRegistration
          */
-        return function (string $name, ?string $controller = null, array $options = []) {
+        return function (string $name, $controller = null, $options = [], ?Closure $callback = null) {
+            if (is_callable($controller) && $callback === null) {
+                $callback = $controller;
+                $controller = null;
+            }
+
+            if (is_callable($options) && $callback === null) {
+                $callback = $options;
+                $options = [];
+            }
+
             if ($controller === null) {
                 $controller = Str::studly(Str::singular($name)) . 'Controller';
             }
@@ -46,7 +57,7 @@ class Route implements Expansion
                 $registrar = new RESTRegistrar($this);
             }
 
-            return new PendingResourceRegistration($registrar, $name, $controller, $options);
+            return (new PendingResourceRegistration($registrar, $name, $controller, $options))->setRouter($this)->extend($callback);
         };
     }
 

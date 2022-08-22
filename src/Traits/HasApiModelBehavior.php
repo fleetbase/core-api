@@ -3,11 +3,13 @@
 namespace Fleetbase\Traits;
 
 use Fleetbase\Support\Http;
+use Fleetbase\Support\Utils;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Exception;
+use Error;
 
 /**
  * Adds API Model Behavior 
@@ -31,6 +33,10 @@ trait HasApiModelBehavior
      */
     public function searcheableFields()
     {
+        if ($this->searchableColumns) {
+            return $this->searchableColumns;
+        }
+        
         return array_merge(
             $this->fillable,
             [
@@ -46,15 +52,15 @@ trait HasApiModelBehavior
      * 
      * @return \Illuminate\Database\Eloquent\Collection|\Illuminate\Contracts\Pagination\LengthAwarePaginator
      */
-    public function queryFromRequest(Request $request, $queryCallback = null)
+    public function queryFromRequest(Request $request)
     {
         $limit = $request->input('limit', 30);
         $columns = $request->input('columns', ['*']);
-        $builder =  $this->searchBuilder($request);
 
-        if (is_callable($queryCallback)) {
-            $builder = $queryCallback($builder, $request);
-        }
+        /** 
+         * @var \Illuminate\Database\Query\Builder $builder 
+         */
+        $builder =  $this->searchBuilder($request);
 
         if (intval($limit) > 0) {
             $builder->limit($limit);
@@ -179,13 +185,41 @@ trait HasApiModelBehavior
                 }
             }
 
-
-            $sd = explode(":", $sort);
-            if ($sd && count($sd) > 0) {
-                count($sd) == 2
-                    ? $builder->orderBy(trim($sd[0]), trim($sd[1]))
-                    : $builder->orderBy(trim($sd[0]), 'asc');
+            if (strtolower($sort) == 'distance') {
+                $builder->orderByDistance();
+                continue;
             }
+
+            if (is_array($sort) || Str::contains($sort, ',')) {
+                $columns = !is_array($sort) ? explode(',', $sort) : $sort;
+
+                foreach ($columns as $column) {
+                    if (Str::startsWith($column, '-')) {
+                        $direction = Str::startsWith($column, '-') ? 'desc' : 'asc';
+                        $param = Str::startsWith($column, '-') ? substr($column, 1) : $column;
+
+                        $builder->orderBy($column, $direction);
+                        continue;
+                    }
+
+                    $sd = explode(":", $column);
+                    if ($sd && count($sd) > 0) {
+                        count($sd) == 2
+                            ? $builder->orderBy(trim($sd[0]), trim($sd[1]))
+                            : $builder->orderBy(trim($sd[0]), 'asc');
+                    }
+                }
+            }
+
+            if (Str::startsWith($sort, '-')) {
+                list($param, $direction) = Http::useSort($request);
+
+                $builder->orderBy($param, $direction);
+                continue;
+            }
+
+            list($param, $direction) = Http::useSort($request);
+            $builder->orderBy($param, $direction);
         }
 
         return $builder;
@@ -283,13 +317,13 @@ trait HasApiModelBehavior
      */
     public function getOptions()
     {
-        $query = $this->select($this->option_key, $this->option_label)
+        $builder = $this->select($this->option_key, $this->option_label)
             ->orderBy($this->option_label, 'asc')
             ->get();
 
         //convert data to standard object {value:'', label:''}
         $arr = [];
-        foreach ($query as $x) {
+        foreach ($builder as $x) {
             if ($x[$this->option_label]) {
                 $arr[] = [
                     'value' => $x[$this->option_key],
@@ -312,11 +346,37 @@ trait HasApiModelBehavior
     public function searchBuilder(Request $request)
     {
         $builder = $this->buildSearchParams($request, self::query());
-        // $builder = $this->applyCustomQuery($request, $builder);
         $builder = $this->applyFilters($request, $builder);
+        $builder = $this->applyCustomFilters($request, $builder);
         $builder = $this->withRelationships($request, $builder);
         $builder = $this->withCounts($request, $builder);
         $builder = $this->applySorts($request, $builder);
+
+        return $builder;
+    }
+
+    public function resolveFilter(Request $request, $namespace = '\\Fleetbase\\Http\\Filter')
+    {
+        if ($this->filter) {
+            return $this->filter;
+        }
+
+        $filter = $namespace . '\\' . Str::studly(Str::singular($this->getTable()) . 'Filter');
+
+        if (class_exists($filter)) {
+            return new $filter($request);
+        }
+
+        return null;
+    }
+
+    public function applyCustomFilters(Request $request, $builder)
+    {
+        $resourceFilter = $this->resolveFilter($request);
+
+        if ($resourceFilter) {
+            $builder->filter($resourceFilter);
+        }
 
         return $builder;
     }
@@ -326,19 +386,9 @@ trait HasApiModelBehavior
         return $this->buildSearchParams($request, self::query())->count();
     }
 
-    public function applyCustomQuery(Request $request, $builder)
-    {
-        if (method_exists($this, 'queryFromRequest')) {
-            $builder = $this->queryFromRequest($request, $builder);
-        }
-
-        return $builder;
-    }
-
     public function applyFilters(Request $request, $builder)
     {
         $operators = $this->getQueryOperators();
-
         $filters = $request->input('filters', []);
 
         foreach ($filters as $column => $values) {

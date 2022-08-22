@@ -2,9 +2,9 @@
 
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
-use Fleetbase\Http\Controllers\ApiController;
+use Fleetbase\Http\Controllers\FleetbaseController;
 
-class InviteController extends ApiController
+class InviteController extends FleetbaseController
 {
     /**
      * The resource to query

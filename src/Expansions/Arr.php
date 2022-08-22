@@ -1,6 +1,6 @@
 <?php
 
-namespace Fleetbase\Macros;
+namespace Fleetbase\Expansions;
 
 use Fleetbase\Build\Expansion;
 

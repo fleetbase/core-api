@@ -80,17 +80,6 @@ trait Expandable
         return static::$added[$class][$name];
     }
 
-    public static function __callStatic($method, $parameters)
-    {
-        if (static::isExpansion($method)) {
-            $closure = static::getExpansionClosure($method);
-
-            return call_user_func_array(Closure::bind($closure, null, static::class), $parameters);
-        }
-
-        return static::$method(...$parameters);
-    }
-
     public function __call($method, $parameters)
     {
         if (static::isExpansion($method)) {

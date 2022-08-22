@@ -1,7 +1,8 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
+use Fleetbase\Http\Middleware\SetupFleetbaseSession;
 use Fleetbase\Support\InternalConfig;
+use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
@@ -27,16 +28,21 @@ Route::prefix(InternalConfig::get('api.routing.prefix', 'flb'))->namespace('Flee
     $router->prefix(InternalConfig::get('api.routing.internal_prefix', 'int'))->namespace('Internal')->group(function ($router) {
         $router->prefix('v1')->namespace('v1')->group(function ($router) {
             $router->registerFleetbaseAuthRoutes();
-            $router->registerFleetbaseRest('companies');
-            $router->registerFleetbaseRest('users');
-            $router->registerFleetbaseRest('user-devices');
-            $router->registerFleetbaseRest('groups');
-            $router->registerFleetbaseRest('roles');
-            $router->registerFleetbaseRest('policies');
-            $router->registerFleetbaseRest('permissions');
-            $router->registerFleetbaseRest('extensions');
-            $router->registerFleetbaseRest('files');
-            $router->registerFleetbaseRest('transactions');
+            $router->group(['middleware' => ['fleetbase.protected']], function ($router) {
+                $router->registerFleetbaseRest('companies');
+                $router->group(['prefix' => 'users'], function ($router) {
+                    $router->get('/me', 'UserController@current');
+                    $router->registerFleetbaseRest('users');
+                });
+                $router->registerFleetbaseRest('user-devices');
+                $router->registerFleetbaseRest('groups');
+                $router->registerFleetbaseRest('roles');
+                $router->registerFleetbaseRest('policies');
+                $router->registerFleetbaseRest('permissions');
+                $router->registerFleetbaseRest('extensions');
+                $router->registerFleetbaseRest('files');
+                $router->registerFleetbaseRest('transactions');
+            });
         });
     });
 });

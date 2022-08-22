@@ -3,7 +3,7 @@
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Exports\UserExport;
-use Fleetbase\Http\Controllers\ApiController;
+use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Http\Requests\ExportRequest;
 use Fleetbase\Http\Requests\Internal\AcceptCompanyInvite;
 use Fleetbase\Http\Requests\Internal\InviteUserRequest;
@@ -15,7 +15,6 @@ use Fleetbase\Models\Driver;
 use Fleetbase\Models\Invite;
 use Fleetbase\Models\User;
 use Fleetbase\Notifications\UserInvited;
-use Fleetbase\Support\Resp;
 use Fleetbase\Support\Utils;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -23,19 +22,19 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Maatwebsite\Excel\Facades\Excel;
 
-class UserController extends ApiController
+class UserController extends FleetbaseController
 {
     /**
      * The resource to query
      *
      * @var string
      */
-   public $resource = 'user';
+    public $resource = 'user';
 
     /**
-     * Get the current authenticated user if any
+     * Responds with the currently authenticated user.
      *
-     * @param \Illuminate\Http\Request $request
+     * @param  \Illuminate\Http\Request $request
      * @return \Illuminate\Http\Response
      */
     public function current(Request $request)
@@ -43,18 +42,41 @@ class UserController extends ApiController
         $user = $request->user();
 
         if (!$user) {
-            return Resp::error('No user session found', 401);
+            return response()->error('No user session found', 401);
         }
 
-        return Resp::json([
-            'user' => $user,
-        ]);
+        return response()->json(
+            [
+                'user' => $user,
+            ]
+        );
     }
+
+    // /**
+    //  * Responds with the currently authenticated user.
+    //  *
+    //  * @param  \Illuminate\Http\Request $request
+    //  * @return \Illuminate\Http\Response
+    //  */
+    // public function findRecord(Request $request)
+    // {
+    //     $user = $request->user();
+
+    //     if (!$user) {
+    //         return response()->error('No user session found', 401);
+    //     }
+
+    //     return response()->json(
+    //         [
+    //             'user' => $user,
+    //         ]
+    //     );
+    // }
 
     /**
      * Creates a user, adds the user to company and sends an email to user about being added.
      *
-     * @param \Fleetbase\Http\Requests\Internal\InviteUserRequest $request
+     * @param  \Fleetbase\Http\Requests\Internal\InviteUserRequest $request
      * @return \Illuminate\Http\Response
      */
     public function inviteUser(InviteUserRequest $request)
@@ -78,7 +100,7 @@ class UserController extends ApiController
         ])->whereJsonContains('recipients', $email)->exists();
 
         if ($isAlreadyInvited) {
-            return Resp::error('This user has already been invited to join this organization.');
+            return response()->error('This user has already been invited to join this organization.');
         }
 
         // get the company inviting
@@ -151,21 +173,21 @@ class UserController extends ApiController
         $email = Arr::first($invite->recipients);
 
         if (!$email) {
-            return Resp::error('Unable to locate the user for this invitation.');
+            return response()->error('Unable to locate the user for this invitation.');
         }
 
         // get user from invite
         $user = User::where('email', $email)->first();
 
         if (!$user) {
-            return Resp::error('Unable to locate the user for this invitation.');
+            return response()->error('Unable to locate the user for this invitation.');
         }
 
         // get the company who sent the invite
         $company = $invite->subject;
 
         if (!$company) {
-            return Resp::error('The organization that invited you no longer exists.');
+            return response()->error('The organization that invited you no longer exists.');
         }
 
         // determine if user needs to set password (when status pending)
@@ -201,13 +223,13 @@ class UserController extends ApiController
     public function deactivate($id)
     {
         if (!$id) {
-            return Resp::error('No user to deactivate', 401);
+            return response()->error('No user to deactivate', 401);
         }
 
         $user = User::where('uuid', $id)->first();
 
         if (!$user) {
-            return Resp::error('No user found', 401);
+            return response()->error('No user found', 401);
         }
 
         // $user->deactivate();
@@ -216,7 +238,7 @@ class UserController extends ApiController
         $user->companies()->where('company_uuid', session('company'))->update(['status' => 'inactive']);
         $user = $user->refresh();
 
-        return Resp::json([
+        return response()->json([
             'message' => 'User deactivated',
             'status' => $user->session_status
         ]);
@@ -231,13 +253,13 @@ class UserController extends ApiController
     public function activate($id)
     {
         if (!$id) {
-            return Resp::error('No user to activate', 401);
+            return response()->error('No user to activate', 401);
         }
 
         $user = User::where('uuid', $id)->first();
 
         if (!$user) {
-            return Resp::error('No user found', 401);
+            return response()->error('No user found', 401);
         }
 
         // $user->deactivate();
@@ -245,7 +267,7 @@ class UserController extends ApiController
         $user->companies()->where('company_uuid', session('company'))->update(['status' => 'active']);
         $user = $user->refresh();
 
-        return Resp::json([
+        return response()->json([
             'message' => 'User activated',
             'status' => $user->session_status
         ]);
@@ -260,13 +282,13 @@ class UserController extends ApiController
     public function removeFromCompany($id)
     {
         if (!$id) {
-            return Resp::error('No user to remove', 401);
+            return response()->error('No user to remove', 401);
         }
 
         $user = User::where('uuid', $id)->first();
 
         if (!$user) {
-            return Resp::error('No user found', 401);
+            return response()->error('No user found', 401);
         }
 
         /** @var \Illuminate\Support\Collection */
@@ -296,7 +318,7 @@ class UserController extends ApiController
             }
         }
 
-        return Resp::json([
+        return response()->json([
             'message' => 'User removed'
         ]);
     }
@@ -314,7 +336,7 @@ class UserController extends ApiController
         $user = $request->user();
 
         if (!$user) {
-            return Resp::error('User not authenticated');
+            return response()->error('User not authenticated');
         }
 
         $user->changePassword($password);

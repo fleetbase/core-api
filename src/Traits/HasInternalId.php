@@ -6,14 +6,14 @@ use Fleetbase\Support\Utils;
 use Fleetbase\Models\Company;
 use Illuminate\Support\Str;
 
-trait InternalIdTrait
+trait HasInternalId
 {
     /**
      * Boot the public id trait for the model.
      *
      * @return void
      */
-    public static function bootInternalIdTrait()
+    public static function bootHasInternalId()
     {
         static::creating(function ($model) {
             if (is_string($model->internal_id)) {

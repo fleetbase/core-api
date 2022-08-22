@@ -9,7 +9,7 @@ use Illuminate\Foundation\Validation\ValidatesRequests;
 use Illuminate\Routing\Controller as BaseController;
 use Illuminate\Database\Eloquent\Model;
 
-abstract class ApiController extends BaseController
+abstract class FleetbaseController extends BaseController
 {
     use AuthorizesRequests, DispatchesJobs, ValidatesRequests, HasApiControllerBehavior;
 

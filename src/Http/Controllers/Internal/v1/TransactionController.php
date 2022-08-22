@@ -2,9 +2,9 @@
 
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
-use Fleetbase\Http\Controllers\ApiController;
+use Fleetbase\Http\Controllers\FleetbaseController;
 
-class TransactionController extends ApiController
+class TransactionController extends FleetbaseController
 {
     /**
      * The resource to query

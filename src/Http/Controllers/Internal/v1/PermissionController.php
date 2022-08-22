@@ -2,9 +2,9 @@
 
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
-use Fleetbase\Http\Controllers\ApiController;
+use Fleetbase\Http\Controllers\FleetbaseController;
 
-class PermissionController extends ApiController
+class PermissionController extends FleetbaseController
 {
     /**
      * The resource to query

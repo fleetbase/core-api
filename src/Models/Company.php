@@ -8,17 +8,13 @@ use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\TracksApiCredential;
 use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasOptionsAttributes;
-// use Spatie\Activitylog\Traits\CausesActivity;
-// use Spatie\Activitylog\Traits\LogsActivity;
-// use Spatie\Sluggable\SlugOptions;
-// use Spatie\Sluggable\HasSlug;
 use Fleetbase\Traits\Searchable;
-// use GeneaLabs\LaravelModelCaching\Traits\Cachable;
-// use Laravel\Cashier\Billable;
+use Spatie\Sluggable\HasSlug;
+use Spatie\Sluggable\SlugOptions;
 
 class Company extends Model
 {
-    use HasUuid, HasPublicId, TracksApiCredential, HasApiModelBehavior, HasOptionsAttributes, Searchable;
+    use HasUuid, HasPublicId, TracksApiCredential, HasApiModelBehavior, HasOptionsAttributes, HasSlug, Searchable;
 
     /**
      * The database connection to use.
@@ -33,6 +29,13 @@ class Company extends Model
      * @var string
      */
     protected $table = 'companies';
+
+    /**
+     * The HTTP resource to use for responses.
+     *
+     * @var string
+     */
+    public $resource = \Fleetbase\Http\Resources\Internal\Organization::class;
 
     /**
      * The type of public Id to generate
@@ -131,15 +134,15 @@ class Company extends Model
      */
     protected static $logName = 'company';
 
-    // /**
-    //  * Get the options for generating the slug.
-    //  */
-    // public function getSlugOptions(): SlugOptions
-    // {
-    //     return SlugOptions::create()
-    //         ->generateSlugsFrom('name')
-    //         ->saveSlugsTo('slug');
-    // }
+    /**
+     * Get the options for generating the slug.
+     */
+    public function getSlugOptions(): SlugOptions
+    {
+        return SlugOptions::create()
+            ->generateSlugsFrom('name')
+            ->saveSlugsTo('slug');
+    }
 
     /**
      * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
@@ -262,9 +265,11 @@ class Company extends Model
     }
 
     /**
-     * Determines if the user passed is the owner of the company.
+     * Checks if a user is the owner of this company.
      *
      * @method isOwner
+     * @param \Fleetbae\Models\User
+     * 
      * @return boolean
      */
     public function isOwner(User $user)
@@ -272,11 +277,21 @@ class Company extends Model
         return $user->uuid === $this->owner_uuid;
     }
 
+    /**
+     * Company field that should be used for Twilio notifications.
+     *
+     * @return string
+     */
     public function routeNotificationForTwilio()
     {
         return $this->phone;
     }
 
+    /**
+     * Uses the current session to get the current company model instance.
+     *
+     * @return null|\Fleetbase\Models\Company
+     */
     public static function currentSession()
     {
         $id = session('company');
@@ -288,6 +303,12 @@ class Company extends Model
         return null;
     }
 
+    /**
+     * Adds a new user to this company.
+     *
+     * @param User|null $user
+     * @return void
+     */
     public function addUser(?User $user)
     {
         return CompanyUser::create([

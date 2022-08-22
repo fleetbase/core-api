@@ -2,12 +2,12 @@
 
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
-use Fleetbase\Http\Controllers\ApiController;
+use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Models\Extension;
 use Fleetbase\Models\ExtensionInstall;
 use Illuminate\Http\Request;
 
-class ExtensionController extends ApiController
+class ExtensionController extends FleetbaseController
 {
     /**
      * The resource to query

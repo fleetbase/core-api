@@ -8,14 +8,11 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Fleetbase\Traits\HasCacheableAttributes;
 use Fleetbase\Traits\ClearsHttpCache;
 use Fleetbase\Traits\Expandable;
+use Fleetbase\Traits\Filterable;
 
 class Model extends EloquentModel
 {
-    use SoftDeletes, HasCacheableAttributes, ClearsHttpCache, Expandable;
-
-    public function resolveChildRouteBinding($childType, $value, $field)
-    {
-    }
+    use SoftDeletes, HasCacheableAttributes, ClearsHttpCache, Expandable, Filterable;
 
     /**
      * The primary key for the model.
@@ -37,6 +34,10 @@ class Model extends EloquentModel
      * @var string
      */
     public $incrementing = false;
+
+    public function resolveChildRouteBinding($childType, $value, $field)
+    {
+    }
 
     /**
      * Saves the model instance and returns itself
@@ -86,27 +87,5 @@ class Model extends EloquentModel
     public function getQueueableRelations()
     {
         return [];
-    }
-
-    public static function isSearchable()
-    {
-        return class_uses_recursive(\Fleetbase\Traits\Searchable::class) || (property_exists(new static, 'searchable') && static::$searchable);
-    }
-
-    public function searchable()
-    {
-        return static::isSearchable();
-    }
-
-    /**
-     * @return void
-     */
-    public static function _flushCache()
-    {
-        $instance = new static();
-
-        if (method_exists($instance, 'isCachable') && $instance->isCachable()) {
-            return $instance->flushCache();
-        }
     }
 }

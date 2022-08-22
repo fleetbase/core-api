@@ -65,7 +65,7 @@ class OnboardController extends Controller
         // create auth token
         $token = $user->createToken($request->ip());
 
-        return Resp::json([
+        return response()->json([
             'status' => 'success',
             'session' => $user->uuid,
             'token' => $token->plainTextToken
@@ -94,7 +94,7 @@ class OnboardController extends Controller
             VerificationCode::generateEmailVerificationFor($user);
         }
 
-        return Resp::json([
+        return response()->json([
             'status' => 'success'
         ]);
     }
@@ -121,7 +121,7 @@ class OnboardController extends Controller
             VerificationCode::generateSmsVerificationFor($user);
         }
 
-        return Resp::json([
+        return response()->json([
             'status' => 'success'
         ]);
     }
@@ -140,7 +140,7 @@ class OnboardController extends Controller
 
         // make sure session is found
         if (!$session) {
-            return Resp::error('No session to verify email for.');
+            return response()->error('No session to verify email for.');
         }
 
         // get verification code for session
@@ -161,7 +161,7 @@ class OnboardController extends Controller
 
         // no verification code found
         if (!$verifyCode) {
-            return Resp::error('Invalid verification code.');
+            return response()->error('Invalid verification code.');
         }
 
         // get user
@@ -180,7 +180,7 @@ class OnboardController extends Controller
         $user->status = 'active';
         $user->save();
 
-        return Resp::json([
+        return response()->json([
             'status' => 'success',
             'verified_at' => $verifiedAt
         ]);

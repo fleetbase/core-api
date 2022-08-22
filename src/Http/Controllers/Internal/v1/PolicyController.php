@@ -2,13 +2,13 @@
 
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
-use Fleetbase\Http\Controllers\ApiController;
+use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Models\Policy;
 use Fleetbase\Support\Resp;
 use Fleetbase\Support\Utils;
 use Illuminate\Http\Request;
 
-class PolicyController extends ApiController
+class PolicyController extends FleetbaseController
 {
     /**
      * The resource to query
@@ -67,11 +67,11 @@ class PolicyController extends ApiController
         $policy = Policy::find($id);
 
         if (!$policy) {
-            return Resp::error('Unable to find policy for deletion.');
+            return response()->error('Unable to find policy for deletion.');
         }
 
         $policy->delete();
 
-        return Resp::json(['status' => 'OK', 'message' => 'Policy deleted.']);
+        return response()->json(['status' => 'OK', 'message' => 'Policy deleted.']);
     }
 }
