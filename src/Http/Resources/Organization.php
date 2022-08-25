@@ -1,8 +1,10 @@
 <?php
 
-namespace Fleetbase\Http\Resources\Internal;
+namespace Fleetbase\Http\Resources;
 
 use Fleetbase\Http\Resources\FleetbaseResource;
+use Fleetbase\Support\Http;
+use Illuminate\Support\Arr;
 
 class Organization extends FleetbaseResource
 {
@@ -14,9 +16,8 @@ class Organization extends FleetbaseResource
      */
     public function toArray($request)
     {
-        return [
+        $organization = [
             'id' => $this->public_id,
-            'uuid' => $this->uuid,
             'name' => $this->name,
             'description' => $this->description,
             'phone' => $this->phone,
@@ -27,5 +28,11 @@ class Organization extends FleetbaseResource
             'created_at' => $this->created_at,
             'status' => $this->status,
         ];
+
+        if (Http::isInternalRequest()) {
+            $organization = Arr::insertAfterKey($organization, ['uuid' => $this->uuid, 'public_id' => $this->public_id], 'id');
+        }
+
+        return $organization;
     }
 }

@@ -3,7 +3,7 @@
 namespace Fleetbase\Observers;
 
 use Fleetbase\Events\ResourceLifecycleEvent;
-use Fleetbase\Models\BaseModel;
+use Fleetbase\Models\Model;
 
 /**
  * Class WebhookEventsObserver.
@@ -19,10 +19,10 @@ class WebhookEventsObserver
     /**
      * Listen to the entity created event.
      *
-     * @param  \Fleetbase\Models\BaseModel
+     * @param  \Fleetbase\Models\Model
      * @return void
      */
-    public function created(BaseModel $model)
+    public function created(Model $model)
     {
         event(new ResourceLifecycleEvent($model, 'created'));
     }
@@ -30,10 +30,10 @@ class WebhookEventsObserver
     /**
      * Listen to the entity updated event.
      *
-     * @param  \Fleetbase\Models\BaseModel
+     * @param  \Fleetbase\Models\Model
      * @return void
      */
-    public function updated(BaseModel $model)
+    public function updated(Model $model)
     {
         if ($model->wasChanged()) {
             event(new ResourceLifecycleEvent($model, 'updated'));
@@ -43,10 +43,10 @@ class WebhookEventsObserver
     /**
      * Listen to the entity deleted event.
      *
-     * @param  \Fleetbase\Models\BaseModel
+     * @param  \Fleetbase\Models\Model
      * @return void
      */
-    public function deleted(BaseModel $model)
+    public function deleted(Model $model)
     {
         event(new ResourceLifecycleEvent($model, 'deleted'));
     }

@@ -3,6 +3,7 @@
 namespace Fleetbase\Expansions;
 
 use Fleetbase\Build\Expansion;
+use Illuminate\Support\MessageBag;
 
 class Response implements Expansion
 {
@@ -31,6 +32,10 @@ class Response implements Expansion
          * @return mixed
          */
         return function ($error, int $statusCode = 400, ?array $data = []) {
+            if ($error instanceof MessageBag) {
+                $error = $error->all();
+            }
+            
             return static::json(
                 [
                     'errors' => is_array($error) ? $error : [$error],

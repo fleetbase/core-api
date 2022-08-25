@@ -11,7 +11,7 @@ use PragmaRX\Countries\Package\Countries;
 use PragmaRX\Countries\Package\Services\Config;
 use PragmaRX\Countries\Package\Support\Collection as CountryCollection;
 use Grimzy\LaravelMysqlSpatial\Types\Point;
-use Fleetbase\Models\BaseModel;
+use Fleetbase\Models\Model;
 use Fleetbase\Models\File;
 use Fleetbase\Models\Place;
 use Fleetbase\Models\Company;
@@ -543,51 +543,24 @@ class Utils
      * Returns the short version class name for an object
      * without its namespace.
      *
-     * @param object|string $mixed
+     * @param object|string $class
      * @return string
      */
-    public static function getClassName($mixed): ?string
+    public static function classBasename($class): ?string
     {
-        if (is_string($mixed)) {
-            return $mixed;
-        }
-
-        if (!$mixed) {
-            return null;
+        if (function_exists('class_basename')) {
+            return class_basename($class);
         }
 
         $className = null;
 
         try {
-            $className = (new ReflectionClass($mixed))->getShortName();
+            $className = (new ReflectionClass($class))->getShortName();
         } catch (ReflectionException $e) {
             //
         }
 
         return $className;
-    }
-
-    /**
-     * Creates a new instance from a ReflectionClass
-     *
-     * @param object|string $mixed
-     * @return string
-     */
-    public static function instance($mixed, $args = [])
-    {
-        if (is_object($mixed) === false && is_string($mixed) === false) {
-            return null;
-        }
-
-        $instance = null;
-
-        try {
-            $instance = (new ReflectionClass($mixed))->newInstance(...$args);
-        } catch (ReflectionException $e) {
-            //
-        }
-
-        return $instance;
     }
 
     /**
@@ -835,10 +808,10 @@ class Utils
      * @param int length
      * @return int
      */
-    public static function getModelClassName($table, $namespace = 'Fleetbase\\Models\\')
+    public static function getModelClassName($table, $namespace = '\\Fleetbase\\Models\\')
     {
         if (is_object($table)) {
-            $table = static::getClassName($table);
+            $table = static::classBasename($table);
         }
 
         if (Str::startsWith($table, $namespace)) {
@@ -891,7 +864,7 @@ class Utils
      */
     public static function getTypeFromClassName($className)
     {
-        $basename = static::getClassName($className);
+        $basename = static::classBasename($className);
         $basename = static::classBasename($basename);
 
         return Str::slug($basename);
@@ -907,7 +880,7 @@ class Utils
      */
     public static function humanizeClassName($className)
     {
-        $basename = static::getClassName($className);
+        $basename = static::classBasename($className);
 
         return (string) static::humanize(Str::snake($basename));
     }
@@ -998,7 +971,7 @@ class Utils
     public static function setProperties($target, $properties, $overwrite = true)
     {
         foreach ($properties as $key => $value) {
-            data_set($target, $key, $value, $overwrite);
+            $target = static::set($target, $key, $value, $overwrite);
         }
 
         return $target;
@@ -1569,7 +1542,7 @@ class Utils
                 $data[$key] = static::serializeJsonResource($value);
             }
 
-            if ($value instanceof BaseModel) {
+            if ($value instanceof Model) {
                 $data[$key] = $value->toArray();
             }
 
@@ -1782,15 +1755,6 @@ class Utils
             'distance' => $distance,
             'time' => $time
         ]);
-    }
-
-    public static function classBasename(string $className)
-    {
-        if ($pos = strrchr($className, '\\')) {
-            return substr($pos, 1);
-        } else {
-            return $className;
-        }
     }
 
     public static function formatMeters($meters, $abbreviate = true)
@@ -2141,10 +2105,10 @@ class Utils
     /**
      * @param string $path
      * @param string $type
-     * @param \Fleetbase\Models\BaseModel $owner
+     * @param \Fleetbase\Models\Model $owner
      * @return null|\Fleetbase\Models\File
      */
-    public static function urlToStorefrontFile($url, $type = 'source', ?BaseModel $owner = null)
+    public static function urlToStorefrontFile($url, $type = 'source', ?Model $owner = null)
     {
         if (!is_string($url)) {
             return null;

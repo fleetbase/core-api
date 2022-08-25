@@ -42,6 +42,24 @@ class Request implements Expansion
     }
 
     /**
+     * Retrieve input from the request as a array.
+     *
+     * @return Closure
+     */
+    public function array()
+    {
+        /**
+         * Retrieve input from the request as a array.
+         *
+         * @param string $key
+         * @return array
+         */
+        return function (string $key) {
+            return (array) $this->input($key, []);
+        };
+    }
+
+    /**
      * Returns all Fleetbase global filters.
      *
      * @return Closure

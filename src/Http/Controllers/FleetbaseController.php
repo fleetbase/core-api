@@ -11,11 +11,14 @@ use Illuminate\Database\Eloquent\Model;
 
 abstract class FleetbaseController extends BaseController
 {
-    use AuthorizesRequests, DispatchesJobs, ValidatesRequests, HasApiControllerBehavior;
-
+    use AuthorizesRequests,
+        DispatchesJobs,
+        ValidatesRequests,
+        HasApiControllerBehavior;
+        
     public function __construct(?Model $model = null, String $resource = null)
     {
         $this->setApiModel($model);
-        $this->setResource($resource);
+        $this->setApiResource($resource);
     }
 }

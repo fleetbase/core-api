@@ -2,7 +2,9 @@
 
 namespace Fleetbase\Http\Resources;
 
+use Fleetbase\Support\Http;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Arr;
 
 class FleetbaseResource extends JsonResource
 {
@@ -14,7 +16,16 @@ class FleetbaseResource extends JsonResource
      */
     public function toArray($request)
     {
-        return parent::toArray($request);
+        $resource = parent::toArray($request);
+        
+        if (Http::isInternalRequest()) {
+            // insert `uuid` after `id` if it doesn't exist already
+            if (!isset($resource['uuid'])) {
+                $resource = Arr::insertAfterKey($resource, ['uuid' => $this->uuid], 'id');
+            }
+        }
+
+        return $resource;
     }
 
     /**
@@ -30,5 +41,10 @@ class FleetbaseResource extends JsonResource
                 $collection->preserveKeys = (new static([]))->preserveKeys === true;
             }
         });
+    }
+
+    public function isEmpty()
+    {
+        return is_null($this->resource) || is_null($this->resource->resource);
     }
 }

@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Expansions;
 
+use Closure;
 use Fleetbase\Build\Expansion;
 use Fleetbase\Routing\RESTRegistrar;
 use Illuminate\Routing\PendingResourceRegistration;
@@ -24,7 +25,7 @@ class Route implements Expansion
      *
      * @return Closure
      */
-    public function registerFleetbaseRest()
+    public function fleetbaseRestRoutes()
     {
         /**
          * Registers a REST complicit collection of routes.
@@ -50,7 +51,9 @@ class Route implements Expansion
                 $controller = Str::studly(Str::singular($name)) . 'Controller';
             }
 
-            /** @var \Illuminate\Routing\Router $this */
+            /** 
+             * @var \Illuminate\Routing\Router $this 
+             */
             if ($this->container && $this->container->bound(RESTRegistrar::class)) {
                 $registrar = $this->container->make(RESTRegistrar::class);
             } else {
@@ -61,21 +64,68 @@ class Route implements Expansion
         };
     }
 
-    public function registerFleetbaseAuthRoutes()
+    public function fleetbaseRoutes()
+    {
+        return function (string $name, ?callable $registerFn = null, $options = [], $controller = null) {
+            if (is_callable($controller) && $callback === null) {
+                $callback = $controller;
+                $controller = null;
+            }
+
+            if (is_callable($options) && $callback === null) {
+                $callback = $options;
+                $options = [];
+            }
+
+            if ($controller === null) {
+                $controller = Str::studly(Str::singular($name)) . 'Controller';
+            }
+
+            if (app()->version() > 8) {
+                $options['controller'] = $controller;
+            }
+
+            // if (!isset($options['prefix'])) {
+            //     $options['prefix'] = $name;
+            // }
+
+            $make = function (string $routeName) use ($controller) {
+                return $controller . '@' . $routeName;
+            };
+
+            $register = function ($router) use ($name, $registerFn, $make, $controller) {
+                if (is_callable($registerFn)) {
+                    $router->group(['prefix' => $name], function ($router) use ($registerFn, $make, $controller)  {
+                        $registerFn($router, $make, $controller);
+                    });
+                }
+                
+                $router->fleetbaseRestRoutes($name, $controller);
+            };
+
+            /** 
+             * @var \Illuminate\Routing\Router $this 
+             */
+            return $this->group($options, $register);
+        };
+    }
+
+    public function fleetbaseAuthRoutes()
     {
         return function () {
-            return $this->group(['prefix' => 'auth'], function () {
-                $this->post('/login', 'AuthController@login');
-                $this->post('/sign-up', 'AuthController@signUp');
-                $this->post('/logout', 'AuthController@logout');
-                $this->post('/get-magic-reset-link', 'AuthController@createPasswordReset');
-                $this->post('/reset-password', 'AuthController@resetPassword');
-                $this->post('/switch-organization', 'AuthController@switchOrganization')->middleware('auth:sanctum');
-                $this->post('/join-organization', 'AuthController@joinOrganization')->middleware('auth:sanctum');
-                $this->post('/create-organization', 'AuthController@createOrganization')->middleware('auth:sanctum');
-                $this->get('/session', 'AuthController@session')->middleware('auth:sanctum');
-                $this->get('/organizations', 'AuthController@getUserOrganizations')->middleware('auth:sanctum');
-                $this->options('/{action}', 'AuthController@options')->where('action', '[A-Za-z-]+');
+            return $this->group(['prefix' => 'auth'], function ($router) {
+                $router->post('/login', 'AuthController@login');
+                $router->post('/sign-up', 'AuthController@signUp');
+                $router->post('/logout', 'AuthController@logout');
+                $router->post('/get-magic-reset-link', 'AuthController@createPasswordReset');
+                $router->post('/reset-password', 'AuthController@resetPassword');
+                $router->group(['middleware' => ['fleetbase.protected']], function ($router) {
+                    $router->post('/switch-organization', 'AuthController@switchOrganization');
+                    $router->post('/join-organization', 'AuthController@joinOrganization');
+                    $router->post('/create-organization', 'AuthController@createOrganization');
+                    $router->get('/session', 'AuthController@session');
+                    $router->get('/organizations', 'AuthController@getUserOrganizations');
+                });
             });
         };
     }

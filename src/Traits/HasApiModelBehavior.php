@@ -3,13 +3,14 @@
 namespace Fleetbase\Traits;
 
 use Fleetbase\Support\Http;
-use Fleetbase\Support\Utils;
-use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Fleetbase\Models\Model;
+use Fleetbase\Support\Resolve;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Illuminate\Http\JsonResponse;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Exception;
-use Error;
 
 /**
  * Adds API Model Behavior 
@@ -17,11 +18,11 @@ use Error;
 trait HasApiModelBehavior
 {
 
-    public static $PUBLIC_ID_COLUMN = 'public_id';
+    public static $publicIdColumn = 'public_id';
 
     public function getQualifiedPublicId()
     {
-        return static::$PUBLIC_ID_COLUMN;
+        return static::$publicIdColumn;
     }
 
     /**
@@ -36,7 +37,7 @@ trait HasApiModelBehavior
         if ($this->searchableColumns) {
             return $this->searchableColumns;
         }
-        
+
         return array_merge(
             $this->fillable,
             [
@@ -73,6 +74,157 @@ trait HasApiModelBehavior
         return $builder->get();
     }
 
+    public function createRecordFromRequest($request, ?callable $onBefore = null, ?callable $onAfter = null, array $options = [])
+    {
+        $input = $request->input(Str::singular($this->getTable())) ?? $request->all();
+        $input = $this->fillSessionAttributes($input);
+
+        if (is_callable($onBefore)) {
+            $before = $onBefore($request, $input);
+            if ($before instanceof JsonResponse) {
+                return $before;
+            }
+        }
+
+        $record = static::create($input);
+
+        if (isset($options['return_object']) && $options['return_object'] === true) {
+            return $record;
+        }
+
+        $builder = $this->where($this->getQualifiedKeyName(), $record->uuid);
+        $builder = $this->withRelationships($request, $builder);
+        $builder = $this->withCounts($request, $builder);
+
+        $record = $builder->first();
+
+        if (is_callable($onAfter)) {
+            $after = $onAfter($request, $record, $input);
+            if ($after instanceof JsonResponse) {
+                return $after;
+            }
+        }
+
+        return static::mutateModelWithRequest($request, $record);
+    }
+
+    public function updateRecordFromRequest(Request $request, $id, ?callable $onBefore = null, ?callable $onAfter = null, array $options = [])
+    {
+        $record = $this->where(function ($q) use ($id) {
+            $q->where($this->getQualifiedKeyName(), $id);
+            $q->orWhere($this->getQualifiedPublicId(), $id);
+        })->first();
+
+        if (!$record) {
+            throw new NotFoundHttpException(Str::title(Str::singular($this->getTable())) . ' not found');
+        }
+
+        $input = $request->input(Str::singular($this->getTable())) ?? $request->all();
+        $input = $this->fillSessionAttributes($input, [], ['updated_by_uuid']);
+
+        if (is_callable($onBefore)) {
+            $before = $onBefore($request, $input);
+            if ($before instanceof JsonResponse) {
+                return $before;
+            }
+        }
+
+        $fillable = $record->getFillable();
+        $keys = array_keys($input);
+
+        foreach ($keys as $key) {
+            if (!in_array($key, $fillable)) {
+                throw new Exception('Invalid param "' . $key . '" in update request!');
+            }
+        }
+
+        $record->update($input);
+
+        if (isset($options['return_object']) && $options['return_object'] === true) {
+            return $record;
+        }
+
+        $builder = $this->where(
+            function ($q) use ($id) {
+                $q->where($this->getQualifiedKeyName(), $id);
+                $q->orWhere($this->getQualifiedPublicId(), $id);
+            }
+        );
+        $builder = $this->withRelationships($request, $builder);
+        $builder = $this->withCounts($request, $builder);
+
+        $record = $builder->first();
+
+        if (is_callable($onAfter)) {
+            $after = $onAfter($request, $record, $input);
+            if ($after instanceof JsonResponse) {
+                return $after;
+            }
+        }
+
+        return static::mutateModelWithRequest($request, $record);
+    }
+
+    public function remove($id)
+    {
+        $record = $this->where(function ($q) use ($id) {
+            $q->where($this->getQualifiedKeyName(), $id);
+            $q->orWhere($this->getQualifiedPublicId(), $id);
+        });
+
+        if (!$record) {
+            return false;
+        }
+
+        try {
+            return $record->delete();
+        } catch (Exception $e) {
+            throw $e;
+        }
+    }
+
+    public static function mutateModelWithRequest(Request $request, Model $model)
+    {
+        $with = $request->or(['with', 'expand']);
+        $without = $request->input('without', []);
+
+        if ($with) {
+            $model->load($with);
+        }
+
+        if ($without) {
+            $model->setHidden($without);
+        }
+
+        return $model;
+    }
+
+    public function fillSessionAttributes($target, $except = [], $only = [])
+    {
+        $fill = [];
+        $attributes = [
+            'user_uuid' => 'user',
+            'author_uuid' => 'user',
+            'uploader_uuid' => 'user',
+            'creator_uuid' => 'user',
+            'created_by_uuid' => 'user',
+            'updated_by_uuid' => 'user',
+            'company_uuid' => 'company'
+        ];
+
+        foreach ($attributes as $attr => $key) {
+            if (!empty($only) && !in_array($attr, $only)) {
+                continue;
+            }
+
+            if ($this->isFillable($attr) && !in_array($except, array_keys($attributes))) {
+                $fill[$attr] = session($key);
+            }
+        }
+
+        return array_merge($target, $fill);
+    }
+
     /**
      * Checks if request contains relationships.
      *
@@ -84,6 +236,7 @@ trait HasApiModelBehavior
     public function withRelationships(Request $request, $builder)
     {
         $with = $request->or(['with', 'expand']);
+        $without = $request->input('without', []);
 
         if (!$with) {
             return $builder;
@@ -117,6 +270,10 @@ trait HasApiModelBehavior
                 $builder->with($contain);
                 continue;
             }
+        }
+
+        if ($without) {
+            $builder->without($without);
         }
 
         return $builder;
@@ -247,71 +404,6 @@ trait HasApiModelBehavior
         return $builder->first();
     }
 
-    public function store(Request $request)
-    {
-        $data = $this->create($request->all());
-
-        $builder = $this->where($this->getQualifiedKeyName(), $data->uuid);
-        $builder = $this->withRelationships($request, $builder);
-        $builder = $this->withCounts($request, $builder);
-
-        return $builder->first();
-    }
-
-
-    public function modify(Request $request, $id)
-    {
-        $record = $this->where(function ($q) use ($id) {
-            $q->where($this->getQualifiedKeyName(), $id);
-            $q->orWhere($this->getQualifiedPublicId(), $id);
-        })->first();
-
-        if (!$record) {
-            throw new NotFoundHttpException("Resource not found");
-        }
-
-        $input = $request->all();
-        $fillable = $record->getFillable();
-        $keys = array_keys($input);
-
-        foreach ($keys as $key) {
-            if (!in_array($key, $fillable)) {
-                throw new Exception('Invalid param "' . $key . '" in update request!');
-            }
-        }
-
-        $record->fill($input);
-        $record->save();
-
-        $builder = $this->where(function ($q) use ($id) {
-            $q->where($this->getQualifiedKeyName(), $id);
-            $q->orWhere($this->getQualifiedPublicId(), $id);
-        });
-        $builder = $this->withRelationships($request, $builder);
-        $builder = $this->withCounts($request, $builder);
-
-        // in case the returned model from the search is null, then use the initially found model
-        return $builder->first() ?? $record;
-    }
-
-    public function remove($id)
-    {
-        $record = $this->where(function ($q) use ($id) {
-            $q->where($this->getQualifiedKeyName(), $id);
-            $q->orWhere($this->getQualifiedPublicId(), $id);
-        });
-
-        if (!$record) {
-            return false;
-        }
-
-        try {
-            return $record->delete();
-        } catch (Exception $e) {
-            throw $e;
-        }
-    }
-
     /**
      * this returns key value pair for select options
      */
@@ -355,24 +447,9 @@ trait HasApiModelBehavior
         return $builder;
     }
 
-    public function resolveFilter(Request $request, $namespace = '\\Fleetbase\\Http\\Filter')
-    {
-        if ($this->filter) {
-            return $this->filter;
-        }
-
-        $filter = $namespace . '\\' . Str::studly(Str::singular($this->getTable()) . 'Filter');
-
-        if (class_exists($filter)) {
-            return new $filter($request);
-        }
-
-        return null;
-    }
-
     public function applyCustomFilters(Request $request, $builder)
     {
-        $resourceFilter = $this->resolveFilter($request);
+        $resourceFilter = Resolve::httpFilterForModel($this, $request);
 
         if ($resourceFilter) {
             $builder->filter($resourceFilter);

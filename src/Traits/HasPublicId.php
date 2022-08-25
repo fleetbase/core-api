@@ -14,13 +14,15 @@ trait HasPublicId
      */
     public static function bootHasPublicId()
     {
-        static::creating(function ($model) {
-            if (Utils::isset($model, 'public_id')) {
-                return;
-            }
+        static::creating(
+            function ($model) {
+                if (Utils::isset($model, 'public_id')) {
+                    return;
+                }
 
-            $model->public_id = static::generatePublicId($model->publicIdType);
-        });
+                $model->public_id = static::generatePublicId($model->publicIdType);
+            }
+        );
     }
 
     /**

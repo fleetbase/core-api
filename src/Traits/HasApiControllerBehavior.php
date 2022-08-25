@@ -12,6 +12,11 @@ use Illuminate\Support\Str;
 use Symfony\Component\HttpKernelException\NotFoundHttpException;
 use Exception;
 use Error;
+use ErrorException;
+use Fleetbase\Exceptions\FleetbaseRequestValidationException;
+use Fleetbase\Support\Resolve;
+use Illuminate\Database\QueryException;
+use Illuminate\Http\JsonResponse;
 
 trait HasApiControllerBehavior
 {
@@ -57,59 +62,57 @@ trait HasApiControllerBehavior
      */
     public $request;
 
-    public function resolveModelFromString(?string $modelName = null, ?string $namespace = '\\Fleetbase\\Models\\')
+    private function actionFromHttpVerb(?string $verb = null)
     {
-        $this->modelClassName = Utils::getModelClassName($this->resource ?? $modelName, $this->namespace ?? $namespace);
-        /** @var $model \Illuminate\Database\Eloquent\Model */
-        $this->model = $model = Utils::instance($this->modelClassName);
-        $this->resourcePluralName = Str::plural($model->getTable());
-        $this->resourceSingularlName = Str::singular($model->getTable());
+        $verb = $verb ?? $_SERVER['REQUEST_METHOD'];
+        $action = Str::lower($verb);
 
-        return $model;
+        switch ($verb) {
+            case 'POST':
+                $action = 'create';
+                break;
+
+            case 'GET':
+                $action = 'query';
+                break;
+
+            case 'PUT':
+            case 'PATCH':
+                $action = 'update';
+                break;
+
+            case 'DELETE':
+                $action = 'delete';
+                break;
+        }
+
+        return $action;
     }
 
-    public function setResource($resource = null)
+    /**
+     * Set the model instance to use
+     *
+     * @param \Illuminate\Database\Eloquent\Model $model - The Model Instance
+     */
+    public function setApiModel(?Model $model = null, string $namespace = '\\Fleetbase\\Models\\')
     {
-        $resource = $resource ?? $this->resource;
-        $resourceNS = "\\Fleetbase\\Http\\Resources";
-        $requestNS = "\\Fleetbase\\Http\\Requests";
-        $modelClassName = $this->modelClassName;
+        $this->modelClassName = $modelName = Utils::getModelClassName($model ?? $this->resource, $namespace);
+        $this->model = $model = Resolve::instance($modelName);
+        $this->resource = $this->getApiResourceForModel($model);
+        $this->request = $this->getApiRequestForModel($model);
+        $this->resourcePluralName = Str::plural($model->getTable());
+        $this->resourceSingularlName = Str::singular($model->getTable());
+    }
 
-        if ($this->model->resource) {
-            $this->resource = $this->model->resource;
-        }
-
-        if (!$this->resource || !Str::startsWith($resource, '\\')) {
-
-            if ($resource) {
-                if (strpos($resource, $resourceNS) === false) {
-                    $this->resource = $resourceNS . "\\{$resource}";
-                } else {
-                    $this->resource = $resource;
-                }
-            } else {
-                $this->resource = $resourceNS . "\\" . $modelClassName;
-            }
-
-            try {
-                if (!class_exists($this->resource)) {
-                    throw new Exception('Missing resource');
-                }
-            } catch (Error | Exception $e) {
-                $this->resource = $resourceNS . "\\FleetbaseResource";
-            }
-        }
-
-        if (!$this->request) {
-            $this->request = $requestNS . "\\" . $modelClassName . 'Request';
-
-            try {
-                if (!class_exists($this->request)) {
-                    throw new Exception('Missing request');
-                }
-            } catch (Error | Exception $e) {
-                $this->request = $requestNS . "\\FleetbaseRequest";
-            }
+    /**
+     * Set the Resource object to use
+     *
+     * @param Resource|string $resources
+     */
+    public function setApiResource($resource)
+    {
+        if (!$this->resource) {
+            $this->resource = (is_object($resource) ? get_class($resource) : $resource) ?? $this->getApiResourceForModel($this->model);
         }
     }
 
@@ -124,28 +127,56 @@ trait HasApiControllerBehavior
     }
 
     /**
-     * Set the Resource object to use
+     * Resolves the api resource for this model
      *
-     * @param Resource|string $resources
+     * @param \Fleetbase\Models\Model $model
+     * @return \Fleetbase\Http\Resources\FleetbaseResource
      */
-    public function setApiResource($resource)
+    public function getApiResourceForModel(Model $model)
     {
-        $this->resource = is_object($resource) ? get_class($resource) : $resource;
+        $resource = $this->resource;
+
+        if (!$resource || !Str::startsWith($resource, '\\')) {
+            $resource = Resolve::httpResourceForModel($model);
+        }
+
+        return $resource;
     }
 
     /**
-     * Set the model instance to use
+     * Resolves the form request for this model.
      *
-     * @param \Illuminate\Database\Eloquent\Model $model - The Model Instance
+     * @param \Fleetbase\Models\Model $model
+     * @return \Fleetbase\Http\Requests\FleetbaseRequest
      */
-    public function setApiModel(?Model $model = null, ?string $namespace = null)
+    public function getApiRequestForModel(Model $model)
     {
-        if ($model === null) {
-            $model = $this->resolveModelFromString();
+        $request = $this->request;
+
+        if (!$request) {
+            $request = Resolve::httpRequestForModel($this->model);
         }
 
-        $this->model = $model;
-        $this->setResource();
+        return $request;
+    }
+
+    /**
+     * Resolves the resource form request and validates.
+     *
+     * @throws \Fleetbase\Exceptions\FleetbaseRequestValidationException
+     * @param \Illuminate\Http\Request $request
+     * @return void
+     */
+    public function validateRequest(Request $request)
+    {
+        if (class_exists($this->request)) {
+            $formRequest = new $this->request($request->all());
+            $validator = Validator::make($request->all(), $formRequest->rules(), $formRequest->messages());
+
+            if ($validator->fails()) {
+                throw new FleetbaseRequestValidationException($validator->errors());
+            }
+        }
     }
 
     /**
@@ -205,13 +236,13 @@ trait HasApiControllerBehavior
      */
     public function findRecord(Request $request, $id)
     {
-        $dataModel = $this->model->getById($id, $request);
+        $record = $this->model->getById($id, $request);
 
-        if ($dataModel) {
-            return new $this->resource($dataModel);
+        if ($record) {
+            return [$this->resourceSingularlName => new $this->resource($record)];
         }
 
-        return response()->error('Resource not found', 404);
+        return response()->error($this->resourceSingularlName . ' not found', 404);
     }
 
     /**
@@ -222,7 +253,7 @@ trait HasApiControllerBehavior
      *
      * @authenticated
      * @queryParam count Count related models. Alternatively `with_count` e.g. `?count=relation1,relation2`. No-example
-     * @queryParam contain Contain data from related model e.g. `?contain=relation1,relation2`. No-example
+     * @queryParam with|expand Contain data from related model e.g. `?with=relation1,relation2`. No-example
      *
      * @response 400 {
      *  "status": "error",
@@ -239,28 +270,19 @@ trait HasApiControllerBehavior
      * @param  \Illuminate\Http\Request $request
      * @return \Illuminate\Http\Response
      */
-    public function store(Request $request)
+    public function createRecord(Request $request)
     {
         try {
-            if (class_exists($this->request)) {
-                $formRequest = new $this->request($request->all());
-                $validator = Validator::make($request->all(), $formRequest->rules(), $formRequest->messages());
+            $this->validateRequest($request);
+            $record = $this->model->createRecordFromRequest($request); 
 
-                if ($validator->fails()) {
-                    return response()->json([
-                        'status' => 'error',
-                        'message' => $validator->errors()->all(),
-                    ], 400);
-                }
-            }
-
-            $dataModel = $this->model->store($request);
-            return new $this->resource($dataModel);
+            return new $this->resource($record);
         } catch (Exception $e) {
-            return response()->json([
-                'status' => 'error',
-                'message' => $e->getMessage(),
-            ], 500);
+            return response()->error($e->getMessage());
+        } catch (QueryException $e) {
+            return response()->error($e->getMessage());
+        } catch (FleetbaseRequestValidationException $e) {
+            return response()->error($e->getErrors());
         }
     }
 
@@ -295,33 +317,21 @@ trait HasApiControllerBehavior
      * @param  int  $id
      * @return \Illuminate\Http\Response
      */
-    public function update(Request $request, $id)
+    public function updateRecord(Request $request, $id)
     {
         try {
-            if (class_exists($this->request)) {
-                $formRequest = new $this->request($request->all());
-                $validator = Validator::make($request->all(), $formRequest->rules(), $formRequest->messages());
+            $this->validateRequest($request);
+            $record = $this->model->updateRecordFromRequest($request);
 
-                if ($validator->fails()) {
-                    return response()->json([
-                        'status' => 'error',
-                        'message' => $validator->errors()->all(),
-                    ], 400);
-                }
-            }
-
-            $dataModel = $this->model->modify($request, $id);
-            return new $this->resource($dataModel);
-        } catch (NotFoundHttpException $e) {
-            return response()->json([
-                'status' => 'failed',
-                'message' => 'Resource not found',
-            ], 404);
+            return new $this->resource($record);
         } catch (Exception $e) {
-            return response()->json([
-                'status' => 'error',
-                'message' => $e->getTrace(),
-            ], 500);
+            return response()->error($e->getMessage());
+        } catch (QueryException $e) {
+            return response()->error($e->getMessage());
+        } catch (FleetbaseRequestValidationException $e) {
+            return response()->error($e->getErrors());
+        } catch (NotFoundHttpException $e) {
+            return response()->error(($this->resourceSingularlName ?? 'Resource') . ' not found');
         }
     }
 
@@ -355,17 +365,22 @@ trait HasApiControllerBehavior
         if ($dataModel) {
             $dataModel->delete();
 
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Resource deleted',
-                'data' => $dataModel,
-            ]);
+            return response()->json(
+                [
+                    'status' => 'success',
+                    'message' => 'Resource deleted',
+                    'data' => $dataModel,
+                ]
+            );
         }
 
-        return response()->json([
-            'status' => 'failed',
-            'message' => 'Resource not found',
-        ], 404);
+        return response()->json(
+            [
+                'status' => 'failed',
+                'message' => 'Resource not found',
+            ],
+            404
+        );
     }
 
     /**

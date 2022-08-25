@@ -74,7 +74,7 @@ class Handler extends ExceptionHandler
      */
     public function render($request, Throwable $exception)
     {
-        $exceptionType = Utils::getClassName($exception);
+        $exceptionType = Utils::classBasename($exception);
 
         switch ($exceptionType) {
             case 'TokenMismatchException':

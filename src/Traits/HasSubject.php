@@ -2,19 +2,21 @@
 
 namespace Fleetbase\Traits;
 
-trait HasSubject {
+trait HasSubject
+{
     /**
-     * Set subject on trait owner
+     * Set subject on trait owner.
      *
-     * @param \Fleetbase\Models\BaseModel $model
+     * @param \Fleetbase\Models\Model $model
      * @param boolean $save
      * @return $this
      */
-    public function setSubject($model, $save = false) {
+    public function setSubject($model, $save = false)
+    {
         $this->subject_uuid = $model->uuid;
         $this->subject_type =  get_class($model);
 
-        if($save) {
+        if ($save) {
             $this->save();
         }
 
@@ -22,7 +24,7 @@ trait HasSubject {
     }
 
     /**
-     * The resource related to this type if any
+     * The resource related to this type if any.
      *
      * @return \Illuminate\Database\Eloquent\Relations\MorphTo
      */
@@ -31,5 +33,3 @@ trait HasSubject {
         return $this->morphTo();
     }
 }
-    
-   

@@ -35,7 +35,7 @@ class Company extends Model
      *
      * @var string
      */
-    public $resource = \Fleetbase\Http\Resources\Internal\Organization::class;
+    public $resource = \Fleetbase\Http\Resources\Organization::class;
 
     /**
      * The type of public Id to generate

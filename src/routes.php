@@ -15,34 +15,61 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::prefix(InternalConfig::get('api.routing.prefix', 'flb'))->namespace('Fleetbase\Http\Controllers')->group(function ($router) {
-    $router->get('/', 'Controller@hello');
+Route::prefix(InternalConfig::get('api.routing.prefix', 'flb'))->namespace('Fleetbase\Http\Controllers')->group(
+    function ($router) {
+        $router->get('/', 'Controller@hello');
 
-    /*
+        /*
     |--------------------------------------------------------------------------
     | Internal Routes
     |--------------------------------------------------------------------------
     |
     | Primary internal routes for console.
     */
-    $router->prefix(InternalConfig::get('api.routing.internal_prefix', 'int'))->namespace('Internal')->group(function ($router) {
-        $router->prefix('v1')->namespace('v1')->group(function ($router) {
-            $router->registerFleetbaseAuthRoutes();
-            $router->group(['middleware' => ['fleetbase.protected']], function ($router) {
-                $router->registerFleetbaseRest('companies');
-                $router->group(['prefix' => 'users'], function ($router) {
-                    $router->get('/me', 'UserController@current');
-                    $router->registerFleetbaseRest('users');
-                });
-                $router->registerFleetbaseRest('user-devices');
-                $router->registerFleetbaseRest('groups');
-                $router->registerFleetbaseRest('roles');
-                $router->registerFleetbaseRest('policies');
-                $router->registerFleetbaseRest('permissions');
-                $router->registerFleetbaseRest('extensions');
-                $router->registerFleetbaseRest('files');
-                $router->registerFleetbaseRest('transactions');
-            });
-        });
-    });
-});
+        $router->prefix(InternalConfig::get('api.routing.internal_prefix', 'int'))->namespace('Internal')->group(
+            function ($router) {
+                $router->prefix('v1')->namespace('v1')->group(
+                    function ($router) {
+                        $router->fleetbaseAuthRoutes();
+                        $router->group(
+                            ['middleware' => ['fleetbase.protected']],
+                            function ($router) {
+                                $router->fleetbaseRoutes('companies');
+                                $router->fleetbaseRoutes(
+                                    'users',
+                                    function ($router, $controller) {
+                                        $router->get('/me', $controller('current'));
+                                    }
+                                );
+                                $router->fleetbaseRoutes('user-devices');
+                                $router->fleetbaseRoutes('groups');
+                                $router->fleetbaseRoutes('roles');
+                                $router->fleetbaseRoutes('policies');
+                                $router->fleetbaseRoutes('permissions');
+                                $router->fleetbaseRoutes('extensions');
+                                $router->fleetbaseRoutes('files');
+                                $router->fleetbaseRoutes('transactions');
+                                $router->group(
+                                    ['prefix' => 'lookup'],
+                                    function ($router) {
+                                        $router->get('whois', 'LookupController@whois');
+                                        $router->get('currencies', 'LookupController@currencies');
+                                        $router->get('countries', 'LookupController@countries');
+                                        $router->get('country/{code}', 'LookupController@country');
+                                        $router->get('font-awesome-icons', 'LookupController@fontAwesomeIcons');
+                                    }
+                                );
+                                $router->group(
+                                    ['prefix' => 'billing'],
+                                    function ($router) {
+                                        $router->get('check-subscription', '_TempController@checkSubscription');
+                                    }
+                                );
+                            }
+                        );
+                    }
+                );
+            }
+        );
+    }
+);

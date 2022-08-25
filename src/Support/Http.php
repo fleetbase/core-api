@@ -2,15 +2,21 @@
 
 namespace Fleetbase\Support;
 
+use Illuminate\Support\Facades\Http as HttpClient;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Exception;
 
-class Http
+class Http extends HttpClient
 {
-    public static function isInternalRequest(Request $request)
+    public static function isInternalRequest(?Request $request = null)
     {
-        $controllerClassName = get_class($request->route()->getController());
-        return Str::startsWith($controllerClassName, (Str::startsWith($controllerClassName, '\\') ? '\\' : '') . 'Fleetbase\\Http\\Controllers\\Internal\\');
+        $request = $request ?? request();
+        $route = $request->route();
+        $action = $route->action;
+        $namespace = $action['namespace'];
+
+        return Str::startsWith($namespace, (Str::startsWith($namespace, '\\') ? '\\' : '') . 'Fleetbase\\Http\\Controllers\\Internal\\');
     }
 
     /**
@@ -49,6 +55,46 @@ class Http
         return [$param, $direction];
     }
 
+    public static function trace($key = null)
+    {
+        $response = HttpClient::get('https://www.cloudflare.com/cdn-cgi/trace');
+        $body = $response->body();
+        $data = array_values(explode("\n", $body));
+        $trace = [];
+
+        foreach ($data as $datum) {
+            $kv = explode('=', $datum);
+
+            if (count($kv) < 2) {
+                continue;
+            }
+
+            $trace[$kv[0]] = $kv[1];
+        }
+
+        if (is_string($key)) {
+            return Utils::get($trace, $key);
+        }
+
+        return $trace;
+    }
+
+    public static function isPublicIp($ip = null)
+    {
+        $ip = $ip === null ? request()->ip() : $ip;
+
+        return filter_var(
+            $ip,
+            FILTER_VALIDATE_IP,
+            FILTER_FLAG_IPV4 | FILTER_FLAG_IPV6 | FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE
+        ) === $ip ? TRUE : FALSE;
+    }
+
+    public static function isPrivateIp($ip = null)
+    {
+        return !static::isPublicIp($ip);
+    }
+
     /**
      * Looks up a user client info w/ api
      *
@@ -60,14 +106,52 @@ class Http
         if ($ip instanceof Request) {
             $ip = $ip->ip();
         }
-        
+
         if ($ip === null) {
             $ip = request()->ip();
         }
 
-        $curl = new \Curl\Curl();
-        $curl->get('https://api.ipdata.co/' . $ip, ['api-key' => config('fleetbase.services.ipinfo.api_key')]);
+        if (static::isPrivateIp($ip)) {
+            $ip = static::trace('ip');
+        }
 
-        return $curl->response;
+        $ipInfoApiKey = config('fleetbase.services.ipinfo.api_key');
+        $lookupUrl = empty($ipInfoApiKey) ? 'https://json.geoiplookup.io/' . $ip :  'https://api.ipdata.co/' . $ip;
+        $query =  empty($ipInfoApiKey) ? [] : ['api-key' => config('fleetbase.services.ipinfo.api_key')];
+
+        $response = HttpClient::get($lookupUrl, $query);
+
+        if ($response->failed()) {
+            throw new Exception($response->json('message') ?? 'IP lookup failed.');
+        }
+
+        return $response->json();
+    }
+
+    public static function action(?string $verb = null)
+    {
+        $verb = $verb ?? $_SERVER['REQUEST_METHOD'];
+        $action = Str::lower($verb);
+
+        switch ($verb) {
+            case 'POST':
+                $action = 'create';
+                break;
+
+            case 'GET':
+                $action = 'query';
+                break;
+
+            case 'PUT':
+            case 'PATCH':
+                $action = 'update';
+                break;
+
+            case 'DELETE':
+                $action = 'delete';
+                break;
+        }
+
+        return $action;
     }
 }

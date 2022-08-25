@@ -27,6 +27,20 @@ class Country implements JsonSerializable
     protected $name;
 
     /**
+     * ISO-4217 Currency Code.
+     *
+     * @var string
+     */
+    protected $currency;
+
+    /**
+     * The country flag emoji.
+     *
+     * @var string
+     */
+    protected $emoji;
+
+    /**
      * Country Data.
      *
      * @var array
@@ -50,7 +64,9 @@ class Country implements JsonSerializable
             $data = static::all()->where('cca2', $code)->first();
         }
 
-        $this->name = $data['name'] = Utils::get($data, 'name.common');
+        $this->name = $data['name'] = Utils::or($data, ['name.common', 'name.official', 'name_long', 'name_en']);
+        $this->currency = $data['currency'] = Utils::or($data, ['currencies.0', 'currencies.0.name']);
+        $this->emoji = $data['emoji'] = Utils::get($data, 'flag.emoji');
         $this->code = $code;
         $this->data = $data;
 
@@ -59,24 +75,85 @@ class Country implements JsonSerializable
         }
     }
 
+    /**
+     * Magic helper methods to access and query country properties.
+     * 
+     * $country->getCurrency();
+     *
+     * @param string $name
+     * @param array $args
+     * @return null|mixed
+     */
     public function __call($name, $args)
     {
-        if ($name === 'getCurrency') {
-            $currency = Arr::first($this->getCurrencies());
-
-            if (is_array($currency) && isset($currency['name'])) {
-                $currency = $currency['name'];
-            }
-
-            return $currency;
-        }
-
         if (Str::startsWith($name, 'get')) {
             $property = Str::snake(Str::replaceFirst('get', '', $name));
 
             if (isset($this->{$property})) {
                 return $this->{$property};
             }
+        }
+
+        if (method_exists($this, $name)) {
+            return $this->{$name}(...$args);
+        }
+
+        return null;
+    }
+
+    /**
+     * Converts the country into an array with only the selected keys.
+     * 
+     * @param array $keys
+     * @return array
+     */
+    public function only($keys = []): array
+    {
+        $result = [];
+
+        foreach ($keys as $key) {
+            $as = $key;
+
+            if (is_array($key)) {
+                $as = Arr::first(array_values($key));
+                $key = Arr::first(array_keys($key));
+            }
+
+            $result[$as] = strpos($key, '.') > 0 ? Utils::get($this, $key) : $this->{$key};
+        }
+
+        return $result;
+    }
+
+    /**
+     * Converts country into array with only the basic column data for a country.
+     *
+     * @return array
+     */
+    public function simple(): array
+    {
+        return $this->only(['name', 'code', 'currency', 'emoji', 'cca2', 'abbrev', 'geo', 'languages', 'type', 'record_type']);
+    }
+
+    /**
+     * Magic helper methods to access and query country properties.
+     * 
+     * static::whereCurrency('USD');
+     *
+     * @param string $name
+     * @param array $args
+     * @return null|mixed
+     */
+    public static function __callStatic($name, $args)
+    {
+        if (Str::startsWith($name, 'where')) {
+            $property = Str::snake(Str::replaceFirst('where', '', $name));
+
+            return static::first(
+                function ($country) use ($property, $args) {
+                    return $country->{$property} === $args[0];
+                }
+            );
         }
 
         return null;
@@ -97,7 +174,12 @@ class Country implements JsonSerializable
         return static::all()->where('cca2', $code)->exists();
     }
 
-    public static function all()
+    /**
+     * Get all countries from repository.
+     *
+     * @return \Illuminate\Support\Collection
+     */
+    public static function all(): Collection
     {
         return new Collection(
             array_map(
@@ -132,6 +214,46 @@ class Country implements JsonSerializable
     }
 
     /**
+     * Search all countries by keyword.
+     * 
+     * @param string $query
+     * @return \Illuminate\Support\Collection 
+     */
+    public static function search(string $query)
+    {
+        return static::filter(
+            function ($country) use ($query) {
+                $query = strtolower($query);
+
+                $matches = [
+                    strtolower($country->getCurrency()) === $query, 
+                    strtolower($country->getCode()) === $query,
+                    strtolower($country->getCca2()) === $query,
+                    Str::contains(strtolower($country->getAbbrev()), $query),
+                    Str::contains(strtolower($country->getName()), $query)
+                ];
+
+                return count(array_filter($matches));
+            }
+        );
+    }
+
+    /**
+     * Find a country by it's currency code.
+     *
+     * @param string $currency
+     * @return void
+     */
+    public static function fromCurrency($currency)
+    {
+        return static::first(
+            function ($country) use ($currency) {
+                return $country->getCurrency() === $currency;
+            }
+        );
+    }
+
+    /**
      * Get the collection of items as JSON.
      *
      * @param  int  $options
@@ -149,7 +271,7 @@ class Country implements JsonSerializable
      */
     public function toArray(): array
     {
-        return (array) $this->data;
+        return array_merge(['name' => $this->name, 'currency' => $this->currency], (array) $this->data);
     }
 
     /**

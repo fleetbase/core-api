@@ -3,6 +3,8 @@
 namespace Fleetbase\Events;
 
 use Fleetbase\Models\Model;
+use Fleetbase\Support\Resolve;
+use Fleetbase\Support\Utils;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
@@ -10,9 +12,7 @@ use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Str;
 use Illuminate\Support\Carbon;
-use Fleetbase\Support\Utils;
 use Illuminate\Http\Resources\Json\JsonResource;
-use Illuminate\Support\Facades\Log;
 
 class ResourceLifecycleEvent implements ShouldBroadcast
 {
@@ -85,8 +85,8 @@ class ResourceLifecycleEvent implements ShouldBroadcast
         $this->queue = Utils::getEventsQueue();
         $this->modelUuid = $model->uuid;
         $this->modelClassNamespace = get_class($model);
-        $this->modelClassName = class_basename($model);
-        $this->modelHumanName = Str::lower(Utils::humanizeClassName($model));
+        $this->modelClassName = Utils::classBasename($model);
+        $this->modelHumanName = Str::humanize($this->modelClassName, false);
         $this->modelRecordName = Utils::or($model, ['name', 'email', 'public_id']);
         $this->modelName = Str::snake($this->modelClassName);
         $this->userSession = session('user');
@@ -103,8 +103,6 @@ class ResourceLifecycleEvent implements ShouldBroadcast
         $this->apiEnvironment = session('api_environment', 'live');
         $this->isSandbox = session('is_sandbox', false);
         $this->data = $this->getEventData();
-
-        Log::info('Triggered lifecycle event for ' . $this->modelHumanName . ' on the event [' . $this->eventName . ']');
     }
 
     /**
@@ -197,7 +195,7 @@ class ResourceLifecycleEvent implements ShouldBroadcast
     public function getEventData()
     {
         $model = $this->getModelRecord();
-        $resource = $this->getModelResource($model);
+        $resource = $this->getModelResource($model, $this->version);
         $resourceData = [];
 
         if ($resource) {
@@ -236,21 +234,13 @@ class ResourceLifecycleEvent implements ShouldBroadcast
     /**
      * Return the models json resource instance
      *
-     * @param  \Fleetbase\Model\Model
-     * @param  string version
+     * @param  \Fleetbase\Model\Model $model
+     * @param  int|null $version
      * @return  \Illuminate\Http\Resources\Json\JsonResource
      */
-    public function getModelResource($model = null, $version = null)
+    public function getModelResource($model, ?int $version = null)
     {
-        $version = $version ?? $this->version;
-        $model = $model === null ? $this->getModelRecord() : $model;
-        $resourceNamespace = "Fleetbase\\Http\\Resources\\v{$version}\\" . $this->modelClassName;
-
-        if (!$model) {
-            return false;
-        }
-
-        return new $resourceNamespace($model);
+        return Resolve::httpResourceForModel($model, $version);
     }
 
     /**

@@ -34,6 +34,7 @@ class CoreServiceProvider extends ServiceProvider
         $this->registerExpansionsFrom();
         $this->registerMiddleware();
         $this->loadRoutesFrom(__DIR__ . '/../routes.php');
+        $this->mergeConfigFrom(__DIR__ . '/../../config/queue.php', 'queue.connections');
         $this->mergeConfigFrom(__DIR__ . '/../../config/fleetbase.php', 'fleetbase');
     }
 

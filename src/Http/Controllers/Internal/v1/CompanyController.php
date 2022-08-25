@@ -3,6 +3,7 @@
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Http\Controllers\FleetbaseController;
+use Fleetbase\Http\Resources\Organization;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\Invite;
 use Illuminate\Support\Str;
@@ -37,6 +38,6 @@ class CompanyController extends FleetbaseController
             }
         }
 
-        return response()->json($company);
+        return new Organization($company);
     }
 }
