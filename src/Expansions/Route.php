@@ -95,11 +95,14 @@ class Route implements Expansion
 
             $register = function ($router) use ($name, $registerFn, $make, $controller) {
                 if (is_callable($registerFn)) {
-                    $router->group(['prefix' => $name], function ($router) use ($registerFn, $make, $controller)  {
-                        $registerFn($router, $make, $controller);
-                    });
+                    $router->group(
+                        ['prefix' => $name],
+                        function ($router) use ($registerFn, $make, $controller) {
+                            $registerFn($router, $make, $controller);
+                        }
+                    );
                 }
-                
+
                 $router->fleetbaseRestRoutes($name, $controller);
             };
 
@@ -113,20 +116,26 @@ class Route implements Expansion
     public function fleetbaseAuthRoutes()
     {
         return function () {
-            return $this->group(['prefix' => 'auth'], function ($router) {
-                $router->post('/login', 'AuthController@login');
-                $router->post('/sign-up', 'AuthController@signUp');
-                $router->post('/logout', 'AuthController@logout');
-                $router->post('/get-magic-reset-link', 'AuthController@createPasswordReset');
-                $router->post('/reset-password', 'AuthController@resetPassword');
-                $router->group(['middleware' => ['fleetbase.protected']], function ($router) {
-                    $router->post('/switch-organization', 'AuthController@switchOrganization');
-                    $router->post('/join-organization', 'AuthController@joinOrganization');
-                    $router->post('/create-organization', 'AuthController@createOrganization');
-                    $router->get('/session', 'AuthController@session');
-                    $router->get('/organizations', 'AuthController@getUserOrganizations');
-                });
-            });
+            return $this->group(
+                ['prefix' => 'auth'],
+                function ($router) {
+                    $router->post('/login', 'AuthController@login');
+                    $router->post('/sign-up', 'AuthController@signUp');
+                    $router->post('/logout', 'AuthController@logout');
+                    $router->post('/get-magic-reset-link', 'AuthController@createPasswordReset');
+                    $router->post('/reset-password', 'AuthController@resetPassword');
+                    $router->group(
+                        ['middleware' => ['fleetbase.protected']],
+                        function ($router) {
+                            $router->post('/switch-organization', 'AuthController@switchOrganization');
+                            $router->post('/join-organization', 'AuthController@joinOrganization');
+                            $router->post('/create-organization', 'AuthController@createOrganization');
+                            $router->get('/session', 'AuthController@session');
+                            $router->get('/organizations', 'AuthController@getUserOrganizations');
+                        }
+                    );
+                }
+            );
         };
     }
 
