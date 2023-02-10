@@ -31,6 +31,7 @@ class CoreServiceProvider extends ServiceProvider
     {
         JsonResource::withoutWrapping();
 
+        $this->registerCommands();
         $this->registerExpansionsFrom();
         $this->registerMiddleware();
         $this->loadRoutesFrom(__DIR__ . '/../routes.php');
@@ -96,5 +97,15 @@ class CoreServiceProvider extends ServiceProvider
                 $this->app->router->pushMiddlewareToGroup($group, $middleware);
             }
         }
+    }
+
+    public function registerCommands()
+    {
+        $this->commands(
+            [
+                \Fleetbase\Console\Commands\CreateDatabase::class,
+                \Fleetbase\Console\Commands\BackupDatabase\MysqlS3Backup::class
+            ]
+        );
     }
 }

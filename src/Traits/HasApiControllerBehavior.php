@@ -11,12 +11,9 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpKernelException\NotFoundHttpException;
 use Exception;
-use Error;
-use ErrorException;
 use Fleetbase\Exceptions\FleetbaseRequestValidationException;
 use Fleetbase\Support\Resolve;
 use Illuminate\Database\QueryException;
-use Illuminate\Http\JsonResponse;
 
 trait HasApiControllerBehavior
 {
@@ -314,10 +311,10 @@ trait HasApiControllerBehavior
      * }
      *
      * @param  \Illuminate\Http\Request  $request
-     * @param  int  $id
+     * @param  string  $id
      * @return \Illuminate\Http\Response
      */
-    public function updateRecord(Request $request, $id)
+    public function updateRecord(Request $request, string $id)
     {
         try {
             $this->validateRequest($request);

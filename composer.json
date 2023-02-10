@@ -1,7 +1,8 @@
 {
     "name": "fleetbase/core-api",
+    "version": "1.0.0-dev",
     "description": "Core Framework and Resources for Fleetbase API",
-    "keywords": ["php", "skeleton", "package"],
+    "keywords": ["fleetbase", "logistics platform"],
     "license": "MIT",
     "authors": [
         {

@@ -17,7 +17,6 @@ class FleetbaseResource extends JsonResource
     public function toArray($request)
     {
         $resource = parent::toArray($request);
-        
         if (Http::isInternalRequest()) {
             // insert `uuid` after `id` if it doesn't exist already
             if (!isset($resource['uuid'])) {
@@ -36,13 +35,21 @@ class FleetbaseResource extends JsonResource
      */
     public static function collection($resource)
     {
-        return tap(new FleetbaseResourceCollection($resource, static::class), function ($collection) {
-            if (property_exists(static::class, 'preserveKeys')) {
-                $collection->preserveKeys = (new static([]))->preserveKeys === true;
+        return tap(
+            new FleetbaseResourceCollection($resource, static::class),
+            function ($collection) {
+                if (property_exists(static::class, 'preserveKeys')) {
+                    $collection->preserveKeys = (new static([]))->preserveKeys === true;
+                }
             }
-        });
+        );
     }
 
+    /**
+     * Checks if resource is null.
+     * 
+     * @return boolean
+     */
     public function isEmpty()
     {
         return is_null($this->resource) || is_null($this->resource->resource);
