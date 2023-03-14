@@ -7,9 +7,9 @@
  */
 return [
     'api' => [
-        'version' => '0.0.1',
+        'version' => '1.0.0',
         'routing' => [
-            'prefix' => 'fleetbase',
+            'prefix' => null,
             'internal_prefix' => 'int'
         ]
     ],

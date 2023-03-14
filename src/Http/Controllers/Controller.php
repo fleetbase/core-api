@@ -17,20 +17,24 @@ class Controller extends BaseController
      */
     public function hello(Request $request)
     {
-        return response()->json([
-            'message' => 'Fleetbase API',
-            'version' => '2.0.0',
-        ]);
+        return response()->json(
+            [
+                'message' => 'Fleetbase API',
+                'version' => config('fleetbase.api.version'),
+            ]
+        );
     }
-    
+
     /**
      * Response time only
      */
     public function time()
     {
-        return response()->json([
-            'ms' => microtime(true) - LARAVEL_START,
-        ]);
+        return response()->json(
+            [
+                'ms' => microtime(true) - LARAVEL_START,
+            ]
+        );
     }
 
     /**

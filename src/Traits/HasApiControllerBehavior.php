@@ -17,6 +17,7 @@ use Fleetbase\Exceptions\FleetbaseRequestValidationException;
 use Fleetbase\Support\Resolve;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Arr;
 
 trait HasApiControllerBehavior
 {
@@ -205,7 +206,19 @@ trait HasApiControllerBehavior
      */
     public function queryRecord(Request $request)
     {
+        $single = $request->boolean('single');
         $data = $this->model->queryFromRequest($request);
+
+        if ($single) {
+            $data = Arr::first($data);
+
+            if (Http::isInternalRequest($request)) {
+                $this->resource::wrap($this->resourceSingularlName);
+                return new $this->resource($data);
+            }
+    
+            return new $this->resource($data);
+        }
 
         if (Http::isInternalRequest($request)) {
             $this->resource::wrap($this->resourcePluralName);

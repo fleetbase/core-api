@@ -20,12 +20,12 @@ Route::prefix(InternalConfig::get('api.routing.prefix', 'flb'))->namespace('Flee
         $router->get('/', 'Controller@hello');
 
         /*
-    |--------------------------------------------------------------------------
-    | Internal Routes
-    |--------------------------------------------------------------------------
-    |
-    | Primary internal routes for console.
-    */
+        |--------------------------------------------------------------------------
+        | Internal Routes
+        |--------------------------------------------------------------------------
+        |
+        | Primary internal routes for console.
+        */
         $router->prefix(InternalConfig::get('api.routing.internal_prefix', 'int'))->namespace('Internal')->group(
             function ($router) {
                 $router->prefix('v1')->namespace('v1')->group(
