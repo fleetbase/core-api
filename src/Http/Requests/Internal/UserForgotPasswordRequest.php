@@ -2,9 +2,9 @@
 
 namespace Fleetbase\Http\Requests\Internal;
 
-use Fleetbase\Http\Requests\Request;
+use Fleetbase\Http\Requests\FleetbaseRequest;
 
-class UserForgotPasswordRequest extends Request
+class UserForgotPasswordRequest extends FleetbaseRequest
 {
     /**
      * Determine if the user is authorized to make this request.

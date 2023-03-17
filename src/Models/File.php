@@ -6,12 +6,15 @@ use Fleetbase\Support\Utils;
 use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasUuid;
+use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Sluggable\SlugOptions;
 use Spatie\Sluggable\HasSlug;
 use Mimey\MimeTypes;
+use Vinkla\Hashids\Facades\Hashids;
 
 class File extends Model
 {
@@ -43,14 +46,14 @@ class File extends Model
      *
      * @var array
      */
-    protected $fillable = ['public_id', 'company_uuid', 'uploader_uuid', 'key_uuid', 'key_type', 'path', 'bucket', 'folder', 'etag', 'original_filename', 'type', 'content_type', 'file_size', 'slug', 'caption'];
+    protected $fillable = ['public_id', 'company_uuid', 'uploader_uuid', 'subject_uuid', 'subject_type', 'path', 'bucket', 'folder', 'etag', 'original_filename', 'type', 'content_type', 'file_size', 'slug', 'caption'];
 
     /**
      * Dynamic attributes that are appended to object
      *
      * @var array
      */
-    protected $appends = ['s3url', 'hash_name'];
+    protected $appends = ['url', 'hash_name'];
 
     /**
      * The attributes excluded from the model's JSON form.
@@ -95,9 +98,16 @@ class File extends Model
      *
      * @return string
      */
-    public function gets3urlAttribute()
+    public function getUrlAttribute()
     {
-        return 'https://' . $this->bucket . '.s3.amazonaws.com/' . $this->path;
+        $disk = env('FILESYSTEM_DRIVER');
+        $url = Storage::disk($disk)->url($this->path);
+
+        if ($disk === 'local') {
+            return asset($url, !app()->environment(['development', 'local']));
+        }
+
+        return $url;
     }
 
     /**
@@ -111,16 +121,6 @@ class File extends Model
     }
 
     /**
-     * Determines if authenticated user is the owner of the company
-     *
-     * @return boolean
-     */
-    public function getIsUploaderAttribute()
-    {
-        return session('user') === $this->uploader_uuid;
-    }
-
-    /**
      * Sets the owner of the company
      *
      * @return $this
@@ -129,16 +129,6 @@ class File extends Model
     {
         $this->uploader_uuid = $uploader->uuid;
         return $this;
-    }
-
-    /**
-     * Generate the file url attribute
-     *
-     * @var string
-     */
-    public function getUrlAttribute()
-    {
-        return url($this->path);
     }
 
     /**
@@ -183,7 +173,7 @@ class File extends Model
     /**
      * Create a new file from uploaded file
      *
-     * @param Illuminate\Http\UploadedFile $file
+     * @param \Illuminate\Http\UploadedFile $file
      * @return \Fleetbase\Models\File
      */
     public static function createFromUpload(UploadedFile $file, $path, $type = null, $size = null)
@@ -217,8 +207,8 @@ class File extends Model
      */
     public function setKey($model, $type = null)
     {
-        $this->key_uuid = data_get($model, 'uuid');
-        $this->key_type = Utils::getMutationType($model);
+        $this->subject_uuid = data_get($model, 'uuid');
+        $this->subject_type = Utils::getMutationType($model);
 
         if (is_string($type)) {
             $this->type = $type;
@@ -242,10 +232,25 @@ class File extends Model
         return $this;
     }
 
-    public static function randomFileName(string $extension)
+    public static function randomFileName(?string $extension = 'png')
     {
         $extension = Str::startsWith($extension, '.') ? $extension : '.' . $extension;
 
-        return uniqid() . $extension;
+        return uniqid() . strtolower($extension);
+    }
+
+    public static function randomFileNameFromRequest(Request $request, ?string $extension = 'png')
+    {
+        /** @var \Illuminate\Http\File|Symfony\Component\HttpFoundation\File\File $file */
+        $file = $request->file;
+
+        if ($request->hasFile('file')) {
+            $extension = strtolower($file->getClientOriginalExtension());
+            $extension = Str::startsWith($extension, '.') ? $extension : '.' . $extension;
+
+            return Hashids::encode(strlen($file->hashName()), time()) . $extension;
+        }
+
+        return static::randomFileName($extension);
     }
 }

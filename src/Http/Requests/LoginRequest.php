@@ -32,7 +32,7 @@ class LoginRequest extends FleetbaseRequest
                 ->toArray();
         }
 
-        return response()->ison($response, 422);
+        return response()->json($response, 422);
     }
 
     /**

@@ -3,7 +3,11 @@
 namespace Fleetbase\Expansions;
 
 use Fleetbase\Build\Expansion;
+use Fleetbase\Models\Company;
 
+/**
+ * @mixin \Illuminate\Support\Facades\Request
+ */
 class Request implements Expansion
 {
     /**
@@ -14,6 +18,22 @@ class Request implements Expansion
     public static function target()
     {
         return \Illuminate\Support\Facades\Request::class;
+    }
+
+    /**
+     * Extends Request to find the current organization/company.
+     *
+     * @return \Fleetbase\Models\Company|null
+     */
+    public function company()
+    {
+        return function () {
+            if ($this->session()->has('company')) {
+                return Company::find($this->session()->get('company'));
+            }
+
+            return null;
+        };
     }
 
     /**

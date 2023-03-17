@@ -2164,8 +2164,8 @@ class Utils
         ];
 
         if ($owner) {
-            $fileInfo['key_uuid'] = $owner->uuid;
-            $fileInfo['key_type'] = Utils::getMutationType($owner);
+            $fileInfo['subject_uuid'] = $owner->uuid;
+            $fileInfo['subject_type'] = Utils::getMutationType($owner);
         }
 
         // create file 

@@ -177,7 +177,7 @@ class Extension extends Model
      */
     public function getIconUrlAttribute()
     {
-        return static::attributeFromCache($this, 'file.s3url', 'https://s3.ap-southeast-1.amazonaws.com/flb-assets/static/no-avatar.png');
+        return static::attributeFromCache($this, 'file.url', 'https://s3.ap-southeast-1.amazonaws.com/flb-assets/static/no-avatar.png');
     }
 
     /**
