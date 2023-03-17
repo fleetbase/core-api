@@ -51,7 +51,7 @@ class Resolve
         return null;
     }
 
-    public static function resourceForMorph($type, $id)
+    public static function resourceForMorph($type, $id, $resourceClass = null)
     {
         if (empty($type) || empty($id)) {
             return null;
@@ -66,7 +66,11 @@ class Resolve
         }
 
         if ($instance) {
-            $resource = Find::httpResourceForModel($instance);
+            if (class_exists($resourceClass)) {
+                $resource = new $resourceClass($instance);
+            } else {
+                $resource = Find::httpResourceForModel($instance);
+            }
 
             return new $resource($instance);
         }
