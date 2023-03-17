@@ -38,7 +38,7 @@ Route::prefix(InternalConfig::get('api.routing.prefix', '/'))->namespace('Fleetb
                                 $router->fleetbaseRoutes(
                                     'users',
                                     function ($router, $controller) {
-                                        $router->get('/me', $controller('current'));
+                                        $router->get('me', $controller('current'));
                                     }
                                 );
                                 $router->fleetbaseRoutes('user-devices');
@@ -47,7 +47,14 @@ Route::prefix(InternalConfig::get('api.routing.prefix', '/'))->namespace('Fleetb
                                 $router->fleetbaseRoutes('policies');
                                 $router->fleetbaseRoutes('permissions');
                                 $router->fleetbaseRoutes('extensions');
-                                $router->fleetbaseRoutes('files');
+                                $router->fleetbaseRoutes(
+                                    'files',
+                                    function ($router, $controller) {
+                                        $router->post('upload', $controller('upload'));
+                                        $router->post('uploadBase64', $controller('upload-base64'));
+                                        $router->get('download/{id}', $controller('download'));
+                                    }
+                                );
                                 $router->fleetbaseRoutes('transactions');
                                 $router->group(
                                     ['prefix' => 'lookup'],

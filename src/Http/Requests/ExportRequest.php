@@ -11,7 +11,7 @@ class ExportRequest extends FleetbaseRequest
      */
     public function authorize()
     {
-        return session('user');
+        return $this->session()->has('user');;
     }
 
     /**

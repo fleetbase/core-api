@@ -303,10 +303,10 @@ class User extends Authenticatable
     public function getAvatarUrlAttribute()
     {
         if ($this->avatar instanceof File) {
-            return $this->avatar->s3url;
+            return $this->avatar->url;
         }
 
-        return static::attributeFromCache($this, 'avatar.s3url', 'https://s3.ap-southeast-1.amazonaws.com/flb-assets/static/no-avatar.png');
+        return static::attributeFromCache($this, 'avatar.url', 'https://s3.ap-southeast-1.amazonaws.com/flb-assets/static/no-avatar.png');
     }
 
     /**

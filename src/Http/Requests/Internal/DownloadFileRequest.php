@@ -4,7 +4,7 @@ namespace Fleetbase\Http\Requests\Internal;
 
 use Fleetbase\Http\Requests\FleetbaseRequest;
 
-class ResetPasswordRequest extends FleetbaseRequest
+class DownloadFileRequest extends FleetbaseRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -13,7 +13,7 @@ class ResetPasswordRequest extends FleetbaseRequest
      */
     public function authorize()
     {
-        return true;
+        return $this->session()->has('user');
     }
 
     /**
@@ -24,23 +24,20 @@ class ResetPasswordRequest extends FleetbaseRequest
     public function rules()
     {
         return [
-            'code' => ['required', 'exists:verification_codes,code'],
-            'link' => ['required', 'exists:verification_codes,uuid'],
-            'password' => 'required|confirmed|min:6',
-            'password_confirmation' => 'required',
+            'id' => ['required', 'string', 'exists:files,uuid'],
         ];
     }
 
     /**
-     * Get the error messages for the defined validation rules.
+     * Get the validation rules error messages.
      *
      * @return array
      */
     public function messages()
     {
         return [
-            'code' => 'Invalid password reset request!',
-            'link' => 'Invalid password reset request!',
+            'id.required' => 'Please provide a file ID.',
+            'id.exists' => 'The requested file does not exist.',
         ];
     }
 }

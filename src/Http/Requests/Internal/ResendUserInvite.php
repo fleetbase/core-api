@@ -2,9 +2,9 @@
 
 namespace Fleetbase\Http\Requests\Internal;
 
-use Fleetbase\Http\Requests\Request;
+use Fleetbase\Http\Requests\FleetbaseRequest;
 
-class ResendUserInvite extends Request
+class ResendUserInvite extends FleetbaseRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -13,7 +13,7 @@ class ResendUserInvite extends Request
      */
     public function authorize()
     {
-        return session('company');
+        return $this->session()->has('company');;
     }
 
     /**

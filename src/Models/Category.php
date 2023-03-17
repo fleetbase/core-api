@@ -135,9 +135,9 @@ class Category extends Model
     public function getIconUrlAttribute()
     {
         if ($this->iconFile instanceof File) {
-            return $this->iconFile->s3url;
+            return $this->iconFile->url;
         }
         
-        return static::attributeFromCache($this, 'iconFile.s3url', 'https://flb-assets.s3.ap-southeast-1.amazonaws.com/static/placeholder-icon.png');
+        return static::attributeFromCache($this, 'iconFile.url', 'https://flb-assets.s3.ap-southeast-1.amazonaws.com/static/placeholder-icon.png');
     }
 }

@@ -2,9 +2,9 @@
 
 namespace Fleetbase\Http\Requests\Internal;
 
-use Illuminate\Foundation\Http\FormRequest;
+use Fleetbase\Http\Requests\FleetbaseRequest;
 
-class AcceptCompanyInvite extends FormRequest
+class AcceptCompanyInvite extends FleetbaseRequest
 {
     /**
      * Determine if the user is authorized to make this request.

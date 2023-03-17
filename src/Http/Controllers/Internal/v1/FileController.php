@@ -3,11 +3,13 @@
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Http\Controllers\FleetbaseController;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
+use Fleetbase\Http\Requests\Internal\DownloadFileRequest;
+use Fleetbase\Http\Requests\Internal\UploadBase64FileRequest;
+use Fleetbase\Http\Requests\Internal\UploadFileRequest;
 use Fleetbase\Models\File;
 use Fleetbase\Support\Utils;
-use Vinkla\Hashids\Facades\Hashids;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class FileController extends FleetbaseController
 {
@@ -16,129 +18,137 @@ class FileController extends FleetbaseController
      *
      * @var string
      */
-   public $resource = 'file';
+    public $resource = 'file';
 
     /**
      * Handle file uploads
      *
-     * @param \Illuminate\Http\Request $request
+     * @param \Fleetbase\Http\Requests\Internal\UploadFileRequest $request
      * @return \Illuminate\Http\Response
      */
-    public function upload(Request $request)
+    public function upload(UploadFileRequest $request)
     {
-        // additional attributes
+        $disk = env('FILESYSTEM_DRIVER');
         $type = $request->input('type');
-        $size = $request->input('file_size');
-        $path = $request->input('path');
-        $keyType = $request->input('key_type');
-        $keyId = $request->input('key_uuid');
+        $size = $request->input('file_size', $request->file->getSize());
+        $path = $request->input('path', 'uploads');
+        $visibility = $request->input('visibility', 'public');
+        $subjectId = $request->input('subject_uuid');
+        $subjectType = $request->input('subject_type');
 
-        // make sure request has file
-        if (!$request->hasFile('file')) {
-            return response()->json(['errors' => ['Oops! Looks like no file was actually uploaded.']], 400);
+        // Correct $path for uploads
+        if (Str::startsWith($path, 'uploads') && $disk === 'uploads') {
+            $path = str_replace('uploads/', '', $path);
         }
 
-        // make sure file is valid
-        if (!$request->file('file')->isValid()) {
-            return response()->json(['errors' => ['Oops! The file you\'ve uploaded is not valid.']], 400);
-        }
+        // Upload file and create record
+        $fileName = File::randomFileNameFromRequest($request);
+        $path = $request->file->storeAs(
+            $path,
+            $fileName,
+            [
+                'disk' => $disk,
+                'visibility' => $visibility
+            ]
+        );
 
-        $uploadPath = $path ?? 'uploads';
-        $fileName = Hashids::encode(strlen($request->file->hashName()), time()) . '.' . $request->file->getClientOriginalExtension();
-        $path = $request->file->storePubliclyAs($uploadPath, $fileName, 's3');
+        // \Fleetbase\Models\File $file
         $file = File::createFromUpload($request->file, $path, $type, $size);
 
-        // if we have key_uuid and type
-        if ($request->has(['key_uuid', 'key_type'])) {
-            $file->update([
-                'key_uuid' => $keyId,
-                'key_type' => Utils::getMutationType($keyType)
-            ]);
-        } else if ($keyType) {
-            $file->update([
-                'key_type' => Utils::getMutationType($keyType)
-            ]);
+        // if we have subject_uuid and type
+        if ($request->has(['subject_uuid', 'subject_type'])) {
+            $file->update(
+                [
+                    'subject_uuid' => $subjectId,
+                    'subject_type' => Utils::getMutationType($subjectType)
+                ]
+            );
+        } else if ($subjectType) {
+            $file->update(
+                [
+                    'subject_type' => Utils::getMutationType($subjectType)
+                ]
+            );
         }
 
         // done
-        return response()->json([
-            'file' => $file,
-        ]);
+        return response()->json(
+            [
+                'file' => $file,
+            ]
+        );
     }
 
     /**
      * Handle file upload of base64
      *
-     * @param \Illuminate\Http\Request $request
+     * @param \Fleetbase\Http\Requests\Internal\UploadBase64FileRequest $request
      * @return \Illuminate\Http\Response
      */
-    public function uploadBase64(Request $request)
+    public function uploadBase64(UploadBase64FileRequest $request)
     {
+        $disk = env('FILESYSTEM_DRIVER');
         $data = $request->input('data');
-        $path = $request->input('path') ?? 'uploads';
-        $fileName = $request->input('fileName');
-        $fileType = $request->input('fileType', 'image');
-        $contentType = $request->input('contentType');
-        $keyId = $request->input('key_uuid');
-        $keyType = $request->input('key_type');
+        $path = $request->input('path', 'uploads');
+        $visibility = $request->input('visibility', 'public');
+        $fileName = $request->input('file_name');
+        $fileType = $request->input('file_type', 'image');
+        $contentType = $request->input('content_type', 'image/png');
+        $subjectId = $request->input('subject_uuid');
+        $subjectType = $request->input('subject_type');
 
         if (!$data) {
             return response()->json(['errors' => ['Oops! Looks like nodata was provided for upload.']], 400);
         }
 
-        // set the bucket path
-        $bucketPath = $path . '/' . $fileName;
+        // Correct $path for uploads
+        if (Str::startsWith($path, 'uploads') && $disk === 'uploads') {
+            $path = str_replace('uploads/', '', $path);
+        }
+
+        // set the full file path
+        $fullPath = $path . '/' . $fileName;
 
         // upload file to path
-        Storage::disk('s3')->put($bucketPath, base64_decode($data), 'public');
+        Storage::disk($disk)->put($fullPath, base64_decode($data), $visibility);
 
         // create the file model
         // create file record for upload
         $file = File::create([
             'company_uuid' => session('company'),
             'uploader_uuid' => session('user'),
-            'key_uuid' => $keyId,
-            'key_type' => $keyType ? Utils::getModelClassName($keyType) : NULL,
-            'name' => basename($bucketPath),
-            'original_filename' => basename($bucketPath),
+            'subject_uuid' => $subjectId,
+            'subject_type' => Utils::getMutationType($subjectType),
+            'name' => basename($fullPath),
+            'original_filename' => basename($fullPath),
             'extension' => 'png',
-            'content_type' => $contentType ?? 'image/png',
-            'path' => $bucketPath,
+            'content_type' => $contentType,
+            'path' => $fullPath,
             'bucket' => config('filesystems.disks.s3.bucket'),
             'type' => $fileType,
             'size' => Utils::getBase64ImageSize($data)
         ]);
 
         // done
-        return response()->json([
-            'file' => $file,
-        ]);
+        return response()->json(
+            [
+                'file' => $file,
+            ]
+        );
     }
 
     /**
      * Handle file uploads
      *
-     * @param \Illuminate\Http\Request $request
+     * @param string $id
+     * @param \Fleetbase\Http\Requests\Internal\UploadFileRequest $request
      * @return \Illuminate\Http\Response
      */
-    public function download($id)
+    public function download(?string $id, DownloadFileRequest $request)
     {
+        $disk = env('FILESYSTEM_DRIVER');
         $file = File::where('uuid', $id)->first();
 
-        if (!$file) {
-            return response()->json(
-                [
-                    'errors' => ['File not found for download'],
-                ],
-                400
-            );
-        }
-
-        // $headers = [
-        //     'Content-Type'        => 'Content-Type: application/zip',
-        //     'Content-Disposition' => 'attachment; filename="' . $file->name . '"',
-        // ];
-
-        return Storage::disk('s3')->download($file->path, $file->name);
+        return Storage::disk($disk)->download($file->path, $file->name);
     }
 }
