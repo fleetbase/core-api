@@ -9,8 +9,8 @@ return [
     'api' => [
         'version' => '0.0.1',
         'routing' => [
-            'prefix' => 'fleetbase',
-            'internal_prefix' => 'int'
+            'prefix' => env('API_PREFIX'),
+            'internal_prefix' => env('INTERNAL_API_PREFIX', 'int')
         ]
     ],
     'services' => [
