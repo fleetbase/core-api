@@ -106,14 +106,13 @@ class FileController extends FleetbaseController
             $path = str_replace('uploads/', '', $path);
         }
 
-        // set the full file path
+        // Set the full file path
         $fullPath = $path . '/' . $fileName;
 
-        // upload file to path
+        // Upload file to path
         Storage::disk($disk)->put($fullPath, base64_decode($data), $visibility);
 
-        // create the file model
-        // create file record for upload
+        // Create file record for upload
         $file = File::create([
             'company_uuid' => session('company'),
             'uploader_uuid' => session('user'),
