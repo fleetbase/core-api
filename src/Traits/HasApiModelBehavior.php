@@ -183,6 +183,27 @@ trait HasApiModelBehavior
         }
     }
 
+    public function bulkRemove($ids = [])
+    {
+        $records = $this->where(function ($q) use ($ids) {
+            $q->whereIn($this->getQualifiedKeyName(), $ids);
+            $q->orWhereIn($this->getQualifiedPublicId(), $ids);
+        });
+
+        if (!$records) {
+            return false;
+        }
+
+        $count = $records->count();
+
+        try {
+            $records->delete();
+            return $count;
+        } catch (Exception $e) {
+            throw $e;
+        }
+    }
+
     public static function mutateModelWithRequest(Request $request, Model $model)
     {
         $with = $request->or(['with', 'expand']);

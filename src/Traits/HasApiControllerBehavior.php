@@ -4,20 +4,18 @@ namespace Fleetbase\Traits;
 
 use Fleetbase\Support\Http;
 use Fleetbase\Support\Utils;
+use Fleetbase\Support\Resolve;
+use Fleetbase\Http\Requests\Internal\BulkDeleteRequest;
+use Fleetbase\Exceptions\FleetbaseRequestValidationException;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Arr;
 use Illuminate\Http\Request;
+use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpKernelException\NotFoundHttpException;
 use Exception;
-use Error;
-use ErrorException;
-use Fleetbase\Exceptions\FleetbaseRequestValidationException;
-use Fleetbase\Support\Resolve;
-use Illuminate\Database\QueryException;
-use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Arr;
 
 trait HasApiControllerBehavior
 {
@@ -216,7 +214,7 @@ trait HasApiControllerBehavior
                 $this->resource::wrap($this->resourceSingularlName);
                 return new $this->resource($data);
             }
-    
+
             return new $this->resource($data);
         }
 
@@ -287,7 +285,7 @@ trait HasApiControllerBehavior
     {
         try {
             $this->validateRequest($request);
-            $record = $this->model->createRecordFromRequest($request); 
+            $record = $this->model->createRecordFromRequest($request);
 
             return new $this->resource($record);
         } catch (Exception $e) {
@@ -371,7 +369,7 @@ trait HasApiControllerBehavior
      * @param  int  $id
      * @return \Illuminate\Http\Response
      */
-    public function destroy($id)
+    public function deleteRecord($id)
     {
         $dataModel = $this->model->wherePublicId($id);
 
@@ -393,6 +391,55 @@ trait HasApiControllerBehavior
                 'message' => 'Resource not found',
             ],
             404
+        );
+    }
+
+    /**
+     * Delete Resource
+     *
+     * Deletes the record with the specified `id`
+     *
+     * @authenticated
+     *
+     * @response {
+     *  "status": "success",
+     *  "message": "Resource deleted",
+     *  "data": {
+     *     "id": 1
+     *  }
+     * }
+     *
+     * @response 404 {
+     *  "status": "failed",
+     *  "message": "Resource not found"
+     * }
+     *
+     * @param  \Fleetbase\Http\Requests\Internal\BulkDeleteRequest  $request
+     * @return \Illuminate\Http\Response
+     */
+    public function bulkDelete(BulkDeleteRequest $request)
+    {
+        $ids = $request->input('ids', []);
+        $count = 0;
+
+        try {
+            $count = $this->model->bulkRemove($ids);
+        } catch (Exception $e) {
+            return response()->error($e->getMessage());
+        } catch (QueryException $e) {
+            return response()->error($e->getMessage());
+        } catch (FleetbaseRequestValidationException $e) {
+            return response()->error($e->getErrors());
+        } catch (NotFoundHttpException $e) {
+            return response()->error(($this->resourceSingularlName ?? 'Resource') . ' not found');
+        }
+
+        return response()->json(
+            [
+                'status' => 'success',
+                'message' => 'Deleted ' . $count . ' ' . Str::plural($this->model->getTable(), $count),
+                'count' => $count,
+            ]
         );
     }
 
