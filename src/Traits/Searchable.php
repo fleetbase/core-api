@@ -73,18 +73,18 @@ trait Searchable
                     $column = $jsonQueryPath[0];
                     $property = $jsonQueryPath[1];
 
-                    $q->orWhere(DB::raw("lower(json_unquote(json_extract($column, '$.$property')))"), 'LIKE', "%{$search}%");
+                    $q->orWhere(DB::raw("lower(json_unquote(json_extract($column, '$.$property')))"), 'LIKE', '%' . str_replace('.', '%', str_replace(',', '%', $search)) . '%');
                     continue;
                 }
 
-                $q->orWhere(DB::raw("lower($column)"), 'like', '%' . $search . '%');
+                $q->orWhere(DB::raw("lower($column)"), 'like', '%' . str_replace('.', '%', str_replace(',', '%', $search))  . '%');
             }
 
             // now do relations
             foreach ($relations as $relationPath => $searchableRelationColumns) {
                 $q->orWhereHas($relationPath, function ($relationQuery) use ($searchableRelationColumns, $search) {
                     foreach ($searchableRelationColumns as $column) {
-                        $relationQuery->where(DB::raw("lower($column)"), 'like', '%' . $search . '%');
+                        $relationQuery->orWhere(DB::raw("lower($column)"), 'like', '%' . str_replace('.', '%', str_replace(',', '%', $search)) . '%');
                     }
                 });
             }
@@ -99,16 +99,5 @@ trait Searchable
     public function getSearchableColumns()
     {
         return property_exists($this, 'searchableColumns') ? $this->searchableColumns : [];
-    }
-
-    // from base model
-    public static function isSearchable()
-    {
-        return class_uses_recursive(Searchable::class) || (property_exists(new static, 'searchable') && static::$searchable);
-    }
-
-    public function searchable()
-    {
-        return static::isSearchable();
     }
 }

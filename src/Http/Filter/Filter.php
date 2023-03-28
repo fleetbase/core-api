@@ -18,6 +18,13 @@ abstract class Filter
     protected $request;
 
     /**
+     * The session instance.
+     *
+     * @var \Illuminate\Contracts\Session\Session
+     */
+    protected $session;
+
+    /**
      * The builder instance.
      *
      * @var \Illuminate\Database\Eloquent\Builder
@@ -33,6 +40,7 @@ abstract class Filter
     public function __construct(Request $request)
     {
         $this->request = $request;
+        $this->session = $request->session();
     }
 
     /**
@@ -46,30 +54,10 @@ abstract class Filter
         $this->builder = $builder;
 
         foreach ($this->request->all() as $name => $value) {
-            if (method_exists($this, $name)) {
-                call_user_func_array([$this, $name], array_filter([$value]));
-            }
-
-            // try camelcase too ex: `include_tags` could be `includeTags`
-            $camelcaseName = Str::camel($name);
-
-            if (method_exists($this, $camelcaseName)) {
-                call_user_func_array([$this, $camelcaseName], array_filter([$value]));
-            }
-
-            // attempt to find and check ranged methods ex: `created_from` and `created_to` could be queried by `createdBetween($start, $end)`
-            $ranges = $this->getRangeFilterCallbacks();
-
-            if (!is_array($ranges)) {
-                continue;
-            }
-
-            foreach ($ranges as $method => $values) {
-                if (method_exists($this, $method)) {
-                    call_user_func_array([$this, $method], $values);
-                }
-            }
+            $this->applyFilter($name, $value);
         }
+
+        $this->applyRangeFilters();
 
         if (Http::isInternalRequest($this->request) && method_exists($this, 'queryForInternal')) {
             call_user_func([$this, 'queryForInternal']);
@@ -78,9 +66,53 @@ abstract class Filter
         return $this->builder;
     }
 
+    /**
+     * Find dynamically named column filters and apply them.
+     *
+     * @param string $name
+     * @param mixed $value
+     * @return void
+     */
+    private function applyFilter($name, $value)
+    {
+        $methodNames = [$name, Str::camel($name)];
+
+        foreach ($methodNames as $methodName) {
+            if (method_exists($this, $methodName)) {
+                call_user_func_array([$this, $methodName], array_filter([$value]));
+                break;
+            }
+        }
+    }
+
+    /**
+     * Apply dynamically named range filters
+     *
+     * @return void
+     */
+    private function applyRangeFilters()
+    {
+        $ranges = $this->getRangeFilterCallbacks();
+
+        if (!is_array($ranges)) {
+            return;
+        }
+
+        foreach ($ranges as $method => $values) {
+            if (method_exists($this, $method)) {
+                call_user_func_array([$this, $method], $values);
+            }
+        }
+    }
+
+    /**
+     * Find standard range filters methods.
+     *
+     * @return array
+     */
     private function getRangeFilterCallbacks(): array
     {
-        $ranges = ['after:before', 'from:to'];
+        $ranges = ['after:before', 'from:to', 'min:max', 'start:end', 'gte:lte', 'greater:less'];
 
         $prepositions = Arr::flatten(
             array_map(
