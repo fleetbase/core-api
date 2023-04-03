@@ -79,7 +79,7 @@ abstract class Filter
 
         foreach ($methodNames as $methodName) {
             if (method_exists($this, $methodName)) {
-                call_user_func_array([$this, $methodName], array_filter([$value]));
+                call_user_func_array([$this, $methodName], [$value]);
                 break;
             }
         }
