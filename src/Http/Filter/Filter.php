@@ -76,7 +76,7 @@ abstract class Filter
     private function applyFilter($name, $value)
     {
         $methodNames = [$name, Str::camel($name)];
-
+        
         foreach ($methodNames as $methodName) {
             if (method_exists($this, $methodName)) {
                 call_user_func_array([$this, $methodName], [$value]);

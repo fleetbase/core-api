@@ -4,7 +4,6 @@ namespace Fleetbase\Expansions;
 
 use Fleetbase\Build\Expansion;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 
 class Builder implements Expansion
 {

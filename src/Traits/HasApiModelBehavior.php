@@ -448,7 +448,7 @@ trait HasApiModelBehavior
         return $arr;
     }
 
-    public function search(Request $request)
+    public function searchRecordFromRequest(Request $request)
     {
         $limit = $request->limit ?? 30;
         $builder =  $this->searchBuilder($request);
