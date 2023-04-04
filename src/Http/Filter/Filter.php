@@ -78,6 +78,11 @@ abstract class Filter
         $methodNames = [$name, Str::camel($name)];
         
         foreach ($methodNames as $methodName) {
+            // if query method value cannot be empty
+            if ($methodName === 'query' && empty($value)) {
+                continue;
+            }
+            
             if (method_exists($this, $methodName)) {
                 call_user_func_array([$this, $methodName], [$value]);
                 break;

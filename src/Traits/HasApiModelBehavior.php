@@ -479,11 +479,6 @@ trait HasApiModelBehavior
         return $builder;
     }
 
-    public function count(Request $request)
-    {
-        return $this->buildSearchParams($request, self::query())->count();
-    }
-
     public function applyFilters(Request $request, $builder)
     {
         $operators = $this->getQueryOperators();
@@ -507,10 +502,27 @@ trait HasApiModelBehavior
                 $value = $valueParts[0];
             }
 
+            if ($this->prioritizedCustomColumnFilter($request, $builder, $column)) {
+                continue;
+            }
+
             $builder = $this->applyOperators($builder, $column, $operator, $operator_symbol, $value);
         }
 
         return $builder;
+    }
+
+    public function count(Request $request)
+    {
+        return $this->buildSearchParams($request, self::query())->count();
+    }
+
+    public function prioritizedCustomColumnFilter($request, $builder, $column)
+    {
+        $resourceFilter = Resolve::httpFilterForModel($this, $request);
+        $camlizedColumnName = Str::camel($column);
+
+        return method_exists($resourceFilter, $camlizedColumnName) || method_exists($resourceFilter, $column);
     }
 
     public function buildSearchParams(Request $request, $builder)
@@ -518,6 +530,10 @@ trait HasApiModelBehavior
         $operators = $this->getQueryOperators();
 
         foreach ($request->all() as $key => $value) {
+            if ($this->prioritizedCustomColumnFilter($request, $builder, $key)) {
+                continue;
+            }
+
             if (in_array($key, $this->searcheableFields())) {
                 switch ($key) {
                     default:
@@ -530,16 +546,16 @@ trait HasApiModelBehavior
             foreach ($operators as $op_key => $op_type) {
                 $key = strtolower($key);
                 $op_key = strtolower($op_key);
-                $column_name = Str::replaceLast($op_key, '', $key);
+                $column = Str::replaceLast($op_key, '', $key);
 
                 $fieldEndsWithOperator = Str::endsWith($key, $op_key);
-                $columnIsSearchable = in_array($column_name, $this->searcheableFields());
+                $columnIsSearchable = in_array($column, $this->searcheableFields());
 
                 if (!$fieldEndsWithOperator || !$columnIsSearchable) {
                     continue;
                 }
 
-                $builder = $this->applyOperators($builder, $column_name, $op_key, $op_type, $value);
+                $builder = $this->applyOperators($builder, $column, $op_key, $op_type, $value);
             }
         }
 
