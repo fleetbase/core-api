@@ -79,7 +79,7 @@ abstract class Filter
         
         foreach ($methodNames as $methodName) {
             // if query method value cannot be empty
-            if ($methodName === 'query' && empty($value)) {
+            if (empty($value)) {
                 continue;
             }
             

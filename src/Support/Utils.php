@@ -2127,7 +2127,7 @@ class Utils
         } catch (ErrorException $e) {
             return null;
         }
-        
+
         $defaultExtensionGuess = '.jpg';
 
         if (!$contents) {
@@ -2236,5 +2236,24 @@ class Utils
         })->toArray();
 
         return in_array($id, $providerIds);
+    }
+
+    public static function dateRange($date)
+    {
+        if (is_string($date) && Str::contains($date, ',')) {
+            return static::dateRange(explode(',', $date));
+        }
+
+        if (is_array($date)) {
+            return array_map(
+                function ($dateString) {
+                    return Carbon::parse($dateString);
+                },
+                $date
+            );
+        }
+
+        // if not valid range just parse as date
+        return Carbon::parse($date);
     }
 }

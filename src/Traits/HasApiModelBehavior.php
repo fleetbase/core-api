@@ -530,7 +530,7 @@ trait HasApiModelBehavior
         $operators = $this->getQueryOperators();
 
         foreach ($request->all() as $key => $value) {
-            if ($this->prioritizedCustomColumnFilter($request, $builder, $key)) {
+            if ($this->prioritizedCustomColumnFilter($request, $builder, $key) || empty($value)) {
                 continue;
             }
 
