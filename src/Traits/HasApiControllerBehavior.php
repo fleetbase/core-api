@@ -332,7 +332,7 @@ trait HasApiControllerBehavior
     {
         try {
             $this->validateRequest($request);
-            $record = $this->model->updateRecordFromRequest($request);
+            $record = $this->model->updateRecordFromRequest($request, $id);
 
             return new $this->resource($record);
         } catch (Exception $e) {
