@@ -18,8 +18,8 @@ use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\Expandable;
 use Fleetbase\Traits\Searchable;
 use Fleetbase\Models\Company;
-use Fleetbase\Support\Utils;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 use Fleetbase\Casts\Json;
 use Fleetbase\Traits\HasCacheableAttributes;
 use Fleetbase\Traits\HasMetaAttributes;
@@ -134,8 +134,6 @@ class User extends Authenticatable
         'company_name',
         'is_admin',
         'types',
-        // 'driver_uuid', 
-        // 'session_status'
     ];
 
     /**
@@ -212,7 +210,7 @@ class User extends Authenticatable
      */
     public function assignCompanyFromId(?string $id)
     {
-        if (!Utils::isUuid($id)) {
+        if (!Str::isUuid($id)) {
             return;
         }
 
@@ -417,21 +415,21 @@ class User extends Authenticatable
         $driver = false;
         $customer = false;
 
-        // if (method_exists($this, 'driver')) {
-        try {
-            $driver = $this->driver()->exists();
-        } catch (QueryException $e) {
-            // keep silent
-        }
+        // // if (method_exists($this, 'driver')) {
+        // try {
+        //     $driver = $this->driver()->exists();
+        // } catch (QueryException $e) {
+        //     // keep silent
         // }
+        // // }
 
-        if (method_exists($this, 'customer')) {
-            try {
-                $customer = $this->customer()->exists();
-            } catch (QueryException $e) {
-                // keep silent
-            }
-        }
+        // if (method_exists($this, 'customer')) {
+        //     try {
+        //         $customer = $this->customer()->exists();
+        //     } catch (QueryException $e) {
+        //         // keep silent
+        //     }
+        // }
 
         $types = [$this->type];
 

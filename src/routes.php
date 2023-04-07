@@ -1,6 +1,5 @@
 <?php
 
-use Fleetbase\Http\Middleware\SetupFleetbaseSession;
 use Fleetbase\Support\InternalConfig;
 use Illuminate\Support\Facades\Route;
 

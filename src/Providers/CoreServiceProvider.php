@@ -6,7 +6,6 @@ use Fleetbase\Support\Expansion;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Arr;
 use Illuminate\Http\Resources\Json\JsonResource;
-use DirectoryIterator;
 
 /**
  * CoreServiceProvider
@@ -54,7 +53,7 @@ class CoreServiceProvider extends ServiceProvider
             return;
         }
 
-        $macros = new DirectoryIterator($from ?? __DIR__ . '/../Expansions');
+        $macros = new \DirectoryIterator($from ?? __DIR__ . '/../Expansions');
 
         foreach ($macros as $macro) {
             if (!$macro->isFile()) {

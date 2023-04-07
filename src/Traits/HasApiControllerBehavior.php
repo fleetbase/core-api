@@ -93,12 +93,12 @@ trait HasApiControllerBehavior
      *
      * @param \Illuminate\Database\Eloquent\Model $model - The Model Instance
      */
-    public function setApiModel(?Model $model = null, string $namespace = '\\Fleetbase\\Models\\')
+    public function setApiModel(?Model $model = null, string $namespace = '\\Fleetbase')
     {
         $this->modelClassName = $modelName = Utils::getModelClassName($model ?? $this->resource, $namespace);
         $this->model = $model = Resolve::instance($modelName);
-        $this->resource = $this->getApiResourceForModel($model);
-        $this->request = $this->getApiRequestForModel($model);
+        $this->resource = $this->getApiResourceForModel($model, $namespace);
+        $this->request = $this->getApiRequestForModel($model, $namespace);
         $this->resourcePluralName = Str::plural($model->getTable());
         $this->resourceSingularlName = Str::singular($model->getTable());
     }
@@ -108,10 +108,10 @@ trait HasApiControllerBehavior
      *
      * @param Resource|string $resources
      */
-    public function setApiResource($resource)
+    public function setApiResource($resource, ?string $namespace)
     {
         if (!$this->resource) {
-            $this->resource = (is_object($resource) ? get_class($resource) : $resource) ?? $this->getApiResourceForModel($this->model);
+            $this->resource = (is_object($resource) ? get_class($resource) : $resource) ?? $this->getApiResourceForModel($this->model, $namespace);
         }
     }
 
@@ -131,12 +131,12 @@ trait HasApiControllerBehavior
      * @param \Fleetbase\Models\Model $model
      * @return \Fleetbase\Http\Resources\FleetbaseResource
      */
-    public function getApiResourceForModel(Model $model)
+    public function getApiResourceForModel(Model $model, ?string $namespace = null)
     {
         $resource = $this->resource;
 
         if (!$resource || !Str::startsWith($resource, '\\')) {
-            $resource = Resolve::httpResourceForModel($model);
+            $resource = Resolve::httpResourceForModel($model, $namespace);
         }
 
         return $resource;
@@ -148,12 +148,12 @@ trait HasApiControllerBehavior
      * @param \Fleetbase\Models\Model $model
      * @return \Fleetbase\Http\Requests\FleetbaseRequest
      */
-    public function getApiRequestForModel(Model $model)
+    public function getApiRequestForModel(Model $model, ?string $namespace = null)
     {
         $request = $this->request;
 
         if (!$request) {
-            $request = Resolve::httpRequestForModel($this->model);
+            $request = Resolve::httpRequestForModel($this->model, $namespace);
         }
 
         return $request;

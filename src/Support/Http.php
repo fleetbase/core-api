@@ -16,7 +16,7 @@ class Http extends HttpClient
         $action = $route->action;
         $namespace = $action['namespace'];
 
-        return Str::startsWith($namespace, (Str::startsWith($namespace, '\\') ? '\\' : '') . 'Fleetbase\\Http\\Controllers\\Internal\\');
+        return Str::contains($namespace, 'Internal');
     }
 
     /**

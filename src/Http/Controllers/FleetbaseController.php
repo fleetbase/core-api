@@ -15,10 +15,12 @@ abstract class FleetbaseController extends BaseController
         DispatchesJobs,
         ValidatesRequests,
         HasApiControllerBehavior;
+
+    public string $namespace = '\\Fleetbase';
         
     public function __construct(?Model $model = null, String $resource = null)
     {
-        $this->setApiModel($model);
-        $this->setApiResource($resource);
+        $this->setApiModel($model, $this->namespace);
+        $this->setApiResource($resource, $this->namespace);
     }
 }

@@ -4,15 +4,14 @@ namespace Fleetbase\Support;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
-use Exception;
-use Error;
 
 class Find
 {
-    public static function httpResourceForModel(Model $model, ?int $version = 1)
+    public static function httpResourceForModel(Model $model, ?string $namespace = null, ?int $version = 1)
     {
         $resourceNamespace = null;
-        $resourceNS = $baseNamespace = "\\Fleetbase\\Http\\Resources\\";
+        $defaultResourceNS = "\\Fleetbase\\Http\\Resources\\";
+        $baseNamespace = $namespace ? $namespace . '\\Http\\Resources\\' : $defaultResourceNS;
         $modelName = Utils::classBasename($model);
 
         if (isset($model->httpResource)) {
@@ -41,19 +40,20 @@ class Find
 
         try {
             if (!class_exists($resourceNamespace)) {
-                throw new Exception('Missing resource');
+                throw new \Exception('Missing resource');
             }
-        } catch (Error | Exception $e) {
-            $resourceNamespace = $resourceNS . "FleetbaseResource";
+        } catch (\Error | \Exception $e) {
+            $resourceNamespace = $defaultResourceNS . "FleetbaseResource";
         }
 
         return $resourceNamespace;
     }
 
-    public static function httpRequestForModel(Model $model, ?int $version = 1)
+    public static function httpRequestForModel(Model $model, ?string $namespace = null, ?int $version = 1)
     {
         $requestNamespace = null;
-        $requestNS = $baseNamespace = "\\Fleetbase\\Http\\Requests\\";
+        $defaultRequestNS = "\\Fleetbase\\Http\\Requests\\";
+        $requestNS = $baseNamespace = $namespace ? $namespace . '\\Http\\Requests\\' : $defaultRequestNS;
         $modelName = Utils::classBasename($model);
 
         if (isset($model->httpRequest)) {
@@ -80,19 +80,22 @@ class Find
 
         try {
             if (!class_exists($requestNamespace)) {
-                throw new Exception('Missing resource');
+                throw new \Exception('Missing resource');
             }
-        } catch (Error | Exception $e) {
-            $requestNamespace = $requestNS . "FleetbaseRequest";
+        } catch (\Error | \Exception $e) {
+            $requestNamespace = $defaultRequestNS . "FleetbaseRequest";
         }
 
         return $requestNamespace;
     }
 
-    public static function httpFilterForModel(Model $model)
+    public static function httpFilterForModel(Model $model, ?string $namespace = null)
     {
+        $namespaceSegments = explode("Models", get_class($model)); 
+        $baseNS = '\\' . rtrim($namespaceSegments[0], '\\');
         $filterNamespace = null;
-        $filterNs = "\\Fleetbase\\Http\\Filter\\";
+        $defaultFilterNS = $baseNS . "\\Http\\Filter\\";
+        $filterNs = $namespace ? $namespace . '\\Http\\Filter\\' : $defaultFilterNS;
         $modelName = Utils::classBasename($model);
 
         if (isset($model->httpFilter)) {

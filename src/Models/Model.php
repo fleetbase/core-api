@@ -10,7 +10,6 @@ use Fleetbase\Traits\Expandable;
 use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\Insertable;
 use Fleetbase\Traits\Searchable;
-use Illuminate\Support\Facades\DB;
 
 class Model extends EloquentModel
 {

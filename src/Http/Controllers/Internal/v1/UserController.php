@@ -41,6 +41,8 @@ class UserController extends FleetbaseController
     {
         $user = $request->user();
 
+        // dd($user);
+
         if (!$user) {
             return response()->error('No user session found', 401);
         }

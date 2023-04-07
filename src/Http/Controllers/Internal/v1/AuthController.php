@@ -3,29 +3,15 @@
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Illuminate\Http\Request;
-// use Illuminate\Support\Facades\Redis;
-// use Illuminate\Support\Facades\Hash;
-// use Illuminate\Support\Str;
 use Fleetbase\Http\Requests\LoginRequest;
-// use Fleetbase\Http\Requests\SignUpRequest;
 use Fleetbase\Http\Controllers\Controller;
-// use Spatie\ResponseCache\Facades\ResponseCache;
-// use Twilio\Exceptions\RestException;
-// use Aloha\Twilio\Support\Laravel\Facade as Twilio;
 use Fleetbase\Support\Auth;
 use Fleetbase\Models\User;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
-// use Fleetbase\Http\Requests\Internal\ResetPasswordRequest;
-// use Fleetbase\Http\Requests\Internal\UserForgotPasswordRequest;
 use Fleetbase\Http\Requests\SwitchOrganizationRequest;
-// use Fleetbase\Http\Requests\JoinOrganizationRequest;
 use Fleetbase\Http\Resources\Organization;
-// use Fleetbase\Models\VerificationCode;
-// use Fleetbase\Notifications\UserForgotPassword;
-// use Fleetbase\Support\Utils;
-// use Illuminate\Support\Carbon;
-// use Exception;
+
 
 class AuthController extends Controller
 {
