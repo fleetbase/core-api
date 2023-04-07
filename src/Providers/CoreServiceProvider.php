@@ -5,7 +5,9 @@ namespace Fleetbase\Providers;
 use Fleetbase\Support\Expansion;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Str;
 use Illuminate\Http\Resources\Json\JsonResource;
+use DirectoryIterator;
 
 /**
  * CoreServiceProvider
@@ -53,7 +55,8 @@ class CoreServiceProvider extends ServiceProvider
             return;
         }
 
-        $macros = new \DirectoryIterator($from ?? __DIR__ . '/../Expansions');
+        $packageNamespace = $this->findPackageNamespace($from);
+        $macros = new DirectoryIterator($from ?? __DIR__ . '/../Expansions');
 
         foreach ($macros as $macro) {
             if (!$macro->isFile()) {
@@ -65,6 +68,13 @@ class CoreServiceProvider extends ServiceProvider
             if ($namespace === null) {
                 // resolve namespace
                 $namespaces = ['Fleetbase\\Expansions\\', 'Fleetbase\\Macros\\', 'Fleetbase\\Mixins\\'];
+
+                if ($packageNamespace) {
+                    $namespaces[] = $packageNamespace . '\\Expansions\\';
+                    $namespaces[] = $packageNamespace . '\\Macros\\';
+                    $namespaces[] = $packageNamespace . '\\Mixins\\';
+                }
+
                 $namespace = Arr::first(
                     $namespaces,
                     function ($ns) use ($className) {
@@ -106,5 +116,31 @@ class CoreServiceProvider extends ServiceProvider
                 \Fleetbase\Console\Commands\BackupDatabase\MysqlS3Backup::class
             ]
         );
+    }
+
+    public function findPackageNamespace($path = null)
+    {
+        if (!$path) {
+            return;
+        }
+
+        $packagePath = strstr($path, '/src', true);
+        $composerJsonPath = $packagePath . '/composer.json';
+
+        // Load the composer.json file into an array
+        $composerJson = json_decode(file_get_contents($composerJsonPath), true);
+
+        // Get the package's namespace from its psr-4 autoloading configuration
+        $namespace = null;
+        if (isset($composerJson['autoload']['psr-4'])) {
+            foreach ($composerJson['autoload']['psr-4'] as $ns => $dir) {
+                if (strpos($dir, 'src') !== false) {
+                    $namespace = rtrim($ns, '\\');
+                    break;
+                }
+            }
+        }
+
+        return $namespace;
     }
 }
