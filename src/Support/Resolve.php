@@ -57,6 +57,8 @@ class Resolve
             return null;
         }
 
+        $instance = null;
+
         if (class_exists($type)) {
             $instance = static::instance($type);
 
