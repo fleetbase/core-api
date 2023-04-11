@@ -10,19 +10,55 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Http\JsonResponse;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
-use Exception;
 
 /**
  * Adds API Model Behavior 
  */
 trait HasApiModelBehavior
 {
-
+    /**
+     * The name of the database column used to store the public ID for this model.
+     *
+     * @var string
+     */
     public static $publicIdColumn = 'public_id';
 
+    /**
+     * Get the fully qualified name of the database column used to store the public ID for this model.
+     *
+     * @return string The fully qualified name of the public ID column.
+     */
     public function getQualifiedPublicId()
     {
         return static::$publicIdColumn;
+    }
+
+    /**
+     * Get the plural name of this model, either from the `pluralName` property or by inflecting the table name.
+     *
+     * @return string The plural name of this model.
+     */
+    public function getPluralName(): string
+    {
+        if (isset($this->pluralName)) {
+            return $this->pluralName;
+        }
+
+        return Str::plural($this->getTable());
+    }
+
+    /**
+     * Get the singular name of this model, either from the `singularName` property or by inflecting the table name.
+     *
+     * @return string The singular name of this model.
+     */
+    public function getSingularName(): string
+    {
+        if (isset($this->singularName)) {
+            return $this->singularName;
+        }
+
+        return Str::singular($this->getTable());
     }
 
     /**
@@ -61,7 +97,7 @@ trait HasApiModelBehavior
         /** 
          * @var \Illuminate\Database\Query\Builder $builder 
          */
-        $builder =  $this->searchBuilder($request);
+        $builder = $this->searchBuilder($request);
 
         if (intval($limit) > 0) {
             $builder->limit($limit);
@@ -74,6 +110,15 @@ trait HasApiModelBehavior
         return $builder->get();
     }
 
+    /**
+     * Create a new record in the database based on the input data in the given request.
+     *
+     * @param  \Illuminate\Http\Request  $request The HTTP request containing the input data.
+     * @param  callable|null  $onBefore An optional callback function to execute before creating the record.
+     * @param  callable|null  $onAfter An optional callback function to execute after creating the record.
+     * @param  array  $options An optional array of additional options.
+     * @return mixed The newly created record, or a JSON response if the callbacks return one.
+     */
     public function createRecordFromRequest($request, ?callable $onBefore = null, ?callable $onAfter = null, array $options = [])
     {
         $input = $request->input(Str::singular($this->getTable())) ?? $request->all();
@@ -108,6 +153,18 @@ trait HasApiModelBehavior
         return static::mutateModelWithRequest($request, $record);
     }
 
+    /**
+     * Update an existing record in the database based on the input data in the given request.
+     *
+     * @param  \Illuminate\Http\Request  $request The HTTP request containing the input data.
+     * @param  mixed  $id The ID of the record to update.
+     * @param  callable|null  $onBefore An optional callback function to execute before updating the record.
+     * @param  callable|null  $onAfter An optional callback function to execute after updating the record.
+     * @param  array  $options An optional array of additional options.
+     * @return mixed The updated record, or a JSON response if the callbacks return one.
+     * @throws \Symfony\Component\HttpKernel\Exception\NotFoundHttpException If the record with the given ID is not found.
+     * @throws \Exception If the input contains an invalid parameter that is not fillable.
+     */
     public function updateRecordFromRequest(Request $request, $id, ?callable $onBefore = null, ?callable $onAfter = null, array $options = [])
     {
         $record = $this->where(function ($q) use ($id) {
@@ -134,7 +191,7 @@ trait HasApiModelBehavior
 
         foreach ($keys as $key) {
             if (!in_array($key, $fillable)) {
-                throw new Exception('Invalid param "' . $key . '" in update request!');
+                throw new \Exception('Invalid param "' . $key . '" in update request!');
             }
         }
 
@@ -178,7 +235,7 @@ trait HasApiModelBehavior
 
         try {
             return $record->delete();
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             throw $e;
         }
     }
@@ -199,7 +256,7 @@ trait HasApiModelBehavior
         try {
             $records->delete();
             return $count;
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             throw $e;
         }
     }

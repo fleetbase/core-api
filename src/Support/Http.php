@@ -16,7 +16,7 @@ class Http extends HttpClient
         $action = $route->action;
         $namespace = $action['namespace'];
 
-        return Str::contains($namespace, 'Internal');
+        return Str::contains($namespace, 'Internal') ||  Str::contains($route->uri(), '/int/');
     }
 
     /**

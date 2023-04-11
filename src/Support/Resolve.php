@@ -40,7 +40,7 @@ class Resolve
         return new $requestNamespace();
     }
 
-    public static function httpFilterForModel(Model $model, Request $request)
+    public static function httpFilterForModel(Model $model, Request $request, ?int $version = 1)
     {
         $filterNamespace = Find::httpFilterForModel($model);
 

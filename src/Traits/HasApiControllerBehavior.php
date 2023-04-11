@@ -99,8 +99,8 @@ trait HasApiControllerBehavior
         $this->model = $model = Resolve::instance($modelName);
         $this->resource = $this->getApiResourceForModel($model, $namespace);
         $this->request = $this->getApiRequestForModel($model, $namespace);
-        $this->resourcePluralName = Str::plural($model->getTable());
-        $this->resourceSingularlName = Str::singular($model->getTable());
+        $this->resourcePluralName = $model->getPluralName();
+        $this->resourceSingularlName = $model->getSingularName();
     }
 
     /**

@@ -14,12 +14,8 @@ class Find
         $baseNamespace = $namespace ? $namespace . '\\Http\\Resources\\' : $defaultResourceNS;
         $modelName = Utils::classBasename($model);
 
-        if (isset($model->httpResource)) {
-            $resourceNamespace = $model->httpResource;
-        }
-
-        if (isset($model->resource)) {
-            $resourceNamespace = $model->resource;
+        if (method_exists($model, 'getResource')) {
+            $resourceNamespace = $model->getResource();
         }
 
         if ($resourceNamespace === null) {
@@ -35,6 +31,11 @@ class Find
             // fallback to the public resource
             if (!class_exists($resourceNamespace)) {
                 $resourceNamespace = str_replace("Internal\\", '', $resourceNamespace);
+            }
+
+            // if no versioned base resource fallback to base namespace for resource
+            if (!class_exists($resourceNamespace)) {
+                $resourceNamespace = str_replace("v{$version}\\", '', $resourceNamespace);
             }
         }
 
@@ -56,12 +57,8 @@ class Find
         $requestNS = $baseNamespace = $namespace ? $namespace . '\\Http\\Requests\\' : $defaultRequestNS;
         $modelName = Utils::classBasename($model);
 
-        if (isset($model->httpRequest)) {
-            $requestNamespace = $model->httpRequest;
-        }
-
-        if (isset($model->request)) {
-            $requestNamespace = $model->request;
+        if (method_exists($model, 'getRequest')) {
+            $requestNamespace = $model->getRequest();
         }
 
         if ($requestNamespace === null) {
@@ -76,6 +73,17 @@ class Find
             }
 
             $requestNamespace = $baseNamespace . "v{$version}\\" . $modelName;
+
+            // if internal request but no internal resource has been declared
+            // fallback to the public resource
+            if (!class_exists($requestNamespace)) {
+                $requestNamespace = str_replace("Internal\\", '', $requestNamespace);
+            }
+
+            // if no versioned base resource fallback to base namespace for resource
+            if (!class_exists($requestNamespace)) {
+                $requestNamespace = str_replace("v{$version}\\", '', $requestNamespace);
+            }
         }
 
         try {
@@ -89,7 +97,7 @@ class Find
         return $requestNamespace;
     }
 
-    public static function httpFilterForModel(Model $model, ?string $namespace = null)
+    public static function httpFilterForModel(Model $model, ?string $namespace = null, ?int $version = 1)
     {
         $namespaceSegments = explode("Models", get_class($model)); 
         $baseNS = '\\' . rtrim($namespaceSegments[0], '\\');
@@ -98,16 +106,35 @@ class Find
         $filterNs = $namespace ? $namespace . '\\Http\\Filter\\' : $defaultFilterNS;
         $modelName = Utils::classBasename($model);
 
-        if (isset($model->httpFilter)) {
-            $filterNamespace = $model->httpFilter;
-        }
-
-        if (isset($model->filter)) {
-            $filterNamespace = $model->filter;
+        if (method_exists($model, 'getFilter')) {
+            $filterNamespace = $model->getFilter();
         }
 
         if ($filterNamespace === null) {
             $filterNamespace = $filterNs . Str::studly(ucfirst($modelName) . 'Filter');
+        }
+
+        if (class_exists($filterNamespace)) {
+            return $filterNamespace;
+        } else {
+            $internal = Http::isInternalRequest();
+
+            if ($internal) {
+                $baseNamespace = $filterNs . "Internal\\";
+            }
+
+            $filterNamespace = $baseNamespace . "v{$version}\\" . $modelName;
+
+            // if internal request but no internal resource has been declared
+            // fallback to the public resource
+            if (!class_exists($filterNamespace)) {
+                $filterNamespace = str_replace("Internal\\", '', $filterNamespace);
+            }
+
+            // if no versioned base resource fallback to base namespace for resource
+            if (!class_exists($filterNamespace)) {
+                $filterNamespace = str_replace("v{$version}\\", '', $filterNamespace);
+            }
         }
 
         if (class_exists($filterNamespace)) {

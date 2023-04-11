@@ -5,9 +5,7 @@ namespace Fleetbase\Providers;
 use Fleetbase\Support\Expansion;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Arr;
-use Illuminate\Support\Str;
 use Illuminate\Http\Resources\Json\JsonResource;
-use DirectoryIterator;
 
 /**
  * CoreServiceProvider
@@ -54,9 +52,15 @@ class CoreServiceProvider extends ServiceProvider
 
             return;
         }
+        
+        try {
+            $macros = new \DirectoryIterator($from ?? __DIR__ . '/../Expansions');
+        } catch(\UnexpectedValueException $e) {
+            // no expansions
+            return;
+        }
 
         $packageNamespace = $this->findPackageNamespace($from);
-        $macros = new DirectoryIterator($from ?? __DIR__ . '/../Expansions');
 
         foreach ($macros as $macro) {
             if (!$macro->isFile()) {

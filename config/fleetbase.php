@@ -17,5 +17,8 @@ return [
         'ipinfo' => [
             'api_key' => env('IPINFO_API_KEY')
         ]
+    ],
+    'connection' => [
+        'db' => env('DB_CONNECTION', 'mysql')
     ]
 ];
