@@ -12,6 +12,18 @@ use Illuminate\Http\Resources\Json\JsonResource;
  */
 class CoreServiceProvider extends ServiceProvider
 {
+    /**
+     * The observers registered with the service provider.
+     *
+     * @var array
+     */
+    public $observers = [];
+
+    /**
+     * The middleware groups registered with the service provider.
+     *
+     * @var array
+     */
     public $middleware = [
         'fleetbase.protected' => [
             \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
@@ -39,11 +51,14 @@ class CoreServiceProvider extends ServiceProvider
     }
 
     /**
-     * Registers all class extension macros.
+     * Registers all class extension macros from the specified path and namespace.
+     *
+     * @param string|null $from The path to load the macros from. If null, the default path is used.
+     * @param string|null $namespace The namespace to load the macros from. If null, the default namespaces are used.
      *
      * @return void
      */
-    public function registerExpansionsFrom($from = null, $namespace = null)
+    public function registerExpansionsFrom($from = null, $namespace = null): void
     {
         if (is_array($from)) {
             foreach ($from as $frm) {
@@ -52,10 +67,10 @@ class CoreServiceProvider extends ServiceProvider
 
             return;
         }
-        
+
         try {
             $macros = new \DirectoryIterator($from ?? __DIR__ . '/../Expansions');
-        } catch(\UnexpectedValueException $e) {
+        } catch (\UnexpectedValueException $e) {
             // no expansions
             return;
         }
@@ -103,7 +118,12 @@ class CoreServiceProvider extends ServiceProvider
         }
     }
 
-    public function registerMiddleware()
+    /**
+     * Register the middleware groups defined by the service provider.
+     *
+     * @return void
+     */
+    public function registerMiddleware(): void
     {
         foreach ($this->middleware as $group => $middlewares) {
             foreach ($middlewares as $middleware) {
@@ -112,7 +132,24 @@ class CoreServiceProvider extends ServiceProvider
         }
     }
 
-    public function registerCommands()
+    /**
+     * Register the model observers defined by the service provider.
+     *
+     * @return void
+     */
+    public function registerObservers(): void
+    {
+        foreach ($this->observers as $model => $observer) {
+            $model::observe($observer);
+        }
+    }
+
+    /**
+     * Register the console commands defined by the service provider.
+     *
+     * @return void
+     */
+    public function registerCommands(): void
     {
         $this->commands(
             [
@@ -122,10 +159,17 @@ class CoreServiceProvider extends ServiceProvider
         );
     }
 
-    public function findPackageNamespace($path = null)
+    /**
+     * Find the package namespace for a given path.
+     *
+     * @param string|null $path The path to search for the package namespace. If null, no namespace is returned.
+     *
+     * @return string|null The package namespace, or null if the path is not valid.
+     */
+    public function findPackageNamespace($path = null): ?string
     {
         if (!$path) {
-            return;
+            return null;
         }
 
         $packagePath = strstr($path, '/src', true);

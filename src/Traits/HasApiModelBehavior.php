@@ -3,13 +3,12 @@
 namespace Fleetbase\Traits;
 
 use Fleetbase\Support\Http;
-use Fleetbase\Models\Model;
+use Fleetbase\Support\Utils;
 use Fleetbase\Support\Resolve;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Http\JsonResponse;
-use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
  * Adds API Model Behavior 
@@ -44,6 +43,10 @@ trait HasApiModelBehavior
             return $this->pluralName;
         }
 
+        if (isset($this->payloadKey)) {
+            return Str::plural($this->payloadKey);
+        }
+
         return Str::plural($this->getTable());
     }
 
@@ -56,6 +59,10 @@ trait HasApiModelBehavior
     {
         if (isset($this->singularName)) {
             return $this->singularName;
+        }
+
+        if (isset($this->payloadKey)) {
+            return Str::singular($this->payloadKey);
         }
 
         return Str::singular($this->getTable());
@@ -87,11 +94,12 @@ trait HasApiModelBehavior
     /**
      * Retrieves all records based on request data passed in
      * 
+     * @param  \Illuminate\Http\Request  $request The HTTP request containing the input data.
      * @return \Illuminate\Database\Eloquent\Collection|\Illuminate\Contracts\Pagination\LengthAwarePaginator
      */
     public function queryFromRequest(Request $request)
     {
-        $limit = $request->input('limit', 30);
+        $limit = $request->integer('limit', 30);
         $columns = $request->input('columns', ['*']);
 
         /** 
@@ -99,15 +107,26 @@ trait HasApiModelBehavior
          */
         $builder = $this->searchBuilder($request);
 
+
         if (intval($limit) > 0) {
             $builder->limit($limit);
         }
 
+        /** debug */
+        // Utils::sqlDump($builder);
+
         if (Http::isInternalRequest($request)) {
+            if ($limit === -1) {
+                $limit = 999999999;
+            }
             return $builder->paginate($limit, $columns);
         }
 
-        return $builder->get();
+        // get the results
+        $result = $builder->get();
+
+        // mutate if mutation causing params present
+        return static::mutateModelWithRequest($request, $result);
     }
 
     /**
@@ -121,7 +140,8 @@ trait HasApiModelBehavior
      */
     public function createRecordFromRequest($request, ?callable $onBefore = null, ?callable $onAfter = null, array $options = [])
     {
-        $input = $request->input(Str::singular($this->getTable())) ?? $request->all();
+        $payloadKeys = [$this->getSingularName(), Str::camel($this->getSingularName())];
+        $input = $request->or($payloadKeys) ?? $request->all();
         $input = $this->fillSessionAttributes($input);
 
         if (is_callable($onBefore)) {
@@ -173,10 +193,11 @@ trait HasApiModelBehavior
         })->first();
 
         if (!$record) {
-            throw new NotFoundHttpException(Str::title(Str::singular($this->getTable())) . ' not found');
+            throw new \Exception(Str::title(Str::singular($this->getTable())) . ' not found');
         }
 
-        $input = $request->input(Str::singular($this->getTable())) ?? $request->all();
+        $payloadKeys = [$this->getSingularName(), Str::camel($this->getSingularName())];
+        $input = $request->or($payloadKeys) ?? $request->all();
         $input = $this->fillSessionAttributes($input, [], ['updated_by_uuid']);
 
         if (is_callable($onBefore)) {
@@ -186,11 +207,10 @@ trait HasApiModelBehavior
             }
         }
 
-        $fillable = $record->getFillable();
         $keys = array_keys($input);
 
         foreach ($keys as $key) {
-            if (!in_array($key, $fillable)) {
+            if (!$this->isFillable($key) && !$this->isRelation($key) && !$this->isRelation(Str::camel($key)) && !$this->isFilterParam($key)) {
                 throw new \Exception('Invalid param "' . $key . '" in update request!');
             }
         }
@@ -222,6 +242,13 @@ trait HasApiModelBehavior
         return static::mutateModelWithRequest($request, $record);
     }
 
+    /**
+     * Removes a record from the database based on the given ID.
+     *
+     * @param mixed $id The ID or public ID of the record to remove
+     * @return bool|int The number of records affected, or false if the record is not found
+     * @throws \Exception If there's an issue while deleting the record
+     */
     public function remove($id)
     {
         $record = $this->where(function ($q) use ($id) {
@@ -240,6 +267,13 @@ trait HasApiModelBehavior
         }
     }
 
+    /**
+     * Removes multiple records from the database based on the given IDs.
+     *
+     * @param array $ids The array of IDs or public IDs of the records to remove
+     * @return bool|int The number of records affected, or false if no records are found
+     * @throws \Exception If there's an issue while deleting the records
+     */
     public function bulkRemove($ids = [])
     {
         $records = $this->where(function ($q) use ($ids) {
@@ -261,22 +295,49 @@ trait HasApiModelBehavior
         }
     }
 
-    public static function mutateModelWithRequest(Request $request, Model $model)
+    /**
+     * Mutates the given model, collection or array of results with the request.
+     * Applies 'with' and 'without' parameters to the result.
+     *
+     * @param Request $request The request object containing the 'with' and 'without' parameters
+     * @param mixed $result The model, collection or array of results to be mutated
+     * @return mixed The mutated model, collection or array of results
+     */
+    public static function mutateModelWithRequest(Request $request, $result)
     {
-        $with = $request->or(['with', 'expand']);
-        $without = $request->input('without', []);
+        $with = $request->or(['with', 'expand'], []);
+        $without = $request->array('without');
+
+        // handle collection or array of results
+        if (is_array($result) || $result instanceof \Illuminate\Support\Collection) {
+            return array_map(
+                function ($model) use ($request) {
+                    return static::mutateModelWithRequest($request, $model);
+                },
+                $result
+            );
+        }
 
         if ($with) {
-            $model->load($with);
+            $result->load($with);
         }
 
         if ($without) {
-            $model->setHidden($without);
+            $result->setHidden($without);
         }
 
-        return $model;
+        return $result;
     }
 
+    /**
+     * Fills the target array with session attributes based on the specified rules.
+     * Allows to apply exceptions and only specific attributes to be filled.
+     *
+     * @param array $target The target array to fill with session attributes
+     * @param array $except The list of attributes that should not be filled (default: [])
+     * @param array $only The list of attributes that should only be filled (default: [])
+     * @return array The filled target array with session attributes
+     */
     public function fillSessionAttributes($target, $except = [], $only = [])
     {
         $fill = [];
@@ -483,7 +544,9 @@ trait HasApiModelBehavior
     }
 
     /**
-     * this returns key value pair for select options
+     * Retrieves the options for the given model.
+     *
+     * @return array An array of options with 'value' and 'label' keys
      */
     public function getOptions()
     {
@@ -505,14 +568,26 @@ trait HasApiModelBehavior
         return $arr;
     }
 
+    /**
+     * Searches for records based on the request parameters and returns a paginated result.
+     *
+     * @param Request $request The request object containing the search parameters
+     * @return \Illuminate\Contracts\Pagination\LengthAwarePaginator The paginated search results
+     */
     public function searchRecordFromRequest(Request $request)
     {
-        $limit = $request->limit ?? 30;
+        $limit = $request->integer('limit', 30);
         $builder =  $this->searchBuilder($request);
 
         return $builder->paginate($limit);
     }
 
+    /**
+     * Builds the search query based on the request parameters.
+     *
+     * @param Request $request The request object containing the search parameters
+     * @return \Illuminate\Database\Eloquent\Builder The search query builder
+     */
     public function searchBuilder(Request $request)
     {
         $builder = $this->buildSearchParams($request, self::query());
@@ -525,6 +600,13 @@ trait HasApiModelBehavior
         return $builder;
     }
 
+    /**
+     * Applies custom filters to the search query based on the request parameters.
+     *
+     * @param Request $request The request object containing the custom filter parameters
+     * @param \Illuminate\Database\Eloquent\Builder $builder The search query builder
+     * @return \Illuminate\Database\Eloquent\Builder The search query builder with custom filters applied
+     */
     public function applyCustomFilters(Request $request, $builder)
     {
         $resourceFilter = Resolve::httpFilterForModel($this, $request);
@@ -533,9 +615,50 @@ trait HasApiModelBehavior
             $builder->filter($resourceFilter);
         }
 
+        // handle with/without here
+        $with = $request->or(['with', 'expand'], []);
+        $without = $request->array('without');
+        $withoutRelations = $request->boolean('without_relations');
+
+        // camelcase all params in with and apply
+        if (is_array($with)) {
+            $with = array_map(
+                function ($relationship) {
+                    return Str::camel($relationship);
+                },
+                $with
+            );
+
+            $builder = $builder->with($with);
+        }
+
+        // camelcase all params in with and apply
+        if (is_array($without)) {
+            $without = array_map(
+                function ($relationship) {
+                    return Str::camel($relationship);
+                },
+                $without
+            );
+
+            $builder = $builder->without($without);
+        }
+
+        // if to query without all relations
+        if ($withoutRelations) {
+            $builder = $builder->withoutRelations();
+        }
+
         return $builder;
     }
 
+    /**
+     * Applies filters to the search query based on the request parameters.
+     *
+     * @param Request $request The request object containing the filter parameters
+     * @param \Illuminate\Database\Eloquent\Builder $builder The search query builder
+     * @return \Illuminate\Database\Eloquent\Builder The search query builder with filters applied
+     */
     public function applyFilters(Request $request, $builder)
     {
         $operators = $this->getQueryOperators();
@@ -569,11 +692,26 @@ trait HasApiModelBehavior
         return $builder;
     }
 
+
+    /**
+     * Counts the records based on the request search parameters.
+     *
+     * @param Request $request The request object containing the search parameters
+     * @return int The number of records found
+     */
     public function count(Request $request)
     {
         return $this->buildSearchParams($request, self::query())->count();
     }
 
+    /**
+     * Checks if the custom column filter should be prioritized.
+     *
+     * @param \Illuminate\Http\Request $request The request object containing filter parameters
+     * @param \Illuminate\Database\Eloquent\Builder $builder The search query builder
+     * @param string $column The column name
+     * @return bool True if the custom column filter should be prioritized, false otherwise
+     */
     public function prioritizedCustomColumnFilter($request, $builder, $column)
     {
         $resourceFilter = Resolve::httpFilterForModel($this, $request);
@@ -582,21 +720,27 @@ trait HasApiModelBehavior
         return method_exists($resourceFilter, $camlizedColumnName) || method_exists($resourceFilter, $column);
     }
 
+    /**
+     * Builds the search parameters based on the request.
+     *
+     * @param Request $request The request object containing the search parameters
+     * @param \Illuminate\Database\Eloquent\Builder $builder The search query builder
+     * @return \Illuminate\Database\Eloquent\Builder The search query builder with search parameters applied
+     */
     public function buildSearchParams(Request $request, $builder)
     {
         $operators = $this->getQueryOperators();
 
-        foreach ($request->all() as $key => $value) {
+        foreach ($request->getFilters() as $key => $value) {
             if ($this->prioritizedCustomColumnFilter($request, $builder, $key) || empty($value)) {
                 continue;
             }
 
-            if (in_array($key, $this->searcheableFields())) {
-                switch ($key) {
-                    default:
-                        $builder->where($key, '=', $value);
-                        break;
-                }
+            $fieldEndsWithOperator = Str::endsWith($key, array_keys($operators));
+
+            if (!$fieldEndsWithOperator && $this->isFillable($key)) {
+                $builder->where($key, '=', $value);
+                continue;
             }
 
             // apply special operators based on the column name passed
@@ -604,14 +748,12 @@ trait HasApiModelBehavior
                 $key = strtolower($key);
                 $op_key = strtolower($op_key);
                 $column = Str::replaceLast($op_key, '', $key);
-
                 $fieldEndsWithOperator = Str::endsWith($key, $op_key);
-                $columnIsSearchable = in_array($column, $this->searcheableFields());
-
-                if (!$fieldEndsWithOperator || !$columnIsSearchable) {
+                
+                if (!$fieldEndsWithOperator) {
                     continue;
                 }
-
+                
                 $builder = $this->applyOperators($builder, $column, $op_key, $op_type, $value);
             }
         }
@@ -619,6 +761,12 @@ trait HasApiModelBehavior
         return $builder;
     }
 
+
+    /**
+     * Returns the query operators for filtering.
+     *
+     * @return array The query operators
+     */
     private function getQueryOperators()
     {
         return [
@@ -635,6 +783,16 @@ trait HasApiModelBehavior
         ];
     }
 
+    /**
+     * Applies the query operators to the search query builder.
+     *
+     * @param \Illuminate\Database\Eloquent\Builder $builder The search query builder
+     * @param string $column_name The column name
+     * @param string $op_key The operator key
+     * @param string $op_type The operator type
+     * @param mixed $value The value for the query operator
+     * @return \Illuminate\Database\Eloquent\Builder The search query builder with query operators applied
+     */
     private function applyOperators($builder, $column_name, $op_key, $op_type, $value)
     {
         $column_name = $this->shouldQualifyColumn($column_name)
@@ -658,6 +816,12 @@ trait HasApiModelBehavior
         return $builder;
     }
 
+    /**
+     * Determines whether the given column name should be qualified.
+     *
+     * @param string $column_name The column name
+     * @return bool True if the column should be qualified, false otherwise
+     */
     public function shouldQualifyColumn($column_name)
     {
         return in_array($column_name, [
@@ -666,5 +830,20 @@ trait HasApiModelBehavior
             $this->getUpdatedAtColumn() ?? 'updated_at',
             $this->getDeletedAtColumn() ?? 'deleted_at'
         ]);
+    }
+
+    /**
+     * Checks if a given key exists in the filter parameters.
+     *
+     * @param string $key The key to be checked for existence in the filter parameters.
+     * @return bool Returns true if the key exists in the filter parameters, otherwise returns false.
+     */
+    public function isFilterParam(string $key): bool
+    {
+        if (!empty($this->filterParams) && is_array($this->filterParams)) {
+            return in_array($key, $this->filterParams);
+        }
+
+        return false;
     }
 }

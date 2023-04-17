@@ -45,6 +45,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 $router->fleetbaseRoutes('policies');
                                 $router->fleetbaseRoutes('permissions');
                                 $router->fleetbaseRoutes('extensions');
+                                $router->fleetbaseRoutes('categories');
                                 $router->fleetbaseRoutes(
                                     'files',
                                     function ($router, $controller) {

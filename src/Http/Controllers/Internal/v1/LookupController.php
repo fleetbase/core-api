@@ -124,7 +124,7 @@ class LookupController extends Controller
      */
     public function countries(Request $request)
     {
-        $query = strtolower($request->input('query'));
+        $query = strtolower($request->input('query', null));
         $simple = $request->boolean('simple');
         $columns = $request->input('columns', []);
 

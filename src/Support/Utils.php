@@ -738,7 +738,7 @@ class Utils
             $namespace = explode(':', $type);
             $package = $namespace[0];
             $type = $namespace[1];
-            $namespace = 'Fleetbase\\' . Str::studly($package) . 'Models\\';
+            $namespace = 'Fleetbase\\' . Str::studly($package);
 
             return Utils::getModelClassName($type, $namespace);
         }

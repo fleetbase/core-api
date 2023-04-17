@@ -21,6 +21,20 @@ class Model extends EloquentModel
         Filterable;
 
     /**
+     * Create a new instance of the model.
+     *
+     * @param array $attributes The attributes to set on the model.
+     *
+     * @return void
+     */
+    public function __construct(array $attributes = [])
+    {
+        parent::__construct($attributes);
+
+        $this->connection = config('fleetbase.db.connection');
+    }
+
+    /**
      * The primary key for the model.
      *
      * @var string
@@ -64,7 +78,9 @@ class Model extends EloquentModel
     }
 
     /**
-     * {@inheritdoc}
+     * Get the relationships that are queued for eager loading.
+     *
+     * @return array
      */
     public function getQueueableRelations()
     {
@@ -72,12 +88,22 @@ class Model extends EloquentModel
     }
 
     /**
-     * {@inheritdoc}
+     * Retrieve a child model instance by binding it to the parent.
+     *
+     * @param  string  $childType
+     * @param  mixed  $value
+     * @param  string|null  $field
+     * @return mixed
      */
     public function resolveChildRouteBinding($childType, $value, $field)
     {
     }
 
+    /**
+     * Get the HTTP resource class for the model.
+     *
+     * @return string|null
+     */
     public function getResource()
     {
         $resourceNamespace = null;
@@ -93,6 +119,11 @@ class Model extends EloquentModel
         return $resourceNamespace;
     }
 
+    /**
+     * Get the HTTP request class for the model.
+     *
+     * @return string|null
+     */
     public function getRequest()
     {
         $requestNamespace = null;
@@ -108,6 +139,11 @@ class Model extends EloquentModel
         return $requestNamespace;
     }
 
+    /**
+     * Get the HTTP filter class for the model.
+     *
+     * @return string|null
+     */
     public function getFilter()
     {
         $filterNamespace = null;

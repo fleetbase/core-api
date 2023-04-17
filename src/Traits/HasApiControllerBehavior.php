@@ -14,8 +14,6 @@ use Illuminate\Http\Request;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
-use Symfony\Component\HttpKernelException\NotFoundHttpException;
-use Exception;
 
 trait HasApiControllerBehavior
 {
@@ -55,12 +53,26 @@ trait HasApiControllerBehavior
     public $resource;
 
     /**
+     * The target API Filter.
+     * 
+     * @var \Fleetbase\Http\Filter\Filter
+     */
+    public $filter;
+
+    /**
      * The current request.
      *
      * @var \Illuminate\Http\Request
      */
     public $request;
 
+    /**
+     * Determines the action to perform based on the HTTP verb.
+     *
+     * @param string|null $verb The HTTP verb to check. Defaults to the request method if not provided.
+     * 
+     * @return string The action to perform based on the HTTP verb.
+     */
     private function actionFromHttpVerb(?string $verb = null)
     {
         $verb = $verb ?? $_SERVER['REQUEST_METHOD'];
@@ -101,6 +113,10 @@ trait HasApiControllerBehavior
         $this->request = $this->getApiRequestForModel($model, $namespace);
         $this->resourcePluralName = $model->getPluralName();
         $this->resourceSingularlName = $model->getSingularName();
+
+        if ($this->filter) {
+            $this->model->filter = $this->filter;
+        }
     }
 
     /**
@@ -287,8 +303,13 @@ trait HasApiControllerBehavior
             $this->validateRequest($request);
             $record = $this->model->createRecordFromRequest($request);
 
+            if (Http::isInternalRequest($request)) {
+                $this->resource::wrap($this->resourceSingularlName);
+                return new $this->resource($record);
+            }
+
             return new $this->resource($record);
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             return response()->error($e->getMessage());
         } catch (QueryException $e) {
             return response()->error($e->getMessage());
@@ -334,15 +355,18 @@ trait HasApiControllerBehavior
             $this->validateRequest($request);
             $record = $this->model->updateRecordFromRequest($request, $id);
 
+            if (Http::isInternalRequest($request)) {
+                $this->resource::wrap($this->resourceSingularlName);
+                return new $this->resource($record);
+            }
+
             return new $this->resource($record);
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             return response()->error($e->getMessage());
         } catch (QueryException $e) {
             return response()->error($e->getMessage());
         } catch (FleetbaseRequestValidationException $e) {
             return response()->error($e->getErrors());
-        } catch (NotFoundHttpException $e) {
-            return response()->error(($this->resourceSingularlName ?? 'Resource') . ' not found');
         }
     }
 
@@ -369,18 +393,27 @@ trait HasApiControllerBehavior
      * @param  int  $id
      * @return \Illuminate\Http\Response
      */
-    public function deleteRecord($id)
+    public function deleteRecord($id, Request $request)
     {
-        $dataModel = $this->model->wherePublicId($id);
+        if (Http::isInternalRequest($request)) {
+            $dataModel = $this->model->whereUuid($id)->first();
+        } else {
+            $dataModel = $this->model->wherePublicId($id)->first();
+        }
 
         if ($dataModel) {
             $dataModel->delete();
 
+            if (Http::isInternalRequest($request)) {
+                $this->resource::wrap($this->resourceSingularlName);
+                return new $this->resource($dataModel);
+            }
+
             return response()->json(
                 [
                     'status' => 'success',
-                    'message' => 'Resource deleted',
-                    'data' => $dataModel,
+                    'message' => $this->resourceSingularlName . ' deleted',
+                    'data' => new $this->resource($dataModel),
                 ]
             );
         }
@@ -388,7 +421,7 @@ trait HasApiControllerBehavior
         return response()->json(
             [
                 'status' => 'failed',
-                'message' => 'Resource not found',
+                'message' => $this->resourceSingularlName . ' not found',
             ],
             404
         );
@@ -424,14 +457,12 @@ trait HasApiControllerBehavior
 
         try {
             $count = $this->model->bulkRemove($ids);
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             return response()->error($e->getMessage());
         } catch (QueryException $e) {
             return response()->error($e->getMessage());
         } catch (FleetbaseRequestValidationException $e) {
             return response()->error($e->getErrors());
-        } catch (NotFoundHttpException $e) {
-            return response()->error(($this->resourceSingularlName ?? 'Resource') . ' not found');
         }
 
         return response()->json(
