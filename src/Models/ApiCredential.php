@@ -7,7 +7,9 @@ use Fleetbase\Traits\HasPolicies;
 use Fleetbase\Traits\Expirable;
 use Fleetbase\Traits\Searchable;
 use Fleetbase\Traits\HasApiModelBehavior;
+use Fleetbase\Traits\Filterable;
 use Fleetbase\Support\Utils;
+use Fleetbase\Casts\Json;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
 use Vinkla\Hashids\Facades\Hashids;
@@ -16,7 +18,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
 
 class ApiCredential extends Model
 {
-    use HasUuid, HasApiModelBehavior, LogsActivity, Searchable, Expirable, HasPolicies, HasPermissions;
+    use HasUuid, HasApiModelBehavior, LogsActivity, Searchable, Expirable, Filterable, HasPolicies, HasPermissions;
 
     /**
      * The database table used by the model.
@@ -45,6 +47,13 @@ class ApiCredential extends Model
     ];
 
     /**
+     * These attributes that can be queried
+     *
+     * @var array
+     */
+    protected $searchableColumns = ['name'];
+
+    /**
      * Dynamic attributes that are appended to object
      *
      * @var array
@@ -59,9 +68,7 @@ class ApiCredential extends Model
     protected $hidden = [];
 
     /**
-     * The user the api credential was created by
-     *
-     * @param \Illuminate\Database\Eloquent\Relations\BelongsTo $company
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
      */
     public function user()
     {
@@ -69,9 +76,7 @@ class ApiCredential extends Model
     }
 
     /**
-     * The company the api credential belongs to
-     *
-     * @param \Illuminate\Database\Eloquent\Relations\BelongsTo $company
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
      */
     public function company()
     {
@@ -126,20 +131,5 @@ class ApiCredential extends Model
             'key' => ($testKey ? 'flb_test_' : 'flb_live_') . $key,
             'secret' => $hash,
         ];
-    }
-
-    /**
-     * Apply the scope to a given Eloquent query builder and request.
-     *
-     * @param  \Illuminate\Database\Eloquent\Builder  $query
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Database\Eloquent\Builder
-     */
-    public static function requestScope($query, $request)
-    {
-        $user = $request->user();
-        $query->where('company_uuid', session('company') ?? data_get($user, 'company_uuid'));
-
-        return $query;
     }
 }

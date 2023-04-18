@@ -21,9 +21,9 @@ use Fleetbase\Models\Company;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Fleetbase\Casts\Json;
+use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\HasCacheableAttributes;
 use Fleetbase\Traits\HasMetaAttributes;
-use Illuminate\Database\QueryException;
 use Laravel\Cashier\Billable;
 
 class User extends Authenticatable
@@ -42,6 +42,7 @@ class User extends Authenticatable
         CausesActivity,
         SoftDeletes,
         Expandable,
+        Filterable,
         Billable;
 
     /**

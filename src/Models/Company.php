@@ -49,7 +49,7 @@ class Company extends Model
      *
      * @var array
      */
-    protected $searchableColumns = [];
+    protected $searchableColumns = ['name', 'description'];
 
     /**
      * The attributes that are mass assignable.

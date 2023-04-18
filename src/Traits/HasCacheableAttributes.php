@@ -127,7 +127,7 @@ trait HasCacheableAttributes
             $this->attributeCachePrefix ?? 'model_attribute_cache',
             $this->getConnectionName() ?? 'connection',
             $this->getTable(),
-            $this->getKey()
+            $this->getTempKey()
         ]);
     }
 
@@ -143,8 +143,25 @@ trait HasCacheableAttributes
             $this->attributeCachePrefix ?? 'model_attribute_cache',
             $this->getConnectionName() ?? 'connection',
             $this->getTable(),
-            $this->getKey(),
+            $this->getTempKey(),
             $attribute,
         ]);
+    }
+
+    /**
+     * Get the temporary key for the instance if the actual key doesn't exists.
+     *
+     * @return string The temporary key.
+     */
+    protected function getTempKey(): string
+    {
+        $key = $this->getKey();
+
+        if (!$key) {
+            // generate a unique uuid for temp purposes
+            return \Illuminate\Support\Str::uuid();
+        }
+
+        return $key;
     }
 }
