@@ -4,6 +4,7 @@ namespace Fleetbase\Models;
 
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Schema;
 use Fleetbase\Traits\HasCacheableAttributes;
 use Fleetbase\Traits\ClearsHttpCache;
 use Fleetbase\Traits\Expandable;
@@ -157,5 +158,16 @@ class Model extends EloquentModel
         }
 
         return $filterNamespace;
+    }
+
+    /**
+     * Determines whether a given column exists in the table associated with the model.
+     *
+     * @param  string  $columnName
+     * @return bool
+     */
+    public function isColumn(string $columnName): bool
+    {
+        return Schema::hasColumn($this->getTable(), $columnName);
     }
 }

@@ -4,15 +4,13 @@ namespace Fleetbase\Models;
 
 use Fleetbase\Casts\Json;
 use Fleetbase\Traits\HasUuid;
-use Fleetbase\Traits\Expirable;
 use Fleetbase\Traits\Searchable;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\Filterable;
-use Spatie\Activitylog\Traits\LogsActivity;
 
 class ApiEvent extends Model
 {
-    use HasUuid, HasApiModelBehavior, LogsActivity, Searchable, Expirable, Filterable;
+    use HasUuid, HasApiModelBehavior, Searchable, Filterable;
 
     /**
      * The database table used by the model.
@@ -33,7 +31,7 @@ class ApiEvent extends Model
      *
      * @var array
      */
-    protected $searchableColumns = [];
+    protected $searchableColumns = ['event', 'description', 'method'];
 
     /**
      * The attributes that are mass assignable.

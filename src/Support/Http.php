@@ -9,7 +9,7 @@ use Exception;
 
 class Http extends HttpClient
 {
-    public static function isInternalRequest(?Request $request = null)
+    public static function isInternalRequest(?Request $request = null): bool
     {
         $request = $request ?? request();
         $route = $request->route();
@@ -17,6 +17,11 @@ class Http extends HttpClient
         $namespace = $action['namespace'];
 
         return Str::contains($namespace, 'Internal') ||  Str::contains($route->uri(), '/int/');
+    }
+
+    public static function isPublicRequest(?Request $request = null): bool
+    {
+        return !static::isInternalRequest($request);
     }
 
     /**

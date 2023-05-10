@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Arr;
 
 /**
  * Adds API Model Behavior 
@@ -105,8 +106,7 @@ trait HasApiModelBehavior
         /** 
          * @var \Illuminate\Database\Query\Builder $builder 
          */
-        $builder = $this->searchBuilder($request);
-
+        $builder = $this->searchBuilder($request, $columns);
 
         if (intval($limit) > 0) {
             $builder->limit($limit);
@@ -123,7 +123,7 @@ trait HasApiModelBehavior
         }
 
         // get the results
-        $result = $builder->get();
+        $result = $builder->get($columns);
 
         // mutate if mutation causing params present
         return static::mutateModelWithRequest($request, $result);
@@ -140,8 +140,7 @@ trait HasApiModelBehavior
      */
     public function createRecordFromRequest($request, ?callable $onBefore = null, ?callable $onAfter = null, array $options = [])
     {
-        $payloadKeys = [$this->getSingularName(), Str::camel($this->getSingularName())];
-        $input = $request->or($payloadKeys) ?? $request->all();
+        $input = $this->getApiPayloadFromRequest($request);
         $input = $this->fillSessionAttributes($input);
 
         if (is_callable($onBefore)) {
@@ -188,16 +187,19 @@ trait HasApiModelBehavior
     public function updateRecordFromRequest(Request $request, $id, ?callable $onBefore = null, ?callable $onAfter = null, array $options = [])
     {
         $record = $this->where(function ($q) use ($id) {
+            $publicIdColumn = $this->getQualifiedPublicId();
+
             $q->where($this->getQualifiedKeyName(), $id);
-            $q->orWhere($this->getQualifiedPublicId(), $id);
+            if ($this->isColumn($publicIdColumn)) {
+                $q->orWhere($publicIdColumn, $id);
+            }
         })->first();
 
         if (!$record) {
-            throw new \Exception(Str::title(Str::singular($this->getTable())) . ' not found');
+            throw new \Exception($this->getApiHumanReadableName() . ' not found');
         }
 
-        $payloadKeys = [$this->getSingularName(), Str::camel($this->getSingularName())];
-        $input = $request->or($payloadKeys) ?? $request->all();
+        $input = $this->getApiPayloadFromRequest($request);
         $input = $this->fillSessionAttributes($input, [], ['updated_by_uuid']);
 
         if (is_callable($onBefore)) {
@@ -223,8 +225,12 @@ trait HasApiModelBehavior
 
         $builder = $this->where(
             function ($q) use ($id) {
+                $publicIdColumn = $this->getQualifiedPublicId();
+
                 $q->where($this->getQualifiedKeyName(), $id);
-                $q->orWhere($this->getQualifiedPublicId(), $id);
+                if ($this->isColumn($publicIdColumn)) {
+                    $q->orWhere($publicIdColumn, $id);
+                }
             }
         );
         $builder = $this->withRelationships($request, $builder);
@@ -252,8 +258,12 @@ trait HasApiModelBehavior
     public function remove($id)
     {
         $record = $this->where(function ($q) use ($id) {
+            $publicIdColumn = $this->getQualifiedPublicId();
+
             $q->where($this->getQualifiedKeyName(), $id);
-            $q->orWhere($this->getQualifiedPublicId(), $id);
+            if ($this->isColumn($publicIdColumn)) {
+                $q->orWhere($publicIdColumn, $id);
+            }
         });
 
         if (!$record) {
@@ -277,8 +287,12 @@ trait HasApiModelBehavior
     public function bulkRemove($ids = [])
     {
         $records = $this->where(function ($q) use ($ids) {
+            $publicIdColumn = $this->getQualifiedPublicId();
+
             $q->whereIn($this->getQualifiedKeyName(), $ids);
-            $q->orWhereIn($this->getQualifiedPublicId(), $ids);
+            if ($this->isColumn($publicIdColumn)) {
+                $q->orWhereIn($publicIdColumn, $ids);
+            }
         });
 
         if (!$records) {
@@ -338,7 +352,7 @@ trait HasApiModelBehavior
      * @param array $only The list of attributes that should only be filled (default: [])
      * @return array The filled target array with session attributes
      */
-    public function fillSessionAttributes($target, $except = [], $only = [])
+    public function fillSessionAttributes(?array $target = [], array $except = [], array $only = []): array
     {
         $fill = [];
         $attributes = [
@@ -375,9 +389,9 @@ trait HasApiModelBehavior
     public function withRelationships(Request $request, $builder)
     {
         $with = $request->or(['with', 'expand']);
-        $without = $request->input('without', []);
+        $without = $request->array('without', []);
 
-        if (!$with) {
+        if (!$with && !$without) {
             return $builder;
         }
 
@@ -532,8 +546,12 @@ trait HasApiModelBehavior
     public function getById($id, Request $request)
     {
         $builder = $this->where(function ($q) use ($id) {
+            $publicIdColumn = $this->getQualifiedPublicId();
+
             $q->where($this->getQualifiedKeyName(), $id);
-            $q->orWhere($this->getQualifiedPublicId(), $id);
+            if ($this->isColumn($publicIdColumn)) {
+                $q->orWhere($publicIdColumn, $id);
+            }
         });
 
         $builder = $this->withCounts($request, $builder);
@@ -588,9 +606,10 @@ trait HasApiModelBehavior
      * @param Request $request The request object containing the search parameters
      * @return \Illuminate\Database\Eloquent\Builder The search query builder
      */
-    public function searchBuilder(Request $request)
+    public function searchBuilder(Request $request, $columns = ['*'])
     {
-        $builder = $this->buildSearchParams($request, self::query());
+        $builder = self::query()->select($columns);
+        $builder = $this->buildSearchParams($request, $builder);
         $builder = $this->applyFilters($request, $builder);
         $builder = $this->applyCustomFilters($request, $builder);
         $builder = $this->withRelationships($request, $builder);
@@ -749,11 +768,11 @@ trait HasApiModelBehavior
                 $op_key = strtolower($op_key);
                 $column = Str::replaceLast($op_key, '', $key);
                 $fieldEndsWithOperator = Str::endsWith($key, $op_key);
-                
+
                 if (!$fieldEndsWithOperator) {
                     continue;
                 }
-                
+
                 $builder = $this->applyOperators($builder, $column, $op_key, $op_type, $value);
             }
         }
@@ -845,5 +864,33 @@ trait HasApiModelBehavior
         }
 
         return false;
+    }
+
+    /**
+     * Get the human-readable name for the API model.
+     *
+     * This function converts the table name of the model into a singular, title-cased string to be used as a human-readable name.
+     *
+     * @return string The human-readable name for the API model.
+     */
+    public function getApiHumanReadableName()
+    {
+        return Utils::humanize($this->getTable());
+    }
+
+    /**
+     * Get the API payload from the request.
+     *
+     * This function extracts the payload from the request using the singular name or camel-cased singular name as keys. If neither is found, it returns all input data.
+     *
+     * @param Request $request The incoming HTTP request instance.
+     * @return array The extracted payload from the request.
+     */
+    public function getApiPayloadFromRequest(Request $request): array
+    {
+        $payloadKeys = [$this->getSingularName(), Str::camel($this->getSingularName())];
+        $input = $request->or($payloadKeys) ?? $request->all();
+
+        return $input;
     }
 }

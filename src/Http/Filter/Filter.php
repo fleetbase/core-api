@@ -139,6 +139,10 @@ abstract class Filter
                     $column = Str::replaceLast('_', '', str_replace($prepositions, '', $param));
                     $preposition = Arr::last(explode('_', $param));
 
+                    if (empty($column)) {
+                        return [];
+                    }
+
                     // find the range
                     $range = Arr::first(
                         $ranges,

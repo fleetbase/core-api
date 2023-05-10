@@ -19,6 +19,7 @@ return [
         ]
     ],
     'connection' => [
-        'db' => env('DB_CONNECTION', 'mysql')
+        'db' => env('DB_CONNECTION', 'mysql'),
+        'sandbox' => env('SANDBOX_DB_CONNECTION', 'sandbox')
     ]
 ];

@@ -49,7 +49,7 @@ class AuthController extends Controller
             return response()->error('Session has expired.', 401, ['restore' => false]);
         }
 
-        return response()->json(['token' => $request->bearerToken()]);
+        return response()->json(['token' => $request->bearerToken(), 'user' => $request->user()->uuid]);
     }
 
     /**

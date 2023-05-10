@@ -4,15 +4,13 @@ namespace Fleetbase\Models;
 
 use Fleetbase\Casts\Json;
 use Fleetbase\Traits\HasUuid;
-use Fleetbase\Traits\Expirable;
 use Fleetbase\Traits\Searchable;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\Filterable;
-use Spatie\Activitylog\Traits\LogsActivity;
 
 class ApiRequestLog extends Model
 {
-    use HasUuid, HasApiModelBehavior, LogsActivity, Searchable, Expirable, Filterable;
+    use HasUuid, HasApiModelBehavior, Searchable, Filterable;
 
     /**
      * The database table used by the model.
@@ -59,6 +57,13 @@ class ApiRequestLog extends Model
     ];
 
     /**
+     * These attributes that can be queried
+     *
+     * @var array
+     */
+    protected $searchableColumns = ['path', 'method', 'full_url', 'content_type', 'ip_address'];
+
+    /**
      * Attributes that is filterable on this model
      *
      * @var array
@@ -76,7 +81,7 @@ class ApiRequestLog extends Model
         'request_body' => Json::class,
         'response_headers' => Json::class,
         'response_body' => Json::class,
-        'related' => 'array',
+        'related' => Json::class,
     ];
 
     /**

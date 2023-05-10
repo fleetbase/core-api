@@ -525,11 +525,26 @@ class Utils
      * @param string $str
      * @return string
      */
-    public static function humanize(?string $string): string
+    public static function humanize(string $string): string
     {
+        $uppercase = ['api', 'vat', 'id', 'uuid', 'sku', 'ean', 'upc', 'erp', 'tms', 'wms', 'ltl', 'ftl', 'lcl', 'fcl', 'rfid', 'jot', 'roi', 'eta', 'pod', 'asn', 'oem', 'ddp', 'fob'];
         $string = str_replace('_', ' ', $string);
         $string = str_replace('-', ' ', $string);
         $string = ucwords($string);
+
+        $string = implode(
+            ' ',
+            array_map(
+                function ($word) use ($uppercase) {
+                    if (in_array(strtolower($word), $uppercase)) {
+                        return strtoupper($word);
+                    }
+
+                    return $word;
+                },
+                explode(' ', $string)
+            )
+        );
 
         return $string;
     }
@@ -1574,5 +1589,50 @@ class Utils
 
         // if not valid range just parse as date
         return Carbon::parse($date);
+    }
+
+    /**
+     * Retrieves the values of a specified key from the "extra" property of all packages
+     * with the "fleetbase" key.
+     *
+     * @param string $key The key to search for in the "extra" property of packages with the "fleetbase" key.
+     *
+     * @return array An array of values for the specified key from the "extra" property of packages with the "fleetbase" key.
+     *
+     * @throws \RuntimeException If the installed.json file cannot be found.
+     */
+    public static function fromFleetbaseExtensions(string $key): array
+    {
+        $installedJsonPath = realpath(base_path('vendor/composer/installed.json'));
+
+        if (!$installedJsonPath) {
+            throw new \RuntimeException('Unable to find the installed.json file.');
+        }
+
+        $installedPackages = json_decode(file_get_contents($installedJsonPath), true);
+        $fleetbaseExtensions = [];
+
+        if (isset($installedPackages['packages'])) {
+            foreach ($installedPackages['packages'] as $package) {
+                if (isset($package['extra']['fleetbase']) && isset($package['extra']['fleetbase'][$key])) {
+                    $fleetbaseExtensions[] = $package['extra']['fleetbase'][$key];
+                }
+            }
+        }
+
+        return array_values($fleetbaseExtensions);
+    }
+
+    /**
+     * Retrieves the database name for the Fleetbase connection from the configuration.
+     *
+     * @return string|null The database name for the Fleetbase connection, or null if not found.
+     */
+    public static function getFleetbaseDatabaseName(): ?string
+    {
+        $connection = config('fleetbase.connection.db');
+        $databaseName = config('database.connections.' . $connection . '.database');
+
+        return $databaseName;
     }
 }

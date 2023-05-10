@@ -468,7 +468,7 @@ trait HasApiControllerBehavior
         return response()->json(
             [
                 'status' => 'success',
-                'message' => 'Deleted ' . $count . ' ' . Str::plural($this->model->getTable(), $count),
+                'message' => 'Deleted ' . $count . ' ' . Str::plural($this->model->getApiHumanReadableName(), $count),
                 'count' => $count,
             ]
         );

@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Console\Commands;
 
+use Fleetbase\Support\Utils;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
@@ -38,8 +39,14 @@ class CreateDatabase extends Command
      */
     public function handle()
     {
+        $connection = config('fleetbase.connection.db');
         $_schemaName = $this->option('schemaName');
         $connections = ['mysql', 'sandbox'];
+        $packageConnections = Utils::fromFleetbaseExtensions('create-database');
+
+        if (is_array($packageConnections) && !empty($packageConnections)) {
+            $connections = array_merge($connections, $packageConnections);
+        }
 
         foreach($connections as $connection) {
             $schemaName = config("database.connections.$connection.database");

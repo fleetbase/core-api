@@ -46,7 +46,7 @@ class Auth extends Authentication
      *
      * @return boolean
      */
-    public static function setSession($user = ull, $login = false): bool
+    public static function setSession($user = null, $login = false): bool
     {
         if ($user === null) {
             return false;

@@ -4,7 +4,7 @@ namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Http\Controllers\FleetbaseController;
 
-class ApiCredentialController extends FleetbaseController
+class ApiRequestLogController extends FleetbaseController
 {
     /**
      * The resource to query

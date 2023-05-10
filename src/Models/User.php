@@ -254,7 +254,7 @@ class User extends Authenticatable
 
         $result = $this->companies()->where('company_uuid', session('company'))->first('status');
 
-        return $result->status ?? 'pending';
+        return data_get($result, 'status', 'pending');
     }
 
     /**
@@ -315,7 +315,7 @@ class User extends Authenticatable
      */
     public function getCompanyNameAttribute()
     {
-        return static::attributeFromCache($this, 'company.name', 'No company name');
+        return data_get($this, 'company.name');
     }
 
     /**
@@ -325,7 +325,7 @@ class User extends Authenticatable
      */
     public function getDriverUuidAttribute()
     {
-        return static::attributeFromCache($this, 'driver.uuid');
+        return data_get($this, 'driver.uuid');
     }
 
     /**

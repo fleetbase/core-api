@@ -32,9 +32,23 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                         $router->group(
                             ['middleware' => ['fleetbase.protected']],
                             function ($router) {
-                                $router->fleetbaseRoutes('api-credentials');
+                                $router->fleetbaseRoutes(
+                                    'api-credentials',
+                                    function ($router, $controller) {
+                                        $router->delete('bulk-delete', $controller('bulkDelete'));
+                                        $router->patch('roll/{id}', $controller('roll'));
+                                        $router->get('export', $controller('export'));
+                                    }
+                                );
                                 $router->fleetbaseRoutes('api-events');
-                                $router->fleetbaseRoutes('api-logs');
+                                $router->fleetbaseRoutes('api-request-logs');
+                                $router->fleetbaseRoutes('webhook-endpoints',
+                                function ($router, $controller) {
+                                    $router->get('events', $controller('events'));
+                                    $router->get('versions', $controller('versions'));
+                                }
+                            );
+                                $router->fleetbaseRoutes('webhook-request-logs');
                                 $router->fleetbaseRoutes('companies');
                                 $router->fleetbaseRoutes(
                                     'users',

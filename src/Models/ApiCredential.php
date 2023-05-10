@@ -68,6 +68,34 @@ class ApiCredential extends Model
     protected $hidden = [];
 
     /**
+     * Properties which activity needs to be logged
+     *
+     * @var array
+     */
+    protected static $logAttributes = '*';
+
+    /**
+     * Do not log empty changed
+     *
+     * @var boolean
+     */
+    protected static $submitEmptyLogs = false;
+
+    /**
+     * The name of the subject to log
+     *
+     * @var string
+     */
+    protected static $logName = 'api_credential';
+
+    /**
+     * Tables that should be skipped when rolling api credential or initializing `_key`.
+     *
+     * @var array
+     */
+    public static array $skipTables = ['vehicles_data', 'permissions', 'roles', 'role_has_permissions', 'model_has_permissions', 'model_has_roles', 'model_has_policies'];
+
+    /**
      * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
      */
     public function user()
@@ -81,6 +109,18 @@ class ApiCredential extends Model
     public function company()
     {
         return $this->belongsTo(Company::class)->withoutGlobalScopes();
+    }
+
+    /**
+     * Set the test_mode attribute based on the request header.
+     *
+     * This function sets the test_mode attribute by checking the 'Access-Console-Sandbox' header in the request. If the header value is true, the test_mode attribute will be set accordingly.
+     *
+     * @param bool $testMode Optional. The default value is false, but can be overridden by the request header.
+     */
+    public function setTestModeAttribute($testMode = false)
+    {
+        $this->attributes['test_mode'] = Utils::isTrue(request()->header('Access-Console-Sandbox'));
     }
 
     /**

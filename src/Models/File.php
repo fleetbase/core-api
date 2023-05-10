@@ -6,6 +6,7 @@ use Fleetbase\Support\Utils;
 use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasUuid;
+use Fleetbase\Traits\SendsWebhooks;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -18,7 +19,7 @@ use Vinkla\Hashids\Facades\Hashids;
 
 class File extends Model
 {
-    use HasUuid, HasPublicId, HasApiModelBehavior, HasSlug, LogsActivity;
+    use HasUuid, HasPublicId, HasApiModelBehavior, HasSlug, LogsActivity, SendsWebhooks;
 
     /**
      * The type of public Id to generate

@@ -25,13 +25,16 @@
         "jdorn/sql-formatter": "^1.2",
         "laravel/cashier": "^13.15",
         "laravel/sanctum": "^2.15",
+        "maatwebsite/excel": "^3.1",
+        "phpoffice/phpspreadsheet": "^1.28",
         "pragmarx/countries": "^0.8.2",
-        "xantios/mimey": "^2.2.0",
         "spatie/laravel-activitylog": "^3.17",
         "spatie/laravel-permission": "^5.5",
         "spatie/laravel-responsecache": "^6.6",
         "spatie/laravel-sluggable": "^2.6",
-        "vinkla/hashids": "^9.1"
+        "textalk/websocket": "^1.6",
+        "vinkla/hashids": "^9.1",
+        "xantios/mimey": "^2.2.0"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^2.16.4",
@@ -54,7 +57,8 @@
     "extra": {
         "laravel": {
             "providers": [
-                "Fleetbase\\Providers\\CoreServiceProvider"
+                "Fleetbase\\Providers\\CoreServiceProvider",
+                "Fleetbase\\Providers\\SocketClusterServiceProvider"
             ]
         }
     },
