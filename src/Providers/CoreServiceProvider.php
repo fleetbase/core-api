@@ -72,6 +72,7 @@ class CoreServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__ . '/../../config/database.redis.php', 'database.redis');
         $this->mergeConfigFrom(__DIR__ . '/../../config/broadcasting.connections.php', 'broadcasting.connections');
         $this->mergeConfigFrom(__DIR__ . '/../../config/queue.connections.php', 'queue.connections');
+        $this->mergeConfigFrom(__DIR__ . '/../../config/mail.mailers.php', 'mail.mailers');
         $this->mergeConfigFrom(__DIR__ . '/../../config/fleetbase.php', 'fleetbase');
         $this->mergeConfigFrom(__DIR__ . '/../../config/auth.php', 'auth');
         $this->mergeConfigFrom(__DIR__ . '/../../config/sanctum.php', 'sanctum');
