@@ -2,7 +2,6 @@
 
 namespace Fleetbase\Models;
 
-use Fleetbase\Scopes\TypeScope;
 use Fleetbase\Casts\Json;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasUuid;
@@ -56,17 +55,6 @@ class Type extends Model
      * @var array
      */
     protected $hidden = [];
-
-    /**
-     * The "booting" method of the model.
-     *
-     * @return void
-     */
-    protected static function boot()
-    {
-        parent::boot();
-        static::addGlobalScope(new TypeScope());
-    }
 
     /**
      * Get the options for generating the slug.

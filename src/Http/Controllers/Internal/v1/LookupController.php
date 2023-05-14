@@ -126,7 +126,7 @@ class LookupController extends Controller
     {
         $query = strtolower($request->input('query', null));
         $simple = $request->boolean('simple');
-        $columns = $request->input('columns', []);
+        $columns = $request->array('columns');
 
         $countries = Country::search($query);
 

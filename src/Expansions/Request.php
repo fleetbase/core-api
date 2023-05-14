@@ -4,6 +4,7 @@ namespace Fleetbase\Expansions;
 
 use Fleetbase\Build\Expansion;
 use Fleetbase\Models\Company;
+use Illuminate\Support\Str;
 
 /**
  * @mixin \Illuminate\Support\Facades\Request
@@ -78,6 +79,10 @@ class Request implements Expansion
          */
         return function (string $key) {
             /** @var \Illuminate\Http\Request $this */
+            if (is_string($this->input($key)) && Str::contains($this->input($key), ',')) {
+                return explode(',', $this->input($key));
+            }
+
             return (array) $this->input($key, []);
         };
     }

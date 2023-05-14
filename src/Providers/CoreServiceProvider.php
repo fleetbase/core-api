@@ -3,6 +3,7 @@
 namespace Fleetbase\Providers;
 
 use Fleetbase\Support\Expansion;
+use Fleetbase\Support\Utils;
 use Laravel\Cashier\Cashier;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Arr;
@@ -205,32 +206,10 @@ class CoreServiceProvider extends ServiceProvider
      * Find the package namespace for a given path.
      *
      * @param string|null $path The path to search for the package namespace. If null, no namespace is returned.
-     *
      * @return string|null The package namespace, or null if the path is not valid.
      */
     private function findPackageNamespace($path = null): ?string
     {
-        if (!$path) {
-            return null;
-        }
-
-        $packagePath = strstr($path, '/src', true);
-        $composerJsonPath = $packagePath . '/composer.json';
-
-        // Load the composer.json file into an array
-        $composerJson = json_decode(file_get_contents($composerJsonPath), true);
-
-        // Get the package's namespace from its psr-4 autoloading configuration
-        $namespace = null;
-        if (isset($composerJson['autoload']['psr-4'])) {
-            foreach ($composerJson['autoload']['psr-4'] as $ns => $dir) {
-                if (strpos($dir, 'src') !== false) {
-                    $namespace = rtrim($ns, '\\');
-                    break;
-                }
-            }
-        }
-
-        return $namespace;
+        return Utils::findPackageNamespace($path);
     }
 }

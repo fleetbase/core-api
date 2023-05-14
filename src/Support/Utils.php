@@ -708,24 +708,40 @@ class Utils
     }
 
     /**
-     * Retrieves a model class name given a string
+     * Get the fully qualified class name for the given table, including the namespace.
      *
-     * @param int length
-     * @return int
+     * @param string|object $table The table name or an object instance to derive the class name from.
+     * @param string|array $namespaceSegments A string representing the namespace or an array of segments to be appended to the model class name.
+     * @return string The fully qualified class name, including the namespace.
+     * @throws InvalidArgumentException If the provided $namespaceSegments is not a string or an array.
      */
-    public static function getModelClassName($table, $namespace = '\\Fleetbase\\')
+    public static function getModelClassName($table, $namespaceSegments = '\\Fleetbase\\'): string
     {
         if (is_object($table)) {
             $table = static::classBasename($table);
         }
 
-        if (Str::startsWith($table, $namespace)) {
+        if (Str::startsWith($table, $namespaceSegments)) {
             return $table;
         }
 
         $modelName = Str::studly(static::singularize($table));
 
-        return $namespace . '\\Models\\' . $modelName;
+        // Check if the input is a string (namespace) or an array (segments)
+        if (is_string($namespaceSegments)) {
+            $namespace = rtrim($namespaceSegments, '\\');
+            $segments = [$namespace, 'Models'];
+        } elseif (is_array($namespaceSegments)) {
+            $segments = $namespaceSegments;
+        } else {
+            throw new \InvalidArgumentException('The input must be a string or an array.');
+        }
+
+        // Add the model name to the segments array
+        $segments[] = $modelName;
+
+        // Implode the segments with a backslash
+        return implode('\\', $segments);
     }
 
     /**
@@ -1634,5 +1650,37 @@ class Utils
         $databaseName = config('database.connections.' . $connection . '.database');
 
         return $databaseName;
+    }
+
+    /**
+     * Find the package namespace for a given path.
+     *
+     * @param string|null $path The path to search for the package namespace. If null, no namespace is returned.
+     * @return string|null The package namespace, or null if the path is not valid.
+     */
+    public static function findPackageNamespace($path = null): ?string
+    {
+        if (!$path) {
+            return null;
+        }
+
+        $packagePath = strstr($path, '/src', true);
+        $composerJsonPath = $packagePath . '/composer.json';
+
+        // Load the composer.json file into an array
+        $composerJson = json_decode(file_get_contents($composerJsonPath), true);
+
+        // Get the package's namespace from its psr-4 autoloading configuration
+        $namespace = null;
+        if (isset($composerJson['autoload']['psr-4'])) {
+            foreach ($composerJson['autoload']['psr-4'] as $ns => $dir) {
+                if (strpos($dir, 'src') !== false) {
+                    $namespace = rtrim($ns, '\\');
+                    break;
+                }
+            }
+        }
+
+        return $namespace;
     }
 }

@@ -9,7 +9,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Arr;
 
 /**
  * Adds API Model Behavior 
@@ -212,7 +211,7 @@ trait HasApiModelBehavior
         $keys = array_keys($input);
 
         foreach ($keys as $key) {
-            if (!$this->isFillable($key) && !$this->isRelation($key) && !$this->isRelation(Str::camel($key)) && !$this->isFilterParam($key)) {
+            if (!$this->isFillable($key) && !$this->isRelation($key) && !$this->isRelation(Str::camel($key)) && !$this->isFilterParam($key) && !in_array($key, $this->appends ?? [])) {
                 throw new \Exception('Invalid param "' . $key . '" in update request!');
             }
         }
@@ -756,8 +755,9 @@ trait HasApiModelBehavior
             }
 
             $fieldEndsWithOperator = Str::endsWith($key, array_keys($operators));
+            $isFillable = $this->isFillable($key) || in_array($key, ['uuid', 'public_id']);
 
-            if (!$fieldEndsWithOperator && $this->isFillable($key)) {
+            if (!$fieldEndsWithOperator && $isFillable) {
                 $builder->where($key, '=', $value);
                 continue;
             }

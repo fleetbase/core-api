@@ -310,6 +310,7 @@ trait HasApiControllerBehavior
 
             return new $this->resource($record);
         } catch (\Exception $e) {
+            dd($e);
             return response()->error($e->getMessage());
         } catch (QueryException $e) {
             return response()->error($e->getMessage());
@@ -468,7 +469,7 @@ trait HasApiControllerBehavior
         return response()->json(
             [
                 'status' => 'success',
-                'message' => 'Deleted ' . $count . ' ' . Str::plural($this->model->getApiHumanReadableName(), $count),
+                'message' => 'Deleted ' . $count . ' ' . Str::plural($this->resourceSingularlName, $count),
                 'count' => $count,
             ]
         );

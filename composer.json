@@ -13,6 +13,7 @@
     "require": {
         "php": "^7.4|^8.0",
         "aws/aws-sdk-php-laravel": "^3.7",
+        "giggsey/libphonenumber-for-php": "^8.13",
         "grimzy/laravel-mysql-spatial": "^5.0",
         "guzzlehttp/guzzle": "^7.4",
         "illuminate/broadcasting": "^7.0|^8.0|^9.0",

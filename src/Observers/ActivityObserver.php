@@ -29,9 +29,7 @@ class ActivityObserver
     public static function generateUuidForActivity()
     {
         $uuid = (string) Str::uuid();
-        $exists = Activity::where('uuid', $uuid)
-            ->withTrashed()
-            ->exists();
+        $exists = Activity::where('uuid', $uuid)->exists();
 
         if ($exists) {
             return static::generateUuidForActivity('uuid');
