@@ -2,7 +2,6 @@
 
 namespace Fleetbase\Exceptions;
 
-use Exception;
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Support\Facades\Log;
@@ -93,6 +92,6 @@ class Handler extends ExceptionHandler
             return parent::render($request, $exception);
         }
 
-        response()->error('Oops! A backend error has been reported, please try your request again to continue.', 400);
+        return response()->error('Oops! A backend error has been reported, please try your request again to continue.', 400);
     }
 }

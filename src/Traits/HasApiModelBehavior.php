@@ -95,9 +95,10 @@ trait HasApiModelBehavior
      * Retrieves all records based on request data passed in
      * 
      * @param  \Illuminate\Http\Request  $request The HTTP request containing the input data.
+     * @param  \Closure|null  $queryCallback Optional callback to modify data with Request and QueryBuilder instance.
      * @return \Illuminate\Database\Eloquent\Collection|\Illuminate\Contracts\Pagination\LengthAwarePaginator
      */
-    public function queryFromRequest(Request $request)
+    public function queryFromRequest(Request $request, ?\Closure $queryCallback = null)
     {
         $limit = $request->integer('limit', 30);
         $columns = $request->input('columns', ['*']);
@@ -109,6 +110,11 @@ trait HasApiModelBehavior
 
         if (intval($limit) > 0) {
             $builder->limit($limit);
+        }
+
+        // if queryCallback is supplied
+        if (is_callable($queryCallback)) {
+            $queryCallback($builder, $request);
         }
 
         /** debug */
@@ -126,6 +132,20 @@ trait HasApiModelBehavior
 
         // mutate if mutation causing params present
         return static::mutateModelWithRequest($request, $result);
+    }
+
+    /**
+     * Static alias for queryFromRequest().
+     *
+     * @see queryFromRequest()
+     * @param  \Illuminate\Http\Request  $request The HTTP request containing the input data.
+     * @param  \Closure|null  $queryCallback Optional callback to modify data with Request and QueryBuilder instance.
+     * @return \Illuminate\Database\Eloquent\Collection|\Illuminate\Contracts\Pagination\LengthAwarePaginator
+     * @static
+     */
+    public static function queryWithRequest(Request $request, ?\Closure $queryCallback = null)
+    {
+        return (new static)->queryFromRequest($request, $queryCallback);
     }
 
     /**

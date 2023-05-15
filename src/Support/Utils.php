@@ -1572,7 +1572,7 @@ class Utils
     }
 
     /**
-     * Converts a string or class name to an ember resource type \Fleetbase\Models\IntegratedVendor -> integrated-vendor
+     * Converts a string or class name to an ember resource type \Fleetbase\FleetOps\Models\IntegratedVendor -> integrated-vendor
      * @param string $className
      * @return null|string
      */

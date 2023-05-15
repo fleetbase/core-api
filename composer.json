@@ -59,6 +59,7 @@
         "laravel": {
             "providers": [
                 "Fleetbase\\Providers\\CoreServiceProvider",
+                "Fleetbase\\Providers\\EventServiceProvider",
                 "Fleetbase\\Providers\\SocketClusterServiceProvider"
             ]
         }
