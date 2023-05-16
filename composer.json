@@ -6,6 +6,10 @@
     "license": "MIT",
     "authors": [
         {
+            "name": "Fleetbase Pte Ltd.",
+            "email": "hello@fleetbase.io"
+        },
+        {
             "name": "Ronald A. Richardson",
             "email": "ron@fleetbase.io"
         }
