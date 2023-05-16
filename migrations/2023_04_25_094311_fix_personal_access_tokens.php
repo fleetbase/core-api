@@ -3,6 +3,7 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use Laravel\Sanctum\PersonalAccessToken;
 
 return new class extends Migration
 {
@@ -25,6 +26,7 @@ return new class extends Migration
      */
     public function down()
     {
+        PersonalAccessToken::truncate();
         Schema::table('personal_access_tokens', function (Blueprint $table) {
             $table->bigInteger('tokenable_id')->change();
         });
