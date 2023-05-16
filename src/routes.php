@@ -42,12 +42,13 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 );
                                 $router->fleetbaseRoutes('api-events');
                                 $router->fleetbaseRoutes('api-request-logs');
-                                $router->fleetbaseRoutes('webhook-endpoints',
-                                function ($router, $controller) {
-                                    $router->get('events', $controller('events'));
-                                    $router->get('versions', $controller('versions'));
-                                }
-                            );
+                                $router->fleetbaseRoutes(
+                                    'webhook-endpoints',
+                                    function ($router, $controller) {
+                                        $router->get('events', $controller('events'));
+                                        $router->get('versions', $controller('versions'));
+                                    }
+                                );
                                 $router->fleetbaseRoutes('webhook-request-logs');
                                 $router->fleetbaseRoutes('companies');
                                 $router->fleetbaseRoutes(
@@ -83,9 +84,11 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     }
                                 );
                                 $router->group(
-                                    ['prefix' => 'billing'],
+                                    ['prefix' => 'onboard'],
                                     function ($router) {
-                                        $router->get('check-subscription', '_TempController@checkSubscription');
+                                        $router->get('should-onboard', 'OnboardController@shouldOnboard');
+                                        $router->post('create-account', 'OnboardController@createAccount');
+                                        $router->post('verify-email', 'OnboardController@verifyEmail');
                                     }
                                 );
                             }

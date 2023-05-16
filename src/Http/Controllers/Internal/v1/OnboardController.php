@@ -10,11 +10,24 @@ use Fleetbase\Models\User;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\VerificationCode;
-use Fleetbase\Support\Resp;
 use Illuminate\Http\Request;
 
 class OnboardController extends Controller
 {
+    /**
+     * Checks to see if this is the first time Fleetbase is being used by checking if any organizations exists.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function shouldOnboard()
+    {
+        return response()->json(
+            [
+                'should_onboard' => Company::doesntExist()
+            ]
+        );
+    }
+
     /**
      * Onboard a new account and send send to verify email.
      *
