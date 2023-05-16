@@ -384,10 +384,6 @@ class AuthController extends Controller
     {
         $user = $request->user();
         $company = Company::create(array_merge($request->only(['name', 'description', 'phone', 'email', 'currency', 'country', 'timezone']), ['owner_uuid' => $user->uuid]));
-        $company->createAsStripeCustomer([
-            'email' => $user->email,
-            'description' => 'Customer for ' . $company->name
-        ]);
         $company->addUser($user);
 
         $user->assignCompany($company);
