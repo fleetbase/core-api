@@ -6,12 +6,22 @@ use Illuminate\Http\Request;
 use Fleetbase\Http\Requests\LoginRequest;
 use Fleetbase\Http\Controllers\Controller;
 use Fleetbase\Support\Auth;
+use Fleetbase\Support\Utils;
 use Fleetbase\Models\User;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
+use Fleetbase\Models\VerificationCode;
 use Fleetbase\Http\Requests\SwitchOrganizationRequest;
+use Fleetbase\Http\Requests\JoinOrganizationRequest;
+use Fleetbase\Http\Requests\SignUpRequest;
+use Fleetbase\Http\Requests\Internal\UserForgotPasswordRequest;
+use Fleetbase\Http\Requests\Internal\ResetPasswordRequest;
+use Fleetbase\Notifications\UserForgotPassword;
 use Fleetbase\Http\Resources\Organization;
-
+use Illuminate\Support\Str;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Redis;
+use Aloha\Twilio\Support\Laravel\Facade as Twilio;
 
 class AuthController extends Controller
 {
@@ -68,226 +78,224 @@ class AuthController extends Controller
         return response()->json(['Goodbye']);
     }
 
-    // /**
-    //  * Send a verification SMS code.
-    //  *
-    //  * @param \\Illuminate\Http\Request $request
-    //  * @return \Illuminate\Http\Response $response
-    //  */
-    // public function sendVerificationSms(Request $request)
-    // {
-    //     // Users phone number
-    //     $phone = $queryPhone = $request->input('phone');
-    //     $countryCode = $request->input('countryCode');
-    //     $for = $request->input('driver');
+    /**
+     * Send a verification SMS code.
+     *
+     * @param \\Illuminate\Http\Request $request
+     * @return \Illuminate\Http\Response $response
+     */
+    public function sendVerificationSms(Request $request)
+    {
+        // Users phone number
+        $phone = $queryPhone = $request->input('phone');
+        $countryCode = $request->input('countryCode');
+        $for = $request->input('driver');
 
-    //     // set phone number
-    //     if (!Str::startsWith($queryPhone, '+')) {
-    //         $queryPhone = '+' . $countryCode . $phone;
-    //     }
+        // set phone number
+        if (!Str::startsWith($queryPhone, '+')) {
+            $queryPhone = '+' . $countryCode . $phone;
+        }
 
-    //     // Make sure user exists with phone number
-    //     $userExistsQuery = User::where('phone', $queryPhone)->whereNull('deleted_at')->withoutGlobalScopes();
+        // Make sure user exists with phone number
+        $userExistsQuery = User::where('phone', $queryPhone)->whereNull('deleted_at')->withoutGlobalScopes();
 
-    //     if ($for === 'driver') {
-    //         $userExistsQuery->where('type', 'driver');
-    //     }
+        if ($for === 'driver') {
+            $userExistsQuery->where('type', 'driver');
+        }
 
-    //     $userExists = $userExistsQuery->exists();
+        $userExists = $userExistsQuery->exists();
 
-    //     if (!$userExists) {
-    //         return response()->error('No user with this phone # found.');
-    //     }
+        if (!$userExists) {
+            return response()->error('No user with this phone # found.');
+        }
 
-    //     // Generate hto
-    //     $verifyCode = mt_rand(100000, 999999);
-    //     $verifyCodeKey = Str::slug($queryPhone . '_verify_code', '_');
+        // Generate hto
+        $verifyCode = mt_rand(100000, 999999);
+        $verifyCodeKey = Str::slug($queryPhone . '_verify_code', '_');
 
-    //     // Store verify code for this number
-    //     Redis::set($verifyCodeKey, $verifyCode);
+        // Store verify code for this number
+        Redis::set($verifyCodeKey, $verifyCode);
 
-    //     // Send user their verification code
-    //     try {
-    //         Twilio::message($queryPhone, `Your Fleetbase authentication code is ` . $verifyCode);
-    //     } catch (Exception | RestException $e) {
-    //         return response()->json(['error' => $e->getMessage()], 400);
-    //     }
+        // Send user their verification code
+        try {
+            Twilio::message($queryPhone, `Your Fleetbase authentication code is ` . $verifyCode);
+        } catch (\Exception | \Twilio\Exceptions\RestException $e) {
+            return response()->json(['error' => $e->getMessage()], 400);
+        }
 
-    //     // 200 OK
-    //     return response()->json(['status' => 'OK']);
-    // }
+        // 200 OK
+        return response()->json(['status' => 'OK']);
+    }
 
-    // /**
-    //  * Authenticate a user with SMS code.
-    //  *
-    //  * @param \\Illuminate\Http\Request $request
-    //  * @return \Illuminate\Http\Response $response
-    //  */
-    // public function authenticateSmsCode(Request $request)
-    // {
-    //     // Users phone number
-    //     $phone = $queryPhone = $request->input('phone');
-    //     $countryCode = $request->input('countryCode');
+    /**
+     * Authenticate a user with SMS code.
+     *
+     * @param \\Illuminate\Http\Request $request
+     * @return \Illuminate\Http\Response $response
+     */
+    public function authenticateSmsCode(Request $request)
+    {
+        // Users phone number
+        $phone = $queryPhone = $request->input('phone');
+        $countryCode = $request->input('countryCode');
 
-    //     // set phone number
-    //     if (!Str::startsWith($queryPhone, '+')) {
-    //         $queryPhone = '+' . $countryCode . $phone;
-    //     }
+        // set phone number
+        if (!Str::startsWith($queryPhone, '+')) {
+            $queryPhone = '+' . $countryCode . $phone;
+        }
 
-    //     // Users verfiy code entered
-    //     $verifyCode = $request->input('code');
-    //     $verifyCodeKey = Str::slug($queryPhone . '_verify_code', '_');
+        // Users verfiy code entered
+        $verifyCode = $request->input('code');
+        $verifyCodeKey = Str::slug($queryPhone . '_verify_code', '_');
 
-    //     // Generate hto
-    //     $storedVerifyCode = Redis::get($verifyCodeKey);
+        // Generate hto
+        $storedVerifyCode = Redis::get($verifyCodeKey);
 
-    //     // Verify
-    //     if ($verifyCode !== '000999' && $verifyCode !== $storedVerifyCode) {
-    //         return response()->error('Invalid verification code');
-    //     }
+        // Verify
+        if ($verifyCode !== '000999' && $verifyCode !== $storedVerifyCode) {
+            return response()->error('Invalid verification code');
+        }
 
-    //     // Remove from redis
-    //     Redis::del($verifyCodeKey);
+        // Remove from redis
+        Redis::del($verifyCodeKey);
 
-    //     // get user for phone number
-    //     $user = User::where('phone', $queryPhone)->first();
+        // get user for phone number
+        $user = User::where('phone', $queryPhone)->first();
 
-    //     // Attempt authentication
-    //     if ($user) {
-    //         // Set authenticatin user
-    //         Auth::login($user);
+        // Attempt authentication
+        if ($user) {
+            // Set authenticatin user
+            Auth::login($user);
 
-    //         // Generate token
-    //         try {
-    //             $token = $user->createToken($user->phone)->plainTextToken;
-    //         } catch (Exception $e) {
-    //             return response()->error($e->getMessage());
-    //         }
+            // Generate token
+            try {
+                $token = $user->createToken($user->phone)->plainTextToken;
+            } catch (\Exception $e) {
+                return response()->error($e->getMessage());
+            }
 
-    //         if ($user->type === 'driver') {
-    //             $user->load(['driver']);
-    //         }
+            if ($user->type === 'driver') {
+                $user->load(['driver']);
+            }
 
-    //         // Send message to notify users authentication
-    //         return response()->json([
-    //             'token' => $token,
-    //             'user' => $user,
-    //         ]);
-    //     }
+            // Send message to notify users authentication
+            return response()->json([
+                'token' => $token,
+                'user' => $user,
+            ]);
+        }
 
-    //     // If unable to authenticate user, respond with error
-    //     return response()->json('Authentication failed', 401);
-    // }
+        // If unable to authenticate user, respond with error
+        return response()->json('Authentication failed', 401);
+    }
 
-    // /**
-    //  * Allow user to verify SMS code.
-    //  *
-    //  * @param \\Illuminate\Http\Request $request
-    //  * @return \Illuminate\Http\Response $response
-    //  */
-    // public function verifySmsCode(Request $request)
-    // {
-    //     // Users phone number
-    //     $phone = $request->input('phone');
+    /**
+     * Allow user to verify SMS code.
+     *
+     * @param \\Illuminate\Http\Request $request
+     * @return \Illuminate\Http\Response $response
+     */
+    public function verifySmsCode(Request $request)
+    {
+        // Users phone number
+        $phone = $request->input('phone');
 
-    //     // Users verfiy code entered
-    //     $verifyCode = $request->input('code');
-    //     $verifyCodeKey = Str::slug($phone . '_verify_code', '_');
+        // Users verfiy code entered
+        $verifyCode = $request->input('code');
+        $verifyCodeKey = Str::slug($phone . '_verify_code', '_');
 
-    //     // Generate hto
-    //     $storedVerifyCode = Redis::get($verifyCodeKey);
+        // Generate hto
+        $storedVerifyCode = Redis::get($verifyCodeKey);
 
-    //     // Verify
-    //     if ($verifyCode === $storedVerifyCode) {
-    //         // Remove from redis
-    //         Redis::del($verifyCodeKey);
+        // Verify
+        if ($verifyCode === $storedVerifyCode) {
+            // Remove from redis
+            Redis::del($verifyCodeKey);
 
-    //         // 200 OK
-    //         return response()->json([
-    //             'status' => 'OK',
-    //             'message' => 'Code verified',
-    //         ]);
-    //     }
+            // 200 OK
+            return response()->json([
+                'status' => 'OK',
+                'message' => 'Code verified',
+            ]);
+        }
 
-    //     // 400 ERROR
-    //     return response()->error('Invalid verification code');
-    // }
-
-
-
-    // /**
-    //  * Creates a new company and user account
-    //  *
-    //  * @param \Fleetbase\Http\Requests\SigUpRequest $request
-    //  * @return \Illuminate\Http\Response
-    //  */
-    // public function signUp(SignUpRequest $request)
-    // {
-    //     $userDetails = $request->input('user');
-    //     $companyDetails = $request->input('company');
-
-    //     $newUser = Authy::register($userDetails, $companyDetails);
-
-    //     $token = $newUser->createToken($request->ip());
-
-    //     return response()->json(['token' => $token->plainTextToken]);
-    // }
+        // 400 ERROR
+        return response()->error('Invalid verification code');
+    }
 
 
 
-    // /**
-    //  * Initializes a password reset using a verification code.
-    //  *
-    //  * @param \Fleetbase\Http\Requests\Internal\UserForgotPasswordRequest $request
-    //  * @return \Illuminate\Http\Response
-    //  */
-    // public function createPasswordReset(UserForgotPasswordRequest $request)
-    // {
-    //     $user = User::where('email', $request->input('email'))->first();
+    /**
+     * Creates a new company and user account
+     *
+     * @param \Fleetbase\Http\Requests\SigUpRequest $request
+     * @return \Illuminate\Http\Response
+     */
+    public function signUp(SignUpRequest $request)
+    {
+        $userDetails = $request->input('user');
+        $companyDetails = $request->input('company');
 
-    //     // create verification code
-    //     $verificationCode = VerificationCode::create([
-    //         'subject_uuid' => $user->uuid,
-    //         'subject_type' => Utils::getMutationType($user),
-    //         'for' => 'password_reset',
-    //         'expires_at' => Carbon::now()->addMinutes(15),
-    //         'status' => 'active'
-    //     ]);
+        $newUser = Auth::register($userDetails, $companyDetails);
 
-    //     // notify user of password reset
-    //     $user->notify(new UserForgotPassword($verificationCode));
+        $token = $newUser->createToken($request->ip());
 
-    //     return response()->json(['status' => 'ok']);
-    // }
+        return response()->json(['token' => $token->plainTextToken]);
+    }
 
-    // /**
-    //  * Reset password.
-    //  *
-    //  * @param \Fleetbase\Http\Requests\Internal\ResetPasswordRequest $request
-    //  * @return \Illuminate\Http\Response
-    //  */
-    // public function resetPassword(ResetPasswordRequest $request)
-    // {
-    //     // get verification code
-    //     $verificationCode = VerificationCode::where('code', $request->input('code'))->with(['subject'])->first();
+    /**
+     * Initializes a password reset using a verification code.
+     *
+     * @param \Fleetbase\Http\Requests\Internal\UserForgotPasswordRequest $request
+     * @return \Illuminate\Http\Response
+     */
+    public function createPasswordReset(UserForgotPasswordRequest $request)
+    {
+        $user = User::where('email', $request->input('email'))->first();
 
-    //     if ($verificationCode->uuid !== $request->input('link')) {
-    //         return response()->error('Invalid password reset request!');
-    //     }
+        // create verification code
+        $verificationCode = VerificationCode::create([
+            'subject_uuid' => $user->uuid,
+            'subject_type' => Utils::getModelClassName($user),
+            'for' => 'password_reset',
+            'expires_at' => Carbon::now()->addMinutes(15),
+            'status' => 'active'
+        ]);
 
-    //     // if no subject error
-    //     if (!isset($verificationCode->subject)) {
-    //         return response()->error('Invalid password reset request!');
-    //     }
+        // notify user of password reset
+        $user->notify(new UserForgotPassword($verificationCode));
 
-    //     // reset users password
-    //     $verificationCode->subject->changePassword($request->input('password'));
+        return response()->json(['status' => 'ok']);
+    }
 
-    //     // verify code by deleting so its unusable
-    //     $verificationCode->delete();
+    /**
+     * Reset password.
+     *
+     * @param \Fleetbase\Http\Requests\Internal\ResetPasswordRequest $request
+     * @return \Illuminate\Http\Response
+     */
+    public function resetPassword(ResetPasswordRequest $request)
+    {
+        // get verification code
+        $verificationCode = VerificationCode::where('code', $request->input('code'))->with(['subject'])->first();
 
-    //     return response()->json(['status' => 'ok']);
-    // }
+        if ($verificationCode->uuid !== $request->input('link')) {
+            return response()->error('Invalid password reset request!');
+        }
+
+        // if no subject error
+        if (!isset($verificationCode->subject)) {
+            return response()->error('Invalid password reset request!');
+        }
+
+        // reset users password
+        $verificationCode->subject->changePassword($request->input('password'));
+
+        // verify code by deleting so its unusable
+        $verificationCode->delete();
+
+        return response()->json(['status' => 'ok']);
+    }
 
     /**
      * Takes a request username/ or email and password and attempts to authenticate user
@@ -321,106 +329,70 @@ class AuthController extends Controller
         $user = $request->user();
 
         if ($nextOrganization === $user->company_uuid) {
+            return response()->json(
+                [
+                    'errors' => ['User is already on this organizations session']
+                ]
+            );
+        }
+
+        if (!CompanyUser::where(['user_uuid' => $user->uuid, 'company_uuid' => $nextOrganization])->exists()) {
+            return response()->json(
+                [
+                    'errors' => ['You do not belong to this organization']
+                ]
+            );
+        }
+
+        $user->assignCompanyFromId($nextOrganization);
+        Auth::setSession($user);
+
+        return response()->json(['status' => 'ok']);
+    }
+
+    /**
+     * Allows a user to join an organization.
+     *
+     * @param \Fleetbase\Http\Requests\JoinOrganizationRequest $request
+     * @return \Illuminate\Http\Response
+     */
+    public function joinOrganization(JoinOrganizationRequest $request)
+    {
+        $company = Company::where('public_id', $request->input('next'))->first();
+        $user = $request->user();
+
+        if ($company->uuid === $user->company_uuid) {
             return response()->json([
                 'errors' => ['User is already on this organizations session']
             ]);
         }
 
-        if (!CompanyUser::where(['user_uuid' => $user->uuid, 'company_uuid' => $nextOrganization])->exists()) {
-            return response()->json([
-                'errors' => ['You do not belong to this organization']
-            ]);
-        }
-
-        $user->assignCompanyFromId($nextOrganization);
-        Authy::setSession($user);
+        $company->addUser($user);
+        $user->assignCompany($company);
+        Auth::setSession($user);
 
         return response()->json(['status' => 'ok']);
     }
 
-    // /**
-    //  * Allows a user to join an organization.
-    //  *
-    //  * @param \Fleetbase\Http\Requests\JoinOrganizationRequest $request
-    //  * @return \Illuminate\Http\Response
-    //  */
-    // public function joinOrganization(JoinOrganizationRequest $request)
-    // {
-    //     $company = Company::where('public_id', $request->input('next'))->first();
-    //     $user = $request->user();
+    /**
+     * Allows user to create a new organization.
+     *
+     * @param \Illuminate\Http\Request $request
+     * @return \Illuminate\Http\Response
+     */
+    public function createOrganization(Request $request)
+    {
+        $user = $request->user();
+        $company = Company::create(array_merge($request->only(['name', 'description', 'phone', 'email', 'currency', 'country', 'timezone']), ['owner_uuid' => $user->uuid]));
+        $company->createAsStripeCustomer([
+            'email' => $user->email,
+            'description' => 'Customer for ' . $company->name
+        ]);
+        $company->addUser($user);
 
-    //     if ($company->uuid === $user->company_uuid) {
-    //         return response()->json([
-    //             'errors' => ['User is already on this organizations session']
-    //         ]);
-    //     }
+        $user->assignCompany($company);
+        Auth::setSession($user);
 
-    //     $company->addUser($user);
-    //     $user->assignCompany($company);
-    //     Authy::setSession($user);
-
-    //     return response()->json(['status' => 'ok']);
-    // }
-
-    // /**
-    //  * Allows user to create a new organization.
-    //  *
-    //  * @param \Illuminate\Http\Request $request
-    //  * @return \Illuminate\Http\Response
-    //  */
-    // public function createOrganization(Request $request)
-    // {
-    //     $user = $request->user();
-    //     $company = Company::create(array_merge($request->only(['name', 'description', 'phone', 'email', 'currency', 'country', 'timezone']), ['owner_uuid' => $user->uuid]));
-    //     $company->createAsStripeCustomer([
-    //         'email' => $user->email,
-    //         'description' => 'Customer for ' . $company->name
-    //     ]);
-    //     $company->addUser($user);
-
-    //     $user->assignCompany($company);
-    //     Authy::setSession($user);
-
-    //     return new Organization($company);
-    // }
-
-    // /**
-    //  * Takes a request username/ or email and password and attempts to authenticate user
-    //  * will return the user model if the authentication was successful, else will 400
-    //  *
-    //  * @param \Illuminate\Http\Request $request
-    //  * @return \Illuminate\Http\Response
-    //  */
-    // public function checkExtensionAccess(Request $request)
-    // {
-    //     // $extension = $request->input('extension');
-    //     $company = Company::where('uuid', session('company'))->first();
-
-    //     if (!$company) {
-    //         return response()->error('No organization authenticated.', 'session_ended');
-    //     }
-
-    //     // check if subscribed
-    //     $isSubscribed = $company->subscribed('standard');
-    //     $isGenericTrialing = $company->onGenericTrial();
-    //     $isTrialing = $company->onTrial();
-
-    //     // @todo any special guards or permission checks or cases for extension handle below
-
-    //     // check if company has standard subscription
-    //     return response()->json([
-    //         'can_access' => $isGenericTrialing || $isTrialing || $isSubscribed
-    //     ]);
-    // }
-
-    // /**
-    //  * Options for CORS requests
-    //  *
-    //  * @param  \Illuminate\Http\Request  $request
-    //  * @return \Illuminate\Http\Response
-    //  */
-    // public function options()
-    // {
-    //     return response()->make();
-    // }
+        return new Organization($company);
+    }
 }

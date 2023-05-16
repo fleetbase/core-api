@@ -16,6 +16,7 @@
     ],
     "require": {
         "php": "^7.4|^8.0",
+        "aloha/twilio": "^5.0",
         "aws/aws-sdk-php-laravel": "^3.7",
         "giggsey/libphonenumber-for-php": "^8.13",
         "grimzy/laravel-mysql-spatial": "^5.0",

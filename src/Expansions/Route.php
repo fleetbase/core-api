@@ -67,13 +67,13 @@ class Route implements Expansion
     public function fleetbaseRoutes()
     {
         return function (string $name, ?callable $registerFn = null, $options = [], $controller = null) {
-            if (is_callable($controller) && $callback === null) {
-                $callback = $controller;
+            if (is_callable($controller) && $registerFn === null) {
+                $registerFn = $controller;
                 $controller = null;
             }
 
-            if (is_callable($options) && $callback === null) {
-                $callback = $options;
+            if (is_callable($options) && $registerFn === null) {
+                $registerFn = $options;
                 $options = [];
             }
 
@@ -115,23 +115,35 @@ class Route implements Expansion
 
     public function fleetbaseAuthRoutes()
     {
-        return function () {
+        return function (?callable $registerFn = null, ?callable $registerProtectedFn = null) {
+            /** 
+             * @var \Illuminate\Routing\Router $this 
+             */
             return $this->group(
                 ['prefix' => 'auth'],
-                function ($router) {
-                    $router->post('/login', 'AuthController@login');
-                    $router->post('/sign-up', 'AuthController@signUp');
-                    $router->post('/logout', 'AuthController@logout');
-                    $router->post('/get-magic-reset-link', 'AuthController@createPasswordReset');
-                    $router->post('/reset-password', 'AuthController@resetPassword');
+                function ($router) use ($registerFn, $registerProtectedFn) {
+                    $router->post('login', 'AuthController@login');
+                    $router->post('sign-up', 'AuthController@signUp');
+                    $router->post('logout', 'AuthController@logout');
+                    $router->post('get-magic-reset-link', 'AuthController@createPasswordReset');
+                    $router->post('reset-password', 'AuthController@resetPassword');
+
+                    if (is_callable($registerFn)) {
+                        $registerFn($router);
+                    }
+
                     $router->group(
                         ['middleware' => ['fleetbase.protected']],
-                        function ($router) {
-                            $router->post('/switch-organization', 'AuthController@switchOrganization');
-                            $router->post('/join-organization', 'AuthController@joinOrganization');
-                            $router->post('/create-organization', 'AuthController@createOrganization');
-                            $router->get('/session', 'AuthController@session');
-                            $router->get('/organizations', 'AuthController@getUserOrganizations');
+                        function ($router) use ($registerProtectedFn) {
+                            $router->post('switch-organization', 'AuthController@switchOrganization');
+                            $router->post('join-organization', 'AuthController@joinOrganization');
+                            $router->post('create-organization', 'AuthController@createOrganization');
+                            $router->get('session', 'AuthController@session');
+                            $router->get('organizations', 'AuthController@getUserOrganizations');
+
+                            if (is_callable($registerProtectedFn)) {
+                                $registerProtectedFn($router);
+                            }
                         }
                     );
                 }

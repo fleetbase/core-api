@@ -30,6 +30,24 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                     function ($router) {
                         $router->fleetbaseAuthRoutes();
                         $router->group(
+                            ['prefix' => 'onboard'],
+                            function ($router) {
+                                $router->get('should-onboard', 'OnboardController@shouldOnboard');
+                                $router->post('create-account', 'OnboardController@createAccount');
+                                $router->post('verify-email', 'OnboardController@verifyEmail');
+                            }
+                        );
+                        $router->group(
+                            ['prefix' => 'lookup'],
+                            function ($router) {
+                                $router->get('whois', 'LookupController@whois');
+                                $router->get('currencies', 'LookupController@currencies');
+                                $router->get('countries', 'LookupController@countries');
+                                $router->get('country/{code}', 'LookupController@country');
+                                $router->get('font-awesome-icons', 'LookupController@fontAwesomeIcons');
+                            }
+                        );
+                        $router->group(
                             ['middleware' => ['fleetbase.protected']],
                             function ($router) {
                                 $router->fleetbaseRoutes(
@@ -73,24 +91,6 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     }
                                 );
                                 $router->fleetbaseRoutes('transactions');
-                                $router->group(
-                                    ['prefix' => 'lookup'],
-                                    function ($router) {
-                                        $router->get('whois', 'LookupController@whois');
-                                        $router->get('currencies', 'LookupController@currencies');
-                                        $router->get('countries', 'LookupController@countries');
-                                        $router->get('country/{code}', 'LookupController@country');
-                                        $router->get('font-awesome-icons', 'LookupController@fontAwesomeIcons');
-                                    }
-                                );
-                                $router->group(
-                                    ['prefix' => 'onboard'],
-                                    function ($router) {
-                                        $router->get('should-onboard', 'OnboardController@shouldOnboard');
-                                        $router->post('create-account', 'OnboardController@createAccount');
-                                        $router->post('verify-email', 'OnboardController@verifyEmail');
-                                    }
-                                );
                             }
                         );
                     }
