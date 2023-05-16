@@ -35,6 +35,8 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 $router->get('should-onboard', 'OnboardController@shouldOnboard');
                                 $router->post('create-account', 'OnboardController@createAccount');
                                 $router->post('verify-email', 'OnboardController@verifyEmail');
+                                $router->post('send-verification-sms', 'OnboardController@sendVerificationSms');
+                                $router->post('send-verification-email', 'OnboardController@sendVerificationEmail');
                             }
                         );
                         $router->group(
