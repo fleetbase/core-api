@@ -28,6 +28,10 @@ class AuthController extends Controller
         $password = $request->input('password');
         $user = User::where('email', $email)->first();
 
+        if (!$user) {
+            return response()->error('No user found by this email.', 401);
+        }
+
         if (Auth::isInvalidPassword($password, $user->password)) {
             return response()->error('Authentication failed using password provided.', 401);
         }
