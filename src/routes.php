@@ -1,7 +1,5 @@
 <?php
 
-use Fleetbase\Http\Middleware\SetupFleetbaseSession;
-use Fleetbase\Support\InternalConfig;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -15,7 +13,7 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::prefix(InternalConfig::get('api.routing.prefix', '/'))->namespace('Fleetbase\Http\Controllers')->group(
+Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase\Http\Controllers')->group(
     function ($router) {
         $router->get('/', 'Controller@hello');
 
@@ -26,14 +24,52 @@ Route::prefix(InternalConfig::get('api.routing.prefix', '/'))->namespace('Fleetb
         |
         | Primary internal routes for console.
         */
-        $router->prefix(InternalConfig::get('api.routing.internal_prefix', 'int'))->namespace('Internal')->group(
+        $router->prefix(config('fleetbase.api.routing.internal_prefix', 'int'))->namespace('Internal')->group(
             function ($router) {
                 $router->prefix('v1')->namespace('v1')->group(
                     function ($router) {
                         $router->fleetbaseAuthRoutes();
                         $router->group(
+                            ['prefix' => 'onboard'],
+                            function ($router) {
+                                $router->get('should-onboard', 'OnboardController@shouldOnboard');
+                                $router->post('create-account', 'OnboardController@createAccount');
+                                $router->post('verify-email', 'OnboardController@verifyEmail');
+                                $router->post('send-verification-sms', 'OnboardController@sendVerificationSms');
+                                $router->post('send-verification-email', 'OnboardController@sendVerificationEmail');
+                            }
+                        );
+                        $router->group(
+                            ['prefix' => 'lookup'],
+                            function ($router) {
+                                $router->get('whois', 'LookupController@whois');
+                                $router->get('currencies', 'LookupController@currencies');
+                                $router->get('countries', 'LookupController@countries');
+                                $router->get('country/{code}', 'LookupController@country');
+                                $router->get('font-awesome-icons', 'LookupController@fontAwesomeIcons');
+                            }
+                        );
+                        $router->group(
                             ['middleware' => ['fleetbase.protected']],
                             function ($router) {
+                                $router->fleetbaseRoutes(
+                                    'api-credentials',
+                                    function ($router, $controller) {
+                                        $router->delete('bulk-delete', $controller('bulkDelete'));
+                                        $router->patch('roll/{id}', $controller('roll'));
+                                        $router->get('export', $controller('export'));
+                                    }
+                                );
+                                $router->fleetbaseRoutes('api-events');
+                                $router->fleetbaseRoutes('api-request-logs');
+                                $router->fleetbaseRoutes(
+                                    'webhook-endpoints',
+                                    function ($router, $controller) {
+                                        $router->get('events', $controller('events'));
+                                        $router->get('versions', $controller('versions'));
+                                    }
+                                );
+                                $router->fleetbaseRoutes('webhook-request-logs');
                                 $router->fleetbaseRoutes('companies');
                                 $router->fleetbaseRoutes(
                                     'users',
@@ -47,6 +83,7 @@ Route::prefix(InternalConfig::get('api.routing.prefix', '/'))->namespace('Fleetb
                                 $router->fleetbaseRoutes('policies');
                                 $router->fleetbaseRoutes('permissions');
                                 $router->fleetbaseRoutes('extensions');
+                                $router->fleetbaseRoutes('categories');
                                 $router->fleetbaseRoutes(
                                     'files',
                                     function ($router, $controller) {
@@ -56,22 +93,6 @@ Route::prefix(InternalConfig::get('api.routing.prefix', '/'))->namespace('Fleetb
                                     }
                                 );
                                 $router->fleetbaseRoutes('transactions');
-                                $router->group(
-                                    ['prefix' => 'lookup'],
-                                    function ($router) {
-                                        $router->get('whois', 'LookupController@whois');
-                                        $router->get('currencies', 'LookupController@currencies');
-                                        $router->get('countries', 'LookupController@countries');
-                                        $router->get('country/{code}', 'LookupController@country');
-                                        $router->get('font-awesome-icons', 'LookupController@fontAwesomeIcons');
-                                    }
-                                );
-                                $router->group(
-                                    ['prefix' => 'billing'],
-                                    function ($router) {
-                                        $router->get('check-subscription', '_TempController@checkSubscription');
-                                    }
-                                );
                             }
                         );
                     }

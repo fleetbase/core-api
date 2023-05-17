@@ -2,7 +2,6 @@
 
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
-use Illuminate\Support\Carbon;
 use Fleetbase\Events\AccountCreated;
 use Fleetbase\Http\Controllers\Controller;
 use Fleetbase\Http\Requests\OnboardRequest;
@@ -10,11 +9,25 @@ use Fleetbase\Models\User;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\VerificationCode;
-use Fleetbase\Support\Resp;
+use Illuminate\Support\Carbon;
 use Illuminate\Http\Request;
 
 class OnboardController extends Controller
 {
+    /**
+     * Checks to see if this is the first time Fleetbase is being used by checking if any organizations exists.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function shouldOnboard()
+    {
+        return response()->json(
+            [
+                'should_onboard' => Company::doesntExist()
+            ]
+        );
+    }
+
     /**
      * Onboard a new account and send send to verify email.
      *
@@ -33,18 +46,9 @@ class OnboardController extends Controller
             'type' => 'user'
         ]);
 
-        // the default trial duration
-        $trialDuration = config('app.trial_duration');
-
         // create company
-        $company = new Company(['name' => $request->input('organization_name'), 'trial_ends_at' => now()->addDays($trialDuration)]);
+        $company = new Company(['name' => $request->input('organization_name')]);
         $company->setOwner($user)->save();
-
-        // create as stripe customer
-        $company->createAsStripeCustomer([
-            'email' => $user->email,
-            'description' => 'Customer for ' . $company->name
-        ]);
 
         // assign user to organization
         $user->assignCompany($company);
@@ -60,7 +64,12 @@ class OnboardController extends Controller
         event(new AccountCreated($user, $company));
 
         // create verification code
-        VerificationCode::generateEmailVerificationFor($user);
+        try {
+            VerificationCode::generateEmailVerificationFor($user);
+        } catch (\Swift_TransportException $e) {
+            // silently create the user anyway -- verfy by sms
+            // return response()->error($e->getMessage() ?? 'Email is not configured.');
+        }
 
         // create auth token
         $token = $user->createToken($request->ip());

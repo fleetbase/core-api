@@ -2,7 +2,6 @@
 
 namespace Fleetbase\Traits;
 
-use Fleetbase\Support\Utils;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
 use Closure;
@@ -18,35 +17,51 @@ trait HasCacheableAttributes
         });
     }
 
-    /** 
-     * Retreive items from cache for model attributes
-     * 
-     * @param mixed target
-     * @param string key
-     * @param mixed default
-     * @param integer ttl
-     * 
+    /**
+     * Retrieve items from cache for model attributes or get from model if not in cache
+     *
+     * @param Model $target
+     * @param string $key
+     * @param mixed $default
+     * @param integer|null $ttl
+     *
      * @return mixed
      */
-    public static function attributeFromCache($target, $key, $default = null, $ttl = null)
+    public static function attributeFromCache(Model $target, string $key, $default = null, ?int $ttl = null)
     {
-        if (!$target instanceof Model) {
-            return $default;
-        }
-
         $cacheKey = $target->getCacheKey($key);
         $cacheTag = $target->getCacheTag();
         $ttl = $ttl === null ? 60 * 60 * 24 : $ttl;
 
         $callback = $default instanceof Closure ? $default : function () use ($target, $key, $default) {
-            return Utils::get($target, $key, $default);
+            return data_get($target, $key, $default);
         };
 
         if ($ttl < 0) {
-            return Cache::tags([$cacheTag])->rememberForever($cacheKey, $ttl, $callback);
+            return Cache::tags([$cacheTag])->rememberForever($cacheKey, $callback);
         }
 
-        return Cache::tags([$cacheTag])->remember($cacheKey, $ttl, $callback);
+        $result = Cache::tags([$cacheTag])->get($cacheKey);
+
+        if ($result === null) {
+            $result = $callback();
+            Cache::tags([$cacheTag])->put($cacheKey, $result, $ttl);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Retrieve items from cache for model attributes.
+     *
+     * @param string $key
+     * @param mixed $default
+     * @param integer $ttl
+     * @return mixed
+     */
+    public function fromCache($key, $default = null, $ttl = null)
+    {
+        return static::attributeFromCache($this, $key, $default, $ttl);
     }
 
     /**
@@ -112,7 +127,7 @@ trait HasCacheableAttributes
             $this->attributeCachePrefix ?? 'model_attribute_cache',
             $this->getConnectionName() ?? 'connection',
             $this->getTable(),
-            $this->getKey()
+            $this->getTempKey()
         ]);
     }
 
@@ -128,8 +143,25 @@ trait HasCacheableAttributes
             $this->attributeCachePrefix ?? 'model_attribute_cache',
             $this->getConnectionName() ?? 'connection',
             $this->getTable(),
-            $this->getKey(),
+            $this->getTempKey(),
             $attribute,
         ]);
+    }
+
+    /**
+     * Get the temporary key for the instance if the actual key doesn't exists.
+     *
+     * @return string The temporary key.
+     */
+    protected function getTempKey(): string
+    {
+        $key = $this->getKey();
+
+        if (!$key) {
+            // generate a unique uuid for temp purposes
+            return \Illuminate\Support\Str::uuid();
+        }
+
+        return $key;
     }
 }

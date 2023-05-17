@@ -10,7 +10,7 @@ use Exception;
 
 class Resolve
 {
-    public static function httpResourceForModel($model, ?int $version = 1)
+    public static function httpResourceForModel($model, ?string $namespace = null, ?int $version = 1)
     {
         if (is_string($model) && class_exists($model)) {
             $model = static::instance($model);
@@ -20,12 +20,12 @@ class Resolve
             throw new Exception('Invalid model to resolve resource for!');
         }
 
-        $resourceNamespace = Find::httpResourceForModel($model, $version);
+        $resourceNamespace = Find::httpResourceForModel($model, $namespace, $version);
 
         return new $resourceNamespace($model);
     }
 
-    public static function httpRequestForModel($model, ?int $version = 1)
+    public static function httpRequestForModel($model, ?string $namespace = null, ?int $version = 1)
     {
         if (is_string($model) && class_exists($model)) {
             $model = static::instance($model);
@@ -35,12 +35,12 @@ class Resolve
             throw new Exception('Invalid model to resolve request for!');
         }
 
-        $requestNamespace = Find::httpRequestForModel($model, $version);
+        $requestNamespace = Find::httpRequestForModel($model, $namespace, $version);
 
         return new $requestNamespace();
     }
 
-    public static function httpFilterForModel(Model $model, Request $request)
+    public static function httpFilterForModel(Model $model, Request $request, ?int $version = 1)
     {
         $filterNamespace = Find::httpFilterForModel($model);
 
@@ -56,6 +56,8 @@ class Resolve
         if (empty($type) || empty($id)) {
             return null;
         }
+
+        $instance = null;
 
         if (class_exists($type)) {
             $instance = static::instance($type);

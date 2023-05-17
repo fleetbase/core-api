@@ -7,7 +7,9 @@ use Fleetbase\Traits\HasPolicies;
 use Fleetbase\Traits\Expirable;
 use Fleetbase\Traits\Searchable;
 use Fleetbase\Traits\HasApiModelBehavior;
+use Fleetbase\Traits\Filterable;
 use Fleetbase\Support\Utils;
+use Fleetbase\Casts\Json;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
 use Vinkla\Hashids\Facades\Hashids;
@@ -16,7 +18,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
 
 class ApiCredential extends Model
 {
-    use HasUuid, HasApiModelBehavior, LogsActivity, Searchable, Expirable, HasPolicies, HasPermissions;
+    use HasUuid, HasApiModelBehavior, LogsActivity, Searchable, Expirable, Filterable, HasPolicies, HasPermissions;
 
     /**
      * The database table used by the model.
@@ -45,6 +47,13 @@ class ApiCredential extends Model
     ];
 
     /**
+     * These attributes that can be queried
+     *
+     * @var array
+     */
+    protected $searchableColumns = ['name'];
+
+    /**
      * Dynamic attributes that are appended to object
      *
      * @var array
@@ -59,9 +68,35 @@ class ApiCredential extends Model
     protected $hidden = [];
 
     /**
-     * The user the api credential was created by
+     * Properties which activity needs to be logged
      *
-     * @param \Illuminate\Database\Eloquent\Relations\BelongsTo $company
+     * @var array
+     */
+    protected static $logAttributes = '*';
+
+    /**
+     * Do not log empty changed
+     *
+     * @var boolean
+     */
+    protected static $submitEmptyLogs = false;
+
+    /**
+     * The name of the subject to log
+     *
+     * @var string
+     */
+    protected static $logName = 'api_credential';
+
+    /**
+     * Tables that should be skipped when rolling api credential or initializing `_key`.
+     *
+     * @var array
+     */
+    public static array $skipTables = ['vehicles_data', 'permissions', 'roles', 'role_has_permissions', 'model_has_permissions', 'model_has_roles', 'model_has_policies'];
+
+    /**
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
      */
     public function user()
     {
@@ -69,13 +104,23 @@ class ApiCredential extends Model
     }
 
     /**
-     * The company the api credential belongs to
-     *
-     * @param \Illuminate\Database\Eloquent\Relations\BelongsTo $company
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
      */
     public function company()
     {
         return $this->belongsTo(Company::class)->withoutGlobalScopes();
+    }
+
+    /**
+     * Set the test_mode attribute based on the request header.
+     *
+     * This function sets the test_mode attribute by checking the 'Access-Console-Sandbox' header in the request. If the header value is true, the test_mode attribute will be set accordingly.
+     *
+     * @param bool $testMode Optional. The default value is false, but can be overridden by the request header.
+     */
+    public function setTestModeAttribute($testMode = false)
+    {
+        $this->attributes['test_mode'] = Utils::isTrue(request()->header('Access-Console-Sandbox'));
     }
 
     /**
@@ -126,20 +171,5 @@ class ApiCredential extends Model
             'key' => ($testKey ? 'flb_test_' : 'flb_live_') . $key,
             'secret' => $hash,
         ];
-    }
-
-    /**
-     * Apply the scope to a given Eloquent query builder and request.
-     *
-     * @param  \Illuminate\Database\Eloquent\Builder  $query
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Database\Eloquent\Builder
-     */
-    public static function requestScope($query, $request)
-    {
-        $user = $request->user();
-        $query->where('company_uuid', session('company') ?? data_get($user, 'company_uuid'));
-
-        return $query;
     }
 }

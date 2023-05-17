@@ -9,12 +9,13 @@ use Fleetbase\Traits\TracksApiCredential;
 use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasOptionsAttributes;
 use Fleetbase\Traits\Searchable;
+use Fleetbase\Traits\SendsWebhooks;
 use Spatie\Sluggable\HasSlug;
 use Spatie\Sluggable\SlugOptions;
 
 class Company extends Model
 {
-    use HasUuid, HasPublicId, TracksApiCredential, HasApiModelBehavior, HasOptionsAttributes, HasSlug, Searchable;
+    use HasUuid, HasPublicId, TracksApiCredential, HasApiModelBehavior, HasOptionsAttributes, HasSlug, Searchable, SendsWebhooks;
 
     /**
      * The database connection to use.
@@ -49,7 +50,7 @@ class Company extends Model
      *
      * @var array
      */
-    protected $searchableColumns = [];
+    protected $searchableColumns = ['name', 'description'];
 
     /**
      * The attributes that are mass assignable.

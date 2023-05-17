@@ -16,8 +16,26 @@ class Arr implements Expansion
         return \Illuminate\Support\Arr::class;
     }
 
+    /**
+     * Returns a higher-order function that checks if every element of an array passes a given truth test.
+     *
+     * The returned function takes an array and a callback function as arguments. It applies the callback to
+     * each element of the array using `array_map`, and returns `true` if all elements pass the truth test,
+     * and `false` otherwise.
+     *
+     * @return \Closure The higher-order function.
+     */
     public function every()
     {
+        /**
+         * Returns a higher-order function that checks if every element of an array passes a given truth test.
+         *
+         * The returned function takes an array and a callback function as arguments. It applies the callback to
+         * each element of the array using `array_map`, and returns `true` if all elements pass the truth test,
+         * and `false` otherwise.
+         *
+         * @return array
+         */
         return function ($array, $callback) {
             return  !in_array(false, array_map($callback, $array));
         };
@@ -26,7 +44,7 @@ class Arr implements Expansion
     /**
      * Inserts key value pairs into array after a specific key.
      *
-     * @return Closure
+     * @return \Closure
      */
     public function insertAfterKey()
     {

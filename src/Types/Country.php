@@ -223,6 +223,10 @@ class Country implements JsonSerializable
     {
         return static::filter(
             function ($country) use ($query) {
+                if (empty($query) || !is_string($query)) {
+                    return true;
+                }
+
                 $query = strtolower($query);
 
                 $matches = [

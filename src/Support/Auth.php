@@ -46,7 +46,7 @@ class Auth extends Authentication
      *
      * @return boolean
      */
-    public static function setSession($user = ull, $login = false): bool
+    public static function setSession($user = null, $login = false): bool
     {
         if ($user === null) {
             return false;
@@ -138,12 +138,40 @@ class Auth extends Authentication
         return true;
     }
 
-    public static function checkPassword($pw1, $pw2)
+    /**
+     * Get the session company
+     *
+     * @return null|Company
+     */
+    public static function getCompany($select = '*'): ?Company
+    {
+        if (!session('company')) {
+            return null;
+        }
+
+        return Company::select($select)->where('uuid', session('company'))->first();
+    }
+
+    /**
+     * Verifies a password against a hash.
+     *
+     * @param string $pw1
+     * @param string $pw2
+     * @return boolean
+     */
+    public static function checkPassword(string $pw1, string $pw2): bool
     {
         return Hash::check($pw1, $pw2);
     }
 
-    public static function isInvalidPassword($pw1, $pw2)
+    /**
+     * Checks if password is invalid.
+     *
+     * @param string $pw1
+     * @param string $pw2
+     * @return boolean
+     */
+    public static function isInvalidPassword(string $pw1, string $pw2): bool
     {
         return !static::checkPassword($pw1, $pw2);
     }

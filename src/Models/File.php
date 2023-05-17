@@ -6,6 +6,7 @@ use Fleetbase\Support\Utils;
 use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasUuid;
+use Fleetbase\Traits\SendsWebhooks;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -18,7 +19,7 @@ use Vinkla\Hashids\Facades\Hashids;
 
 class File extends Model
 {
-    use HasUuid, HasPublicId, HasApiModelBehavior, HasSlug, LogsActivity;
+    use HasUuid, HasPublicId, HasApiModelBehavior, HasSlug, LogsActivity, SendsWebhooks;
 
     /**
      * The type of public Id to generate
@@ -94,14 +95,16 @@ class File extends Model
     }
 
     /**
-     * get the s3 url
+     * Get the File url attribute.
      *
      * @return string
      */
     public function getUrlAttribute()
     {
         $disk = env('FILESYSTEM_DRIVER');
-        $url = Storage::disk($disk)->url($this->path);
+        /** @var \Illuminate\Support\Facades\Storage $filesystem */
+        $filesystem = Storage::disk($disk);
+        $url = $filesystem->url($this->path);
 
         if ($disk === 'local') {
             return asset($url, !app()->environment(['development', 'local']));
@@ -111,9 +114,7 @@ class File extends Model
     }
 
     /**
-     * The uploader of this file
-     *
-     * @var Model
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
      */
     public function uploader()
     {
@@ -121,20 +122,20 @@ class File extends Model
     }
 
     /**
-     * Sets the owner of the company
+     * Sets the uploader of the file.
      *
-     * @return $this
+     * @return \Fleetbase\Models\File
      */
-    public function setUploader(User $uploader)
+    public function setUploader(User $uploader): File
     {
         $this->uploader_uuid = $uploader->uuid;
         return $this;
     }
 
     /**
-     * Generate the file url attribute
+     * Generate the file url attribute.
      *
-     * @var string
+     * @return string
      */
     public function getMimeType($extension = null)
     {
@@ -184,7 +185,6 @@ class File extends Model
             'company_uuid' => session('company'),
             'uploader_uuid' => session('user'),
             'original_filename' => $file->getClientOriginalName(),
-            // 'extension' => $extension,
             'content_type' => static::getFileMimeType($extension),
             'path' => $path,
             'bucket' => config('filesystems.disks.s3.bucket'),
@@ -203,9 +203,9 @@ class File extends Model
     /**
      * Assosciates the file to another model
      *
-     * @void
+     * @return \Fleetbase\Models\File
      */
-    public function setKey($model, $type = null)
+    public function setKey($model, $type = null): File
     {
         $this->subject_uuid = data_get($model, 'uuid');
         $this->subject_type = Utils::getMutationType($model);
@@ -222,9 +222,9 @@ class File extends Model
     /**
      * Set the file type
      *
-     * @void
+     * @return \Fleetbase\Models\File
      */
-    public function setType($type = null)
+    public function setType($type = null): File
     {
         $this->type = $type;
         $this->save();

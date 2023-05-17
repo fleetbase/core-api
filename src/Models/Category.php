@@ -2,8 +2,8 @@
 
 namespace Fleetbase\Models;
 
-use Fleetbase\Casts\Json;
 use Fleetbase\Support\Utils;
+use Fleetbase\Casts\Json;
 use Fleetbase\Traits\HasMetaAttributes;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasPublicId;
@@ -22,13 +22,6 @@ class Category extends Model
      * @var string
      */
     protected $publicIdType = 'category';
-
-    /**
-     * The database connection to use.
-     *
-     * @var string
-     */
-    protected $connection = 'mysql';
 
     /**
      * The database table used by the model.
@@ -91,8 +84,6 @@ class Category extends Model
         return SlugOptions::create()
             ->generateSlugsFrom('name')
             ->saveSlugsTo('slug');
-        // later to add scope for owner_uuid and for
-        // ->extraScope(fn ($builder) => $builder->where('scope_id', $this->scope_id));
     }
 
     /**
@@ -134,10 +125,6 @@ class Category extends Model
      */
     public function getIconUrlAttribute()
     {
-        if ($this->iconFile instanceof File) {
-            return $this->iconFile->url;
-        }
-        
-        return static::attributeFromCache($this, 'iconFile.url', 'https://flb-assets.s3.ap-southeast-1.amazonaws.com/static/placeholder-icon.png');
+        return data_get($this, 'iconFile.url', 'https://flb-assets.s3.ap-southeast-1.amazonaws.com/images/fallback-placeholder-1.png');
     }
 }

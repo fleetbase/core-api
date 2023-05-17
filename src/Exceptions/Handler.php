@@ -2,15 +2,10 @@
 
 namespace Fleetbase\Exceptions;
 
-use Exception;
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 use Fleetbase\Support\Utils;
-use Fleetbase\Support\Resp;
-use Fleetbase\Exceptions\IntegratedVendorException;
-use Throwable;
 
 class Handler extends ExceptionHandler
 {
@@ -39,7 +34,7 @@ class Handler extends ExceptionHandler
      */
     protected function unauthenticated($request, AuthenticationException $exception)
     {
-        return Resp::error('Unauthenticated.', 401);
+        return response()->error('Unauthenticated.', 401);
     }
 
     /**
@@ -50,7 +45,7 @@ class Handler extends ExceptionHandler
      *
      * @throws \Exception
      */
-    public function report(Throwable $exception)
+    public function report(\Throwable $exception)
     {
         // log to Sentry
         if ($this->shouldReport($exception) && app()->bound('sentry')) {
@@ -72,31 +67,31 @@ class Handler extends ExceptionHandler
      *
      * @throws \Throwable
      */
-    public function render($request, Throwable $exception)
+    public function render($request, \Throwable $exception)
     {
         $exceptionType = Utils::classBasename($exception);
 
         switch ($exceptionType) {
             case 'TokenMismatchException':
-                return Resp::error('Invalid XSRF token sent with request.');
+                return response()->error('Invalid XSRF token sent with request.');
 
             case 'ThrottleRequestsException':
-                return Resp::error('Too many requests.');
+                return response()->error('Too many requests.');
 
             case 'AuthenticationException':
-                return Resp::error('Unauthenticated.');
+                return response()->error('Unauthenticated.');
 
             case 'NotFoundHttpException':
-                return Resp::error('There is nothing to see here.');
+                return response()->error('There is nothing to see here.');
 
             case 'IntegratedVendorException':
-                return Resp::error($exception->getMessage());
+                return response()->error($exception->getMessage());
         }
 
         if (app()->environment(['development', 'local'])) {
             return parent::render($request, $exception);
         }
 
-        Resp::error('Oops! A backend error has been reported, please try your request again to continue.', 400);
+        return response()->error('Oops! A backend error has been reported, please try your request again to continue.', 400);
     }
 }

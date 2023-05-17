@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Http\Controllers;
 
+use Fleetbase\Support\SocketClusterService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Foundation\Bus\DispatchesJobs;
 use Illuminate\Foundation\Validation\ValidatesRequests;
@@ -35,16 +36,5 @@ class Controller extends BaseController
                 'ms' => microtime(true) - LARAVEL_START,
             ]
         );
-    }
-
-    /**
-     * Options for CORS requests
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\Response
-     */
-    public function options()
-    {
-        return response()->json([]);
     }
 }

@@ -2,7 +2,6 @@
 
 namespace Fleetbase\Http\Requests;
 
-use Fleetbase\Support\Resp;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Validation\Rule;
 
@@ -34,7 +33,7 @@ class OnboardRequest extends FleetbaseRequest
                 ->toArray();
         }
 
-        return Resp::json($response, 422);
+        return response()->json($response, 422);
     }
 
     /**

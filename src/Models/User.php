@@ -18,12 +18,12 @@ use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\Expandable;
 use Fleetbase\Traits\Searchable;
 use Fleetbase\Models\Company;
-use Fleetbase\Support\Utils;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 use Fleetbase\Casts\Json;
+use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\HasCacheableAttributes;
 use Fleetbase\Traits\HasMetaAttributes;
-use Illuminate\Database\QueryException;
 use Laravel\Cashier\Billable;
 
 class User extends Authenticatable
@@ -42,6 +42,7 @@ class User extends Authenticatable
         CausesActivity,
         SoftDeletes,
         Expandable,
+        Filterable,
         Billable;
 
     /**
@@ -134,8 +135,6 @@ class User extends Authenticatable
         'company_name',
         'is_admin',
         'types',
-        // 'driver_uuid', 
-        // 'session_status'
     ];
 
     /**
@@ -212,7 +211,7 @@ class User extends Authenticatable
      */
     public function assignCompanyFromId(?string $id)
     {
-        if (!Utils::isUuid($id)) {
+        if (!Str::isUuid($id)) {
             return;
         }
 
@@ -255,7 +254,7 @@ class User extends Authenticatable
 
         $result = $this->companies()->where('company_uuid', session('company'))->first('status');
 
-        return $result->status ?? 'pending';
+        return data_get($result, 'status', 'pending');
     }
 
     /**
@@ -316,7 +315,7 @@ class User extends Authenticatable
      */
     public function getCompanyNameAttribute()
     {
-        return static::attributeFromCache($this, 'company.name', 'No company name');
+        return data_get($this, 'company.name');
     }
 
     /**
@@ -326,7 +325,7 @@ class User extends Authenticatable
      */
     public function getDriverUuidAttribute()
     {
-        return static::attributeFromCache($this, 'driver.uuid');
+        return data_get($this, 'driver.uuid');
     }
 
     /**
@@ -417,21 +416,21 @@ class User extends Authenticatable
         $driver = false;
         $customer = false;
 
-        // if (method_exists($this, 'driver')) {
-        try {
-            $driver = $this->driver()->exists();
-        } catch (QueryException $e) {
-            // keep silent
-        }
+        // // if (method_exists($this, 'driver')) {
+        // try {
+        //     $driver = $this->driver()->exists();
+        // } catch (QueryException $e) {
+        //     // keep silent
         // }
+        // // }
 
-        if (method_exists($this, 'customer')) {
-            try {
-                $customer = $this->customer()->exists();
-            } catch (QueryException $e) {
-                // keep silent
-            }
-        }
+        // if (method_exists($this, 'customer')) {
+        //     try {
+        //         $customer = $this->customer()->exists();
+        //     } catch (QueryException $e) {
+        //         // keep silent
+        //     }
+        // }
 
         $types = [$this->type];
 

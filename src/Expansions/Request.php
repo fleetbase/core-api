@@ -4,6 +4,7 @@ namespace Fleetbase\Expansions;
 
 use Fleetbase\Build\Expansion;
 use Fleetbase\Models\Company;
+use Illuminate\Support\Str;
 
 /**
  * @mixin \Illuminate\Support\Facades\Request
@@ -28,6 +29,7 @@ class Request implements Expansion
     public function company()
     {
         return function () {
+            /** @var \Illuminate\Http\Request $this */
             if ($this->session()->has('company')) {
                 return Company::find($this->session()->get('company'));
             }
@@ -51,6 +53,7 @@ class Request implements Expansion
          * @return mixed
          */
         return function (array $params = [], $default = null) {
+            /** @var \Illuminate\Http\Request $this */
             foreach ($params as $param) {
                 if ($this->has($param)) {
                     return $this->input($param);
@@ -75,7 +78,31 @@ class Request implements Expansion
          * @return array
          */
         return function (string $key) {
+            /** @var \Illuminate\Http\Request $this */
+            if (is_string($this->input($key)) && Str::contains($this->input($key), ',')) {
+                return explode(',', $this->input($key));
+            }
+
             return (array) $this->input($key, []);
+        };
+    }
+
+    /**
+     * Retrieve input from the request as a integer.
+     *
+     * @return Closure
+     */
+    public function integer()
+    {
+        /**
+         * Retrieve input from the request as a integer.
+         *
+         * @param string $key
+         * @return array
+         */
+        return function (string $key, $default = 0) {
+            /** @var \Illuminate\Http\Request $this */
+            return intval($this->input($key, $default));
         };
     }
 
@@ -91,6 +118,7 @@ class Request implements Expansion
                 'within',
                 'with',
                 'without',
+                'without_relations',
                 'coords',
                 'boundary',
                 'page',
@@ -111,6 +139,7 @@ class Request implements Expansion
                 'global',
             ];
             $filters = is_array($additionalFilters) ? array_merge($defaultFilters, $additionalFilters) : $defaultFilters;
+            /** @var \Illuminate\Http\Request $this */
             return $this->except($filters);
         };
     }

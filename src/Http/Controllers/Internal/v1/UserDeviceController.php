@@ -4,7 +4,6 @@ namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Models\UserDevice;
-use Fleetbase\Support\Resp;
 use Illuminate\Http\Request;
 
 class UserDeviceController extends FleetbaseController

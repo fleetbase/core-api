@@ -4,20 +4,16 @@ namespace Fleetbase\Traits;
 
 use Fleetbase\Support\Http;
 use Fleetbase\Support\Utils;
+use Fleetbase\Support\Resolve;
+use Fleetbase\Http\Requests\Internal\BulkDeleteRequest;
+use Fleetbase\Exceptions\FleetbaseRequestValidationException;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Arr;
 use Illuminate\Http\Request;
+use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
-use Symfony\Component\HttpKernelException\NotFoundHttpException;
-use Exception;
-use Error;
-use ErrorException;
-use Fleetbase\Exceptions\FleetbaseRequestValidationException;
-use Fleetbase\Support\Resolve;
-use Illuminate\Database\QueryException;
-use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Arr;
 
 trait HasApiControllerBehavior
 {
@@ -57,12 +53,26 @@ trait HasApiControllerBehavior
     public $resource;
 
     /**
+     * The target API Filter.
+     * 
+     * @var \Fleetbase\Http\Filter\Filter
+     */
+    public $filter;
+
+    /**
      * The current request.
      *
      * @var \Illuminate\Http\Request
      */
     public $request;
 
+    /**
+     * Determines the action to perform based on the HTTP verb.
+     *
+     * @param string|null $verb The HTTP verb to check. Defaults to the request method if not provided.
+     * 
+     * @return string The action to perform based on the HTTP verb.
+     */
     private function actionFromHttpVerb(?string $verb = null)
     {
         $verb = $verb ?? $_SERVER['REQUEST_METHOD'];
@@ -95,14 +105,18 @@ trait HasApiControllerBehavior
      *
      * @param \Illuminate\Database\Eloquent\Model $model - The Model Instance
      */
-    public function setApiModel(?Model $model = null, string $namespace = '\\Fleetbase\\Models\\')
+    public function setApiModel(?Model $model = null, string $namespace = '\\Fleetbase')
     {
         $this->modelClassName = $modelName = Utils::getModelClassName($model ?? $this->resource, $namespace);
         $this->model = $model = Resolve::instance($modelName);
-        $this->resource = $this->getApiResourceForModel($model);
-        $this->request = $this->getApiRequestForModel($model);
-        $this->resourcePluralName = Str::plural($model->getTable());
-        $this->resourceSingularlName = Str::singular($model->getTable());
+        $this->resource = $this->getApiResourceForModel($model, $namespace);
+        $this->request = $this->getApiRequestForModel($model, $namespace);
+        $this->resourcePluralName = $model->getPluralName();
+        $this->resourceSingularlName = $model->getSingularName();
+
+        if ($this->filter) {
+            $this->model->filter = $this->filter;
+        }
     }
 
     /**
@@ -110,10 +124,10 @@ trait HasApiControllerBehavior
      *
      * @param Resource|string $resources
      */
-    public function setApiResource($resource)
+    public function setApiResource($resource, ?string $namespace)
     {
         if (!$this->resource) {
-            $this->resource = (is_object($resource) ? get_class($resource) : $resource) ?? $this->getApiResourceForModel($this->model);
+            $this->resource = (is_object($resource) ? get_class($resource) : $resource) ?? $this->getApiResourceForModel($this->model, $namespace);
         }
     }
 
@@ -133,12 +147,12 @@ trait HasApiControllerBehavior
      * @param \Fleetbase\Models\Model $model
      * @return \Fleetbase\Http\Resources\FleetbaseResource
      */
-    public function getApiResourceForModel(Model $model)
+    public function getApiResourceForModel(Model $model, ?string $namespace = null)
     {
         $resource = $this->resource;
 
         if (!$resource || !Str::startsWith($resource, '\\')) {
-            $resource = Resolve::httpResourceForModel($model);
+            $resource = Resolve::httpResourceForModel($model, $namespace);
         }
 
         return $resource;
@@ -150,12 +164,12 @@ trait HasApiControllerBehavior
      * @param \Fleetbase\Models\Model $model
      * @return \Fleetbase\Http\Requests\FleetbaseRequest
      */
-    public function getApiRequestForModel(Model $model)
+    public function getApiRequestForModel(Model $model, ?string $namespace = null)
     {
         $request = $this->request;
 
         if (!$request) {
-            $request = Resolve::httpRequestForModel($this->model);
+            $request = Resolve::httpRequestForModel($this->model, $namespace);
         }
 
         return $request;
@@ -216,7 +230,7 @@ trait HasApiControllerBehavior
                 $this->resource::wrap($this->resourceSingularlName);
                 return new $this->resource($data);
             }
-    
+
             return new $this->resource($data);
         }
 
@@ -287,10 +301,16 @@ trait HasApiControllerBehavior
     {
         try {
             $this->validateRequest($request);
-            $record = $this->model->createRecordFromRequest($request); 
+            $record = $this->model->createRecordFromRequest($request);
+
+            if (Http::isInternalRequest($request)) {
+                $this->resource::wrap($this->resourceSingularlName);
+                return new $this->resource($record);
+            }
 
             return new $this->resource($record);
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
+            dd($e);
             return response()->error($e->getMessage());
         } catch (QueryException $e) {
             return response()->error($e->getMessage());
@@ -334,17 +354,20 @@ trait HasApiControllerBehavior
     {
         try {
             $this->validateRequest($request);
-            $record = $this->model->updateRecordFromRequest($request);
+            $record = $this->model->updateRecordFromRequest($request, $id);
+
+            if (Http::isInternalRequest($request)) {
+                $this->resource::wrap($this->resourceSingularlName);
+                return new $this->resource($record);
+            }
 
             return new $this->resource($record);
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             return response()->error($e->getMessage());
         } catch (QueryException $e) {
             return response()->error($e->getMessage());
         } catch (FleetbaseRequestValidationException $e) {
             return response()->error($e->getErrors());
-        } catch (NotFoundHttpException $e) {
-            return response()->error(($this->resourceSingularlName ?? 'Resource') . ' not found');
         }
     }
 
@@ -371,18 +394,27 @@ trait HasApiControllerBehavior
      * @param  int  $id
      * @return \Illuminate\Http\Response
      */
-    public function destroy($id)
+    public function deleteRecord($id, Request $request)
     {
-        $dataModel = $this->model->wherePublicId($id);
+        if (Http::isInternalRequest($request)) {
+            $dataModel = $this->model->whereUuid($id)->first();
+        } else {
+            $dataModel = $this->model->wherePublicId($id)->first();
+        }
 
         if ($dataModel) {
             $dataModel->delete();
 
+            if (Http::isInternalRequest($request)) {
+                $this->resource::wrap($this->resourceSingularlName);
+                return new $this->resource($dataModel);
+            }
+
             return response()->json(
                 [
                     'status' => 'success',
-                    'message' => 'Resource deleted',
-                    'data' => $dataModel,
+                    'message' => $this->resourceSingularlName . ' deleted',
+                    'data' => new $this->resource($dataModel),
                 ]
             );
         }
@@ -390,9 +422,56 @@ trait HasApiControllerBehavior
         return response()->json(
             [
                 'status' => 'failed',
-                'message' => 'Resource not found',
+                'message' => $this->resourceSingularlName . ' not found',
             ],
             404
+        );
+    }
+
+    /**
+     * Delete Resource
+     *
+     * Deletes the record with the specified `id`
+     *
+     * @authenticated
+     *
+     * @response {
+     *  "status": "success",
+     *  "message": "Resource deleted",
+     *  "data": {
+     *     "id": 1
+     *  }
+     * }
+     *
+     * @response 404 {
+     *  "status": "failed",
+     *  "message": "Resource not found"
+     * }
+     *
+     * @param  \Fleetbase\Http\Requests\Internal\BulkDeleteRequest  $request
+     * @return \Illuminate\Http\Response
+     */
+    public function bulkDelete(BulkDeleteRequest $request)
+    {
+        $ids = $request->input('ids', []);
+        $count = 0;
+
+        try {
+            $count = $this->model->bulkRemove($ids);
+        } catch (\Exception $e) {
+            return response()->error($e->getMessage());
+        } catch (QueryException $e) {
+            return response()->error($e->getMessage());
+        } catch (FleetbaseRequestValidationException $e) {
+            return response()->error($e->getErrors());
+        }
+
+        return response()->json(
+            [
+                'status' => 'success',
+                'message' => 'Deleted ' . $count . ' ' . Str::plural($this->resourceSingularlName, $count),
+                'count' => $count,
+            ]
         );
     }
 

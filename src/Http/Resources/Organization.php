@@ -16,23 +16,20 @@ class Organization extends FleetbaseResource
      */
     public function toArray($request)
     {
-        $organization = [
-            'id' => $this->public_id,
+        return [
+            'id' => $this->when(Http::isInternalRequest(), $this->id, $this->public_id),
+            'uuid' => $this->when(Http::isInternalRequest(), $this->uuid),
+            'public_id' => $this->when(Http::isInternalRequest(), $this->public_id),
             'name' => $this->name,
             'description' => $this->description,
             'phone' => $this->phone,
             'timezone' => $this->timezone,
             'logo_url' => $this->logo_url,
             'backdrop_url' => $this->backdrop_url,
+            'options' => $this->options,
             'slug' => $this->slug,
             'created_at' => $this->created_at,
             'status' => $this->status,
         ];
-
-        if (Http::isInternalRequest()) {
-            $organization = Arr::insertAfterKey($organization, ['uuid' => $this->uuid, 'public_id' => $this->public_id], 'id');
-        }
-
-        return $organization;
     }
 }

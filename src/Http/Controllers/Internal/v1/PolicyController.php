@@ -4,7 +4,6 @@ namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Models\Policy;
-use Fleetbase\Support\Resp;
 use Fleetbase\Support\Utils;
 use Illuminate\Http\Request;
 

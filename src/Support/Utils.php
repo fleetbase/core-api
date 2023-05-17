@@ -5,32 +5,15 @@ namespace Fleetbase\Support;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Redis;
-use Doctrine\Inflector\InflectorFactory;
-use Errorname\VINDecoder\Decoder as VinDecoder;
-use PragmaRX\Countries\Package\Countries;
-use PragmaRX\Countries\Package\Services\Config;
-use PragmaRX\Countries\Package\Support\Collection as CountryCollection;
-use Grimzy\LaravelMysqlSpatial\Types\Point;
-use Fleetbase\Models\Model;
-use Fleetbase\Models\File;
-use Fleetbase\Models\Place;
-use Fleetbase\Models\Company;
-use Grimzy\LaravelMysqlSpatial\Eloquent\SpatialExpression;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
-use Vinkla\Hashids\Facades\Hashids;
-use Stringy\Stringy;
-use NumberFormatter;
-use DateTimeZone;
-use ErrorException;
-use ReflectionClass;
-use SqlFormatter;
-use ReflectionException;
-use SplStack;
+use Fleetbase\Models\Model;
+use Fleetbase\Models\File;
+use Fleetbase\Models\Company;
 
 class Utils
 {
@@ -195,77 +178,7 @@ class Utils
         return $unkeyedHeaders;
     }
 
-    /**
-     * Converts a place to an address string.
-     *
-     * @param string $binaryString
-     * @return array
-     */
-    public static function getAddressStringForPlace($place, $useHtml = false, $except = [])
-    {
-        $address = $useHtml ? '<address>' : '';
-        $parts = collect(['name', 'street1', 'street2', 'city', 'province', 'postal_code', 'country_name'])->filter(function ($part) use ($except) {
-            return is_array($except) ? !in_array($part, $except) : true;
-        })->values();
-        $numberOfParts = $parts->count();
-        $addressValues = [];
-        $seperator = $useHtml ? '<br>' : ' - ';
 
-        for ($i = 0; $i < $numberOfParts; $i++) {
-            $key = $parts[$i];
-            $value = strtoupper(static::get($place, $key)) ?? null;
-
-            // if value empty skip or value equal to last value skip
-            if (Utils::isEmpty($value) || in_array($value, $addressValues) || (Str::contains(static::get($place, 'street1'), $value) && $key !== 'street1')) {
-                continue;
-            }
-
-            $addressValues[$key] = $value;
-        }
-
-        foreach ($addressValues as $key => $value) {
-            if ($key === array_key_last($addressValues)) {
-                $seperator = '';
-            }
-
-            if ($useHtml && in_array($key, ['street1', 'street2', 'postal_code'])) {
-                $seperator = '<br>';
-            }
-
-            $address .= strtoupper($value) . $seperator;
-            $seperator = ', ';
-        }
-
-        if ($useHtml) {
-            $address .= '</address>';
-        }
-
-        return $address;
-    }
-
-    /**
-     * Unpacks a mysql POINT column from binary to array
-     *
-     * @param string $binaryString
-     * @return array
-     */
-    public static function unpackPoint($bindaryString)
-    {
-        return unpack('x/x/x/x/corder/Ltype/dlat/dlon', $bindaryString);
-    }
-
-    /**
-     * Unpacks a mysql POINT column from binary to array
-     *
-     * @param string $rawPoint
-     * @return \Grimzy\LaravelMysqlSpatial\Types\Point
-     */
-    public static function mysqlPointAsGeometry($rawPoint)
-    {
-        $coordinates = static::unpackPoint($rawPoint);
-
-        return new Point($coordinates['lon'], $coordinates['lat']);
-    }
 
     /**
      * Creates an object from an array.
@@ -322,21 +235,6 @@ class Utils
     }
 
     /**
-     * Check if a given string is a valid UUID
-     * 
-     * @param   string  $uuid   The string to check
-     * @return  boolean
-     */
-    public static function isUuid(?string $uuid): bool
-    {
-        if (!is_string($uuid) || (preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/', $uuid) !== 1)) {
-            return false;
-        }
-
-        return true;
-    }
-
-    /**
      * Converts a QueryBuilder to a string
      *
      * @param QueryBuilder $query
@@ -361,7 +259,7 @@ class Utils
             $sql = $sql->toSql();
         }
 
-        $sql = SqlFormatter::format($sql);
+        $sql = \SqlFormatter::format($sql);
         if ($die) {
             exit($sql);
         } else {
@@ -555,8 +453,8 @@ class Utils
         $className = null;
 
         try {
-            $className = (new ReflectionClass($class))->getShortName();
-        } catch (ReflectionException $e) {
+            $className = (new \ReflectionClass($class))->getShortName();
+        } catch (\ReflectionException $e) {
             //
         }
 
@@ -575,7 +473,7 @@ class Utils
             return '';
         }
 
-        $inflector = InflectorFactory::create()->build();
+        $inflector = \Doctrine\Inflector\InflectorFactory::create()->build();
 
         return $inflector->pluralize($text);
     }
@@ -592,7 +490,7 @@ class Utils
             return '';
         }
 
-        $inflector = InflectorFactory::create()->build();
+        $inflector = \Doctrine\Inflector\InflectorFactory::create()->build();
 
         return $inflector->singularize($text);
     }
@@ -605,7 +503,7 @@ class Utils
      */
     public static function tableize($text): string
     {
-        $inflector = InflectorFactory::create()->build();
+        $inflector = \Doctrine\Inflector\InflectorFactory::create()->build();
 
         return $inflector->tableize($text);
     }
@@ -622,25 +520,33 @@ class Utils
     }
 
     /**
-     * Returns an instance of use Stringy\Stringy;
-     *
-     * @param string $str
-     * @return \Stringy\Stringy
-     */
-    public static function string(string $str): Stringy
-    {
-        return Stringy::create($str);
-    }
-
-    /**
      * Humanize a string
      *
      * @param string $str
      * @return string
      */
-    public static function humanize(?string $str): string
+    public static function humanize(string $string): string
     {
-        return static::string($str)->toLowerCase()->humanize();
+        $uppercase = ['api', 'vat', 'id', 'uuid', 'sku', 'ean', 'upc', 'erp', 'tms', 'wms', 'ltl', 'ftl', 'lcl', 'fcl', 'rfid', 'jot', 'roi', 'eta', 'pod', 'asn', 'oem', 'ddp', 'fob'];
+        $string = str_replace('_', ' ', $string);
+        $string = str_replace('-', ' ', $string);
+        $string = ucwords($string);
+
+        $string = implode(
+            ' ',
+            array_map(
+                function ($word) use ($uppercase) {
+                    if (in_array(strtolower($word), $uppercase)) {
+                        return strtoupper($word);
+                    }
+
+                    return $word;
+                },
+                explode(' ', $string)
+            )
+        );
+
+        return $string;
     }
 
     /**
@@ -649,14 +555,13 @@ class Utils
      * @param string $str
      * @return string
      */
-    public static function smartHumanize(?string $str): string
+    public static function smartHumanize(?string $string): string
     {
         $search = ['api', 'vat', 'id', 'sku'];
         $replace = array_map(function ($word) {
             return strtoupper($word);
         }, $search);
-
-        $subject = static::string($str)->toLowerCase()->humanize();
+        $subject = static::humanize($string);
 
         return Str::replace($search, $replace, $subject);
     }
@@ -784,7 +689,7 @@ class Utils
     public static function moneyFormat($amount, $currency = 'USD', $cents = true)
     {
         $amount = $cents === true ? static::numbersOnly($amount) / 100 : $amount;
-        $money = new Money($amount, $currency);
+        $money = new \Cknow\Money\Money($amount, $currency);
 
         return $money->format();
     }
@@ -803,31 +708,48 @@ class Utils
     }
 
     /**
-     * Retrieves a model class name given a string
+     * Get the fully qualified class name for the given table, including the namespace.
      *
-     * @param int length
-     * @return int
+     * @param string|object $table The table name or an object instance to derive the class name from.
+     * @param string|array $namespaceSegments A string representing the namespace or an array of segments to be appended to the model class name.
+     * @return string The fully qualified class name, including the namespace.
+     * @throws InvalidArgumentException If the provided $namespaceSegments is not a string or an array.
      */
-    public static function getModelClassName($table, $namespace = '\\Fleetbase\\Models\\')
+    public static function getModelClassName($table, $namespaceSegments = '\\Fleetbase\\'): string
     {
         if (is_object($table)) {
             $table = static::classBasename($table);
         }
 
-        if (Str::startsWith($table, $namespace)) {
+        if (Str::startsWith($table, $namespaceSegments)) {
             return $table;
         }
 
         $modelName = Str::studly(static::singularize($table));
 
-        return $namespace . $modelName;
+        // Check if the input is a string (namespace) or an array (segments)
+        if (is_string($namespaceSegments)) {
+            $namespace = rtrim($namespaceSegments, '\\');
+            $segments = [$namespace, 'Models'];
+        } elseif (is_array($namespaceSegments)) {
+            $segments = $namespaceSegments;
+        } else {
+            throw new \InvalidArgumentException('The input must be a string or an array.');
+        }
+
+        // Add the model name to the segments array
+        $segments[] = $modelName;
+
+        // Implode the segments with a backslash
+        return implode('\\', $segments);
     }
 
     /**
      * Converts a model name or table name into a mutation type for eloquent relationships.
      * 
-     * store:storefront -> Fleetbase\Models\Storefront\Store
-     * order -> Fleetbase\Models\Order
+     * storefront:store -> Fleetbase\Storefront\Models\Store
+     * fleet-ops:order -> Fleetbase\FleetOps\Models\Order
+     * user -> Fleetbase\Models\User
      * Fleetbase\Models\Order -> Fleetbase\Models\Order
      * 
      * @param string|object type
@@ -845,8 +767,9 @@ class Utils
 
         if (Str::contains($type, ':')) {
             $namespace = explode(':', $type);
-            $type = $namespace[0];
-            $namespace = 'Fleetbase\\Models\\' . Str::studly($namespace[1]) . '\\';
+            $package = $namespace[0];
+            $type = $namespace[1];
+            $namespace = 'Fleetbase\\' . Str::studly($package);
 
             return Utils::getModelClassName($type, $namespace);
         }
@@ -1060,7 +983,7 @@ class Utils
      */
     public static function getCountryCodeByName($countryName)
     {
-        $countries = new Countries();
+        $countries = new \PragmaRX\Countries\Package\Countries();
         $countries = $countries
             ->all()
             ->map(function ($country) {
@@ -1095,9 +1018,9 @@ class Utils
      * @param string $timezone
      * @return \PragmaRX\Countries\Package\Support\Collection
      */
-    public static function findCountryFromTimezone(string $timezone): CountryCollection
+    public static function findCountryFromTimezone(string $timezone): \PragmaRX\Countries\Package\Support\Collection
     {
-        $countries = new Countries(new Config([
+        $countries = new \PragmaRX\Countries\Package\Countries(new \PragmaRX\Countries\Package\Services\Config([
             'hydrate' => [
                 'elements' => [
                     'timezones' => true,
@@ -1113,13 +1036,13 @@ class Utils
     }
 
     /**
-     * Returns additional country data from iso2 format
+     * Returns additional country data for a given country in ISO2 format.
      *
-     * @param string country
+     * @param string $country The ISO2 country code.
      *
-     * @return array
+     * @return array|null The additional country data.
      */
-    public static function getCountryData($country)
+    public static function getCountryData(string $country): ?array
     {
         if (static::isEmpty($country)) {
             return null;
@@ -1128,24 +1051,27 @@ class Utils
         $storageKey = 'countryData:' . $country;
 
         if (Redis::exists($storageKey)) {
-            return json_decode(Redis::get($storageKey));
+            return json_decode(Redis::get($storageKey), true);
         }
 
-        $data = (new Countries())
+        $data = (new \PragmaRX\Countries\Package\Countries())
             ->where('cca2', $country)
             ->map(function ($country) {
                 $longitude = (float) static::get($country, 'geo.longitude_desc') ?? 0;
-                $latitutde = (float) static::get($country, 'geo.latitude_desc') ?? 0;
+                $latitude = (float) static::get($country, 'geo.latitude_desc') ?? 0;
 
                 return [
                     'iso3' => static::get($country, 'cca3'),
                     'iso2' => static::get($country, 'cca2'),
-                    'emoji' => Utils::get($country, 'flag.emoji'),
-                    'name' => Utils::get($country, 'name'),
-                    'aliases' => Utils::get($country, 'alt_spellings', []),
-                    'capital' => Utils::get($country, 'capital_rinvex'),
-                    'geo' => Utils::get($country, 'geo'),
-                    'coordinates' => ['longitude' => $longitude, 'latitude' => $latitutde],
+                    'emoji' => static::get($country, 'flag.emoji'),
+                    'name' => static::get($country, 'name'),
+                    'aliases' => static::get($country, 'alt_spellings', []),
+                    'capital' => static::get($country, 'capital_rinvex'),
+                    'geo' => static::get($country, 'geo'),
+                    'coordinates' => [
+                        'longitude' => $longitude,
+                        'latitude' => $latitude,
+                    ],
                 ];
             })
             ->first()
@@ -1156,65 +1082,6 @@ class Utils
         }
 
         return $data ?? null;
-    }
-
-    /**
-     * Finds and identifies resource relations and maps them to their respective
-     * service, resource model, console link, and id
-     *
-     * @param object $obj
-     * @return string
-     */
-    public static function mapResourceRelations($ids = [])
-    {
-        // map of relation meta
-        $map = [
-            'driver_' => [
-                'service' => 'fleet-ops',
-                'model' => 'driver',
-                'link' => 'management.drivers.index.details',
-            ],
-            'place_' => [
-                'service' => 'fleet-ops',
-                'model' => 'place',
-                'link' => 'management.places.index.details',
-            ],
-            'order_' => [
-                'service' => 'fleet-ops',
-                'model' => 'order',
-                'link' => 'operations.orders.index.details',
-            ],
-        ];
-
-        // mapped meta relation info
-        $relations = [];
-
-        // build mappings
-        foreach ($ids as $id) {
-            if (!Str::contains($id, '_')) {
-                continue;
-            }
-
-            $idPrefix = explode('_', $id)[0];
-
-            if (isset($map[$idPrefix])) {
-                $relations[$id] = [...$map[$idPrefix], 'id' => $id];
-            }
-        }
-
-        return $relations;
-    }
-
-    /**
-     * Decodes vehicle identification number into array
-     *
-     * @param string $vin
-     * @return array
-     */
-    public static function decodeVin($vin)
-    {
-        $vin = VinDecoder::decode($vin);
-        return $vin;
     }
 
     /**
@@ -1229,229 +1096,11 @@ class Utils
             $ip = request()->ip();
         }
 
-        $curl = new \Curl\Curl();
-        $curl->get('https://api.ipdata.co/' . $ip, ['api-key' => env('IPINFO_API_KEY', 'c7350212ccc98d1a1663c89ff9f063c381b0aed49141c6faec968688')]);
+        $response = Http::withHeaders([
+            'Accept' => 'application/json',
+        ])->get('https://api.ipdata.co/' . $ip . '?api-key=' . env('IPINFO_API_KEY'));
 
-        return $curl->response;
-    }
-
-    /**
-     * Checks if value is valid latitude coordinate.
-     *
-     * @param int $num
-     * @return boolean
-     */
-    public static function isLatitude($num): bool
-    {
-        if (!is_numeric($num) || is_null($num)) {
-            return false;
-        }
-
-        // cast to float
-        $num = (float) $num;
-
-        return is_finite($num) && $num >= -90 && $num <= 90;
-    }
-
-    /**
-     * Checks if value is valid longitude coordinate.
-     *
-     * @param int $num
-     * @return boolean
-     */
-    public static function isLongitude($num): bool
-    {
-        if (!is_numeric($num) || is_null($num)) {
-            return false;
-        }
-
-        // cast to float
-        $num = (float) $num;
-
-        return is_finite($num) && $num >= -180 && $num <= 180;
-    }
-
-    public static function cleanCoordinateString($string)
-    {
-        return preg_replace('/[^0-9.]/', '', $string);
-    }
-
-    /**
-     * Checks if value is valid longitude coordinate.
-     *
-     * @todo check for geojson and point instances
-     * @param int $num
-     * @return boolean
-     */
-    public static function isCoordinates($coordinates): bool
-    {
-        $latitude = null;
-        $longitude = null;
-
-        if ($coordinates instanceof SpatialExpression) {
-            $coordinates = $coordinates->getSpatialValue();
-        }
-
-        if ($coordinates instanceof Place) {
-            $coordinates = $coordinates->location;
-        }
-
-        if ($coordinates instanceof Point) {
-            /** @var \Grimzy\LaravelMysqlSpatial\Types\Point $coordinates */
-            $latitude = $coordinates->getLat();
-            $longitude = $coordinates->getLng();
-        }
-
-        if (is_array($coordinates) || is_object($coordinates)) {
-            $latitude = static::or($coordinates, ['_lat', 'lat', '_latitude', 'latitude', 'x', '0']);
-            $longitude = static::or($coordinates, ['lon', '_lon', 'long', 'lng', '_lng', '_longitude', 'longitude', 'y', '1']);
-        }
-
-        if (is_string($coordinates)) {
-            $coords = [];
-
-            if (Str::startsWith($coordinates, 'POINT(')) {
-                $coordinates = Str::replaceFirst('POINT(', '', $coordinates);
-                $coordinates = Str::replace(')', '', $coordinates);
-                $coords = explode(' ', $coordinates);
-
-                if (count($coords) !== 2) {
-                    return false;
-                }
-
-                $coords = array_reverse($coords);
-                $coordinates = null;
-            }
-
-            if (Str::contains($coordinates, ',')) {
-                $coords = explode(',', $coordinates);
-            }
-
-            if (Str::contains($coordinates, '|')) {
-                $coords = explode('|', $coordinates);
-            }
-
-            if (Str::contains($coordinates, ' ')) {
-                $coords = explode(' ', $coordinates);
-            }
-
-            if (count($coords) !== 2) {
-                return false;
-            }
-
-            $latitude = static::cleanCoordinateString($coords[0]);
-            $longitude = static::cleanCoordinateString($coords[1]);
-        }
-
-        return static::isLatitude($latitude) && static::isLongitude($longitude);
-    }
-
-    /**
-     * Gets a coordinate property from coordinates.
-     *
-     * @param mixed $coordinates
-     * @param string $prop
-     * @return boolean
-     */
-    public static function getCoordFromCoordinates($coordinates, $prop = 'latitude'): float
-    {
-        $latitude = null;
-        $longitude = null;
-
-        if ($coordinates instanceof SpatialExpression) {
-            $coordinates = $coordinates->getSpatialValue();
-        }
-
-        if ($coordinates instanceof Place) {
-            $coordinates = $coordinates->location;
-        }
-
-        if ($coordinates instanceof Point) {
-            /** @var \Grimzy\LaravelMysqlSpatial\Types\Point $coordinates */
-            $latitude = $coordinates->getLat();
-            $longitude = $coordinates->getLng();
-        } else if (is_array($coordinates) || is_object($coordinates)) {
-            $latitude = static::or($coordinates, ['_lat', 'lat', '_latitude', 'latitude', 'x', '0']);
-            $longitude = static::or($coordinates, ['lon', '_lon', 'long', 'lng', '_lng', '_longitude', 'longitude', 'y', '1']);
-        }
-
-        if (is_string($coordinates)) {
-            $coords = [];
-
-            if (Str::startsWith($coordinates, 'POINT(')) {
-                $coordinates = Str::replaceFirst('POINT(', '', $coordinates);
-                $coordinates = Str::replace(')', '', $coordinates);
-                $coords = explode(' ', $coordinates);
-
-                // if (count($coords) !== 2) {
-                //     return false;
-                // }
-
-                $coords = array_reverse($coords);
-                $coordinates = null;
-            }
-
-            if (Str::contains($coordinates, ',')) {
-                $coords = explode(',', $coordinates);
-            }
-
-            if (Str::contains($coordinates, '|')) {
-                $coords = explode('|', $coordinates);
-            }
-
-            if (Str::contains($coordinates, ' ')) {
-                $coords = explode(' ', $coordinates);
-            }
-
-            $latitude = $coords[0];
-            $longitude = $coords[1];
-        }
-
-        return $prop === 'latitude' ? (float) $latitude : (float) $longitude;
-    }
-
-    /**
-     * Gets latitude property from coordinates.
-     *
-     * @param mixed $coordinates
-     * @return boolean
-     */
-    public static function getLatitudeFromCoordinates($coordinates): float
-    {
-        return static::getCoordFromCoordinates($coordinates);
-    }
-
-    /**
-     * Gets longitude property from coordinates.
-     *
-     * @param mixed $coordinates
-     * @return boolean
-     */
-    public static function getLongitudeFromCoordinates($coordinates): float
-    {
-        return static::getCoordFromCoordinates($coordinates, 'longitude');
-    }
-
-    /**
-     * Gets longitude property from coordinates.
-     *
-     * @param mixed $coordinates
-     * @return \Grimzy\LaravelMysqlSpatial\Types\Point
-     */
-    public static function getPointFromCoordinates($coordinates): Point
-    {
-        if ($coordinates instanceof Point) {
-            return $coordinates;
-        }
-
-        if (!static::isCoordinates($coordinates)) {
-            return new Point(0, 0);
-        }
-
-        $latitude = static::getLatitudeFromCoordinates($coordinates);
-        $longitude = static::getLongitudeFromCoordinates($coordinates);
-
-        return new Point($latitude, $longitude);
+        return $response->json();
     }
 
     /**
@@ -1493,42 +1142,13 @@ class Utils
     }
 
     /**
-     * Convert a point to wkt for sql insert.
-     * 
-     * @return \Illuminate\Database\Query\Expression
-     */
-    public static function parsePointToWkt($point)
-    {
-        $wkt = 'POINT(0 0)';
-
-        if ($point instanceof Point) {
-            $wkt = $point->toWKT();
-        }
-
-        if (is_array($point)) {
-            $json = json_encode($point);
-            $p = Point::fromJson($json);
-
-            $wkt = $p->toWkt();
-        }
-
-        if (is_string($point)) {
-            $p = Point::fromString($point);
-
-            $wkt = $p->toWKT();
-        }
-
-        return DB::raw("(ST_PointFromText('$wkt', 0, 'axis-order=long-lat'))");
-    }
-
-    /**
      * Get an ordinal formatted number.
      * 
      * @return string
      */
     public static function ordinalNumber($number, $locale = 'en_US')
     {
-        $ordinal = new NumberFormatter($locale, NumberFormatter::ORDINAL);
+        $ordinal = new \NumberFormatter($locale, \NumberFormatter::ORDINAL);
         return $ordinal->format($number);
     }
 
@@ -1572,277 +1192,20 @@ class Utils
         return (bool) preg_match('/^[a-zA-Z0-9\/\r\n+]*={0,2}$/', $data);
     }
 
-    public static function rawPointToFloatPair($data)
-    {
-        $res = unpack("lSRID/CByteOrder/lTypeInfo/dX/dY", $data);
-        return [$res['X'], $res['Y']];
-    }
-
-    public static function rawPointToPoint($data)
-    {
-        $res = unpack("lSRID/CByteOrder/lTypeInfo/dX/dY", $data);
-        return new Point($res['X'], $res['Y'], $res['SRID']);
-    }
-
     /**
      * Generates a public id given a type.
      *
      * @return string
      */
-    public static function generatePublicId(string $type)
+    public static function generatePublicId(string $type): string
     {
-        $hashid = lcfirst(Hashids::encode(time(), rand(), rand()));
+        $hashid = lcfirst(\Vinkla\Hashids\Facades\Hashids::encode(time(), rand(), rand()));
         $hashid = substr($hashid, 0, 7);
 
         return $type . '_' . $hashid;
     }
 
-    /**
-     * Calculates driving distance and time using Google distance matrix.
-     * Returns distance in meters and time in seconds.
-     * 
-     * @param Place|Point|array $origin
-     * @param Place|Point|array $destination
-     * 
-     * @return stdObject
-     */
-    public static function getDrivingDistanceAndTime($origin, $destination)
-    {
-        if ($origin instanceof Place) {
-            $origin = static::createObject([
-                'latitude' => $origin->location->getLat(),
-                'longitude' => $origin->location->getLng(),
-            ]);
-        } else {
-            $point = static::getPointFromCoordinates($origin);
-            $origin = static::createObject([
-                'latitude' => $point->getLat(),
-                'longitude' => $point->getLng(),
-            ]);
-        }
 
-        if ($destination instanceof Place) {
-            $destination = static::createObject([
-                'latitude' => $destination->location->getLat(),
-                'longitude' => $destination->location->getLng(),
-            ]);
-        } else {
-            $point = static::getPointFromCoordinates($destination);
-            $destination = static::createObject([
-                'latitude' => $point->getLat(),
-                'longitude' => $point->getLng(),
-            ]);
-        }
-
-        $cacheKey = $origin->latitude . ':' . $origin->longitude . ':' . $destination->latitude . ':' . $destination->longitude;
-
-        // check cache for results
-        $cachedResult = Redis::get($cacheKey);
-
-        if ($cachedResult) {
-            $json = json_decode($cachedResult);
-
-            return $json;
-        }
-
-        $curl = new \Curl\Curl();
-        $curl->get('https://maps.googleapis.com/maps/api/distancematrix/json', [
-            'origins' => $origin->latitude . ',' . $origin->longitude,
-            'destinations' => $destination->latitude . ',' . $destination->longitude,
-            'mode' => 'driving',
-            'key' => env('GOOGLE_MAPS_API_KEY')
-        ]);
-
-        $response = $curl->response;
-        $distance = static::get($response, 'rows.0.elements.0.distance.value');
-        $time = static::get($response, 'rows.0.elements.0.duration.value');
-
-        $result = static::createObject([
-            'distance' => $distance,
-            'time' => $time
-        ]);
-
-        // cache result
-        Redis::set($cacheKey, json_encode($result));
-
-        return $result;
-    }
-
-    /**
-     * Calculates driving distance and time using Google distance matrix for multiple origins or destinations.
-     * Returns distance in meters and time in seconds.
-     * 
-     * @param Place|Point|array $origin
-     * @param Place|Point|array $destination
-     * 
-     * @return stdObject
-     */
-    public static function distanceMatrix($origins = [], $destinations = [])
-    {
-        $origins = collect($origins)->map(function ($origin) {
-            $point = static::getPointFromCoordinates($origin);
-            $origin = static::createObject([
-                'latitude' => $point->getLat(),
-                'longitude' => $point->getLng(),
-            ]);
-
-            return $origin;
-        });
-
-        $destinations = collect($destinations)->map(function ($destination) {
-            $point = static::getPointFromCoordinates($destination);
-            $destination = static::createObject([
-                'latitude' => $point->getLat(),
-                'longitude' => $point->getLng(),
-            ]);
-
-            return $destination;
-        });
-
-        // get url ready string for origins
-        $originsString = $origins->map(function ($origin) {
-            return $origin->latitude . ',' . $origin->longitude;
-        })->join('|');
-
-        // get url ready string for origins
-        $destinationString = $destinations->map(function ($destination) {
-            return $destination->latitude . ',' . $destination->longitude;
-        })->join('|');
-
-        $cacheKey = md5($originsString . '_' . $destinationString);
-
-        // check cache for results
-        $cachedResult = Redis::get($cacheKey);
-
-        if ($cachedResult) {
-            $json = json_decode($cachedResult);
-
-            return $json;
-        }
-
-        $curl = new \Curl\Curl();
-        $curl->get('https://maps.googleapis.com/maps/api/distancematrix/json', [
-            'origins' => $originsString,
-            'destinations' => $destinationString,
-            'mode' => 'driving',
-            'key' => env('GOOGLE_MAPS_API_KEY')
-        ]);
-
-        $response = $curl->response;
-        $distance = static::get($response, 'rows.0.elements.0.distance.value');
-        $time = static::get($response, 'rows.0.elements.0.duration.value');
-
-        $result = static::createObject([
-            'distance' => $distance,
-            'time' => $time
-        ]);
-
-        // cache result
-        Redis::set($cacheKey, json_encode($result));
-
-        return $result;
-    }
-
-    public static function getPreliminaryDistanceMatrix($origin, $destination)
-    {
-        $origin = $origin instanceof Place ? $origin->location : static::getPointFromCoordinates($origin);
-        $destination = $destination instanceof Place ? $destination->location : static::getPointFromCoordinates($destination);
-
-        $distance = Utils::vincentyGreatCircleDistance($origin, $destination);
-        $time = round($distance / 100) * 7.2;
-
-        return static::createObject([
-            'distance' => $distance,
-            'time' => $time
-        ]);
-    }
-
-    public static function formatMeters($meters, $abbreviate = true)
-    {
-        if ($meters > 1000) {
-            return round($meters / 1000, 2) . ($abbreviate ? 'km' : ' kilometers');
-        }
-
-        return round($meters) . ($abbreviate ? 'm' : ' meters');
-    }
-
-    /**
-     * Calculates the great-circle distance between two points, with
-     * the Vincenty formula. (Using over haversine tdue to antipodal point issues)
-     * 
-     * https://en.wikipedia.org/wiki/Great-circle_distance#Formulas
-     * https://en.wikipedia.org/wiki/Antipodal_point
-     * 
-     * @param \Grimzy\LaravelMysqlSpatial\Types\Point Starting point
-     * @param \Grimzy\LaravelMysqlSpatial\Types\Point Ending point
-     * @param float $earthRadius Mean earth radius in [m]
-     * @return float Distance between points in [m] (same as earthRadius)
-     */
-    public static function vincentyGreatCircleDistance(Point $from, Point $to, float $earthRadius = 6371000): float
-    {
-        // convert from degrees to radians
-        $latFrom = deg2rad($from->getLat());
-        $lonFrom = deg2rad($from->getLng());
-        $latTo = deg2rad($to->getLat());
-        $lonTo = deg2rad($to->getLng());
-
-        $lonDelta = $lonTo - $lonFrom;
-        $a = pow(cos($latTo) * sin($lonDelta), 2) +
-            pow(cos($latFrom) * sin($latTo) - sin($latFrom) * cos($latTo) * cos($lonDelta), 2);
-        $b = sin($latFrom) * sin($latTo) + cos($latFrom) * cos($latTo) * cos($lonDelta);
-
-        $angle = atan2(sqrt($a), $b);
-        return $angle * $earthRadius;
-    }
-
-    /**
-     * Finds the newarest timezone for coordinate points.
-     *
-     * @param Point $location
-     * @param string $country_code
-     * @return string 
-     */
-    public static function getNearestTimezone(Point $location, $country_code = ''): string
-    {
-        $timezone_ids = ($country_code) ? DateTimeZone::listIdentifiers(DateTimeZone::PER_COUNTRY, $country_code)
-            : DateTimeZone::listIdentifiers();
-
-        $cur_lat = $location->getLat();
-        $cur_long = $location->getLng();
-
-        if ($timezone_ids && is_array($timezone_ids) && isset($timezone_ids[0])) {
-
-            $time_zone = '';
-            $tz_distance = 0;
-
-            //only one identifier?
-            if (count($timezone_ids) == 1) {
-                $time_zone = $timezone_ids[0];
-            } else {
-
-                foreach ($timezone_ids as $timezone_id) {
-                    $timezone = new DateTimeZone($timezone_id);
-                    $location = $timezone->getLocation();
-                    $tz_lat   = $location['latitude'];
-                    $tz_long  = $location['longitude'];
-
-                    $theta    = $cur_long - $tz_long;
-                    $distance = (sin(deg2rad($cur_lat)) * sin(deg2rad($tz_lat)))
-                        + (cos(deg2rad($cur_lat)) * cos(deg2rad($tz_lat)) * cos(deg2rad($theta)));
-                    $distance = acos($distance);
-                    $distance = abs(rad2deg($distance));
-
-                    if (!$time_zone || $tz_distance > $distance) {
-                        $time_zone   = $timezone_id;
-                        $tz_distance = $distance;
-                    }
-                }
-            }
-            return  $time_zone;
-        }
-
-        return 'unknown';
-    }
 
     public static function formatSeconds($seconds)
     {
@@ -1948,7 +1311,7 @@ class Utils
 
     public static function numberAsWord(int $number): string
     {
-        $formatter = new NumberFormatter("en", NumberFormatter::SPELLOUT);
+        $formatter = new \NumberFormatter("en", \NumberFormatter::SPELLOUT);
 
         return $formatter->format($number);
     }
@@ -2005,7 +1368,7 @@ class Utils
             preg_split('/[\s-]+/', $data)
         );
 
-        $stack = new SplStack; // Current work stack
+        $stack = new \SplStack; // Current work stack
         $sum   = 0; // Running total
         $last  = null;
 
@@ -2124,10 +1487,10 @@ class Utils
 
         try {
             $contents = file_get_contents($url);
-        } catch (ErrorException $e) {
+        } catch (\ErrorException $e) {
             return null;
         }
-        
+
         $defaultExtensionGuess = '.jpg';
 
         if (!$contents) {
@@ -2209,7 +1572,7 @@ class Utils
     }
 
     /**
-     * Converts a string or class name to an ember resource type \Fleetbase\Models\IntegratedVendor -> integrated-vendor
+     * Converts a string or class name to an ember resource type \Fleetbase\FleetOps\Models\IntegratedVendor -> integrated-vendor
      * @param string $className
      * @return null|string
      */
@@ -2225,16 +1588,99 @@ class Utils
         return $emberResourceType;
     }
 
-    public static function isIntegratedVendorId(string $id)
+    public static function dateRange($date)
     {
-        if (Str::startsWith($id, 'integrated_vendor_')) {
-            return true;
+        if (is_string($date) && Str::contains($date, ',')) {
+            return static::dateRange(explode(',', $date));
         }
 
-        $providerIds = DB::table('integrated_vendors')->select('provider')->where('company_uuid', session('company'))->distinct()->get()->map(function ($result) {
-            return $result->provider;
-        })->toArray();
+        if (is_array($date)) {
+            return array_map(
+                function ($dateString) {
+                    return Carbon::parse($dateString);
+                },
+                $date
+            );
+        }
 
-        return in_array($id, $providerIds);
+        // if not valid range just parse as date
+        return Carbon::parse($date);
+    }
+
+    /**
+     * Retrieves the values of a specified key from the "extra" property of all packages
+     * with the "fleetbase" key.
+     *
+     * @param string $key The key to search for in the "extra" property of packages with the "fleetbase" key.
+     *
+     * @return array An array of values for the specified key from the "extra" property of packages with the "fleetbase" key.
+     *
+     * @throws \RuntimeException If the installed.json file cannot be found.
+     */
+    public static function fromFleetbaseExtensions(string $key): array
+    {
+        $installedJsonPath = realpath(base_path('vendor/composer/installed.json'));
+
+        if (!$installedJsonPath) {
+            throw new \RuntimeException('Unable to find the installed.json file.');
+        }
+
+        $installedPackages = json_decode(file_get_contents($installedJsonPath), true);
+        $fleetbaseExtensions = [];
+
+        if (isset($installedPackages['packages'])) {
+            foreach ($installedPackages['packages'] as $package) {
+                if (isset($package['extra']['fleetbase']) && isset($package['extra']['fleetbase'][$key])) {
+                    $fleetbaseExtensions[] = $package['extra']['fleetbase'][$key];
+                }
+            }
+        }
+
+        return array_values($fleetbaseExtensions);
+    }
+
+    /**
+     * Retrieves the database name for the Fleetbase connection from the configuration.
+     *
+     * @return string|null The database name for the Fleetbase connection, or null if not found.
+     */
+    public static function getFleetbaseDatabaseName(): ?string
+    {
+        $connection = config('fleetbase.connection.db');
+        $databaseName = config('database.connections.' . $connection . '.database');
+
+        return $databaseName;
+    }
+
+    /**
+     * Find the package namespace for a given path.
+     *
+     * @param string|null $path The path to search for the package namespace. If null, no namespace is returned.
+     * @return string|null The package namespace, or null if the path is not valid.
+     */
+    public static function findPackageNamespace($path = null): ?string
+    {
+        if (!$path) {
+            return null;
+        }
+
+        $packagePath = strstr($path, '/src', true);
+        $composerJsonPath = $packagePath . '/composer.json';
+
+        // Load the composer.json file into an array
+        $composerJson = json_decode(file_get_contents($composerJsonPath), true);
+
+        // Get the package's namespace from its psr-4 autoloading configuration
+        $namespace = null;
+        if (isset($composerJson['autoload']['psr-4'])) {
+            foreach ($composerJson['autoload']['psr-4'] as $ns => $dir) {
+                if (strpos($dir, 'src') !== false) {
+                    $namespace = rtrim($ns, '\\');
+                    break;
+                }
+            }
+        }
+
+        return $namespace;
     }
 }

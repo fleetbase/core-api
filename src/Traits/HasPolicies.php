@@ -2,10 +2,10 @@
 
 namespace Fleetbase\Traits;
 
+use Fleetbase\Contracts\Policy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Collection;
-use Fleetbase\Contracts\Policy;
 use Spatie\Permission\PermissionRegistrar;
 use Spatie\Permission\Traits\HasPermissions;
 

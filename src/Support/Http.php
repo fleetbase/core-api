@@ -9,14 +9,19 @@ use Exception;
 
 class Http extends HttpClient
 {
-    public static function isInternalRequest(?Request $request = null)
+    public static function isInternalRequest(?Request $request = null): bool
     {
         $request = $request ?? request();
         $route = $request->route();
         $action = $route->action;
         $namespace = $action['namespace'];
 
-        return Str::startsWith($namespace, (Str::startsWith($namespace, '\\') ? '\\' : '') . 'Fleetbase\\Http\\Controllers\\Internal\\');
+        return Str::contains($namespace, 'Internal') ||  Str::contains($route->uri(), '/int/');
+    }
+
+    public static function isPublicRequest(?Request $request = null): bool
+    {
+        return !static::isInternalRequest($request);
     }
 
     /**
