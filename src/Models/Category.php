@@ -125,10 +125,6 @@ class Category extends Model
      */
     public function getIconUrlAttribute()
     {
-        if ($this->iconFile instanceof File) {
-            return $this->iconFile->url;
-        }
-        
-        return $this->fromCache('iconFile.url', 'https://flb-assets.s3.ap-southeast-1.amazonaws.com/static/placeholder-icon.png');
+        return data_get($this, 'iconFile.url', 'https://flb-assets.s3.ap-southeast-1.amazonaws.com/images/fallback-placeholder-1.png');
     }
 }

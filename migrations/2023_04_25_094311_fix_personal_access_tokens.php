@@ -14,6 +14,10 @@ return new class extends Migration
      */
     public function up()
     {
+        if (config('database.default') === config('fleetbase.connection.sandbox')) {
+            return;
+        };
+
         Schema::table('personal_access_tokens', function (Blueprint $table) {
             $table->uuid('tokenable_id')->change();
         });
@@ -26,6 +30,10 @@ return new class extends Migration
      */
     public function down()
     {
+        if (config('database.default') === config('fleetbase.connection.sandbox')) {
+            return;
+        };
+        
         PersonalAccessToken::truncate();
         Schema::table('personal_access_tokens', function (Blueprint $table) {
             $table->bigInteger('tokenable_id')->change();

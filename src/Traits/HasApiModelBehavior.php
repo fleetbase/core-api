@@ -913,4 +913,15 @@ trait HasApiModelBehavior
 
         return $input;
     }
+
+    /**
+     * Determines whether a given column exists in the table associated with the model.
+     *
+     * @param  string  $columnName
+     * @return bool
+     */
+    public function isColumn(string $columnName): bool
+    {
+        return Schema::hasColumn($this->getTable(), $columnName);
+    }
 }
