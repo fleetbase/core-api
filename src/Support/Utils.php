@@ -1559,16 +1559,31 @@ class Utils
         return true;
     }
 
+    /**
+     * Returns the name of the queue for events.
+     *
+     * The queue name is retrieved from the 'SQS_EVENTS_QUEUE' environment variable
+     * or falls back to the default 'events' if the variable is not set.
+     * Additionally, if the 'QUEUE_URL_EVENTS' environment variable is set,
+     * the queue name is extracted from the URL.
+     *
+     * @return string The name of the queue for events.
+     */
     public static function getEventsQueue(): string
     {
-        $sqs_events_queue = env('SQS_EVENTS_QUEUE', 'events');
+        if (!empty(env('AWS_ACCESS_KEY_ID')) && !empty(env('AWS_SECRET_ACCESS_KEY'))) {
+            $sqs_events_queue = env('SQS_EVENTS_QUEUE', 'events');
 
-        if ($queueUrl = getenv('QUEUE_URL_EVENTS')) {
-            $url = parse_url($queueUrl);
-            $sqs_events_queue = basename($url['path']);
+            if ($queueUrl = getenv('QUEUE_URL_EVENTS')) {
+                $url = parse_url($queueUrl);
+                $sqs_events_queue = basename($url['path']);
+            }
+
+            return $sqs_events_queue;
         }
 
-        return $sqs_events_queue;
+        // Fallback to Redis queuq
+        return env('REDIS_QUEUE', 'default');
     }
 
     /**

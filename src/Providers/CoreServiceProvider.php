@@ -46,6 +46,7 @@ class CoreServiceProvider extends ServiceProvider
      */
     public $commands = [
         \Fleetbase\Console\Commands\CreateDatabase::class,
+        \Fleetbase\Console\Commands\SeedDatabase::class,
         \Fleetbase\Console\Commands\MigrateSandbox::class,
         \Fleetbase\Console\Commands\InitializeSandboxKeyColumn::class,
         \Fleetbase\Console\Commands\SyncSandbox::class,
