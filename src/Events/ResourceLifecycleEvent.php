@@ -82,6 +82,7 @@ class ResourceLifecycleEvent implements ShouldBroadcast
      */
     public function __construct(Model $model, $eventName = null, $version = 1)
     {
+        $this->connection = $this->chooseQueueConnection();
         $this->queue = Utils::getEventsQueue();
         $this->modelUuid = $model->uuid;
         $this->modelClassNamespace = get_class($model);
@@ -103,6 +104,26 @@ class ResourceLifecycleEvent implements ShouldBroadcast
         $this->apiEnvironment = session('api_environment', 'live');
         $this->isSandbox = session('is_sandbox', false);
         $this->data = $this->getEventData();
+    }
+
+    /**
+     * Chooses the queue connection for the event.
+     *
+     * If the AWS SQS credentials (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY) and the SQS_EVENTS_QUEUE 
+     * environment variable are all set, it will return the value of SQS_EVENTS_QUEUE as the chosen queue connection.
+     * If not, it defaults to using the 'redis' connection.
+     *
+     * @return string The name of the queue connection.
+     */
+    protected function chooseQueueConnection()
+    {
+        // AWS SQS
+        if (!empty(env('AWS_ACCESS_KEY_ID')) && !empty(env('AWS_SECRET_ACCESS_KEY')) && !empty(env('SQS_EVENTS_QUEUE'))) {
+            return env('SQS_EVENTS_QUEUE', 'events');
+        }
+
+        // Fallback to Redis Connection
+        return 'redis';
     }
 
     /**

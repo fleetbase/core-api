@@ -60,16 +60,17 @@ class OnboardController extends Controller
             'status' => 'active'
         ]);
 
-        // send account created event
-        event(new AccountCreated($user, $company));
-
         // create verification code
         try {
             VerificationCode::generateEmailVerificationFor($user);
         } catch (\Swift_TransportException $e) {
-            // silently create the user anyway -- verfy by sms
-            // return response()->error($e->getMessage() ?? 'Email is not configured.');
+            // silence
+        } catch (\Aws\Exception\CredentialsException $e) {
+            // silence
         }
+
+        // send account created event
+        event(new AccountCreated($user, $company));
 
         // create auth token
         $token = $user->createToken($request->ip());

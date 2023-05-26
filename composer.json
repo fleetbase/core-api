@@ -1,8 +1,11 @@
 {
     "name": "fleetbase/core-api",
-    "version": "1.0.0-alpha",
+    "version": "1.0.1-alpha",
     "description": "Core Framework and Resources for Fleetbase API",
-    "keywords": ["fleetbase", "logistics platform"],
+    "keywords": [
+        "fleetbase",
+        "logistics platform"
+    ],
     "license": "MIT",
     "authors": [
         {
@@ -50,7 +53,8 @@
     },
     "autoload": {
         "psr-4": {
-            "Fleetbase\\": "src/"
+            "Fleetbase\\": "src/",
+            "Fleetbase\\Seeds\\": "seeds/"
         }
     },
     "autoload-dev": {
