@@ -36,15 +36,22 @@ class OnboardController extends Controller
      */
     public function createAccount(OnboardRequest $request)
     {
+        // if first user make admin
+        $isAdmin = !User::exists();
+
         // create user account
         $user = User::create([
             'name' => $request->input('name'),
             'email' => $request->input('email'),
             'phone' => $request->input('phone'),
-            'password' => $request->input('password'),
-            'status' => 'active',
-            'type' => 'user'
+            'status' => 'active'
         ]);
+
+        // set the user type
+        $user->type = $isAdmin ? 'admin' : 'user';
+
+        // set the user password
+        $user->password = $request->input('password');
 
         // create company
         $company = new Company(['name' => $request->input('organization_name')]);
@@ -67,6 +74,10 @@ class OnboardController extends Controller
             // silence
         } catch (\Aws\Exception\CredentialsException $e) {
             // silence
+        } catch (\InvalidArgumentException $e) {
+            // slicence
+        } catch (\Exception $e) {
+            // slicence
         }
 
         // send account created event

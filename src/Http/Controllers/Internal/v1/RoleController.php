@@ -38,9 +38,10 @@ class RoleController extends FleetbaseController
      * Updates a record by an identifier with request payload
      *
      * @param  \Illuminate\Http\Request  $request
+     * @param  string $id
      * @return \Illuminate\Http\Response
      */
-    public function updateRecord(Request $request)
+    public function updateRecord(Request $request, string $id)
     {
         return $this->model::updateRecordFromRequest($request, function ($request, &$role) {
             if ($request->isArray('role.permissions')) {

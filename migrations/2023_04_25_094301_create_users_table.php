@@ -40,10 +40,6 @@ return new class extends Migration
             $table->softDeletes();
             $table->timestamp('created_at')->nullable()->index();
             $table->timestamp('updated_at')->nullable();
-            $table->string('stripe_id', 191)->nullable()->index();
-            $table->string('card_brand')->nullable();
-            $table->string('card_last_four', 4)->nullable();
-            $table->timestamp('trial_ends_at')->nullable();
 
             $table->unique(['uuid']);
         });
