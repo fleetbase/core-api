@@ -100,7 +100,6 @@ class User extends Authenticatable
         'avatar_uuid',
         'username',
         'email',
-        'password',
         'name',
         'phone',
         'date_of_birth',
@@ -112,11 +111,17 @@ class User extends Authenticatable
         'email_verified_at',
         'phone_verified_at',
         'slug',
-        'type',
         'status',
         'created_at', // syncable
         'updated_at', // syncable
     ];
+
+    /**
+     * Attributes which are not mass assignable.
+     *
+     * @var array
+     */
+    protected $guarded = ['type', 'password'];
 
     /**
      * The attributes that should be hidden for arrays.
@@ -277,9 +282,11 @@ class User extends Authenticatable
      */
     public function routeNotificationForFcm()
     {
-        return $this->devices->where('platform', 'android')->map(function ($userDevice) {
-            return $userDevice->token;
-        })->toArray();
+        return $this->devices->where('platform', 'android')->map(
+            function ($userDevice) {
+                return $userDevice->token;
+            }
+        )->toArray();
     }
 
     /**
@@ -289,9 +296,11 @@ class User extends Authenticatable
      */
     public function routeNotificationForApn()
     {
-        return $this->devices->where('platform', 'ios')->map(function ($userDevice) {
-            return $userDevice->token;
-        })->toArray();
+        return $this->devices->where('platform', 'ios')->map(
+            function ($userDevice) {
+                return $userDevice->token;
+            }
+        )->toArray();
     }
 
     /**
@@ -305,7 +314,7 @@ class User extends Authenticatable
             return $this->avatar->url;
         }
 
-        return static::attributeFromCache($this, 'avatar.url', 'https://s3.ap-southeast-1.amazonaws.com/flb-assets/static/no-avatar.png');
+        return data_get($this, 'avatar.url', 'https://s3.ap-southeast-1.amazonaws.com/flb-assets/static/no-avatar.png');
     }
 
     /**
@@ -329,7 +338,7 @@ class User extends Authenticatable
     }
 
     /**
-     * Determines if the user is admin
+     * Checks if the user is admin
      *
      * @return boolean
      */
@@ -338,13 +347,20 @@ class User extends Authenticatable
         return $this->type === 'admin';
     }
 
+    /**
+     * Adds a boolean dynamic property to check if user is an admin.
+     *
+     * @return void
+     */
     public function getIsAdminAttribute()
     {
-        return $this->isAdmin() || in_array($this->email, ['ron@fleetbase.io', 'shiv@fleetbase.io', 'evan@fleetbase.io']);
+        return $this->isAdmin();
     }
 
     /**
-     * Hash password
+     * Set and hash password
+     * 
+     * @return void
      */
     public function setPasswordAttribute($value)
     {
@@ -353,16 +369,20 @@ class User extends Authenticatable
 
     /**
      * Get the user timezone
+     * 
+     * @return string
      */
-    public function getTimezone()
+    public function getTimezone(): string
     {
-        return static::attributeFromCache($this, 'timezone', 'Asia/Singapore');
+        return data_get($this, 'timezone', 'Asia/Singapore');
     }
 
     /**
      * Updates the users last login
+     * 
+     * @return \Fleetbase\Models\User
      */
-    public function updateLastLogin()
+    public function updateLastLogin(): User
     {
         $this->last_login = Carbon::now()->toDateTimeString();
         $this->save();
@@ -372,12 +392,11 @@ class User extends Authenticatable
 
     /**
      * Changes the users password
+     * 
+     * @return \Fleetbase\Models\User
      */
-    public function changePassword($newPassword)
+    public function changePassword($newPassword): User
     {
-        // $this->password = bcrypt($newPassword); 
-        // attribute is already hashed
-
         $this->password = $newPassword;
         $this->save();
 
@@ -395,22 +414,41 @@ class User extends Authenticatable
         return $this;
     }
 
-    // from base model
+    /**
+     * Determines if the model is searchable.
+     * 
+     * @return bool True if the class uses the Searchable trait or the 'searchable' property exists and is true, false otherwise.
+     */
     public static function isSearchable()
     {
         return class_uses_recursive(\Fleetbase\Traits\Searchable::class) || (property_exists(new static, 'searchable') && static::$searchable);
     }
 
+    /**
+     * Accessor to check if the model instance is searchable.
+     *
+     * @return bool True if the model instance is searchable, false otherwise.
+     */
     public function searchable()
     {
         return static::isSearchable();
     }
 
+    /**
+     * Get the phone number to which the notification should be routed.
+     *
+     * @return string The phone number of the model instance.
+     */
     public function routeNotificationForTwilio()
     {
         return $this->phone;
     }
 
+    /**
+     * Accessor to get the types associated with the model instance.
+     *
+     * @return array An array of types associated with the model instance.
+     */
     public function getTypesAttribute()
     {
         $driver = false;

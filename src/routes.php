@@ -69,6 +69,12 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                         $router->get('export', $controller('export'));
                                     }
                                 );
+                                $router->fleetbaseRoutes(
+                                    'settings',
+                                    function ($router, $controller) {
+                                        $router->post('test-mysql-connection', $controller('testMysqlConnection'));
+                                    }
+                                );
                                 $router->fleetbaseRoutes('api-events');
                                 $router->fleetbaseRoutes('api-request-logs');
                                 $router->fleetbaseRoutes(
