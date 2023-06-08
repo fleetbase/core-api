@@ -72,7 +72,16 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 $router->fleetbaseRoutes(
                                     'settings',
                                     function ($router, $controller) {
-                                        $router->post('test-mysql-connection', $controller('testMysqlConnection'));
+                                        $router->get('overview', $controller('adminOverview'));
+                                        $router->get('filesystem-config', $controller('getFilesystemConfig'));
+                                        $router->post('filesystem-config', $controller('saveFilesystemConfig'));
+                                        $router->get('mail-config', $controller('getMailConfig'));
+                                        $router->post('mail-config', $controller('saveMailConfig'));
+                                        $router->post('test-mail-config', $controller('testMailConfig'));
+                                        $router->get('queue-config', $controller('getQueueConfig'));
+                                        $router->post('queue-config', $controller('saveQueueConfig'));
+                                        $router->get('services-config', $controller('getServicesConfig'));
+                                        $router->post('services-config', $controller('saveServicesConfig'));
                                     }
                                 );
                                 $router->fleetbaseRoutes('api-events');

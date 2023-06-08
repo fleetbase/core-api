@@ -58,20 +58,6 @@ class ResourceLifecycleEvent implements ShouldBroadcast
     public array $data = [];
 
     /**
-     * The name of the queue connection to use when broadcasting the event.
-     *
-     * @var string
-     */
-    public string $connection = 'events';
-
-    /**
-     * The name of the queue to use when broadcasting the event.
-     *
-     * @var string
-     */
-    public string $queue = 'events';
-
-    /**
      * Create a new lifecycle event instance.
      *
      * @param \Fleetbase\Models\Model $model

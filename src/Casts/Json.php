@@ -49,11 +49,6 @@ class Json implements CastsAttributes
         }
 
         $json = stripslashes($json);
-
-        if (Str::startsWith($json, '"') && Str::endsWith($json, '"')) {
-            $json = trim($json, '"');
-        }
-
         return json_decode($json, true);
     }
 }
