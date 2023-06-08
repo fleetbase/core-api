@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Providers;
 
+use Fleetbase\Models\Setting;
 use Fleetbase\Support\Expansion;
 use Fleetbase\Support\Utils;
 use Laravel\Cashier\Cashier;
@@ -72,7 +73,6 @@ class CoreServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__ . '/../../config/database.connections.php', 'database.connections');
         $this->mergeConfigFrom(__DIR__ . '/../../config/database.redis.php', 'database.redis');
         $this->mergeConfigFrom(__DIR__ . '/../../config/broadcasting.connections.php', 'broadcasting.connections');
-        $this->mergeConfigFrom(__DIR__ . '/../../config/queue.connections.php', 'queue.connections');
         $this->mergeConfigFrom(__DIR__ . '/../../config/fleetbase.php', 'fleetbase');
         $this->mergeConfigFrom(__DIR__ . '/../../config/auth.php', 'auth');
         $this->mergeConfigFrom(__DIR__ . '/../../config/sanctum.php', 'sanctum');
@@ -81,6 +81,74 @@ class CoreServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__ . '/../../config/permission.php', 'permission');
         $this->mergeConfigFrom(__DIR__ . '/../../config/activitylog.php', 'activitylog');
         $this->mergeConfigFrom(__DIR__ . '/../../config/excel.php', 'excel');
+        $this->mergeConfigFromSettings();
+    }
+
+    public function mergeConfigFromSettings()
+    {
+        $putsenv = [
+            'services.aws' => ['key' => 'AWS_ACCESS_KEY_ID', 'secret' => 'AWS_SECRET_ACCESS_KEY', 'region' => 'AWS_DEFAULT_REGION'],
+            'services.google_maps' => ['api_key' => 'GOOGLE_MAPS_API_KEY', 'locale' => 'GOOGLE_MAPS_LOCALE'],
+            'services.twilio' => ['sid' => 'TWILIO_SID', 'token' => 'TWILIO_TOKEN', 'from' => 'TWILIO_FROM']
+        ];
+
+        $settings = [
+            ['settingsKey' => 'filesystem.driver', 'configKey' => 'filesystems.default'],
+            ['settingsKey' => 'filesystem.s3', 'configKey' => 'filesystems.disks.s3'],
+            ['settingsKey' => 'mail.mailer', 'configKey' => 'mail.default'],
+            ['settingsKey' => 'mail.from', 'configKey' => 'mail.from'],
+            ['settingsKey' => 'mail.smtp', 'configKey' => 'mail.mailers.smtp'],
+            ['settingsKey' => 'queue.driver', 'configKey' => 'queue.default'],
+            ['settingsKey' => 'queue.sqs', 'configKey' => 'queue.connections.sqs'],
+            ['settingsKey' => 'queue.beanstalkd', 'configKey' => 'queue.connections.beanstalkd'],
+            ['settingsKey' => 'services.aws', 'configKey' => 'services.aws'],
+            ['settingsKey' => 'services.aws.key', 'configKey' => 'queue.connections.sqs.key'],
+            ['settingsKey' => 'services.aws.secret', 'configKey' => 'queue.connections.sqs.secret'],
+            ['settingsKey' => 'services.aws.region', 'configKey' => 'queue.connections.sqs.region'],
+            ['settingsKey' => 'services.aws.key', 'configKey' => 'cache.stores.dynamodb.key'],
+            ['settingsKey' => 'services.aws.secret', 'configKey' => 'cache.stores.dynamodb.secret'],
+            ['settingsKey' => 'services.aws.region', 'configKey' => 'cache.stores.dynamodb.region'],
+            ['settingsKey' => 'services.aws.key', 'configKey' => 'filesystems.disks.s3.key'],
+            ['settingsKey' => 'services.aws.secret', 'configKey' => 'filesystems.disks.s3.secret'],
+            ['settingsKey' => 'services.aws.region', 'configKey' => 'filesystems.disks.s3.region'],
+            ['settingsKey' => 'services.aws.key', 'configKey' => 'mail.mailers.ses.key'],
+            ['settingsKey' => 'services.aws.secret', 'configKey' => 'mail.mailers.ses.secret'],
+            ['settingsKey' => 'services.aws.region', 'configKey' => 'mail.mailers.ses.region'],
+            ['settingsKey' => 'services.aws.key', 'configKey' => 'services.ses.key'],
+            ['settingsKey' => 'services.aws.secret', 'configKey' => 'services.ses.secret'],
+            ['settingsKey' => 'services.aws.region', 'configKey' => 'services.ses.region'],
+            ['settingsKey' => 'services.google_maps', 'configKey' => 'services.google_maps'],
+            ['settingsKey' => 'services.twilio', 'configKey' => 'services.twilio'],
+            ['settingsKey' => 'services.twilio', 'configKey' => 'twilio.connections.twilio'],
+            ['settingsKey' => 'services.ipinfo', 'configKey' => 'services.ipinfo'],
+            ['settingsKey' => 'services.ipinfo', 'configKey' => 'fleetbase.services.ipinfo'],
+        ];
+
+        foreach ($settings as $setting) {
+            $settingsKey = $setting['settingsKey'];
+            $configKey = $setting['configKey'];
+            $value = Setting::system($settingsKey);
+
+            if ($value) {
+                // some settings should set env variables to be accessed throughout entire application
+                if (in_array($settingsKey, array_keys($putsenv))) {
+                    $environmentVariables = $putsenv[$settingsKey];
+
+                    foreach ($environmentVariables as $configEnvKey => $envKey) {
+                        putenv($envKey . '="' . data_get($value, $configEnvKey) . '"');
+                    }
+                }
+
+                // Fetch the current config array
+                $config = config()->all();
+
+                // Update the specific value in the config array
+                Arr::set($config, $configKey, $value);
+
+                // Set the entire config array
+                config($config);
+            }
+        }
     }
 
     /**

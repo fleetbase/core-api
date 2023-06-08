@@ -28,7 +28,7 @@ class FileController extends FleetbaseController
      */
     public function upload(UploadFileRequest $request)
     {
-        $disk = env('FILESYSTEM_DRIVER');
+        $disk = $request->input('disk', config('filesystems.default'));
         $type = $request->input('type');
         $size = $request->input('file_size', $request->file->getSize());
         $path = $request->input('path', 'uploads');
@@ -87,7 +87,7 @@ class FileController extends FleetbaseController
      */
     public function uploadBase64(UploadBase64FileRequest $request)
     {
-        $disk = env('FILESYSTEM_DRIVER');
+        $disk = $request->input('disk', config('filesystems.default'));
         $data = $request->input('data');
         $path = $request->input('path', 'uploads');
         $visibility = $request->input('visibility', 'public');
@@ -145,7 +145,7 @@ class FileController extends FleetbaseController
      */
     public function download(?string $id, DownloadFileRequest $request)
     {
-        $disk = env('FILESYSTEM_DRIVER');
+        $disk = $request->input('disk', config('filesystems.default'));
         $file = File::where('uuid', $id)->first();
 
         return Storage::disk($disk)->download($file->path, $file->name);

@@ -4,7 +4,6 @@ namespace Fleetbase\Models;
 
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Support\Facades\Schema;
 use Fleetbase\Traits\HasCacheableAttributes;
 use Fleetbase\Traits\ClearsHttpCache;
 use Fleetbase\Traits\Expandable;
