@@ -8,6 +8,7 @@ use Fleetbase\Support\Utils;
 use Laravel\Cashier\Cashier;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
@@ -102,6 +103,11 @@ class CoreServiceProvider extends ServiceProvider
      */
     public function mergeConfigFromSettings()
     {
+        // Check if the settings table exists
+        if (!Schema::hasTable('settings')) {
+            return;
+        }
+
         $putsenv = [
             'services.aws' => ['key' => 'AWS_ACCESS_KEY_ID', 'secret' => 'AWS_SECRET_ACCESS_KEY', 'region' => 'AWS_DEFAULT_REGION'],
             'services.google_maps' => ['api_key' => 'GOOGLE_MAPS_API_KEY', 'locale' => 'GOOGLE_MAPS_LOCALE'],
