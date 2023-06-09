@@ -82,8 +82,24 @@ class CoreServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__ . '/../../config/activitylog.php', 'activitylog');
         $this->mergeConfigFrom(__DIR__ . '/../../config/excel.php', 'excel');
         $this->mergeConfigFromSettings();
+        $this->addServerIpAsAllowedOrigin();
     }
 
+    /**
+     * Merge configuration values from application settings.
+     *
+     * This function iterates through a predefined list of settings keys,
+     * retrieves their values from the system settings, and updates the
+     * Laravel configuration values accordingly. For some settings, it
+     * also updates corresponding environment variables.
+     *
+     * The settings keys and the corresponding config keys are defined
+     * in the $settings array. The $putsenv array defines the settings
+     * keys that also need to update environment variables and maps each
+     * settings key to the environment variables that need to be updated.
+     *
+     * @return void
+     */
     public function mergeConfigFromSettings()
     {
         $putsenv = [
@@ -149,6 +165,29 @@ class CoreServiceProvider extends ServiceProvider
                 config($config);
             }
         }
+    }
+
+    /**
+     * Add the server's IP address to the CORS allowed origins.
+     *
+     * This function retrieves the server's IP address and adds it to the
+     * list of CORS allowed origins in the Laravel configuration. If the
+     * server's IP address is already in the list, the function doesn't
+     * add it again.
+     *
+     * @return void
+     */
+    public function addServerIpAsAllowedOrigin()
+    {
+        $serverIp = gethostbyname(gethostname());
+        $allowedOrigins = config('cors.allowed_origins', []);
+        $serverIpOrigin = "http://{$serverIp}:4200";
+
+        if (!in_array($serverIpOrigin, $allowedOrigins, true)) {
+            $allowedOrigins[] = $serverIpOrigin;
+        }
+
+        config(['cors.allowed_origins' => $allowedOrigins]);
     }
 
     /**
