@@ -9,6 +9,7 @@ use Laravel\Cashier\Cashier;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
@@ -103,8 +104,18 @@ class CoreServiceProvider extends ServiceProvider
      */
     public function mergeConfigFromSettings()
     {
-        // Check if the settings table exists
-        if (!Schema::hasTable('settings')) {
+        try {
+            // Try to make a simple DB call
+            DB::connection()->getPdo();
+
+            // Check if the settings table exists
+            if (!Schema::hasTable('settings')) {
+                return;
+            }
+
+            // Rest of your function code...
+        } catch (\Exception $e) {
+            // Connection failed, or other error occurred
             return;
         }
 
