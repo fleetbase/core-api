@@ -1,6 +1,6 @@
 {
     "name": "fleetbase/core-api",
-    "version": "1.0.4-alpha",
+    "version": "1.0.5-alpha",
     "description": "Core Framework and Resources for Fleetbase API",
     "keywords": [
         "fleetbase",
