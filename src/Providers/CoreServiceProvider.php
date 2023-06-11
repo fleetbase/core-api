@@ -10,6 +10,7 @@ use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
@@ -196,7 +197,23 @@ class CoreServiceProvider extends ServiceProvider
      */
     public function addServerIpAsAllowedOrigin()
     {
-        $serverIp = gethostbyname(gethostname());
+        $cacheKey = 'server_public_ip';
+        $cacheExpirationMinutes = 60 * 60 * 24 * 30;
+
+        // Check the cache first
+        $serverIp = Cache::get($cacheKey);
+
+        // If not cached, fetch the IP and store it in the cache
+        if (!$serverIp) {
+            $serverIp = trim(shell_exec('dig +short myip.opendns.com @resolver1.opendns.com'));
+
+            if (!$serverIp) {
+                return;
+            }
+
+            Cache::put($cacheKey, $serverIp, $cacheExpirationMinutes);
+        }
+
         $allowedOrigins = config('cors.allowed_origins', []);
         $serverIpOrigin = "http://{$serverIp}:4200";
 
