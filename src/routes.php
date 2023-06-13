@@ -55,6 +55,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 $router->get('currencies', 'LookupController@currencies');
                                 $router->get('countries', 'LookupController@countries');
                                 $router->get('country/{code}', 'LookupController@country');
+                                $router->get('fleetbase-blog', 'LookupController@fleetbaseBlog');
                                 $router->get('font-awesome-icons', 'LookupController@fontAwesomeIcons');
                             }
                         );
