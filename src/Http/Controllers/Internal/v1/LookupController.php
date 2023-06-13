@@ -166,4 +166,34 @@ class LookupController extends Controller
 
         return response()->json($country);
     }
+
+    /**
+     * Pull the Fleetbase.io blog RSS feed.
+     *
+     * @param \Illuminate\Http\Request
+     * @return \Illuminate\Http\Response
+     */
+    public function fleetbaseBlog(Request $request)
+    {
+        $limit = $request->integer('limit', 6);
+        $rssUrl = 'https://www.fleetbase.io/post/rss.xml';
+        $rss = simplexml_load_file($rssUrl);
+        $posts = [];
+
+        foreach ($rss->channel->item as $item) {
+            $posts[] = [
+                'title' => (string) $item->title,
+                'link' => (string) $item->link,
+                'guid' => (string) $item->guid,
+                'description' => (string) $item->description,
+                'pubDate' => (string) $item->pubDate,
+                'media_content' => (string) data_get($item, 'media:content.url'),
+                'media_thumbnail' => (string) data_get($item, 'media:thumbnail.url')
+            ];
+        }
+
+        $posts = array_slice($posts, 0, $limit);
+        
+        return response()->json($posts);
+    }
 }
