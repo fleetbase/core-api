@@ -231,7 +231,7 @@ trait HasApiModelBehavior
         $keys = array_keys($input);
 
         foreach ($keys as $key) {
-            if (!$this->isFillable($key) && !$this->isRelation($key) && !$this->isRelation(Str::camel($key)) && !$this->isFilterParam($key) && !in_array($key, $this->appends ?? [])) {
+            if ($this->isInvalidUpdateParam($key)) {
                 throw new \Exception('Invalid param "' . $key . '" in update request!');
             }
         }
@@ -923,5 +923,26 @@ trait HasApiModelBehavior
     public function isColumn(string $columnName): bool
     {
         return Schema::hasColumn($this->getTable(), $columnName);
+    }
+
+    /**
+     * Determines whether a given parameter key is invalid for an update operation.
+     *
+     * This function checks if the provided key is not one of the timestamp fields, not a fillable attribute,
+     * not a relation (either in its given form or in its camel case equivalent), not a filter parameter,
+     * and not an appended attribute.
+     *
+     * @param string $key The parameter key to evaluate.
+     * @return bool Returns true if the key is not valid for updating; false otherwise.
+     */
+    public function isInvalidUpdateParam(string $key): bool
+    {
+        $isNotTimestamp = !in_array($key, ['created_at', 'updated_at', 'deleted_at']);
+        $isNotFillable = !$this->isFillable($key);
+        $isNotRelation = !$this->isRelation($key) && !$this->isRelation(Str::camel($key));
+        $isNotFilterParam = !$this->isFilterParam($key);
+        $isNotAppenededAttribute = !in_array($key, $this->appends ?? []);
+
+        return $isNotTimestamp && $isNotFillable && $isNotRelation && $isNotFilterParam && $isNotAppenededAttribute;
     }
 }
