@@ -5,6 +5,7 @@ namespace Fleetbase\Http\Resources;
 use Fleetbase\Support\Http;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Str;
 
 class FleetbaseResource extends JsonResource
 {
@@ -55,5 +56,24 @@ class FleetbaseResource extends JsonResource
     public function isEmpty()
     {
         return is_null($this->resource) || is_null($this->resource->resource);
+    }
+
+    /**
+     * Get all internal id properties, only when internal request.
+     *
+     * @return array
+     */
+    public function getInternalIds(): array
+    {
+        $attributes = $this->getAttributes();
+        $internalIds = [];
+
+        foreach ($attributes as $key => $value) {
+            if (Str::endsWith($key, '_uuid')) {
+                $internalIds[$key] = $this->when(Http::isInternalRequest(), $value);
+            }
+        }
+
+        return $internalIds;
     }
 }
