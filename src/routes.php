@@ -60,6 +60,12 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                             }
                         );
                         $router->group(
+                            ['prefix' => 'settings'],
+                            function ($router) {
+                                $router->get('branding', 'SettingController@getBrandingSettings');
+                            }
+                        );
+                        $router->group(
                             ['middleware' => ['fleetbase.protected']],
                             function ($router) {
                                 $router->fleetbaseRoutes(
@@ -83,6 +89,8 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                         $router->post('queue-config', $controller('saveQueueConfig'));
                                         $router->get('services-config', $controller('getServicesConfig'));
                                         $router->post('services-config', $controller('saveServicesConfig'));
+                                        $router->post('branding', $controller('saveBrandingSettings'));
+                                        $router->put('branding', $controller('saveBrandingSettings'));
                                     }
                                 );
                                 $router->fleetbaseRoutes('api-events');

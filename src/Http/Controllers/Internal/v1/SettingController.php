@@ -252,4 +252,40 @@ class SettingController extends Controller
 
 		return response()->json(['status' => 'OK']);
 	}
+
+	/**
+	 * Get branding settings.
+	 *
+	 * @param  \Illuminate\Http\Request  $request
+	 * @return \Illuminate\Http\JsonResponse
+	 */
+	public function getBrandingSettings()
+	{
+		$brandingSettings = Setting::getBranding();
+		return response()->json(['brand' => $brandingSettings]);
+	}
+
+	/**
+	 * Saves branding settings.
+	 *
+	 * @param  \Illuminate\Http\Request  $request
+	 * @return \Illuminate\Http\JsonResponse
+	 */
+	public function saveBrandingSettings(Request $request)
+	{
+		$iconUrl = $request->input('brand.icon_url');
+		$logoUrl = $request->input('brand.logo_url');
+
+		if ($iconUrl) {
+			Setting::configure('branding.icon_url', $iconUrl);
+		}
+
+		if ($logoUrl) {
+			Setting::configure('branding.logo_url', $logoUrl);
+		}
+
+		$brandingSettings = Setting::getBranding();
+		
+		return response()->json(['brand' => $brandingSettings]);
+	}
 }
