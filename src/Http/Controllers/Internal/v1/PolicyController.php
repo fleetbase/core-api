@@ -3,10 +3,10 @@
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Http\Controllers\FleetbaseController;
+use Fleetbase\Exceptions\FleetbaseRequestValidationException;
+use Fleetbase\Models\Permission;
 use Fleetbase\Models\Policy;
-use Fleetbase\Support\Utils;
 use Illuminate\Http\Request;
-
 class PolicyController extends FleetbaseController
 {
     /**
@@ -14,7 +14,7 @@ class PolicyController extends FleetbaseController
      *
      * @var string
      */
-   public $resource = 'policy';
+    public $resource = 'policy';
 
     /**
      * Creates a record by an identifier with request payload
@@ -24,15 +24,22 @@ class PolicyController extends FleetbaseController
      */
     public function createRecord(Request $request)
     {
-        return $this->model::createRecordFromRequest($request, null, function ($request, &$policy) {
-            if ($request->isArray('policy.permissions')) {
-                $permissions = collect($request->input('policy.permissions'))->map(function($permission) {
-                    return Utils::get($permission, 'name');
-                })->toArray();
+        try {
+            $record = $this->model->createRecordFromRequest($request, null, function ($request, &$policy) {
+                if ($request->isArray('policy.permissions')) {
+                    $permissions = Permission::whereIn('id', $request->array('policy.permissions'))->get();
+                    $policy->syncPermissions($permissions);
+                }
+            });
 
-                $policy->syncPermissions($permissions);
-            }
-        });
+            return ['policy' => new $this->resource($record)];
+        } catch (\Exception $e) {
+            return response()->error($e->getMessage());
+        } catch (\Illuminate\Database\QueryException $e) {
+            return response()->error($e->getMessage());
+        } catch (FleetbaseRequestValidationException $e) {
+            return response()->error($e->getErrors());
+        }
     }
 
     /**
@@ -41,17 +48,24 @@ class PolicyController extends FleetbaseController
      * @param  \Illuminate\Http\Request  $request
      * @return \Illuminate\Http\Response
      */
-    public function updateRecord(Request $request)
+    public function updateRecord(Request $request, string $id)
     {
-        return $this->model::updateRecordFromRequest($request, function ($request, &$policy) {
-            if ($request->isArray('policy.permissions')) {
-                $permissions = collect($request->input('policy.permissions'))->map(function($permission) {
-                    return Utils::get($permission, 'name');
-                })->toArray();
+        try {
+            $record = $this->model->updateRecordFromRequest($request, $id, function ($request, &$policy) {
+                if ($request->isArray('policy.permissions')) {
+                    $permissions = Permission::whereIn('id', $request->array('policy.permissions'))->get();
+                    $policy->syncPermissions($permissions);
+                }
+            });
 
-                $policy->syncPermissions($permissions);
-            }
-        });
+            return ['policy' => new $this->resource($record)];
+        } catch (\Exception $e) {
+			return response()->error($e->getMessage());
+		} catch (\Illuminate\Database\QueryException $e) {
+			return response()->error($e->getMessage());
+		} catch (FleetbaseRequestValidationException $e) {
+			return response()->error($e->getErrors());
+		}
     }
 
     /**
@@ -60,7 +74,7 @@ class PolicyController extends FleetbaseController
      * @param  \Illuminate\Http\Request  $request
      * @return \Illuminate\Http\Response
      */
-    public function deleteRecord(Request $request)
+    public function deleteRecord($id, Request $request)
     {
         $id = $request->segment(4);
         $policy = Policy::find($id);

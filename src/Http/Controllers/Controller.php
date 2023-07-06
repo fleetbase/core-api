@@ -2,11 +2,9 @@
 
 namespace Fleetbase\Http\Controllers;
 
-use Fleetbase\Support\SocketClusterService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Foundation\Bus\DispatchesJobs;
 use Illuminate\Foundation\Validation\ValidatesRequests;
-use Illuminate\Http\Request;
 use Illuminate\Routing\Controller as BaseController;
 
 class Controller extends BaseController
@@ -16,7 +14,7 @@ class Controller extends BaseController
     /**
      * Welcome message only
      */
-    public function hello(Request $request)
+    public function hello()
     {
         return response()->json(
             [
@@ -36,5 +34,13 @@ class Controller extends BaseController
                 'ms' => microtime(true) - LARAVEL_START,
             ]
         );
+    }
+
+    /**
+     * Use this route for arbitrary testing.
+     */
+    public function test()
+    {
+        return response()->json(['status' => 'ok']);
     }
 }

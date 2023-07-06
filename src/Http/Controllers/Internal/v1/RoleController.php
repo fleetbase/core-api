@@ -3,6 +3,8 @@
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Http\Controllers\FleetbaseController;
+use Fleetbase\Exceptions\FleetbaseRequestValidationException;
+use Fleetbase\Models\Permission;
 use Fleetbase\Support\Utils;
 use Illuminate\Http\Request;
 
@@ -13,7 +15,7 @@ class RoleController extends FleetbaseController
      *
      * @var string
      */
-   public $resource = 'role';
+    public $resource = 'role';
 
     /**
      * Creates a record by an identifier with request payload
@@ -23,15 +25,22 @@ class RoleController extends FleetbaseController
      */
     public function createRecord(Request $request)
     {
-        return $this->model::createRecordFromRequest($request, null, function ($request, &$role) {
-            if ($request->isArray('role.permissions')) {
-                $permissions = collect($request->input('role.permissions'))->map(function($permission) {
-                    return Utils::get($permission, 'name');
-                })->toArray();
+        try {
+            $record = $this->model->createRecordFromRequest($request, null, function ($request, &$role) {
+                if ($request->isArray('role.permissions')) {
+                    $permissions = Permission::whereIn('id', $request->array('role.permissions'))->get();
+                    $role->syncPermissions($permissions);
+                }
+            });
 
-                $role->syncPermissions($permissions);
-            }
-        });
+            return ['role' => new $this->resource($record)];
+        } catch (\Exception $e) {
+            return response()->error($e->getMessage());
+        } catch (\Illuminate\Database\QueryException $e) {
+            return response()->error($e->getMessage());
+        } catch (FleetbaseRequestValidationException $e) {
+            return response()->error($e->getErrors());
+        }
     }
 
     /**
@@ -43,14 +52,21 @@ class RoleController extends FleetbaseController
      */
     public function updateRecord(Request $request, string $id)
     {
-        return $this->model::updateRecordFromRequest($request, function ($request, &$role) {
-            if ($request->isArray('role.permissions')) {
-                $permissions = collect($request->input('role.permissions'))->map(function($permission) {
-                    return Utils::get($permission, 'name');
-                })->toArray();
+        try {
+            $record = $this->model->updateRecordFromRequest($request, $id, function ($request, &$role) {
+                if ($request->isArray('role.permissions')) {
+                    $permissions = Permission::whereIn('id', $request->array('role.permissions'))->get();
+                    $role->syncPermissions($permissions);
+                }
+            });
 
-                $role->syncPermissions($permissions);
-            }
-        });
+            return ['role' => new $this->resource($record)];
+        } catch (\Exception $e) {
+            return response()->error($e->getMessage());
+        } catch (\Illuminate\Database\QueryException $e) {
+            return response()->error($e->getMessage());
+        } catch (FleetbaseRequestValidationException $e) {
+            return response()->error($e->getErrors());
+        }
     }
 }

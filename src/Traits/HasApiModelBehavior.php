@@ -175,7 +175,7 @@ trait HasApiModelBehavior
             return $record;
         }
 
-        $builder = $this->where($this->getQualifiedKeyName(), $record->uuid);
+        $builder = $this->where($this->getQualifiedKeyName(), $record->getKey());
         $builder = $this->withRelationships($request, $builder);
         $builder = $this->withCounts($request, $builder);
 
@@ -222,7 +222,7 @@ trait HasApiModelBehavior
         $input = $this->fillSessionAttributes($input, [], ['updated_by_uuid']);
 
         if (is_callable($onBefore)) {
-            $before = $onBefore($request, $input);
+            $before = $onBefore($request, $record, $input);
             if ($before instanceof JsonResponse) {
                 return $before;
             }

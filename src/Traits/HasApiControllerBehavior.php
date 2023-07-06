@@ -310,7 +310,6 @@ trait HasApiControllerBehavior
 
             return new $this->resource($record);
         } catch (\Exception $e) {
-            dd($e);
             return response()->error($e->getMessage());
         } catch (QueryException $e) {
             return response()->error($e->getMessage());
@@ -391,13 +390,14 @@ trait HasApiControllerBehavior
      *  "message": "Resource not found"
      * }
      *
-     * @param  int  $id
+     * @param  string  $id
      * @return \Illuminate\Http\Response
      */
     public function deleteRecord($id, Request $request)
     {
         if (Http::isInternalRequest($request)) {
-            $dataModel = $this->model->whereUuid($id)->first();
+            $key = $this->model->getKeyName();
+            $dataModel = $this->model->where($key, $id)->first();
         } else {
             $dataModel = $this->model->wherePublicId($id)->first();
         }

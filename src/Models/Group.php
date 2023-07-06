@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Models;
 
+use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\HasPolicies;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasUuid;
@@ -12,7 +13,7 @@ use Spatie\Sluggable\SlugOptions;
 
 class Group extends Model
 {
-    use HasUuid, HasApiModelBehavior, HasPermissions, HasPolicies, HasRoles, HasSlug;
+    use HasUuid, HasApiModelBehavior, HasPermissions, HasPolicies, HasRoles, HasSlug, Filterable;
 
     /**
      * The database connection to use.
@@ -40,14 +41,14 @@ class Group extends Model
      *
      * @var array
      */
-    protected $fillable = ['_key', 'company_uuid', 'name', 'slug'];
+    protected $fillable = ['_key', 'company_uuid', 'name', 'description', 'slug'];
 
     /**
      * The relationships that will always be appended.
      *
      * @var array
      */
-    protected $with = ['users'];
+    protected $with = ['users', 'permissions', 'policies'];
 
     /**
      * Get the options for generating the slug.

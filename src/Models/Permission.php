@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Models;
 
+use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\Searchable;
 use Fleetbase\Traits\HasUuid;
@@ -9,7 +10,28 @@ use Spatie\Permission\Models\Permission as BasePermission;
 
 class Permission extends BasePermission
 {
-    use HasUuid, HasApiModelBehavior, Searchable;
+    use HasUuid, HasApiModelBehavior, Searchable, Filterable;
+
+    /**
+     * The database connection to use.
+     *
+     * @var string
+     */
+    protected $connection = 'mysql';
+
+    /**
+     * The primary key for the model.
+     *
+     * @var string
+     */
+    protected $primaryKey = 'id';
+
+    /**
+     * The primary key type.
+     *
+     * @var string
+     */
+    public $keyType = 'string';
 
     /**
      * The column to use for generating uuid.
@@ -19,11 +41,11 @@ class Permission extends BasePermission
     public $uuidColumn = 'id';
 
     /**
-     * The primary key type.
+     * Indicates if the IDs are auto-incrementing.
      *
-     * @var string
+     * @var boolean
      */
-    public $keyType = 'string';
+    public $incrementing = false;
 
     /**
      * The attributes that can be queried

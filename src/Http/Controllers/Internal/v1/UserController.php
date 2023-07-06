@@ -41,8 +41,6 @@ class UserController extends FleetbaseController
     {
         $user = $request->user();
 
-        // dd($user);
-
         if (!$user) {
             return response()->error('No user session found', 401);
         }
@@ -53,27 +51,6 @@ class UserController extends FleetbaseController
             ]
         );
     }
-
-    // /**
-    //  * Responds with the currently authenticated user.
-    //  *
-    //  * @param  \Illuminate\Http\Request $request
-    //  * @return \Illuminate\Http\Response
-    //  */
-    // public function findRecord(Request $request)
-    // {
-    //     $user = $request->user();
-
-    //     if (!$user) {
-    //         return response()->error('No user session found', 401);
-    //     }
-
-    //     return response()->json(
-    //         [
-    //             'user' => $user,
-    //         ]
-    //     );
-    // }
 
     /**
      * Creates a user, adds the user to company and sends an email to user about being added.
@@ -235,7 +212,6 @@ class UserController extends FleetbaseController
         }
 
         // $user->deactivate();
-
         // deactivate for company session
         $user->companies()->where('company_uuid', session('company'))->update(['status' => 'inactive']);
         $user = $user->refresh();
@@ -264,8 +240,9 @@ class UserController extends FleetbaseController
             return response()->error('No user found', 401);
         }
 
-        // $user->deactivate();
-        // deactivate for company session
+        // $user->activate();
+        // activate for company session
+        // maybe we dont want to activate for all organizations
         $user->companies()->where('company_uuid', session('company'))->update(['status' => 'active']);
         $user = $user->refresh();
 

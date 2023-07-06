@@ -12,7 +12,7 @@ class SeedDatabase extends Command
      *
      * @var string
      */
-    protected $signature = 'fleetbase:seed';
+    protected $signature = 'fleetbase:seed {--class=FleetbaseSeeder}';
 
     /**
      * The console command description.
@@ -28,13 +28,24 @@ class SeedDatabase extends Command
      */
     public function handle()
     {
-        Artisan::call(
-            'db:seed',
-            [
-                '--class' => 'Fleetbase\\Seeds\\ExtensionSeeder',
-            ]
-        );
+        $class = $this->option('class');
 
-        $this->info('Fleetbase seeds were run successfully.');
+        if ($class) {
+            Artisan::call(
+                'db:seed',
+                [
+                    '--class' => 'Fleetbase\\Seeds\\' . $class,
+                ]
+            );
+            $this->info('Fleetbase ' . $class . ' Seeder was run Successfully!');
+        } else {
+            Artisan::call(
+                'db:seed',
+                [
+                    '--class' => 'Fleetbase\\Seeds\\FleetbaseSeeder',
+                ]
+            );
+            $this->info('Fleetbase Seeders were run Successfully!');
+        }
     }
 }

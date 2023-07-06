@@ -41,11 +41,11 @@ trait HasPolicies
     public function policies(): BelongsToMany
     {
         return $this->morphToMany(
-            config('permission.models.role'),
+            \Fleetbase\Models\Policy::class,
             'model',
-            config('permission.table_names.model_has_policies'),
-            config('permission.column_names.model_morph_key'),
-            'role_id'
+            'model_has_policies',
+            'model_uuid',
+            'policy_id'
         );
     }
 
