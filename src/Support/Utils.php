@@ -1698,4 +1698,136 @@ class Utils
 
         return $namespace;
     }
+
+    /**
+     * Search installed composer packages for a specified keyword within their keywords array.
+     * The function reads the composer.lock file, which includes the exact versions of installed packages.
+     * If the keyword is found, the package's information is added to the result array.
+     *
+     * @param string $keyword The keyword to search for within the packages' keywords array.
+     * 
+     * @throws Exception If the composer.lock file does not exist or if packages are not defined in it.
+     *
+     * @return array An associative array of packages that contain the keyword in their keywords array.
+     *               The keys are the package names, and the values are the corresponding composer.json information.
+     */
+    public static function findComposerPackagesWithKeyword($keyword = 'fleetbase-extension')
+    {
+        // Path to composer.lock file.
+        $filePath = './composer.lock';
+
+        // Check if file exists.
+        if (!file_exists($filePath)) {
+            throw new \Exception('composer.lock file does not exist');
+        }
+
+        // Read composer.lock content.
+        $fileContent = file_get_contents($filePath);
+        $composerData = json_decode($fileContent, true);
+
+        // Check if packages are defined.
+        if (!isset($composerData['packages'])) {
+            throw new \Exception('Packages are not defined in the composer.lock file');
+        }
+
+        $foundPackages = [];
+        $packages = array_values($composerData['packages']);
+
+        // Loop through packages.
+        foreach ($packages as $package) {
+            // Check if keywords array exists and contains the keyword.
+            if (isset($package['keywords']) && in_array($keyword, $package['keywords'])) {
+                // If package contains the keyword in its keywords array, add it to the result array.
+                $foundPackages[$package['name']] = $package;
+            }
+        }
+
+        return $foundPackages;
+    }
+
+    /**
+     * Get installed Fleetbase extensions.
+     *
+     * @return array
+     */
+    public static function getInstalledFleetbaseExtensions()
+    {
+        return static::findComposerPackagesWithKeyword('fleetbase-extension');
+    }
+
+    /**
+     * Get the namespaced names of the authentication schemas found in the installed Fleetbase extensions.
+     *
+     * @return array
+     */
+    public static function getAuthSchemaNamespaces()
+    {
+        $packages = static::getInstalledFleetbaseExtensions();
+        $authSchemaClasses = [];
+
+        // Local package directory
+        $localNamespace = 'Fleetbase\\';
+        $localPackageSrcDirectory = base_path('vendor/fleetbase/core-api/src/');
+        $localPackageDirectoryPath = $localPackageSrcDirectory . 'Auth/Schemas';
+
+        if (file_exists($localPackageDirectoryPath)) {
+            $localDirectoryIterator = new \DirectoryIterator($localPackageDirectoryPath);
+
+            foreach ($localDirectoryIterator as $file) {
+                if ($file->isFile() && $file->getExtension() == 'php') {
+                    $className = 'Auth\\Schemas\\' . $file->getBasename('.php');
+                    $authSchemaClasses[] = $localNamespace . $className;
+                }
+            }
+        }
+
+        foreach ($packages as $packageName => $package) {
+            $srcDirectory = base_path('vendor/' . $packageName . '/src/');
+
+            if (!isset($package['autoload']['psr-4'])) {
+                continue;
+            }
+
+            foreach ($package['autoload']['psr-4'] as $namespace => $directory) {
+                $directoryPath = $srcDirectory . 'Auth/Schemas';
+
+                // try path with namespace
+                if (!file_exists($directoryPath)) {
+                    $directoryPath = $srcDirectory . str_replace('\\', '/', $namespace) . 'Auth/Schemas';
+                }
+
+                if (!file_exists($directoryPath)) {
+                    continue;
+                }
+
+                $directoryIterator = new \DirectoryIterator($directoryPath);
+
+                foreach ($directoryIterator as $file) {
+                    if ($file->isFile() && $file->getExtension() == 'php') {
+                        $className = $namespace . 'Auth\\Schemas\\' . $file->getBasename('.php');
+                        $authSchemaClasses[] = $className;
+                    }
+                }
+            }
+        }
+
+        return array_values($authSchemaClasses);
+    }
+
+    /**
+     * Get the authentication schemas instances from the installed Fleetbase extensions.
+     *
+     * @return array
+     */
+    public static function getAuthSchemas()
+    {
+        $namespaces = static::getAuthSchemaNamespaces();
+
+        return array_map(
+            function ($schema) {
+                return app($schema);
+            },
+            $namespaces
+        );
+    }
 }

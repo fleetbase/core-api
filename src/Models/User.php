@@ -24,6 +24,7 @@ use Fleetbase\Casts\Json;
 use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\HasCacheableAttributes;
 use Fleetbase\Traits\HasMetaAttributes;
+use Illuminate\Database\Eloquent\Concerns\HasTimestamps;
 use Laravel\Cashier\Billable;
 
 class User extends Authenticatable
@@ -38,6 +39,7 @@ class User extends Authenticatable
         HasApiModelBehavior,
         HasCacheableAttributes,
         HasMetaAttributes,
+        HasTimestamps,
         LogsActivity,
         CausesActivity,
         SoftDeletes,
@@ -67,6 +69,13 @@ class User extends Authenticatable
     public $incrementing = false;
 
     /**
+     * Indicates if the model should be timestamped.
+     *
+     * @var boolean
+     */
+    public $timestamps = true;
+
+    /**
      * The database table used by the model.
      *
      * @var string
@@ -93,8 +102,8 @@ class User extends Authenticatable
      * @var array
      */
     protected $fillable = [
-        'uuid', // syncable
-        'public_id', // syncable
+        'uuid',
+        'public_id',
         '_key',
         'company_uuid',
         'avatar_uuid',
@@ -110,10 +119,11 @@ class User extends Authenticatable
         'last_login',
         'email_verified_at',
         'phone_verified_at',
+        'type',
         'slug',
         'status',
-        'created_at', // syncable
-        'updated_at', // syncable
+        'created_at', 
+        'updated_at',
     ];
 
     /**
@@ -121,7 +131,7 @@ class User extends Authenticatable
      *
      * @var array
      */
-    protected $guarded = ['type', 'password'];
+    protected $guarded = ['password'];
 
     /**
      * The attributes that should be hidden for arrays.
@@ -137,6 +147,7 @@ class User extends Authenticatable
      */
     protected $appends = [
         'avatar_url',
+        'session_status',
         'company_name',
         'is_admin',
         'types',
@@ -368,6 +379,16 @@ class User extends Authenticatable
     }
 
     /**
+     * Set the default status to `active`
+     * 
+     * @return void
+     */
+    public function setStatusAttribute($value = 'active')
+    {
+        $this->attributes['status'] = $value ?? 'active';
+    }
+
+    /**
      * Get the user timezone
      * 
      * @return string
@@ -404,11 +425,22 @@ class User extends Authenticatable
     }
 
     /**
-     * Changes the users password
+     * Deactivate this user
      */
     public function deactivate()
     {
         $this->status = 'inactive';
+        $this->save();
+
+        return $this;
+    }
+
+    /**
+     * Activate this user
+     */
+    public function activate()
+    {
+        $this->status = 'active';
         $this->save();
 
         return $this;

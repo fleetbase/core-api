@@ -13,6 +13,10 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
+if (env('APP_DEBUG') === true) {
+    Route::get('test', 'Fleetbase\Http\Controllers\Controller@test');
+}
+
 Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase\Http\Controllers')->group(
     function ($router) {
         $router->get('/', 'Controller@hello');
@@ -60,6 +64,12 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                             }
                         );
                         $router->group(
+                            ['prefix' => 'users'],
+                            function ($router) {
+                                $router->post('accept-company-invite', 'UserController@acceptCompanyInvite');
+                            }
+                        );
+                        $router->group(
                             ['prefix' => 'settings'],
                             function ($router) {
                                 $router->get('branding', 'SettingController@getBrandingSettings');
@@ -74,6 +84,13 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                         $router->delete('bulk-delete', $controller('bulkDelete'));
                                         $router->patch('roll/{id}', $controller('roll'));
                                         $router->get('export', $controller('export'));
+                                    }
+                                );
+                                $router->fleetbaseRoutes(
+                                    'metrics',
+                                    function ($router, $controller) {
+                                        $router->get('iam', $controller('iam'));
+                                        $router->get('iam-dashboard', $controller('iamDashboard'));
                                     }
                                 );
                                 $router->fleetbaseRoutes(
@@ -108,6 +125,12 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     'users',
                                     function ($router, $controller) {
                                         $router->get('me', $controller('current'));
+                                        $router->get('export', $controller('export'));
+                                        $router->patch('deactivate/{id}', $controller('deactivate'));
+                                        $router->patch('activate/{id}', $controller('activate'));
+                                        $router->delete('remove-from-company/{id}', $controller('removeFromCompany'));
+                                        $router->post('resend-invite', $controller('resendInvitation'));
+                                        $router->post('set-password', $controller('setCurrentUserPassword'));
                                     }
                                 );
                                 $router->fleetbaseRoutes('user-devices');

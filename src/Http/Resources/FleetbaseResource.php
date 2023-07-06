@@ -19,13 +19,13 @@ class FleetbaseResource extends JsonResource
     {
         $resource = parent::toArray($request);
 
-        if (Http::isInternalRequest()) {
-            // insert `uuid` after `id` if it doesn't exist already
-            if (!isset($resource['uuid'])) {
-                $resource['id'] = $this->id;
-                $resource = Arr::insertAfterKey($resource, ['uuid' => $this->uuid], 'id');
-            }
-        }
+        // if (Http::isInternalRequest()) {
+        //     // insert `uuid` after `id` if it doesn't exist already
+        //     if (!isset($resource['uuid'])) {
+        //         $resource['id'] = $this->id;
+        //         $resource = Arr::insertAfterKey($resource, ['uuid' => $this->uuid], 'id');
+        //     }
+        // }
 
         return $resource;
     }

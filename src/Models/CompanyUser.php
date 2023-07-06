@@ -42,4 +42,14 @@ class CompanyUser extends Model
     {
         return $this->belongsTo(Company::class);
     }
+
+    /**
+     * Set the default status to `active`
+     * 
+     * @return void
+     */
+    public function setStatusAttribute($value = 'active')
+    {
+        $this->attributes['status'] = $value ?? 'active';
+    }
 }

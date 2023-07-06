@@ -23,6 +23,22 @@ return new class extends Migration
             $table->timestamps();
             $table->softDeletes();
         });
+
+        Schema::create('model_has_policies', function (Blueprint $table) {
+            $table->uuid('policy_id')->index();
+
+            $table->string('model_type');
+            $table->uuid('model_uuid');
+            $table->index(['model_uuid', 'model_type'], 'model_has_policies_model_uuid_model_type_index');
+
+            $table
+                ->foreign('policy_id')
+                ->references('id')
+                ->on('policies')
+                ->onDelete('cascade');
+
+            $table->primary(['policy_id', 'model_uuid', 'model_type'], 'model_has_policies_policy_model_type_primary');
+        });
     }
 
     /**
@@ -33,5 +49,6 @@ return new class extends Migration
     public function down()
     {
         Schema::dropIfExists('policies');
+        Schema::dropIfExists('model_has_policies');
     }
 };

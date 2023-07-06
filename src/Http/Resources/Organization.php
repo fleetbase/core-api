@@ -4,7 +4,6 @@ namespace Fleetbase\Http\Resources;
 
 use Fleetbase\Http\Resources\FleetbaseResource;
 use Fleetbase\Support\Http;
-use Illuminate\Support\Arr;
 
 class Organization extends FleetbaseResource
 {

@@ -5,6 +5,7 @@ namespace Fleetbase\Http\Controllers\Internal\v1;
 use Fleetbase\Exports\GroupExport;
 use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Http\Requests\ExportRequest;
+use Fleetbase\Exceptions\FleetbaseRequestValidationException;
 use Fleetbase\Models\GroupUser;
 use Fleetbase\Support\Utils;
 use Illuminate\Http\Request;
@@ -18,7 +19,7 @@ class GroupController extends FleetbaseController
      *
      * @var string
      */
-   public $resource = 'group';
+    public $resource = 'group';
 
     /**
      * Creates a record with request payload
@@ -28,20 +29,65 @@ class GroupController extends FleetbaseController
      */
     public function createRecord(Request $request)
     {
-        return $this->model::createRecordFromRequest($request, null, function (&$request, &$group) {
-            $users = $request->input('group.users');
+        try {
+            $record = $this->model->createRecordFromRequest($request, null, function (&$request, &$group) {
+                $users = $request->input('group.users');
 
-            foreach ($users as $user) {
-                GroupUser::firstOrCreate([
-                    'group_uuid' => $group->uuid,
-                    'user_uuid' => Utils::get($user, 'uuid'),
-                ]);
-            }
+                foreach ($users as $id) {
+                    GroupUser::firstOrCreate([
+                        'group_uuid' => $group->uuid,
+                        'user_uuid' => $id,
+                    ]);
+                }
 
-            $group->load(['users']);
-        });
+                $group->load(['users']);
+            });
+
+            return ['group' => new $this->resource($record)];
+        } catch (\Exception $e) {
+            return response()->error($e->getMessage());
+        } catch (\Illuminate\Database\QueryException $e) {
+            return response()->error($e->getMessage());
+        } catch (FleetbaseRequestValidationException $e) {
+            return response()->error($e->getErrors());
+        }
     }
 
+    /**
+     * Updated a record with request payload
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\Response
+     */
+    public function updateRecord(Request $request, string $id)
+    {
+        try {
+            $record = $this->model->updateRecordFromRequest($request, $id, function (&$request, &$group) {
+                $users = $request->input('group.users');
+
+                // users should always be an array of user ids 
+                // we will first delete all group users where id is not in this array
+                GroupUser::whereNotIn('user_uuid', $users)->delete();
+
+                foreach ($users as $id) {
+                    GroupUser::firstOrCreate([
+                        'group_uuid' => $group->uuid,
+                        'user_uuid' => $id,
+                    ]);
+                }
+
+                $group->load(['users']);
+            });
+
+            return ['group' => new $this->resource($record)];
+        } catch (\Exception $e) {
+            return response()->error($e->getMessage());
+        } catch (\Illuminate\Database\QueryException $e) {
+            return response()->error($e->getMessage());
+        } catch (FleetbaseRequestValidationException $e) {
+            return response()->error($e->getErrors());
+        }
+    }
 
     /**
      * Export the groups to excel or csv

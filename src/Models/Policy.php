@@ -2,14 +2,16 @@
 
 namespace Fleetbase\Models;
 
+use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasUuid;
+use Fleetbase\Traits\Searchable;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Permission\Traits\HasPermissions;
 
 class Policy extends Model
 {
-    use HasUuid, HasApiModelBehavior, HasPermissions, SoftDeletes;
+    use HasUuid, HasApiModelBehavior, HasPermissions, SoftDeletes, Searchable, Filterable;
 
     /** @__construct */
     public function __construct(array $attributes = [])
@@ -89,29 +91,53 @@ class Policy extends Model
      */
     protected $appends = ['type', 'is_mutable', 'is_deletable'];
 
+    /**
+     * Cannot set permissions to Role model directly.
+     *
+     * @return void
+     */
+    public function setPermissionsAttribute()
+    {
+        unset($this->attributes['permissions']);
+    }
+
+    /**
+     * Check if the company_uuid attribute is set
+     *
+     * @return bool
+     */
     public function getIsMutableAttribute()
     {
         return isset($this->company_uuid);
     }
 
+    /**
+     * Check if the company_uuid attribute is set
+     *
+     * @return bool
+     */
     public function getIsDeletableAttribute()
     {
         return isset($this->company_uuid);
     }
 
+    /**
+     * Get the type of attribute based on the company_uuid
+     *
+     * @return string
+     */
     public function getTypeAttribute()
     {
         return empty($this->company_uuid) ? 'FLB Managed' : 'Organization Managed';
     }
 
-    public function attach($model)
+    /**
+     * Default guard should be `web`.
+     * 
+     * @return void
+     */
+    public function setGuardNameAttribute()
     {
-        if ($model instanceof Role) {
-
-        }
-
-        if ($model instanceof Group) {
-            
-        }
+        $this->attributes['guard_name'] = 'web';
     }
 }

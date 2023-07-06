@@ -88,6 +88,23 @@ class Request implements Expansion
     }
 
     /**
+     * Check if param is array value.
+     *
+     * @return Closure
+     */
+    public function isArray()
+    {
+        return function ($param) {
+            /**
+             * Context.
+             *
+             * @var \Illuminate\Support\Facades\Request $this
+             */
+            return $this->has($param) && is_array($this->input($param));
+        };
+    }
+
+    /**
      * Retrieve input from the request as a integer.
      *
      * @return Closure
