@@ -942,7 +942,8 @@ trait HasApiModelBehavior
         $isNotRelation = !$this->isRelation($key) && !$this->isRelation(Str::camel($key));
         $isNotFilterParam = !$this->isFilterParam($key);
         $isNotAppenededAttribute = !in_array($key, $this->appends ?? []);
+        $isNotIdParam = !in_array($key, ['id', 'uuid', 'public_id']);
 
-        return $isNotTimestamp && $isNotFillable && $isNotRelation && $isNotFilterParam && $isNotAppenededAttribute;
+        return $isNotTimestamp && $isNotFillable && $isNotRelation && $isNotFilterParam && $isNotAppenededAttribute && $isNotIdParam;
     }
 }

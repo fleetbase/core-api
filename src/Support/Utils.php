@@ -76,11 +76,10 @@ class Utils
      */
     public static function fromS3(string $path, $bucket = null, $region = null): string
     {
-        $bucket = $bucket ?? config('filesystems.disks.s3.bucket');
-        $region = $region ?? config('filesystems.disks.s3.region');
+        $bucket = $bucket ?? config('filesystems.disks.s3.bucket', $bucket);
+        $region = $region ?? config('filesystems.disks.s3.region', $region);
 
         return 'https://' . $bucket . '.s3-' . $region . '.amazonaws.com/' . $path;
-        // return 'https://s3.' . $region . '.amazonaws.com/' . $bucket . '/' . $path;
     }
 
     /**
@@ -90,9 +89,21 @@ class Utils
      * @param string $pattern
      * @return boolean
      */
-    public static function assetFromS3(string $path): string
+    public static function assetFromS3(string $path, $region = null): string
     {
-        return static::fromS3($path, 'flb-assets');
+        return static::fromS3($path, 'flb-assets', $region);
+    }
+
+    /**
+     * Return asset URL from Fleetbase S3 asset bucket.
+     *
+     * @param string $string
+     * @param string $pattern
+     * @return boolean
+     */
+    public static function assetFromFleetbase(string $path): string
+    {
+        return static::assetFromS3($path, 'ap-southeast-1');
     }
 
     /**

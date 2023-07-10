@@ -32,7 +32,12 @@ class PolymorphicType implements CastsAttributes
      */
     public function set($model, $key, $value, $attributes)
     {
-        $className = Utils::getMutationType($value);
+        // default $className is null
+        $className = null;
+
+        if ($value) {
+            $className = Utils::getMutationType($value);
+        }
 
         return $className;
     }
