@@ -223,6 +223,8 @@ class PermissionSeeder extends Seeder
      */
     public function output(string $line = ''): void
     {
-        echo $line . PHP_EOL;
+        if (app()->runningInConsole()) {
+            echo $line . PHP_EOL;
+        }
     }
 }
