@@ -1725,7 +1725,7 @@ class Utils
     public static function findComposerPackagesWithKeyword($keyword = 'fleetbase-extension')
     {
         // Path to composer.lock file.
-        $filePath = './composer.lock';
+        $filePath = base_path('composer.lock');
 
         // Check if file exists.
         if (!file_exists($filePath)) {
