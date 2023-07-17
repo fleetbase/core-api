@@ -25,7 +25,6 @@ use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\HasCacheableAttributes;
 use Fleetbase\Traits\HasMetaAttributes;
 use Illuminate\Database\Eloquent\Concerns\HasTimestamps;
-use Laravel\Cashier\Billable;
 
 class User extends Authenticatable
 {
@@ -44,8 +43,7 @@ class User extends Authenticatable
         CausesActivity,
         SoftDeletes,
         Expandable,
-        Filterable,
-        Billable;
+        Filterable;
 
     /**
      * The database connection to use.

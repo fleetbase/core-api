@@ -47,8 +47,11 @@ class MigrateSandbox extends Command
         // only run core and fleetops migrations
         $paths = [
             'vendor/fleetbase/core-api/migrations',
-            'vendor/fleetbase/fleetops-api/migrations'
+            // 'vendor/fleetbase/fleetops-api/migrations'
         ];
+
+        $directories = Utils::getMigrationDirectories();
+        dd($directories);
 
         foreach ($paths as $path) {
             $this->call($command, [

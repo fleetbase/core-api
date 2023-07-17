@@ -1766,6 +1766,22 @@ class Utils
         return static::findComposerPackagesWithKeyword('fleetbase-extension');
     }
 
+    public static function getMigrationDirectories()
+    {
+        $packages = static::getInstalledFleetbaseExtensions();
+        $directories = [];
+
+        foreach ($packages as $packageName => $package) {
+            $migrationDirectory = base_path('vendor/' . $packageName . '/migrations/');
+
+            if (file_exists($migrationDirectory)) {
+                $directories[] = $migrationDirectory;
+            }
+        }
+
+        return $directories;
+    }
+
     /**
      * Get the namespaced names of the authentication schemas found in the installed Fleetbase extensions.
      *
