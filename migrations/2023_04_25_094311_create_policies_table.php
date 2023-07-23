@@ -48,7 +48,9 @@ return new class extends Migration
      */
     public function down()
     {
+        Schema::disableForeignKeyConstraints();
         Schema::dropIfExists('policies');
         Schema::dropIfExists('model_has_policies');
+        Schema::enableForeignKeyConstraints();
     }
 };

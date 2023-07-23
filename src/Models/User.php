@@ -357,6 +357,16 @@ class User extends Authenticatable
     }
 
     /**
+     * Checks if the user is NOT admin
+     *
+     * @return boolean
+     */
+    public function isNotAdmin()
+    {
+        return $this->type !== 'admin';
+    }
+
+    /**
      * Adds a boolean dynamic property to check if user is an admin.
      *
      * @return void

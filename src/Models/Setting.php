@@ -147,13 +147,31 @@ class Setting extends EloquentModel
         );
     }
 
+    /**
+     * lookup a setting and return the value.
+     *
+     * @param string $key
+     * @param mixed $defaultValue
+     * @return mixed|null
+     */
+    public static function lookup(string $key, $defaultValue = null)
+    {
+        $setting = static::where('key', $key)->first();
+
+        if (!$setting) {
+            return $defaultValue;
+        }
+
+        return data_get($setting, 'value', $defaultValue);
+    }
+
     public static function getBranding()
     {
         $brandingSettings = ['id' => 1, 'uuid' => 1];
-		$iconUrl = static::where('key', 'branding.icon_url')->first();
-		$logoUrl = static::where('key', 'branding.logo_url')->first();
-		$brandingSettings['icon_url'] = $iconUrl ? $iconUrl->value : '/images/icon.png';
-		$brandingSettings['logo_url'] = $logoUrl ? $logoUrl->value : '/images/fleetbase-logo-svg.svg';
+        $iconUrl = static::where('key', 'branding.icon_url')->first();
+        $logoUrl = static::where('key', 'branding.logo_url')->first();
+        $brandingSettings['icon_url'] = $iconUrl ? $iconUrl->value : '/images/icon.png';
+        $brandingSettings['logo_url'] = $logoUrl ? $logoUrl->value : '/images/fleetbase-logo-svg.svg';
 
         return $brandingSettings;
     }

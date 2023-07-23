@@ -45,13 +45,12 @@ class MigrateSandbox extends Command
         $command = $refresh ? 'migrate:refresh' : 'migrate';
 
         // only run core and fleetops migrations
-        $paths = [
-            'vendor/fleetbase/core-api/migrations',
-            // 'vendor/fleetbase/fleetops-api/migrations'
-        ];
+        $paths = ['vendor/fleetbase/core-api/migrations'];
+        $migrationDirectories = $this->getExtensionsMigrationPaths();
 
-        $directories = Utils::getMigrationDirectories();
-        dd($directories);
+        if (is_array($migrationDirectories)) {
+            $paths = array_merge($paths, $migrationDirectories);
+        }
 
         foreach ($paths as $path) {
             $this->call($command, [
@@ -61,5 +60,67 @@ class MigrateSandbox extends Command
                 '--path' => $path
             ]);
         }
+    }
+
+    /**
+     * Returns the relative paths to the migration directories of all installed Fleetbase extensions.
+     * 
+     * This function retrieves all installed Fleetbase extensions, and then for each extension, 
+     * it checks if sandbox migrations are disabled. If not, it gets the migration directory 
+     * for the extension. All collected paths are then converted to relative paths and returned.
+     *
+     * @return array An array of the relative paths to the migration directories of all installed Fleetbase extensions.
+     */
+    private function getExtensionsMigrationPaths(): array
+    {
+        $packages = Utils::getInstalledFleetbaseExtensions();
+        $paths = [];
+
+        foreach ($packages as $packageName => $package) {
+            // check if migrations is disabled for sandbox
+            $sandboxMigrations = Utils::getFleetbaseExtensionProperty($packageName, 'sandbox-migrations');
+
+            if ($sandboxMigrations === false || $sandboxMigrations === 'false' || $sandboxMigrations === 0 || $sandboxMigrations === '0') {
+                continue;
+            }
+
+            $path = Utils::getMigrationDirectoryForExtension($packageName);
+
+            if ($path) {
+                $paths[] = $path;
+            }
+        }
+
+        return $this->makePathsRelative($paths);
+    }
+
+    /**
+     * Converts an array of absolute paths to relative paths.
+     * 
+     * This function maps over an array of paths and for each path, it creates a substring 
+     * from the position of 'vendor' to the end of the string, effectively creating a relative path. 
+     * The trailing slash is also removed from each path. If the provided input is not an array, 
+     * the function will return an empty array.
+     * 
+     * @param array|null $paths An array of absolute paths that will be converted to relative paths.
+     * @return array An array of relative paths.
+     */
+    private function makePathsRelative(?array $paths = []): array
+    {
+        if (!is_array($paths)) {
+            return [];
+        }
+
+        $relativePaths = array_map(function ($path) {
+            // Find the position of "vendor" in the string
+            $startPosition = strpos($path, 'vendor');
+            // Create a substring from the position of "vendor" to the end of the string
+            $relativePath = substr($path, $startPosition);
+            // Remove the trailing slash
+            $relativePath = rtrim($relativePath, '/');
+            return $relativePath;
+        }, $paths);
+
+        return $relativePaths;
     }
 }
