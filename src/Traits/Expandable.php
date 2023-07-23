@@ -2,8 +2,8 @@
 
 namespace Fleetbase\Traits;
 
+use Illuminate\Support\Facades\DB;
 use Closure;
-// use Illuminate\Database\Eloquent\Builder;
 use ReflectionMethod;
 use ReflectionClass;
 
@@ -91,6 +91,15 @@ trait Expandable
         if (static::isModel()) {
             if (in_array($method, ['increment', 'decrement'])) {
                 return $this->$method(...$parameters);
+            }
+
+            // only forward call if connection is working
+            try {
+                // Try to make a simple DB call
+                DB::connection()->getPdo();
+            } catch (\Exception $e) {
+                // Connection failed, or other error occurred
+                return;
             }
 
             return $this->forwardCallTo($this->newQuery(), $method, $parameters);
