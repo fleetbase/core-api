@@ -55,11 +55,11 @@ class PermissionSeeder extends Seeder
             try {
                 $administratorPolicy->givePermissionTo($permission);
             } catch (\Spatie\Permission\Exceptions\GuardDoesNotMatch $e) {
-                dd($e->getMessage(), $guard, $permission, $administratorPolicy);
+                dd($e->getMessage());
             }
 
             // output message for permissions creation
-            $this->output('Created (' . $guard . ') permission: ' . $permission->name);
+            // $this->output('Created (' . $guard . ') permission: ' . $permission->name);
 
             // check if schema has direct permissions to add
             if (is_array($permissions)) {
@@ -79,11 +79,11 @@ class PermissionSeeder extends Seeder
                     try {
                         $administratorPolicy->givePermissionTo($permission);
                     } catch (\Spatie\Permission\Exceptions\GuardDoesNotMatch $e) {
-                        dd($e->getMessage(), $guard, $permission, $administratorPolicy);
+                        dd($e->getMessage());
                     }
 
                     // output message for permissions creation
-                    $this->output('Created (' . $guard . ') permission: ' . $permission->name);
+                    // $this->output('Created (' . $guard . ') permission: ' . $permission->name);
                 }
             }
 
@@ -156,16 +156,16 @@ class PermissionSeeder extends Seeder
                 try {
                     $fullAccessPolicy->givePermissionTo($permission);
                 } catch (\Spatie\Permission\Exceptions\GuardDoesNotMatch $e) {
-                    dd($e->getMessage(), $guard, $permission, $fullAccessPolicy);
+                    dd($e->getMessage());
                 }
                 try {
                     $resourceFullAccessPolicy->givePermissionTo($permission);
                 } catch (\Spatie\Permission\Exceptions\GuardDoesNotMatch $e) {
-                    dd($e->getMessage(), $guard, $permission, $resourceFullAccessPolicy);
+                    dd($e->getMessage());
                 }
 
                 // output message for permissions creation
-                $this->output('Created (' . $guard . ') permission: ' . $permission->name);
+                // $this->output('Created (' . $guard . ') permission: ' . $permission->name);
 
                 // create action permissions
                 $resourceActions = array_merge($actions, data_get($resource, 'actions', []));
@@ -197,17 +197,17 @@ class PermissionSeeder extends Seeder
                         try {
                             $readOnlyPolicy->givePermissionTo($permission);
                         } catch (\Spatie\Permission\Exceptions\GuardDoesNotMatch $e) {
-                            dd($e->getMessage(), $guard, $permission, $readOnlyPolicy);
+                            dd($e->getMessage());
                         }
                         try {
                             $resourceReadOnlyPolicy->givePermissionTo($permission);
                         } catch (\Spatie\Permission\Exceptions\GuardDoesNotMatch $e) {
-                            dd($e->getMessage(), $guard, $permission, $resourceReadOnlyPolicy);
+                            dd($e->getMessage());
                         }
                     }
 
                     // output message for permissions creation
-                    $this->output('Created (' . $guard . ') permission: ' . $permission->name);
+                    // $this->output('Created (' . $guard . ') permission: ' . $permission->name);
                 }
             }
         }

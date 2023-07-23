@@ -5,7 +5,6 @@ namespace Fleetbase\Providers;
 use Fleetbase\Models\Setting;
 use Fleetbase\Support\Expansion;
 use Fleetbase\Support\Utils;
-use Laravel\Cashier\Cashier;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Schema;
@@ -65,7 +64,6 @@ class CoreServiceProvider extends ServiceProvider
     public function boot()
     {
         JsonResource::withoutWrapping();
-        Cashier::ignoreMigrations();
 
         $this->registerCommands();
         $this->registerObservers();

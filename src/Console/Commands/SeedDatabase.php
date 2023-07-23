@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Console\Commands;
 
+use Fleetbase\Support\Utils;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
 
@@ -12,7 +13,7 @@ class SeedDatabase extends Command
      *
      * @var string
      */
-    protected $signature = 'fleetbase:seed {--class=FleetbaseSeeder}';
+    protected $signature = 'fleetbase:seed {--class}';
 
     /**
      * The console command description.
@@ -45,6 +46,19 @@ class SeedDatabase extends Command
                     '--class' => 'Fleetbase\\Seeds\\FleetbaseSeeder',
                 ]
             );
+
+            // seed for extensions
+            $extensionSeeders = Utils::getSeedersFromExtensions();
+
+            foreach ($extensionSeeders as $seeder) {
+                // Manually include the seeder file
+                require_once $seeder['path'];
+
+                // Instantiate the seeder class and run it
+                $seederInstance = new $seeder['class']();
+                $seederInstance->run();
+            }
+
             $this->info('Fleetbase Seeders were run Successfully!');
         }
     }

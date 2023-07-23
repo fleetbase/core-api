@@ -35,7 +35,8 @@ class Response implements Expansion
             if ($error instanceof MessageBag) {
                 $error = $error->all();
             }
-            
+
+            /** @var \Illuminate\Support\Facades\Response $this */
             return static::json(
                 [
                     'errors' => is_array($error) ? $error : [$error],

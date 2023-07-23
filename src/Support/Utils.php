@@ -1666,6 +1666,43 @@ class Utils
     }
 
     /**
+     * Retrieves the values of a specified key from the "extra" property for a specific package
+     * with the "fleetbase" key.
+     *
+     * @param string $extension The fleetbase extension to lookup the property for.
+     * @param string $key The key to search for in the "extra" property of packages with the "fleetbase" key.
+     * @return mixed The value of the key
+     *
+     * @throws \RuntimeException If the installed.json file cannot be found.
+     */
+    public static function getFleetbaseExtensionProperty(string $extension, string $key)
+    {
+        $installedJsonPath = realpath(base_path('vendor/composer/installed.json'));
+
+        if (!$installedJsonPath) {
+            throw new \RuntimeException('Unable to find the installed.json file.');
+        }
+
+        $installedPackages = json_decode(file_get_contents($installedJsonPath), true);
+        $value = null;
+
+        if (isset($installedPackages['packages'])) {
+            foreach ($installedPackages['packages'] as $package) {
+                if ($package['name'] !== $extension) {
+                    continue;
+                }
+
+                if (isset($package['extra']['fleetbase']) && isset($package['extra']['fleetbase'][$key])) {
+                    $value = $package['extra']['fleetbase'][$key];
+                    break;
+                }
+            }
+        }
+
+        return $value;
+    }
+
+    /**
      * Retrieves the database name for the Fleetbase connection from the configuration.
      *
      * @return string|null The database name for the Fleetbase connection, or null if not found.
@@ -1764,6 +1801,177 @@ class Utils
     public static function getInstalledFleetbaseExtensions()
     {
         return static::findComposerPackagesWithKeyword('fleetbase-extension');
+    }
+
+    /**
+     * Retrieves directories containing seeders from installed Fleetbase extensions.
+     *
+     * This function first gets all installed Fleetbase extensions. Then it iterates over them
+     * and checks for a 'seeds' directory within each one. If it exists, the directory path
+     * is added to an array. The function finally returns this array of migration directories.
+     *
+     * @return array The array containing the paths to seeder directories of all installed Fleetbase extensions.
+     *
+     * @throws \RuntimeException if an error occurs during directory retrieval.
+     */
+    public static function getSeederClassesFromExtensions(): array
+    {
+        $packages = static::getInstalledFleetbaseExtensions();
+        $seederClasses = [];
+
+        foreach ($packages as $packageName => $package) {
+            // Derive the seeds directory path
+            $seedsDirectory = base_path('vendor/' . $packageName . '/seeds');
+
+            // Check if the seeds directory exists
+            if (!is_dir($seedsDirectory)) {
+                continue;
+            }
+
+            // Get all PHP files in the seeds directory
+            $files = glob($seedsDirectory . '/*.php');
+
+            // Find the namespace that corresponds to the seeds directory
+            $namespace = static::getNamespaceFromAutoload($package['autoload']['psr-4'], 'seeds');
+
+            foreach ($files as $file) {
+                // Get the base name of the file, and remove the .php extension to get the class name
+                $className = basename($file, '.php');
+
+                // Combine the namespace and class name to get the fully qualified class name
+                $seederClasses[] = $namespace . '\\' . $className;
+            }
+        }
+
+        return $seederClasses;
+    }
+
+    /**
+     * Get directories containing seed files from Fleetbase extensions installed in the project.
+     *
+     * This method iterates over all packages installed in the project and identified as Fleetbase extensions.
+     * For each extension, it identifies the "seeds" directory, fetches all PHP files in it, and maps these files
+     * to their fully qualified class names based on the PSR-4 autoload configuration in the extension's composer.json.
+     * The resulting array contains the fully qualified class names and the full paths to the corresponding PHP files.
+     *
+     * @return array Each item is an associative array with two keys:
+     *               'class' => the fully qualified class name of a seeder,
+     *               'path' => the full path to the PHP file of the seeder.
+     *
+     * @throws \Exception if the composer.lock file does not exist or does not contain packages data.
+     */
+    public static function getSeedersFromExtensions(): array
+    {
+        $packages = static::getInstalledFleetbaseExtensions();
+        $seederClasses = [];
+
+        foreach ($packages as $packageName => $package) {
+            // Derive the seeds directory path
+            $seedsDirectory = base_path('vendor/' . $packageName . '/seeds');
+
+            // Check if the seeds directory exists
+            if (!is_dir($seedsDirectory)) {
+                continue;
+            }
+
+            // Get all PHP files in the seeds directory
+            $files = glob($seedsDirectory . '/*.php');
+
+            // Find the namespace that corresponds to the seeds directory
+            $namespace = static::getNamespaceFromAutoload($package['autoload']['psr-4'], 'seeds');
+
+            foreach ($files as $file) {
+                // Get the base name of the file, and remove the .php extension to get the class name
+                $className = basename($file, '.php');
+
+                // Combine the namespace and class name to get the fully qualified class name
+                $seederClasses[] = [
+                    'class' => $namespace . '\\' . $className,
+                    'path' => $file,
+                ];
+            }
+        }
+
+        return $seederClasses;
+    }
+
+    /**
+     * Determines the namespace of a given directory from a given PSR-4 autoload configuration.
+     *
+     * @param array $psr4 The PSR-4 autoload configuration, mapping namespace prefixes to directories.
+     * @param string $directory The directory whose corresponding namespace should be returned.
+     *
+     * @return string|null The namespace corresponding to the given directory in the autoload configuration,
+     * or null if no such namespace exists.
+     */
+    private static function getNamespaceFromAutoload(array $psr4, string $directory): ?string
+    {
+        foreach ($psr4 as $namespace => $path) {
+            if (strpos($path, $directory) !== false) {
+                // Remove trailing backslashes from the namespace
+                $namespace = rtrim($namespace, '\\');
+                return $namespace;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Retrieves directories containing migrations from installed Fleetbase extensions.
+     *
+     * This function first gets all installed Fleetbase extensions. Then it iterates over them
+     * and checks for a 'migrations' directory within each one. If it exists, the directory path
+     * is added to an array. The function finally returns this array of migration directories.
+     *
+     * @return array The array containing the paths to migration directories of all installed Fleetbase extensions.
+     *
+     * @throws \RuntimeException if an error occurs during directory retrieval.
+     */
+    public static function getMigrationDirectories(): array
+    {
+        $packages = static::getInstalledFleetbaseExtensions();
+        $directories = [];
+
+        foreach ($packages as $packageName => $package) {
+            $migrationDirectory = base_path('vendor/' . $packageName . '/migrations/');
+
+            if (file_exists($migrationDirectory)) {
+                $directories[] = $migrationDirectory;
+            }
+        }
+
+        return $directories;
+    }
+
+    /**
+     * Retrieves the migration directory for a specific Fleetbase extension.
+     *
+     * This function first gets all installed Fleetbase extensions. Then it iterates over them
+     * until it finds the specified extension. If the extension is found, the function constructs
+     * the path to its 'migrations' directory and returns this path.
+     *
+     * @param string $extension The name of the Fleetbase extension for which the migration directory is to be retrieved.
+     *
+     * @return string|null The path to the migration directory of the specified Fleetbase extension, or null if the extension is not found.
+     *
+     * @throws \RuntimeException if an error occurs during directory retrieval.
+     */
+    public static function getMigrationDirectoryForExtension(string $extension): ?string
+    {
+        $packages = static::getInstalledFleetbaseExtensions();
+        $migrationDirectory = null;
+
+        foreach ($packages as $packageName => $package) {
+            if ($packageName !== $extension) {
+                continue;
+            }
+
+            $migrationDirectory = base_path('vendor/' . $packageName . '/migrations/');
+            break;
+        }
+
+        return $migrationDirectory;
     }
 
     /**
