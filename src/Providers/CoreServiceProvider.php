@@ -111,8 +111,6 @@ class CoreServiceProvider extends ServiceProvider
             if (!Schema::hasTable('settings')) {
                 return;
             }
-
-            // Rest of your function code...
         } catch (\Exception $e) {
             // Connection failed, or other error occurred
             return;
