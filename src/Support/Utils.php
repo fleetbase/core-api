@@ -2049,4 +2049,32 @@ class Utils
             $namespaces
         );
     }
+
+    /**
+     * UTF-8 aware parse_url() replacement.
+     * 
+     * @return array
+     */
+    public static function parseUrl($url)
+    {
+        $enc_url = preg_replace_callback(
+            '%[^:/@?&=#]+%usD',
+            function ($matches) {
+                return urlencode($matches[0]);
+            },
+            $url
+        );
+
+        $parts = parse_url($enc_url);
+
+        if ($parts === false) {
+            throw new \InvalidArgumentException('Malformed URL: ' . $url);
+        }
+
+        foreach ($parts as $name => $value) {
+            $parts[$name] = urldecode($value);
+        }
+
+        return $parts;
+    }
 }
