@@ -1,12 +1,14 @@
 <?php
 
+use Fleetbase\Support\Utils;
+
 $host = env('DB_HOST', '127.0.0.1');
 $database = env('DB_DATABASE', 'fleetbase');
 $username = env('DB_USERNAME', 'fleetbase');
 $password = env('DB_PASSWORD', '');
 
 if ($databaseUrl = getenv('DATABASE_URL')) {
-    $url = parse_url($databaseUrl);
+    $url = Utils::parseUrl($databaseUrl);
 
     $host = $url['host'];
     $username = $url['user'];
@@ -21,7 +23,7 @@ $redis_database = env('REDIS_DATABASE', '0');
 $redis_password = env('REDIS_PASSWORD', null);
 
 if ($cacheUrl = getenv('CACHE_URL')) {
-    $url = parse_url($cacheUrl);
+    $url = Utils::parseUrl($cacheUrl);
 
     $redis_host = $url['host'];
     if (isset($url['pass'])) {
