@@ -946,4 +946,55 @@ trait HasApiModelBehavior
 
         return $isNotTimestamp && $isNotFillable && $isNotRelation && $isNotFilterParam && $isNotAppenededAttribute && $isNotIdParam;
     }
+
+    /**
+     * Find a model by its `public_id` or `internal_id` key or throw an exception.
+     *
+     * @param  mixed  $id
+     * @param  array  $columns
+     * @param  Closure|null  $queryCallback
+     * @return \Illuminate\Database\Eloquent\Model|\Illuminate\Database\Eloquent\Collection|static|static[]
+     *
+     * @throws \Illuminate\Database\Eloquent\ModelNotFoundException
+     */
+    public static function findRecordOrFail($id, $with = [], $columns = ['*'], $queryCallback = null)
+    {
+        if (is_null($columns) || empty($columns)) {
+            $columns = ['*'];
+        }
+
+        /** @var \Illuminate\Database\Eloquent\Model $instance New instance of current Model **/
+        $instance = (new static());
+
+        // has internal id?
+        $hasInternalId = in_array('internal_id', $instance->getFillable());
+
+        // create query
+        $query = static::query()
+            ->select($columns)
+            ->with($with)
+            ->where(
+                function ($query) use ($id, $hasInternalId) {
+                    $query->where('public_id', $id);
+
+                    if ($hasInternalId) {
+                        $query->orWhere('internal_id', $id);
+                    }
+                }
+            );
+
+        // more query modifications if callback supplied
+        if (is_callable($queryCallback)) {
+            $queryCallback($query);
+        }
+
+        // get result
+        $result = $query->first();
+
+        if (!is_null($result)) {
+            return $result;
+        }
+
+        throw (new \Illuminate\Database\Eloquent\ModelNotFoundException())->setModel(static::class, $id);
+    }
 }
