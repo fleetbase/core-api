@@ -2069,4 +2069,32 @@ class Utils
 
         return $parts;
     }
+
+    /**
+     * Get the default "from" email address.
+     *
+     * This method retrieves the default "from" email address from the environment variable 'MAIL_FROM_ADDRESS'.
+     * If that's not set, it constructs the email address using the 'CONSOLE_HOST' environment variable.
+     * If neither is available, it uses the server's IP address.
+     *
+     * @return string The default "from" email address.
+     */
+    public static function getDefaultMailFromAddress(?string $default = 'hello@fleetbase.io'): string
+    {
+        $from = env('MAIL_FROM_ADDRESS', $default);
+
+        if (!$from && env('CONSOLE_HOST')) {
+            $from = 'hello@' . Str::domain(env('CONSOLE_HOST'));
+        }
+
+        if (!$from && is_string($default)) {
+            return $default;
+        }
+
+        if (!$from) {
+            $from = 'hello@' . \Illuminate\Support\Facades\Request::server('SERVER_ADDR');
+        }
+
+        return $from;
+    }
 }

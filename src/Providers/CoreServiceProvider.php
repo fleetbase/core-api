@@ -161,9 +161,36 @@ class CoreServiceProvider extends ServiceProvider
             ['settingsKey' => 'services.ipinfo', 'configKey' => 'fleetbase.services.ipinfo'],
         ];
 
+        $priorityEnvs = [
+            'AWS_ACCESS_KEY_ID' => ['services.aws.key'],
+            'AWS_SECRET_ACCESS_KEY' => ['services.aws.secret', 'filesystems.disks.s3.secret', 'cache.stores.dynamodb.secret', 'queue.connections.sqs.secret', 'mail.mailers.ses.secret'],
+            'AWS_DEFAULT_REGION' => ['services.aws.region', 'filesystems.disks.s3.region', 'cache.stores.dynamodb.region', 'queue.connections.sqs.region', 'mail.mailers.ses.region'],
+            'AWS_BUCKET' => ['filesystems.disks.s3'],
+            'FILESYSTEM_DRIVER' => ['filesystems.default'],
+            'MAIL_MAILER' => ['mail.default'],
+            'QUEUE_CONNECTION' => ['queue.default'],
+            'SQS_PREFIX' => ['queue.connections.sqs'],
+            'MAIL_FROM_ADDRESS' => ['mail.from'],
+            'MAIL_HOST' => ['mail.mailers.smtp']
+        ];
+
         foreach ($settings as $setting) {
             $settingsKey = $setting['settingsKey'];
             $configKey = $setting['configKey'];
+
+            // Check if the setting should be skipped based on priorityEnvs
+            $shouldSkip = false;
+            foreach ($priorityEnvs as $envKey => $settingKeys) {
+                if (env($envKey) && in_array($configKey, $settingKeys)) {
+                    $shouldSkip = true;
+                    break;
+                }
+            }
+
+            if ($shouldSkip) {
+                continue;
+            }
+
             $value = Setting::system($settingsKey);
 
             if ($value) {
@@ -185,6 +212,11 @@ class CoreServiceProvider extends ServiceProvider
                 // Set the entire config array
                 config($config);
             }
+        }
+
+        // we need a mail from set
+        if (empty(config('mail.from.address'))) {
+            config()->set('mail.from.address', Utils::getDefaultMailFromAddress());
         }
     }
 
