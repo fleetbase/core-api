@@ -119,7 +119,13 @@ class FileController extends FleetbaseController
         $fullPath = $path . '/' . $fileName;
 
         // Upload file to path
-        Storage::disk($disk)->put($fullPath, base64_decode($data), $visibility);
+        try {
+            Storage::disk($disk)->put($fullPath, base64_decode($data), $visibility);
+        } catch (\Aws\S3\Exception\S3Exception $e) {
+            return response()->error($e->getMessage());
+        } catch (\Exception $e) {
+            return response()->error($e->getMessage());
+        }
 
         // Create file record for upload
         $file = File::create([
@@ -137,7 +143,7 @@ class FileController extends FleetbaseController
             'size' => Utils::getBase64ImageSize($data)
         ]);
 
-        // done
+        // Done ✓
         return response()->json(
             [
                 'file' => $file,
