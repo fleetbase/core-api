@@ -41,21 +41,30 @@ class FileController extends FleetbaseController
             $path = str_replace('uploads/', '', $path);
         }
 
-        // Upload file and create record
+        // Generate a filename
         $fileName = File::randomFileNameFromRequest($request);
-        $path = $request->file->storeAs(
-            $path,
-            $fileName,
-            [
-                'disk' => $disk,
-                'visibility' => $visibility
-            ]
-        );
 
-        // \Fleetbase\Models\File $file
+        // Upload the file to storage disk
+        try {
+            $path = $request->file->storeAs(
+                $path,
+                $fileName,
+                [
+                    'disk' => $disk,
+                    'visibility' => $visibility
+                ]
+            );
+        } catch (\Aws\S3\Exception\S3Exception $e) {
+            return response()->error($e->getMessage());
+        } catch (\Exception $e) {
+            return response()->error($e->getMessage());
+        }
+
+        // Create a file record
+        // @var \Fleetbase\Models\File $file
         $file = File::createFromUpload($request->file, $path, $type, $size);
 
-        // if we have subject_uuid and type
+        // Set the subject if specified
         if ($request->has(['subject_uuid', 'subject_type'])) {
             $file->update(
                 [
@@ -71,7 +80,7 @@ class FileController extends FleetbaseController
             );
         }
 
-        // done
+        // Done ✓
         return response()->json(
             [
                 'file' => $file,
@@ -110,7 +119,13 @@ class FileController extends FleetbaseController
         $fullPath = $path . '/' . $fileName;
 
         // Upload file to path
-        Storage::disk($disk)->put($fullPath, base64_decode($data), $visibility);
+        try {
+            Storage::disk($disk)->put($fullPath, base64_decode($data), $visibility);
+        } catch (\Aws\S3\Exception\S3Exception $e) {
+            return response()->error($e->getMessage());
+        } catch (\Exception $e) {
+            return response()->error($e->getMessage());
+        }
 
         // Create file record for upload
         $file = File::create([
@@ -128,7 +143,7 @@ class FileController extends FleetbaseController
             'size' => Utils::getBase64ImageSize($data)
         ]);
 
-        // done
+        // Done ✓
         return response()->json(
             [
                 'file' => $file,
