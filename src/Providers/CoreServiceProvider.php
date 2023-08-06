@@ -199,8 +199,17 @@ class CoreServiceProvider extends ServiceProvider
                     $environmentVariables = $putsenv[$settingsKey];
 
                     foreach ($environmentVariables as $configEnvKey => $envKey) {
+                        // hack fix for aws set envs
+                        $hasDefaultRegion = !empty(env('AWS_DEFAULT_REGION'));
+                        if ($hasDefaultRegion && \Illuminate\Support\Str::startsWith($envKey, 'AWS_')) {
+                            continue;
+                        }
+                        
+                        $envValue = data_get($value, $configEnvKey);
+                        $doesntHaveEnvSet = env($envKey);
+                        $hasValue = !empty($envValue);
                         // only set if env variable is not set already
-                        if (empty(env($envKey))) {
+                        if ($doesntHaveEnvSet && $hasValue) {
                             putenv($envKey . '="' . data_get($value, $configEnvKey) . '"');
                         }
                     }
