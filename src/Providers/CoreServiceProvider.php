@@ -199,7 +199,10 @@ class CoreServiceProvider extends ServiceProvider
                     $environmentVariables = $putsenv[$settingsKey];
 
                     foreach ($environmentVariables as $configEnvKey => $envKey) {
-                        putenv($envKey . '="' . data_get($value, $configEnvKey) . '"');
+                        // only set if env variable is not set already
+                        if (empty(env($envKey))) {
+                            putenv($envKey . '="' . data_get($value, $configEnvKey) . '"');
+                        }
                     }
                 }
 
