@@ -44,4 +44,14 @@ class Str implements Expansion
             return $uppercase ? ucfirst($humanized) : $humanized;
         };
     }
+
+    public function domain()
+    {
+        return function (string $url) {
+            $parsedUrl = parse_url($url);
+            $host = explode('.', $parsedUrl['host']);
+            $domain = $host[count($host) - 2] . '.' . $host[count($host) - 1];
+            return $domain;
+        };
+    }
 }
