@@ -89,6 +89,7 @@ class CoreServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__ . '/../../config/permission.php', 'permission');
         $this->mergeConfigFrom(__DIR__ . '/../../config/activitylog.php', 'activitylog');
         $this->mergeConfigFrom(__DIR__ . '/../../config/excel.php', 'excel');
+        $this->mergeConfigFrom(__DIR__ . '/../../config/sentry.php', 'sentry');
         $this->mergeConfigFromSettings();
         $this->addServerIpAsAllowedOrigin();
     }
@@ -126,7 +127,8 @@ class CoreServiceProvider extends ServiceProvider
         $putsenv = [
             'services.aws' => ['key' => 'AWS_ACCESS_KEY_ID', 'secret' => 'AWS_SECRET_ACCESS_KEY', 'region' => 'AWS_DEFAULT_REGION'],
             'services.google_maps' => ['api_key' => 'GOOGLE_MAPS_API_KEY', 'locale' => 'GOOGLE_MAPS_LOCALE'],
-            'services.twilio' => ['sid' => 'TWILIO_SID', 'token' => 'TWILIO_TOKEN', 'from' => 'TWILIO_FROM']
+            'services.twilio' => ['sid' => 'TWILIO_SID', 'token' => 'TWILIO_TOKEN', 'from' => 'TWILIO_FROM'],
+            'services.sentry' => ['dsn' => 'SENTRY_DSN']
         ];
 
         $settings = [
@@ -159,6 +161,7 @@ class CoreServiceProvider extends ServiceProvider
             ['settingsKey' => 'services.twilio', 'configKey' => 'twilio.connections.twilio'],
             ['settingsKey' => 'services.ipinfo', 'configKey' => 'services.ipinfo'],
             ['settingsKey' => 'services.ipinfo', 'configKey' => 'fleetbase.services.ipinfo'],
+            ['settingsKey' => 'services.sentry.dsn', 'configKey' => 'sentry.dsn'],
         ];
 
         $priorityEnvs = [

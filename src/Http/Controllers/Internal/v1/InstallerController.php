@@ -3,6 +3,7 @@
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Http\Controllers\Controller;
+use Fleetbase\Models\Setting;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -18,6 +19,7 @@ class InstallerController extends Controller
     {
         $shouldInstall = false;
         $shouldOnboard = false;
+        $defaultTheme = Setting::lookup('branding.default_theme', 'dark');
 
         try {
             DB::connection()->getPdo();
@@ -39,7 +41,8 @@ class InstallerController extends Controller
         return response()->json(
             [
                 'shouldInstall' => $shouldInstall,
-                'shouldOnboard' => $shouldOnboard
+                'shouldOnboard' => $shouldOnboard,
+                'defaultTheme' => $defaultTheme
             ]
         );
     }

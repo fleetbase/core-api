@@ -170,8 +170,13 @@ class Setting extends EloquentModel
         $brandingSettings = ['id' => 1, 'uuid' => 1];
         $iconUrl = static::where('key', 'branding.icon_url')->first();
         $logoUrl = static::where('key', 'branding.logo_url')->first();
+        $defaultTheme = static::where('key', 'branding.default_theme')->first();
+
+
+        // set branding settings
         $brandingSettings['icon_url'] = $iconUrl ? $iconUrl->value : '/images/icon.png';
         $brandingSettings['logo_url'] = $logoUrl ? $logoUrl->value : '/images/fleetbase-logo-svg.svg';
+        $brandingSettings['default_theme'] = $defaultTheme ? $defaultTheme->value : 'dark';
 
         return $brandingSettings;
     }

@@ -4,6 +4,7 @@ namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Http\Controllers\Controller;
 use Fleetbase\Models\Setting;
+use Fleetbase\Support\Utils;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
 
@@ -14,7 +15,8 @@ class SettingController extends Controller
 	 *
 	 * @return void
 	 */
-	public function adminOverview() {
+	public function adminOverview()
+	{
 		$metrics = [];
 		$metrics['total_users'] = \Fleetbase\Models\User::all()->count();
 		$metrics['total_organizations'] = \Fleetbase\Models\Company::all()->count();
@@ -62,6 +64,34 @@ class SettingController extends Controller
 		Setting::configure('system.filesystem.s3', array_merge(config('filesystems.disks.s3', []), $s3));
 
 		return response()->json(['status' => 'OK']);
+	}
+
+	/**
+	 * Creates a file and uploads it to the users default disks.
+	 *
+	 * @param  \Illuminate\Http\Request  $request The incoming HTTP request containing the authenticated user.
+	 * @return \Illuminate\Http\JsonResponse Returns a JSON response with a success message and HTTP status 200.
+	 */
+	public function testFilesystemConfig(Request $request)
+	{
+		$disk = $request->input('disk', config('filesystems.default'));
+		$message = 'Filesystem configuration is successful, test file uploaded.';
+		$status = 'success';
+
+		// set config values from input
+		config(['filesystem.default' => $disk]);
+
+		try {
+			\Illuminate\Support\Facades\Storage::disk($disk)->put('testfile.txt', 'Hello World');
+		} catch (\Aws\S3\Exception\S3Exception $e) {
+			$message = $e->getMessage();
+			$status = 'error';
+		} catch (\Exception $e) {
+			$message = $e->getMessage();
+			$status = 'error';
+		}
+
+		return response()->json(['status' => $status, 'message' => $message]);
 	}
 
 	/**
@@ -122,14 +152,17 @@ class SettingController extends Controller
 	 *
 	 * @param  \Illuminate\Http\Request  $request The incoming HTTP request containing the authenticated user.
 	 * @return \Illuminate\Http\JsonResponse Returns a JSON response with a success message and HTTP status 200.
-	 *
-	 * @throws \Illuminate\Database\Eloquent\ModelNotFoundException If the authenticated user is not found.
-	 * @throws \Illuminate\Mail\MailerException If the email fails to send.
 	 */
 	public function testMailConfig(Request $request)
 	{
 		$mailer = $request->input('mailer', 'smtp');
-		$from = $request->input('from', []);
+		$from = $request->input(
+			'from',
+			[
+				'address' => Utils::getDefaultMailFromAddress(),
+				'name' => 'Fleetbase'
+			]
+		);
 		$smtp = $request->input('smtp', []);
 		$user = $request->user();
 		$message = 'Mail configuration is successful, check your inbox for the test email to confirm.';
@@ -140,6 +173,12 @@ class SettingController extends Controller
 
 		try {
 			Mail::to($user)->send(new \Fleetbase\Mail\TestEmail());
+		} catch (\Aws\Ses\Exception\SesException $e) {
+			$message = $e->getMessage();
+			$status = 'error';
+		} catch (\Swift_TransportException $e) {
+			$message = $e->getMessage();
+			$status = 'error';
 		} catch (\Exception $e) {
 			$message = $e->getMessage();
 			$status = 'error';
@@ -196,6 +235,40 @@ class SettingController extends Controller
 	}
 
 	/**
+	 * Sends a test message to the queue .
+	 *
+	 * @param  \Illuminate\Http\Request  $request The incoming HTTP request containing the authenticated user.
+	 * @return \Illuminate\Http\JsonResponse Returns a JSON response with a success message and HTTP status 200.
+	 */
+	public function testQueueConfig(Request $request)
+	{
+		$queue = $request->input('queue', config('queue.connections.sqs.queue'));
+		$message = 'Queue configuration is successful, message sent to queue.';
+		$status = 'success';
+
+		// set config values from input
+		config(['queue.default' => $queue]);
+
+		try {
+			\Illuminate\Support\Facades\Queue::pushRaw(new \Illuminate\Support\MessageBag(['Hello World']));
+		} catch (\Aws\Sqs\Exception\SqsException $e) {
+			$message = $e->getMessage();
+			$status = 'error';
+		} catch (\Exception $e) {
+			$message = $e->getMessage();
+			$status = 'error';
+		} catch (\Error $e) {
+			$message = $e->getMessage();
+			$status = 'error';
+		} catch (\ErrorException $e) {
+			$message = $e->getMessage();
+			$status = 'error';
+		}
+
+		return response()->json(['status' => $status, 'message' => $message]);
+	}
+
+	/**
 	 * Loads and sends the services configuration.
 	 *
 	 *  @return \Illuminate\Http\JsonResponse
@@ -206,18 +279,21 @@ class SettingController extends Controller
 		$awsKey = config('services.aws.key', env('AWS_ACCESS_KEY_ID'));
 		$awsSecret = config('services.aws.secret', env('AWS_SECRET_ACCESS_KEY'));
 		$awsRegion = config('services.aws.region', env('AWS_DEFAULT_REGION', 'us-east-1'));
-	
+
 		/** ipinfo service */
 		$ipinfoApiKey = config('services.ipinfo.api_key', env('IPINFO_API_KEY'));
-	
+
 		/** google maps service */
 		$googleMapsApiKey = config('services.google_maps.api_key', env('GOOGLE_MAPS_API_KEY'));
 		$googleMapsLocale = config('services.google_maps.locale', env('GOOGLE_MAPS_LOCALE', 'us'));
-	
+
 		/** twilio service */
 		$twilioSid = config('services.twilio.sid', env('TWILIO_SID'));
 		$twilioToken = config('services.twilio.token', env('TWILIO_TOKEN'));
 		$twilioFrom = config('services.twilio.from', env('TWILIO_FROM'));
+
+		/** sentry service */
+		$sentryDsn = config('sentry.dsn', env('SENTRY_LARAVEL_DSN', env('SENTRY_DSN')));
 
 		return response()->json([
 			'awsKey' => $awsKey,
@@ -229,6 +305,7 @@ class SettingController extends Controller
 			'twilioSid' => $twilioSid,
 			'twilioToken' => $twilioToken,
 			'twilioFrom' => $twilioFrom,
+			'sentryDsn' => $sentryDsn,
 		]);
 	}
 
@@ -244,11 +321,13 @@ class SettingController extends Controller
 		$ipinfo = $request->input('ipinfo', config('services.ipinfo'));
 		$googleMaps = $request->input('googleMaps', config('services.google_maps'));
 		$twilio = $request->input('twilio', config('services.twilio'));
+		$sentry = $request->input('sentry', config('sentry.dsn'));
 
 		Setting::configure('system.services.aws', array_merge(config('services.aws', []), $aws));
 		Setting::configure('system.services.ipinfo', array_merge(config('services.ipinfo', []), $ipinfo));
 		Setting::configure('system.services.google_maps', array_merge(config('services.google_maps', []), $googleMaps));
 		Setting::configure('system.services.twilio', array_merge(config('services.twilio', []), $twilio));
+		Setting::configure('system.services.sentry', array_merge(config('sentry', []), $sentry));
 
 		return response()->json(['status' => 'OK']);
 	}
@@ -275,6 +354,11 @@ class SettingController extends Controller
 	{
 		$iconUrl = $request->input('brand.icon_url');
 		$logoUrl = $request->input('brand.logo_url');
+		$defaultTheme = $request->input('brand.default_theme');
+
+		if ($defaultTheme) {
+			Setting::configure('branding.default_theme', $defaultTheme);
+		}
 
 		if ($iconUrl) {
 			Setting::configure('branding.icon_url', $iconUrl);
@@ -285,7 +369,106 @@ class SettingController extends Controller
 		}
 
 		$brandingSettings = Setting::getBranding();
-		
+
 		return response()->json(['brand' => $brandingSettings]);
+	}
+
+	/**
+	 * Sends a test SMS message using Twilio.
+	 *
+	 * @param  \Illuminate\Http\Request  $request The incoming HTTP request containing the authenticated user.
+	 * @return \Illuminate\Http\JsonResponse Returns a JSON response with a success message and HTTP status 200.
+	 */
+	public function testTwilioConfig(Request $request)
+	{
+		$sid = $request->input('sid');
+		$token = $request->input('token');
+		$from = $request->input('from');
+		$phone = $request->input('phone');
+
+		if (!$phone) {
+			return response()->json(['status' => 'error', 'message' => 'No test phone number provided!']);
+		}
+
+		// Set config from request
+		config(['twilio.connections.twilio.sid' => $sid, 'twilio.connections.twilio.token' => $token, 'twilio.connections.twilio.from' => $from]);
+
+		$message = 'Twilio configuration is successful, SMS sent to ' . $phone . '.';
+		$status = 'success';
+
+		try {
+			\Aloha\Twilio\Support\Laravel\Facade::message($phone, 'This is a Twilio test from Fleetbase');
+		} catch (\Twilio\Exceptions\RestException $e) {
+			$message = $e->getMessage();
+			$status = 'error';
+		} catch (\Exception $e) {
+			$message = $e->getMessage();
+			$status = 'error';
+		} catch (\Error $e) {
+			$message = $e->getMessage();
+			$status = 'error';
+		} catch (\ErrorException $e) {
+			$message = $e->getMessage();
+			$status = 'error';
+		}
+
+		return response()->json(['status' => $status, 'message' => $message]);
+	}
+
+	/**
+	 * Sends a test exception to Sentry.
+	 *
+	 * @param  \Illuminate\Http\Request  $request The incoming HTTP request containing the authenticated user.
+	 * @return \Illuminate\Http\JsonResponse Returns a JSON response with a success message and HTTP status 200.
+	 */
+	public function testSentryConfig(Request $request)
+	{
+		$dsn = $request->input('dsn');
+
+		// Set config from request
+		config(['sentry.dsn' => $dsn]);
+
+		$message = 'Sentry configuration is successful, test Exception sent.';
+		$status = 'success';
+
+		try {
+			$clientBuilder = \Sentry\ClientBuilder::create([
+				'dsn' => $dsn,
+				'release' => env('SENTRY_RELEASE'),
+				'environment' => app()->environment(),
+				'traces_sample_rate' => 1.0,
+			]);
+		} catch (\Exception $e) {
+			$message = $e->getMessage();
+			$status = 'error';
+		}
+
+		if ($clientBuilder) {
+			// Set the Laravel SDK identifier and version
+			$clientBuilder->setSdkIdentifier(\Sentry\Laravel\Version::SDK_IDENTIFIER);
+			$clientBuilder->setSdkVersion(\Sentry\Laravel\Version::SDK_VERSION);
+
+			// Create hub
+			$hub = new \Sentry\State\Hub($clientBuilder->getClient());
+
+			// Create test exception
+			$testException = null;
+
+			try {
+				throw new \Exception('This is a test exception sent from the Sentry Laravel SDK.');
+			} catch (\Exception $exception) {
+				$testException = $exception;
+			}
+
+			try {
+				// Capture test exception
+				$hub->captureException($testException);
+			} catch (\Exception $e) {
+				$message = $e->getMessage();
+				$status = 'error';
+			}
+		}
+
+		return response()->json(['status' => $status, 'message' => $message]);
 	}
 }
