@@ -26,6 +26,25 @@ class Handler extends ExceptionHandler
     protected $dontFlash = ['password', 'password_confirmation'];
 
     /**
+     * Registers a custom exception handler for the application.
+     *
+     * This function integrates with Sentry to capture unhandled exceptions.
+     * It utilizes the Laravel's reportable method to define how exceptions
+     * should be reported. Any unhandled exception will be captured and sent
+     * to Sentry for monitoring and troubleshooting.
+     *
+     * @return void
+     */
+    public function register(): void
+    {
+        $this->reportable(
+            function (\Throwable $e) {
+                \Sentry\Laravel\Integration::captureUnhandledException($e);
+            }
+        );
+    }
+
+    /**
      * Handles unauthenticated request esxceptions.
      *
      * @param \Iluminate\Http\Request $request
@@ -47,13 +66,8 @@ class Handler extends ExceptionHandler
      */
     public function report(\Throwable $exception)
     {
-        // log to Sentry
-        if ($this->shouldReport($exception) && app()->bound('sentry')) {
-            app('sentry')->captureException($exception);
-        }
-
-        // log to CloudWatch
-        Log::error($exception->getMessage() ?? class_basename($exception));
+        // Log to CloudWatch
+        Log::error($this->getCloudwatchLoggableException($exception));
 
         parent::report($exception);
     }
@@ -93,5 +107,46 @@ class Handler extends ExceptionHandler
         }
 
         return response()->error('Oops! A backend error has been reported, please try your request again to continue.', 400);
+    }
+
+    /**
+     * Retrieves a loggable message from an exception for CloudWatch.
+     *
+     * This function attempts to extract a loggable message from the given exception object.
+     * It first checks if the exception has a 'getMessage' method and uses it if available.
+     * If not, it attempts to JSON encode the exception. If all else fails, it returns
+     * the base class name of the exception.
+     *
+     * @param  \Throwable  $exception The exception object to extract a loggable message from.
+     * @return string|null The loggable message or class name of the exception, or null if none is found.
+     */
+    public function getCloudwatchLoggableException(\Throwable $exception)
+    {
+        $output = null;
+
+        if (empty($output)) {
+            try {
+                $output = json_encode(
+                    [
+                        'message' => $exception->getMessage(),
+                        'code' => $exception->getCode(),
+                        'file' => $exception->getFile(),
+                        'line' => $exception->getLine(),
+                    ]
+                );
+            } catch (\Exception $e) {
+                $output = null;
+            }
+        }
+
+        if (empty($output) && method_exists($exception, 'getMessage')) {
+            $output = $exception->getMessage();
+        }
+
+        if (empty($output)) {
+            $output = class_basename($exception);
+        }
+
+        return $output;
     }
 }

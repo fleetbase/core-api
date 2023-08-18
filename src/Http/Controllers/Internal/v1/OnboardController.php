@@ -89,7 +89,8 @@ class OnboardController extends Controller
         return response()->json([
             'status' => 'success',
             'session' => $user->uuid,
-            'token' => $token->plainTextToken
+            'token' => $token->plainTextToken,
+            'skipVerification' => $user->id === 1
         ]);
     }
 

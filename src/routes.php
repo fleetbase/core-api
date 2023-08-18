@@ -99,13 +99,17 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                         $router->get('overview', $controller('adminOverview'));
                                         $router->get('filesystem-config', $controller('getFilesystemConfig'));
                                         $router->post('filesystem-config', $controller('saveFilesystemConfig'));
+                                        $router->post('test-filesystem-config', $controller('testFilesystemConfig'));
                                         $router->get('mail-config', $controller('getMailConfig'));
                                         $router->post('mail-config', $controller('saveMailConfig'));
                                         $router->post('test-mail-config', $controller('testMailConfig'));
                                         $router->get('queue-config', $controller('getQueueConfig'));
                                         $router->post('queue-config', $controller('saveQueueConfig'));
+                                        $router->post('test-queue-config', $controller('testQueueConfig'));
                                         $router->get('services-config', $controller('getServicesConfig'));
                                         $router->post('services-config', $controller('saveServicesConfig'));
+                                        $router->post('test-twilio-config', $controller('testTwilioConfig'));
+                                        $router->post('test-sentry-config', $controller('testSentryConfig'));
                                         $router->post('branding', $controller('saveBrandingSettings'));
                                         $router->put('branding', $controller('saveBrandingSettings'));
                                     }
