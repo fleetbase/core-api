@@ -68,8 +68,6 @@ class ResourceLifecycleEvent implements ShouldBroadcast
      */
     public function __construct(Model $model, $eventName = null, $version = 1)
     {
-        $this->connection = $this->chooseQueueConnection();
-        $this->queue = Utils::getEventsQueue();
         $this->modelUuid = $model->uuid;
         $this->modelClassNamespace = get_class($model);
         $this->modelClassName = Utils::classBasename($model);
@@ -93,26 +91,6 @@ class ResourceLifecycleEvent implements ShouldBroadcast
     }
 
     /**
-     * Chooses the queue connection for the event.
-     *
-     * If the AWS SQS credentials (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY) and the SQS_EVENTS_QUEUE 
-     * environment variable are all set, it will return the value of SQS_EVENTS_QUEUE as the chosen queue connection.
-     * If not, it defaults to using the 'redis' connection.
-     *
-     * @return string The name of the queue connection.
-     */
-    protected function chooseQueueConnection()
-    {
-        // AWS SQS
-        if (!empty(env('AWS_ACCESS_KEY_ID')) && !empty(env('AWS_SECRET_ACCESS_KEY')) && !empty(env('SQS_EVENTS_QUEUE'))) {
-            return env('SQS_EVENTS_QUEUE', 'events');
-        }
-
-        // Fallback to Redis Connection
-        return 'redis';
-    }
-
-    /**
      * The event's broadcast name.
      *
      * @return string
@@ -130,7 +108,7 @@ class ResourceLifecycleEvent implements ShouldBroadcast
     public function broadcastOn()
     {
         $model = $this->getModelRecord();
-        $companySession = $model->company_uuid ?? session('company');
+        $companySession = session('company', $model->company_uuid);
         $channels = [new Channel('company.' . $companySession)];
 
         if ($model && isset($model->company)) {
@@ -177,8 +155,8 @@ class ResourceLifecycleEvent implements ShouldBroadcast
             $channels[] = new Channel('vendor.' . $model->vendor->public_id);
         }
 
-        if ($model && Utils::get($model, 'meta.storefront_id')) {
-            $channels[] = new Channel('storefront.' . Utils::get($model, 'meta.storefront_id'));
+        if ($model && data_get($model, 'meta.storefront_id')) {
+            $channels[] = new Channel('storefront.' . data_get($model, 'meta.storefront_id'));
         }
 
         return $channels;

@@ -950,14 +950,15 @@ trait HasApiModelBehavior
     /**
      * Find a model by its `public_id` or `internal_id` key or throw an exception.
      *
-     * @param  mixed  $id
-     * @param  array  $columns
-     * @param  Closure|null  $queryCallback
+     * @param  mixed  $id ID of the record to find
+     * @param  array  $with Relationships to include
+     * @param  array  $columns Columns to select in query
+     * @param  Closure|null  $queryCallback Optional callback to modify the QueryBuilder
      * @return \Illuminate\Database\Eloquent\Model|\Illuminate\Database\Eloquent\Collection|static|static[]
      *
      * @throws \Illuminate\Database\Eloquent\ModelNotFoundException
      */
-    public static function findRecordOrFail($id, $with = [], $columns = ['*'], $queryCallback = null)
+    public static function findRecordOrFail($id, $with = [], $columns = ['*'], ?\Closure $queryCallback = null)
     {
         if (is_null($columns) || empty($columns)) {
             $columns = ['*'];

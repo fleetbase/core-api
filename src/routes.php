@@ -112,6 +112,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                         $router->post('test-sentry-config', $controller('testSentryConfig'));
                                         $router->post('branding', $controller('saveBrandingSettings'));
                                         $router->put('branding', $controller('saveBrandingSettings'));
+                                        $router->post('test-socket', $controller('testSocketcluster'));
                                     }
                                 );
                                 $router->fleetbaseRoutes('api-events');

@@ -5,6 +5,7 @@ namespace Fleetbase\Http\Requests;
 use Fleetbase\Support\Http;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
+use Illuminate\Validation\ValidationException;
 
 class FleetbaseRequest extends FormRequest
 {
@@ -38,7 +39,7 @@ class FleetbaseRequest extends FormRequest
             }
         }
 
-        return response()->json($response, 422);
+        throw new ValidationException($validator, response()->json($response, 422));
     }
 
     public function responseWithErrors(Validator $validator)
