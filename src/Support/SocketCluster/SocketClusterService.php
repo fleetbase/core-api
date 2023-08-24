@@ -181,7 +181,7 @@ class SocketClusterService
         $this->sent = false;
 
         try {
-            $this->sendSocketClusterHandshake($cid);
+            $this->handshake($cid);
             $this->client->send($message);
             $this->response = $this->client->receive();
             $this->client->close();
@@ -208,7 +208,7 @@ class SocketClusterService
      * @throws \WebSocket\TimeoutException    If the operation times out.
      * @throws \Throwable                     If any other error occurs.
      */
-    public function sendSocketClusterHandshake($cid)
+    public function handshake($cid)
     {
         $handshake = new SocketClusterHandshake($cid);
         $this->handshakeSent = false;
