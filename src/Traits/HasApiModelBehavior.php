@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Arr;
 
 /**
  * Adds API Model Behavior 
@@ -910,6 +911,8 @@ trait HasApiModelBehavior
     {
         $payloadKeys = [$this->getSingularName(), Str::camel($this->getSingularName())];
         $input = $request->or($payloadKeys) ?? $request->all();
+        // the following input keys should always be managed by the server
+        $input = Arr::except($input, ['company_uuid', 'created_by_uuid', 'updated_by_uuid', 'uploader_uuid']);
 
         return $input;
     }
@@ -922,7 +925,14 @@ trait HasApiModelBehavior
      */
     public function isColumn(string $columnName): bool
     {
-        return Schema::hasColumn($this->getTable(), $columnName);
+        $connectionName = config('database.default');
+        $connection = $this->getConnection();
+
+        if ($connection instanceof \Illuminate\Database\Connection) {
+            $connectionName = $connection->getName();
+        }
+
+        return Schema::connection($connectionName)->hasColumn($this->getTable(), $columnName);
     }
 
     /**
@@ -950,14 +960,15 @@ trait HasApiModelBehavior
     /**
      * Find a model by its `public_id` or `internal_id` key or throw an exception.
      *
-     * @param  mixed  $id
-     * @param  array  $columns
-     * @param  Closure|null  $queryCallback
+     * @param  mixed  $id ID of the record to find
+     * @param  array  $with Relationships to include
+     * @param  array  $columns Columns to select in query
+     * @param  Closure|null  $queryCallback Optional callback to modify the QueryBuilder
      * @return \Illuminate\Database\Eloquent\Model|\Illuminate\Database\Eloquent\Collection|static|static[]
      *
      * @throws \Illuminate\Database\Eloquent\ModelNotFoundException
      */
-    public static function findRecordOrFail($id, $with = [], $columns = ['*'], $queryCallback = null)
+    public static function findRecordOrFail($id, $with = [], $columns = ['*'], ?\Closure $queryCallback = null)
     {
         if (is_null($columns) || empty($columns)) {
             $columns = ['*'];

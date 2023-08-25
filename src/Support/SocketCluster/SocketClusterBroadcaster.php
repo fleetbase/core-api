@@ -1,21 +1,20 @@
 <?php
 
-namespace Fleetbase\Support;
+namespace Fleetbase\Support\SocketCluster;
 
 use Illuminate\Contracts\Broadcasting\Broadcaster;
-use Fleetbase\Support\SocketClusterService;
 
 class SocketClusterBroadcaster implements Broadcaster
 {
     /**
-     * @var \Fleetbase\Services\SocketClusterService
+     * @var \Fleetbase\Suppoer\SocketCluster\SocketClusterService
      */
-    protected $socketcluster;
+    protected SocketClusterService $socketcluster;
 
     /**
      * Construct
      *
-     * @param \Fleetbase\Services\SocketClusterService $socketcluster
+     * @param \Fleetbase\Support\SocketCluster\SocketClusterService $socketcluster
      *
      * @param void
      */

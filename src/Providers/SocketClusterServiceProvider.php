@@ -4,8 +4,8 @@ namespace Fleetbase\Providers;
 
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\Broadcast;
-use Fleetbase\Support\SocketClusterService;
-use Fleetbase\Support\SocketClusterBroadcaster;
+use Fleetbase\Support\SocketCluster\SocketClusterService;
+use Fleetbase\Support\SocketCluster\SocketClusterBroadcaster;
 
 class SocketClusterServiceProvider extends ServiceProvider
 {

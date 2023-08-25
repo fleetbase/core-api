@@ -391,7 +391,7 @@ class SettingController extends Controller
 		}
 
 		// Set config from request
-		config(['twilio.connections.twilio.sid' => $sid, 'twilio.connections.twilio.token' => $token, 'twilio.connections.twilio.from' => $from]);
+		config(['twilio.twilio.connections.twilio.sid' => $sid, 'twilio.twilio.connections.twilio.token' => $token, 'twilio.twilio.connections.twilio.from' => $from]);
 
 		$message = 'Twilio configuration is successful, SMS sent to ' . $phone . '.';
 		$status = 'success';
@@ -470,5 +470,50 @@ class SettingController extends Controller
 		}
 
 		return response()->json(['status' => $status, 'message' => $message]);
+	}
+
+	/**
+	 * Test SocketCluster Configuration
+	 *
+	 * @param  \Illuminate\Http\Request  $request The incoming HTTP request containing the authenticated user.
+	 * @return \Illuminate\Http\JsonResponse Returns a JSON response with a success message and HTTP status 200.
+	 */
+	public function testSocketcluster(Request $request)
+	{
+		// Get the channel to publish to
+		$channel = $request->input('channel', 'test');
+		$message = 'Socket broadcasted message successfully.';
+		$status = 'success';
+		$sent = false;
+		$response = null;
+
+		$socketClusterClient = new \Fleetbase\Support\SocketCluster\SocketClusterService();
+
+		try {
+			$sent = $socketClusterClient->send($channel, [
+				'message' => 'Hello World',
+				'sender' => 'Fleetbase'
+			]);
+			$response = $socketClusterClient->response();
+		} catch (\WebSocket\ConnectionException $e) {
+            $message = $e->getMessage();
+        } catch (\WebSocket\TimeoutException $e) {
+            $message = $e->getMessage();
+        } catch (\Throwable $e) {
+            $message = $e->getMessage();
+        }
+
+		if (!$sent) {
+			$status = 'error';
+		}
+
+		return response()->json(
+			[
+				'status' => $status,
+				'message' => $message,
+				'channel' => $channel,
+				'response' => $response
+			]
+		);
 	}
 }

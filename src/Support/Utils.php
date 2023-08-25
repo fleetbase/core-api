@@ -1598,6 +1598,26 @@ class Utils
     }
 
     /**
+     * Chooses the queue connection for the event.
+     *
+     * If the AWS SQS credentials (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY) and the SQS_EVENTS_QUEUE 
+     * environment variable are all set, it will return the value of SQS_EVENTS_QUEUE as the chosen queue connection.
+     * If not, it defaults to using the 'redis' connection.
+     *
+     * @return string The name of the queue connection.
+     */
+    public static function chooseQueueConnection()
+    {
+        // AWS SQS
+        if (!empty(env('AWS_ACCESS_KEY_ID')) && !empty(env('AWS_SECRET_ACCESS_KEY')) && !empty(env('SQS_EVENTS_QUEUE'))) {
+            return env('SQS_EVENTS_QUEUE', 'events');
+        }
+
+        // Fallback to Redis Connection
+        return 'redis';
+    }
+
+    /**
      * Converts a string or class name to an ember resource type \Fleetbase\FleetOps\Models\IntegratedVendor -> integrated-vendor
      * @param string $className
      * @return null|string

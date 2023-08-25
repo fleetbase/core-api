@@ -158,7 +158,7 @@ class CoreServiceProvider extends ServiceProvider
             ['settingsKey' => 'services.aws.region', 'configKey' => 'services.ses.region'],
             ['settingsKey' => 'services.google_maps', 'configKey' => 'services.google_maps'],
             ['settingsKey' => 'services.twilio', 'configKey' => 'services.twilio'],
-            ['settingsKey' => 'services.twilio', 'configKey' => 'twilio.connections.twilio'],
+            ['settingsKey' => 'services.twilio', 'configKey' => 'twilio.twilio.connections.twilio'],
             ['settingsKey' => 'services.ipinfo', 'configKey' => 'services.ipinfo'],
             ['settingsKey' => 'services.ipinfo', 'configKey' => 'fleetbase.services.ipinfo'],
             ['settingsKey' => 'services.sentry.dsn', 'configKey' => 'sentry.dsn'],
@@ -209,8 +209,9 @@ class CoreServiceProvider extends ServiceProvider
                         }
                         
                         $envValue = data_get($value, $configEnvKey);
-                        $doesntHaveEnvSet = env($envKey);
+                        $doesntHaveEnvSet = empty(env($envKey));
                         $hasValue = !empty($envValue);
+
                         // only set if env variable is not set already
                         if ($doesntHaveEnvSet && $hasValue) {
                             putenv($envKey . '="' . data_get($value, $configEnvKey) . '"');

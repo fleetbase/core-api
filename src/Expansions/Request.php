@@ -74,16 +74,16 @@ class Request implements Expansion
         /**
          * Retrieve input from the request as a array.
          *
-         * @param string $key
+         * @param string $param
          * @return array
          */
-        return function (string $key) {
+        return function (string $param) {
             /** @var \Illuminate\Http\Request $this */
-            if (is_string($this->input($key)) && Str::contains($this->input($key), ',')) {
-                return explode(',', $this->input($key));
+            if (is_string($this->input($param)) && Str::contains($this->input($param), ',')) {
+                return explode(',', $this->input($param));
             }
 
-            return (array) $this->input($key, []);
+            return (array) $this->input($param, []);
         };
     }
 
@@ -101,6 +101,29 @@ class Request implements Expansion
              * @var \Illuminate\Support\Facades\Request $this
              */
             return $this->has($param) && is_array($this->input($param));
+        };
+    }
+
+    /**
+     * Check value exists in request array param
+     *
+     * @return Closure
+     */
+    public function inArray()
+    {
+        return function ($param, $needle) {
+            /**
+             * Context.
+             *
+             * @var \Illuminate\Support\Facades\Request $this
+             */
+            $haystack = (array) $this->input($param, []);
+
+            if (is_array($haystack)) {
+                return in_array($needle, $haystack);
+            }
+
+            return false;
         };
     }
 
