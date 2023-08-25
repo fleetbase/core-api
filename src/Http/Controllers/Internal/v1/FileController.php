@@ -29,10 +29,10 @@ class FileController extends FleetbaseController
     public function upload(UploadFileRequest $request)
     {
         $disk = $request->input('disk', config('filesystems.default'));
+        $bucket = $request->input('bucket', config('filesystems.disks.' . $disk . '.bucket', config('filesystems.disks.s3.bucket')));
         $type = $request->input('type');
         $size = $request->input('file_size', $request->file->getSize());
         $path = $request->input('path', 'uploads');
-        $visibility = $request->input('visibility', 'public');
         $subjectId = $request->input('subject_uuid');
         $subjectType = $request->input('subject_type');
 
@@ -50,8 +50,7 @@ class FileController extends FleetbaseController
                 $path,
                 $fileName,
                 [
-                    'disk' => $disk,
-                    'visibility' => $visibility
+                    'disk' => $disk
                 ]
             );
         } catch (\Aws\S3\Exception\S3Exception $e) {
@@ -62,7 +61,7 @@ class FileController extends FleetbaseController
 
         // Create a file record
         // @var \Fleetbase\Models\File $file
-        $file = File::createFromUpload($request->file, $path, $type, $size);
+        $file = File::createFromUpload($request->file, $path, $type, $size, $disk, $bucket);
 
         // Set the subject if specified
         if ($request->has(['subject_uuid', 'subject_type'])) {
@@ -97,9 +96,9 @@ class FileController extends FleetbaseController
     public function uploadBase64(UploadBase64FileRequest $request)
     {
         $disk = $request->input('disk', config('filesystems.default'));
+        $bucket = $request->input('bucket', config('filesystems.disks.' . $disk . '.bucket', config('filesystems.disks.s3.bucket')));
         $data = $request->input('data');
         $path = $request->input('path', 'uploads');
-        $visibility = $request->input('visibility', 'public');
         $fileName = $request->input('file_name');
         $fileType = $request->input('file_type', 'image');
         $contentType = $request->input('content_type', 'image/png');
@@ -120,7 +119,7 @@ class FileController extends FleetbaseController
 
         // Upload file to path
         try {
-            Storage::disk($disk)->put($fullPath, base64_decode($data), $visibility);
+            Storage::disk($disk)->put($fullPath, base64_decode($data));
         } catch (\Aws\S3\Exception\S3Exception $e) {
             return response()->error($e->getMessage());
         } catch (\Exception $e) {
@@ -133,12 +132,13 @@ class FileController extends FleetbaseController
             'uploader_uuid' => session('user'),
             'subject_uuid' => $subjectId,
             'subject_type' => Utils::getMutationType($subjectType),
+            'disk' => $disk,
             'name' => basename($fullPath),
             'original_filename' => basename($fullPath),
             'extension' => 'png',
             'content_type' => $contentType,
             'path' => $fullPath,
-            'bucket' => config('filesystems.disks.s3.bucket'),
+            'bucket' => $bucket,
             'type' => $fileType,
             'size' => Utils::getBase64ImageSize($data)
         ]);

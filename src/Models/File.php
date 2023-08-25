@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Models;
 
+use Fleetbase\Casts\Json;
 use Fleetbase\Support\Utils;
 use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasApiModelBehavior;
@@ -47,7 +48,7 @@ class File extends Model
      *
      * @var array
      */
-    protected $fillable = ['public_id', 'company_uuid', 'uploader_uuid', 'subject_uuid', 'subject_type', 'path', 'bucket', 'folder', 'etag', 'original_filename', 'type', 'content_type', 'file_size', 'slug', 'caption'];
+    protected $fillable = ['public_id', 'company_uuid', 'uploader_uuid', 'subject_uuid', 'subject_type', 'disk', 'path', 'bucket', 'folder', 'meta', 'etag', 'original_filename', 'type', 'content_type', 'file_size', 'slug', 'caption'];
 
     /**
      * Dynamic attributes that are appended to object
@@ -62,6 +63,15 @@ class File extends Model
      * @var array
      */
     protected $hidden = [];
+
+    /**
+     * The attributes that should be cast to native types.
+     *
+     * @var array
+     */
+    protected $casts = [
+        'meta' => Json::class
+    ];
 
     /**
      * Properties which activity needs to be logged
@@ -95,16 +105,52 @@ class File extends Model
     }
 
     /**
-     * Get the File url attribute.
+     * Get the disk name for the file.
      *
-     * @return string
+     * @return string The disk name.
+     */
+    public function getDisk(): string
+    {
+        $disk = $this->disk;
+
+        if (!$disk) {
+            $disk = config('filesystems.default', env('FILESYSTEM_DRIVER'));
+        }
+
+        return $disk;
+    }
+
+    /**
+     * Get the filesystem instance for the specified disk.
+     *
+     * @param string|null $disk The disk name. If null, the default disk will be used.
+     * @return \Illuminate\Contracts\Filesystem\Filesystem The filesystem instance.
+     */
+    public function getFilesystem(?string $disk = null): \Illuminate\Contracts\Filesystem\Filesystem
+    {
+        $disk = $disk ?? $this->getDisk();
+        return Storage::disk($disk);
+    }
+
+    /**
+     * Get the URL for the file.
+     *
+     * If the file is stored on S3, a temporary signed URL will be generated.
+     * If the file is stored locally, the asset URL will be returned.
+     *
+     * @return string The URL for the file.
      */
     public function getUrlAttribute()
     {
-        $disk = env('FILESYSTEM_DRIVER');
-        /** @var \Illuminate\Support\Facades\Storage $filesystem */
-        $filesystem = Storage::disk($disk);
-        $url = $filesystem->url($this->path);
+        $disk = $this->getDisk();
+        /** @var $filesystem \Illuminate\Support\Facades\Storage */
+        $filesystem = $this->getFilesystem();
+
+        if ($disk === 's3') {
+            $url = $filesystem->temporaryUrl($this->path, now()->addMinutes(30));
+        } else {
+            $url = $filesystem->url($this->path);
+        }
 
         if ($disk === 'local') {
             return asset($url, !app()->environment(['development', 'local']));
@@ -177,9 +223,17 @@ class File extends Model
      * @param \Illuminate\Http\UploadedFile $file
      * @return \Fleetbase\Models\File
      */
-    public static function createFromUpload(UploadedFile $file, $path, $type = null, $size = null)
+    public static function createFromUpload(UploadedFile $file, $path, $type = null, $size = null, $disk = null, $bucket = null)
     {
         $extension = $file->getClientOriginalExtension();
+
+        if (is_null($disk)) {
+            $disk = config('filesystems.default');
+        }
+
+        if (is_null($bucket)) {
+            $bucket = config('filesystems.disks.' . $disk . '.bucket', config('filesystems.disks.s3.bucket'));
+        }
 
         $data = [
             'company_uuid' => session('company'),
@@ -187,7 +241,7 @@ class File extends Model
             'original_filename' => $file->getClientOriginalName(),
             'content_type' => static::getFileMimeType($extension),
             'path' => $path,
-            'bucket' => config('filesystems.disks.s3.bucket'),
+            'bucket' => $bucket,
             'type' => $type,
             'file_size' => $size ?? $file->getSize(),
         ];

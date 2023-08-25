@@ -391,7 +391,7 @@ class SettingController extends Controller
 		}
 
 		// Set config from request
-		config(['twilio.connections.twilio.sid' => $sid, 'twilio.connections.twilio.token' => $token, 'twilio.connections.twilio.from' => $from]);
+		config(['twilio.twilio.connections.twilio.sid' => $sid, 'twilio.twilio.connections.twilio.token' => $token, 'twilio.twilio.connections.twilio.from' => $from]);
 
 		$message = 'Twilio configuration is successful, SMS sent to ' . $phone . '.';
 		$status = 'success';
@@ -491,7 +491,7 @@ class SettingController extends Controller
 
 		try {
 			$sent = $socketClusterClient->send($channel, [
-				'message' => 'Wassup World!',
+				'message' => 'Hello World',
 				'sender' => 'Fleetbase'
 			]);
 			$response = $socketClusterClient->response();

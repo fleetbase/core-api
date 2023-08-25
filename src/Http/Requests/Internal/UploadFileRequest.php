@@ -24,7 +24,7 @@ class UploadFileRequest extends FleetbaseRequest
     public function rules()
     {
         return [
-            'file' => ['required', 'file', 'max:10240', 'mimes:jpg,png,pdf,xls,xlsx,doc,docx,csv'],
+            'file' => ['required', 'file', 'max:10240', 'mimes:jpg,png,pdf,xls,xlsx,doc,docx,csv,tsv,svg'],
         ];
     }
 

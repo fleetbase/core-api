@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Arr;
 
 /**
  * Adds API Model Behavior 
@@ -910,6 +911,8 @@ trait HasApiModelBehavior
     {
         $payloadKeys = [$this->getSingularName(), Str::camel($this->getSingularName())];
         $input = $request->or($payloadKeys) ?? $request->all();
+        // the following input keys should always be managed by the server
+        $input = Arr::except($input, ['company_uuid', 'created_by_uuid', 'updated_by_uuid', 'uploader_uuid']);
 
         return $input;
     }
@@ -922,7 +925,14 @@ trait HasApiModelBehavior
      */
     public function isColumn(string $columnName): bool
     {
-        return Schema::hasColumn($this->getTable(), $columnName);
+        $connectionName = config('database.default');
+        $connection = $this->getConnection();
+
+        if ($connection instanceof \Illuminate\Database\Connection) {
+            $connectionName = $connection->getName();
+        }
+
+        return Schema::connection($connectionName)->hasColumn($this->getTable(), $columnName);
     }
 
     /**
