@@ -24,4 +24,13 @@ return [
             'query' => [],
         ],
     ],
+
+    // for apple apn
+    'apn' => [
+        'key_id' => env('APN_KEY_ID'),
+        'team_id' => env('APN_TEAM_ID'),
+        'app_bundle_id' => env('APN_BUNDLE_ID'),
+        'private_key_content' => env('APN_PRIVATE_KEY'),
+        'production' => env('APN_PRODUCTION', true),
+    ],
 ];

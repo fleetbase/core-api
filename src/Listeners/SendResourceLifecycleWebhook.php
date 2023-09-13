@@ -13,7 +13,6 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
-use Aws\Sqs\Exception\SqsException;
 
 class SendResourceLifecycleWebhook implements ShouldQueue
 {
@@ -98,8 +97,7 @@ class SendResourceLifecycleWebhook implements ShouldQueue
                     ->payload($event->data)
                     ->useSecret($apiSecret)
                     ->dispatch();
-            } catch (SqsException $exception) {
-                // \Sentry\captureException($exception);
+            } catch (\Aws\Sqs\Exception\SqsException $exception) {
                 // get webhook attempt request/response interfaces
                 $response = $exception->getResponse();
                 $request = $exception->getRequest();
@@ -120,7 +118,7 @@ class SendResourceLifecycleWebhook implements ShouldQueue
                     'status' => 'failed',
                     'headers' => $request->getHeaders(),
                     'meta' => [
-                        'exception' => '\Aws\Sqs\Exception\SqsException'
+                        'exception' => get_class($exception)
                     ],
                     'sent_at' => $durationStart,
                 ]);

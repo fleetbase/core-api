@@ -578,11 +578,10 @@ class Utils
     }
 
     /**
-     * Returns the short version class name for an object
-     * without its namespace.
+     * Returns the uuid for a table with where hook.
      *
      * @param string|array $table
-     * @param array $where
+     * @param array|callable $where
      *
      * @return string
      */
@@ -603,12 +602,7 @@ class Utils
             ->select(['uuid'])
             ->where($where)->first();
 
-        // static::sqlDump($result, false);
-
-        // $result = $result->first();
-        // dump($result);
-
-        return $result->uuid ?? null;
+        return data_get($result, 'uuid');
     }
 
     /**
@@ -912,7 +906,7 @@ class Utils
     }
 
     /**
-     * Check if key exists
+     * Check if key exists with value.
      *
      * @param mixed target
      * @param string key
@@ -926,7 +920,7 @@ class Utils
     }
 
     /**
-     * Check if key is not on target
+     * Check if key has no value.
      *
      * @param mixed target
      * @param string key
@@ -1079,10 +1073,12 @@ class Utils
                     'aliases' => static::get($country, 'alt_spellings', []),
                     'capital' => static::get($country, 'capital_rinvex'),
                     'geo' => static::get($country, 'geo'),
+                    'currency' => Arr::first(static::get($country, 'currencies', [])),
+                    'dial_code' => Arr::first(static::get($country, 'calling_codes', [])),
                     'coordinates' => [
                         'longitude' => $longitude,
                         'latitude' => $latitude,
-                    ],
+                    ]
                 ];
             })
             ->first()
@@ -1093,6 +1089,48 @@ class Utils
         }
 
         return $data ?? null;
+    }
+
+    /**
+     * Retrieve currency from given ISO country code.
+     *
+     * @param string $countryCode The ISO country code to fetch currency information.
+     *
+     * @return string|null The currency code related to the given country code, or null if not found.
+     */
+    public static function getCurrenyFromCountryCode(string $countryCode): ?string
+    {
+        $data = static::getCountryData($countryCode);
+
+        return static::get($data, 'currency');
+    }
+
+    /**
+     * Retrieve area/dial code from given ISO country code.
+     *
+     * @param string $countryCode The ISO country code to fetch currency information.
+     *
+     * @return string|null The dial code related to the given country code, or null if not found.
+     */
+    public static function getDialCodeFromCountryCode(string $countryCode): ?string
+    {
+        $data = static::getCountryData($countryCode);
+
+        return static::get($data, 'dial_code');
+    }
+
+    /**
+     * Retrieve country capital from given ISO country code.
+     *
+     * @param string $countryCode The ISO country code to fetch currency information.
+     *
+     * @return string|null The capital city related to the given country code, or null if not found.
+     */
+    public static function getCapitalCityFromCountryCode(string $countryCode): ?string
+    {
+        $data = static::getCountryData($countryCode);
+
+        return static::get($data, 'capital');
     }
 
     /**

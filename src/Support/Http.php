@@ -13,8 +13,13 @@ class Http extends HttpClient
     {
         $request = $request ?? request();
         $route = $request->route();
-        $action = $route->action;
-        $namespace = $action['namespace'];
+
+        if ($route === null) {
+            return false;
+        }
+
+        $action = data_get($route, 'action');
+        $namespace = data_get($action, 'namespace');
 
         return Str::contains($namespace, 'Internal') ||  Str::contains($route->uri(), '/int/');
     }

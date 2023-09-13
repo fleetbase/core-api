@@ -5,6 +5,7 @@ namespace Fleetbase\Providers;
 use Fleetbase\Models\Setting;
 use Fleetbase\Support\Expansion;
 use Fleetbase\Support\Utils;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Schema;
@@ -162,6 +163,7 @@ class CoreServiceProvider extends ServiceProvider
             ['settingsKey' => 'services.ipinfo', 'configKey' => 'services.ipinfo'],
             ['settingsKey' => 'services.ipinfo', 'configKey' => 'fleetbase.services.ipinfo'],
             ['settingsKey' => 'services.sentry.dsn', 'configKey' => 'sentry.dsn'],
+            ['settingsKey' => 'broadcasting.apn', 'configKey' => 'broadcasting.connections.apn'],
         ];
 
         $priorityEnvs = [
@@ -207,7 +209,7 @@ class CoreServiceProvider extends ServiceProvider
                         if ($hasDefaultRegion && \Illuminate\Support\Str::startsWith($envKey, 'AWS_')) {
                             continue;
                         }
-                        
+
                         $envValue = data_get($value, $configEnvKey);
                         $doesntHaveEnvSet = empty(env($envKey));
                         $hasValue = !empty($envValue);
@@ -395,6 +397,34 @@ class CoreServiceProvider extends ServiceProvider
     public function registerCommands(): void
     {
         $this->commands($this->commands ?? []);
+    }
+
+    /**
+     * Schedule commands within the service provider.
+     *
+     * This method allows child service providers to easily schedule their commands
+     * by providing a callback that receives the Laravel scheduler instance.
+     *
+     * @param callable|null $callback A callback function that receives the Laravel scheduler instance.
+     *                                The callback is used to define the scheduling of commands.
+     *                                If no callback is provided, no scheduling will occur.
+     *
+     * @return void
+     *
+     * @example 
+     * $this->scheduleCommands(function ($schedule) {
+     *     $schedule->command('your-package:command')->daily();
+     * });
+     */
+    public function scheduleCommands(?callable $callback = null): void
+    {
+        $this->app->booted(function () use ($callback) {
+            $schedule = $this->app->make(Schedule::class);
+            
+            if (is_callable($callback)) {
+                $callback($schedule);
+            }
+        });
     }
 
     /**

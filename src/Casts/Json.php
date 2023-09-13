@@ -48,7 +48,7 @@ class Json implements CastsAttributes
             return $json;
         }
 
-        $json = stripslashes($json);
+        // $json = stripslashes($json);
         return json_decode($json, true);
     }
 }

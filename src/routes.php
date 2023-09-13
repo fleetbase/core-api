@@ -113,6 +113,9 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                         $router->post('branding', $controller('saveBrandingSettings'));
                                         $router->put('branding', $controller('saveBrandingSettings'));
                                         $router->post('test-socket', $controller('testSocketcluster'));
+                                        $router->get('notification-channels-config', $controller('getNotificationChannelsConfig'));
+                                        $router->post('notification-channels-config', $controller('saveNotificationChannelsConfig'));
+                                        $router->post('test-notification-channels-config', $controller('testNotificationChannelsConfig'));
                                     }
                                 );
                                 $router->fleetbaseRoutes('api-events');

@@ -67,4 +67,54 @@ class Arr implements Expansion
             return $previous + $item + $next;
         };
     }
+
+    /**
+     * Returns the first assosciative array key when the first value is matched, fallsback to `array_search` if string provided.
+     *
+     * @return \Closure
+     */
+    public function search()
+    {
+        /**
+         * Returns the first assosciative array key when the first value is matched, fallsback to `array_search` if string provided.
+         *
+         * @param array $array
+         * @param callable|mixed $callable
+         * @return mixed
+         */
+        return function (array $array = [], $callable) {
+            if (!is_callable($callable)) {
+                return array_search($callable, $array);
+            }
+
+            foreach ($array as $key => $value) {
+                if (is_callable($callable) & $callable($value)) {
+                    return $key;
+                }
+            }
+
+            return null;
+        };
+    }
+
+    /**
+     * Map an array with keys.
+     *
+     * This macro extends Laravel's Arr class by allowing you to map over an array 
+     * while also passing the key of each element to the given callable.
+     *
+     * The resulting array will preserve the original keys of the input array.
+     *
+     * @param array $array The array to map over. Defaults to an empty array.
+     * @param callable $callable The function to apply to each element in the array.
+     *                           Receives two arguments: the value and its key.
+     * @return \Closure The closure that performs the mapping operation.
+     */
+    public function map()
+    {
+        return function (array $array = [], $callable) {
+            // Map over the array. The $callable receives both the value and the key.
+            return array_map($callable, $array, array_keys($array));
+        };
+    }
 }

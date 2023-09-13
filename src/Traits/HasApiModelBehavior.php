@@ -344,11 +344,10 @@ trait HasApiModelBehavior
 
         // handle collection or array of results
         if (is_array($result) || $result instanceof \Illuminate\Support\Collection) {
-            return array_map(
+            return collect($result)->map(
                 function ($model) use ($request) {
                     return static::mutateModelWithRequest($request, $model);
-                },
-                $result
+                }
             );
         }
 

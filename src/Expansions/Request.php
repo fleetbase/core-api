@@ -147,6 +147,49 @@ class Request implements Expansion
     }
 
     /**
+     * Removes a param from the request.
+     *
+     * @return Closure
+     */
+    public function removeParam()
+    {
+        /**
+         * Retrieve input from the request as a integer.
+         *
+         * @param string $key
+         * @return array
+         */
+        return function (string $key) {
+            /** @var \Illuminate\Http\Request $this */
+            return $this->request->remove($key);
+        };
+    }
+
+    /**
+     * Retrieves the search query parameter.
+     *
+     * @return Closure
+     */
+    public function searchQuery()
+    {
+        /**
+         * Retrieve the search query parameter.
+         *
+         * @return string
+         */
+        return function () {
+            /** @var \Illuminate\Http\Request $this */
+            $searchQueryParam = $this->or(['query', 'searchQuery']);
+
+            if (is_string($searchQueryParam)) {
+                return urldecode(strtolower($searchQueryParam));
+            }
+
+            return $searchQueryParam;
+        };
+    }
+
+    /**
      * Returns all Fleetbase global filters.
      *
      * @return Closure
