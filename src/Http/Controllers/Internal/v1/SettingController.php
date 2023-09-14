@@ -3,6 +3,7 @@
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Http\Controllers\Controller;
+use Fleetbase\Models\File;
 use Fleetbase\Models\Setting;
 use Fleetbase\Notifications\TestPushNotification;
 use Fleetbase\Support\Utils;
@@ -344,6 +345,10 @@ class SettingController extends Controller
 		// get apn config
 		$apn = config('broadcasting.connections.apn');
 
+		if (is_array($apn) && isset($apn['private_key_file_id'])) {
+			$apn['private_key_file'] = File::where('uuid', $apn['private_key_file_id'])->first();
+		}
+
 		return response()->json([
 			'apn' => $apn
 		]);
@@ -361,6 +366,10 @@ class SettingController extends Controller
 
 		if (is_array($apn) && isset($apn['private_key_content'])) {
 			$apn['private_key_content'] = str_replace('\\n', "\n", trim($apn['private_key_content']));
+		}
+
+		if (is_array($apn) && isset($apn['private_key_path']) && is_string($apn['private_key_path'])) {
+			$apn['private_key_path'] = storage_path('app/' . $apn['private_key_path']);
 		}
 
 		Setting::configure('system.broadcasting.apn', array_merge(config('broadcasting.connections.apn', []), $apn));
@@ -383,17 +392,17 @@ class SettingController extends Controller
 		$apn = $request->array('apn', config('broadcasting.connections.apn'));
 
 		// temporarily set apn config here
-		config(['brodcasting.connections.apn' => $apn]);
+		config(['broadcasting.connections.apn' => $apn]);
 
 		// trigger test notification
 		$notifiable = (new AnonymousNotifiable);
 
 		if ($apnToken) {
-			$notifiable->route(\NotificationChannels\Apn\ApnChannel::class, $apnToken);
+			$notifiable->route('apn', $apnToken);
 		}
 
-		if ($apnToken) {
-			$notifiable->route(\NotificationChannels\Fcm\FcmChannel::class, $fcmToken);
+		if ($fcmToken) {
+			$notifiable->route('fcm', $fcmToken);
 		}
 
 		$status = 'success';
@@ -404,16 +413,8 @@ class SettingController extends Controller
 		} catch (\NotificationChannels\Fcm\Exceptions\CouldNotSendNotification $e) {
 			$responseMessage = $e->getMessage();
 			$status = 'error';
-		} catch (\Exception $e) {
-			$responseMessage = $e->getMessage();
-			$status = 'error';
-		} catch (\Error $e) {
-			$responseMessage = $e->getMessage();
-			$status = 'error';
-		} catch (\ErrorException $e) {
-			$responseMessage = $e->getMessage();
-			$status = 'error';
 		} catch (\Throwable $e) {
+			dd($e);
 			$responseMessage = $e->getMessage();
 			$status = 'error';
 		}

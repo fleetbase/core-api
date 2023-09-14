@@ -24,7 +24,34 @@ class UploadFileRequest extends FleetbaseRequest
     public function rules()
     {
         return [
-            'file' => ['required', 'file', 'max:10240', 'mimes:jpg,png,pdf,xls,xlsx,doc,docx,csv,tsv,svg'],
+            'file' => [
+                'required',
+                'file',
+                'max:104857600', // 100 MB
+                'mimetypes:' . implode(',', [
+                    'image/jpeg',
+                    'image/png',
+                    'image/bmp',
+                    'image/tiff',
+                    'image/svg+xml',
+                    'application/pdf',
+                    'application/vnd.ms-excel',
+                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    'application/msword',
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                    'text/csv',
+                    'text/tab-separated-values',
+                    'text/plain',
+                    'application/x-pkcs12',
+                    'application/pkcs-12',
+                    'application/x-pem-file',
+                    'application/x-pkcs7-certreqresp',
+                    'application/x-pkcs7-certificates',
+                    'application/pkix-cert',
+                    'application/x-x509-ca-cert',
+                    'application/octet-stream'
+                ])
+            ],
         ];
     }
 

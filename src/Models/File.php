@@ -240,6 +240,7 @@ class File extends Model
             'uploader_uuid' => session('user'),
             'original_filename' => $file->getClientOriginalName(),
             'content_type' => static::getFileMimeType($extension),
+            'disk' => $disk,
             'path' => $path,
             'bucket' => $bucket,
             'type' => $type,

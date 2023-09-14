@@ -36,11 +36,6 @@ class FileController extends FleetbaseController
         $subjectId = $request->input('subject_uuid');
         $subjectType = $request->input('subject_type');
 
-        // Correct $path for uploads
-        if (Str::startsWith($path, 'uploads') && $disk === 'uploads') {
-            $path = str_replace('uploads/', '', $path);
-        }
-
         // Generate a filename
         $fileName = File::randomFileNameFromRequest($request);
 
@@ -82,7 +77,7 @@ class FileController extends FleetbaseController
         // Done ✓
         return response()->json(
             [
-                'file' => $file,
+                'file' => $file
             ]
         );
     }
