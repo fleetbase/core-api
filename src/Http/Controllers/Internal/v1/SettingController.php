@@ -3,9 +3,12 @@
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Http\Controllers\Controller;
+use Fleetbase\Models\File;
 use Fleetbase\Models\Setting;
+use Fleetbase\Notifications\TestPushNotification;
 use Fleetbase\Support\Utils;
 use Illuminate\Http\Request;
+use Illuminate\Notifications\AnonymousNotifiable;
 use Illuminate\Support\Facades\Mail;
 
 class SettingController extends Controller
@@ -333,6 +336,93 @@ class SettingController extends Controller
 	}
 
 	/**
+	 * Loads and sends the notification channel configurations
+	 *
+	 *  @return \Illuminate\Http\JsonResponse
+	 */
+	public function getNotificationChannelsConfig()
+	{
+		// get apn config
+		$apn = config('broadcasting.connections.apn');
+
+		if (is_array($apn) && isset($apn['private_key_file_id'])) {
+			$apn['private_key_file'] = File::where('uuid', $apn['private_key_file_id'])->first();
+		}
+
+		return response()->json([
+			'apn' => $apn
+		]);
+	}
+
+	/**
+	 * Saves notification channels configuration.
+	 *
+	 * @param  \Illuminate\Http\Request  $request
+	 * @return \Illuminate\Http\JsonResponse
+	 */
+	public function saveNotificationChannelsConfig(Request $request)
+	{
+		$apn = $request->array('apn', config('broadcasting.connections.apn'));
+
+		if (is_array($apn) && isset($apn['private_key_content'])) {
+			$apn['private_key_content'] = str_replace('\\n', "\n", trim($apn['private_key_content']));
+		}
+
+		if (is_array($apn) && isset($apn['private_key_path']) && is_string($apn['private_key_path'])) {
+			$apn['private_key_path'] = storage_path('app/' . $apn['private_key_path']);
+		}
+
+		Setting::configure('system.broadcasting.apn', array_merge(config('broadcasting.connections.apn', []), $apn));
+
+		return response()->json(['status' => 'OK']);
+	}
+
+	/**
+	 * Test notification channels configuration.
+	 *
+	 * @param  \Illuminate\Http\Request  $request
+	 * @return \Illuminate\Http\JsonResponse
+	 */
+	public function testNotificationChannelsConfig(Request $request)
+	{
+		$title = $request->input('title', 'Hello World from Fleetbase 🚀');
+		$message = $request->input('message', 'This is a test push notification!');
+		$apnToken = $request->input('apnToken');
+		$fcmToken = $request->input('fcmToken');
+		$apn = $request->array('apn', config('broadcasting.connections.apn'));
+
+		// temporarily set apn config here
+		config(['broadcasting.connections.apn' => $apn]);
+
+		// trigger test notification
+		$notifiable = (new AnonymousNotifiable);
+
+		if ($apnToken) {
+			$notifiable->route('apn', $apnToken);
+		}
+
+		if ($fcmToken) {
+			$notifiable->route('fcm', $fcmToken);
+		}
+
+		$status = 'success';
+		$responseMessage = 'Notification sent successfully.';
+
+		try {
+			$notifiable->notify(new TestPushNotification($title, $message));
+		} catch (\NotificationChannels\Fcm\Exceptions\CouldNotSendNotification $e) {
+			$responseMessage = $e->getMessage();
+			$status = 'error';
+		} catch (\Throwable $e) {
+			dd($e);
+			$responseMessage = $e->getMessage();
+			$status = 'error';
+		}
+
+		return response()->json(['status' => $status, 'message' => $responseMessage]);
+	}
+
+	/**
 	 * Get branding settings.
 	 *
 	 * @param  \Illuminate\Http\Request  $request
@@ -496,12 +586,12 @@ class SettingController extends Controller
 			]);
 			$response = $socketClusterClient->response();
 		} catch (\WebSocket\ConnectionException $e) {
-            $message = $e->getMessage();
-        } catch (\WebSocket\TimeoutException $e) {
-            $message = $e->getMessage();
-        } catch (\Throwable $e) {
-            $message = $e->getMessage();
-        }
+			$message = $e->getMessage();
+		} catch (\WebSocket\TimeoutException $e) {
+			$message = $e->getMessage();
+		} catch (\Throwable $e) {
+			$message = $e->getMessage();
+		}
 
 		if (!$sent) {
 			$status = 'error';

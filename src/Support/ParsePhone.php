@@ -11,13 +11,31 @@ use PragmaRX\Countries\Package\Countries;
 use Illuminate\Support\Str;
 use Illuminate\Database\Eloquent\Model;
 
+/**
+ * Class ParsePhone
+ * Utility class for phone number parsing and formatting.
+ */
 class ParsePhone
 {
+    /**
+     * Get an instance of PhoneNumberUtil.
+     *
+     * @return PhoneNumberUtil
+     */
     public static function phoneNumberUtilInstance()
     {
         return PhoneNumberUtil::getInstance();
     }
 
+    /**
+     * Parse and format a phone number from an Eloquent model.
+     *
+     * @param Model $model   The Eloquent model to extract phone number data from.
+     * @param array $options Additional options for parsing and formatting.
+     * @param int   $format  The phone number format. Defaults to E164.
+     *
+     * @return string|null Formatted phone number or null.
+     */
     public static function fromModel(Model $model, $options = [], $format = PhoneNumberFormat::E164)
     {
         $phoneUtil = static::phoneNumberUtilInstance();
@@ -128,12 +146,30 @@ class ParsePhone
         return $phone;
     }
 
-    public static function fromCompany(Company $company,$options = [], $format = PhoneNumberFormat::E164)
+    /**
+     * Parse and format a phone number from a Company model.
+     *
+     * @param Company $company The Company model to extract phone number data from.
+     * @param array   $options Additional options for parsing and formatting.
+     * @param int     $format  The phone number format. Defaults to E164.
+     *
+     * @return string|null Formatted phone number or null.
+     */
+    public static function fromCompany(Company $company, $options = [], $format = PhoneNumberFormat::E164)
     {
         return static::fromModel($company, $options, $format);
     }
 
-    public static function fromUser(User $user,$options = [], $format = PhoneNumberFormat::E164)
+    /**
+     * Parse and format a phone number from a User model.
+     *
+     * @param User  $user    The User model to extract phone number data from.
+     * @param array $options Additional options for parsing and formatting.
+     * @param int   $format  The phone number format. Defaults to E164.
+     *
+     * @return string|null Formatted phone number or null.
+     */
+    public static function fromUser(User $user, $options = [], $format = PhoneNumberFormat::E164)
     {
         return static::fromModel($user, $options, $format);
     }

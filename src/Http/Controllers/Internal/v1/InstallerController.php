@@ -49,6 +49,9 @@ class InstallerController extends Controller
 
     public function createDatabase()
     {
+        ini_set('memory_limit', '-1');
+        ini_set('max_execution_time', 0);
+
         Artisan::call('mysql:createdb');
 
         return response()->json(
@@ -60,6 +63,9 @@ class InstallerController extends Controller
 
     public function migrate()
     {
+        ini_set('memory_limit', '-1');
+        ini_set('max_execution_time', 0);
+
         shell_exec(base_path('artisan') . ' migrate');
         Artisan::call('sandbox:migrate');
 
@@ -72,6 +78,9 @@ class InstallerController extends Controller
 
     public function seed()
     {
+        ini_set('memory_limit', '-1');
+        ini_set('max_execution_time', 0);
+        
         Artisan::call('fleetbase:seed');
 
         return response()->json(

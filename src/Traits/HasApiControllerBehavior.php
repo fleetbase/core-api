@@ -226,6 +226,10 @@ trait HasApiControllerBehavior
         if ($single) {
             $data = Arr::first($data);
 
+            if (!$data) {
+                return response()->error(Str::title($this->resourceSingularlName) . ' not found', 404);
+            }
+
             if (Http::isInternalRequest($request)) {
                 $this->resource::wrap($this->resourceSingularlName);
                 return new $this->resource($data);
@@ -269,7 +273,7 @@ trait HasApiControllerBehavior
             return [$this->resourceSingularlName => new $this->resource($record)];
         }
 
-        return response()->error($this->resourceSingularlName . ' not found', 404);
+        return response()->error(Str::title($this->resourceSingularlName) . ' not found', 404);
     }
 
     /**
@@ -413,7 +417,7 @@ trait HasApiControllerBehavior
             return response()->json(
                 [
                     'status' => 'success',
-                    'message' => $this->resourceSingularlName . ' deleted',
+                    'message' => Str::title($this->resourceSingularlName) . ' deleted',
                     'data' => new $this->resource($dataModel),
                 ]
             );
@@ -422,7 +426,7 @@ trait HasApiControllerBehavior
         return response()->json(
             [
                 'status' => 'failed',
-                'message' => $this->resourceSingularlName . ' not found',
+                'message' => Str::title($this->resourceSingularlName) . ' not found',
             ],
             404
         );

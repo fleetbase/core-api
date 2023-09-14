@@ -7,14 +7,16 @@ use Fleetbase\Support\Resolve;
 use Fleetbase\Support\Utils;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\Channel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+// use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Str;
 use Illuminate\Support\Carbon;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Arr;
 
-class ResourceLifecycleEvent implements ShouldBroadcast
+class ResourceLifecycleEvent implements ShouldBroadcastNow
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
@@ -24,6 +26,7 @@ class ResourceLifecycleEvent implements ShouldBroadcast
     public $modelHumanName;
     public $modelRecordName;
     public $modelName;
+    public $namespace;
     public $version;
     public $userSession;
     public $companySession;
@@ -74,6 +77,7 @@ class ResourceLifecycleEvent implements ShouldBroadcast
         $this->modelHumanName = Str::humanize($this->modelClassName, false);
         $this->modelRecordName = Utils::or($model, ['name', 'email', 'public_id']);
         $this->modelName = Str::snake($this->modelClassName);
+        $this->namespace = $this->getNamespaceFromModel($model);
         $this->userSession = session('user');
         $this->companySession = session('company');
         $this->eventName = $eventName ?? $this->eventName;
@@ -119,6 +123,10 @@ class ResourceLifecycleEvent implements ShouldBroadcast
             $channels[] = new Channel($this->modelName . '.' . $model->public_id);
         }
 
+        if (isset($model->uuid)) {
+            $channels[] = new Channel($this->modelName . '.' . $model->uuid);
+        }
+
         if (session()->has('api_credential')) {
             $channels[] = new Channel('api.' . session('api_credential'));
         }
@@ -155,11 +163,21 @@ class ResourceLifecycleEvent implements ShouldBroadcast
             $channels[] = new Channel('vendor.' . $model->vendor->public_id);
         }
 
+        // In future versions allow extensions to define lifecycle hook channels using kv
+        // For now define storefront channel manually here in core
         if ($model && data_get($model, 'meta.storefront_id')) {
             $channels[] = new Channel('storefront.' . data_get($model, 'meta.storefront_id'));
         }
 
         return $channels;
+    }
+
+    public function getNamespaceFromModel(Model $model): string
+    {
+        $namespaceSegments = explode('\Models\\', get_class($model));
+        $modelNamespace = '\\' . Arr::first($namespaceSegments);
+
+        return $modelNamespace;
     }
 
     /**
@@ -180,7 +198,7 @@ class ResourceLifecycleEvent implements ShouldBroadcast
     public function getEventData()
     {
         $model = $this->getModelRecord();
-        $resource = $this->getModelResource($model, $this->version);
+        $resource = $this->getModelResource($model, $this->namespace, $this->version);
         $resourceData = [];
 
         if ($resource) {
@@ -220,12 +238,13 @@ class ResourceLifecycleEvent implements ShouldBroadcast
      * Return the models json resource instance
      *
      * @param  \Fleetbase\Model\Model $model
+     * @param  string|null $namespace
      * @param  int|null $version
      * @return  \Illuminate\Http\Resources\Json\JsonResource
      */
-    public function getModelResource($model, ?int $version = null)
+    public function getModelResource($model, ?string $namespace = null, ?int $version = null)
     {
-        return Resolve::httpResourceForModel($model, $version);
+        return Resolve::httpResourceForModel($model, $namespace, $version);
     }
 
     /**

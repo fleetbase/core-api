@@ -19,8 +19,14 @@ class AuthenticateOnceWithBasicAuth
      */
     public function handle($request, \Closure $next)
     {
-        if ($this->authenticatedWithBasic($request)) {
+        $authenticationResponse = $this->authenticatedWithBasic($request);
+
+        if ($authenticationResponse === true) {
             return $next($request);
+        }
+
+        if ($authenticationResponse instanceof \Illuminate\Http\Response) {
+            return $authenticationResponse;
         }
 
         return response()->error('Oops! The API credentials provided were not valid', 401);
@@ -72,7 +78,6 @@ class AuthenticateOnceWithBasicAuth
         if ($request->isMethod('OPTIONS')) {
             // Set api credential session
             Auth::setApiKey($apiCredential);
-
             return true;
         }
 
