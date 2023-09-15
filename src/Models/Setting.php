@@ -168,15 +168,32 @@ class Setting extends EloquentModel
     public static function getBranding()
     {
         $brandingSettings = ['id' => 1, 'uuid' => 1];
-        $iconUrl = static::where('key', 'branding.icon_uuid')->first();
-        $logoUrl = static::where('key', 'branding.logo_uuid')->first();
-        $defaultTheme = static::where('key', 'branding.default_theme')->first();
+        $iconUuid = static::where('key', 'branding.icon_uuid')->value('value');
+        $logoUuid = static::where('key', 'branding.logo_uuid')->value('value');
+        $defaultTheme = static::where('key', 'branding.default_theme')->value('value');
 
+        // get icon file record
+        if (\Illuminate\Support\Str::isUuid($iconUuid)) {
+            $icon = File::where('uuid', $iconUuid)->first();
+
+            if ($icon && $icon instanceof File) {
+                $brandingSettings['icon_url'] = $icon->url;
+            }
+        }
+
+        // getlogo file record
+        if (\Illuminate\Support\Str::isUuid($logoUuid)) {
+            $logo = File::where('uuid', $logoUuid)->first();
+
+            if ($logo && $logo instanceof File) {
+                $brandingSettings['logo_url'] = $logo->url;
+            }
+        }
 
         // set branding settings
-        $brandingSettings['icon_url'] = $iconUrl ? $iconUrl->value : '/images/icon.png';
-        $brandingSettings['logo_url'] = $logoUrl ? $logoUrl->value : '/images/fleetbase-logo-svg.svg';
-        $brandingSettings['default_theme'] = $defaultTheme ? $defaultTheme->value : 'dark';
+        $brandingSettings['icon_uuid'] = $iconUuid;
+        $brandingSettings['logo_uuid'] = $iconUuid;
+        $brandingSettings['default_theme'] = $defaultTheme ?? 'dark';
 
         return $brandingSettings;
     }

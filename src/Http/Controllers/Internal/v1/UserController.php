@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
+use Fleetbase\Events\UserRemovedFromCompany;
 use Fleetbase\Exports\UserExport;
 use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Http\Requests\ExportRequest;
@@ -11,7 +12,6 @@ use Fleetbase\Http\Requests\Internal\ResendUserInvite;
 use Fleetbase\Http\Requests\Internal\UpdatePasswordRequest;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
-use Fleetbase\Models\Driver;
 use Fleetbase\Models\Invite;
 use Fleetbase\Models\User;
 use Fleetbase\Notifications\UserInvited;
@@ -264,10 +264,18 @@ class UserController extends FleetbaseController
             return response()->error('No user to remove', 401);
         }
 
+        // get user to remove from company
         $user = User::where('uuid', $id)->first();
 
         if (!$user) {
             return response()->error('No user found', 401);
+        }
+
+        // get the current company user is being removed from
+        $company = Company::where('uuid', session('company'))->first();
+
+        if (!$company) {
+            return response()->error('Unable to remove user from this company', 401);
         }
 
         /** @var \Illuminate\Support\Collection */
@@ -277,7 +285,10 @@ class UserController extends FleetbaseController
         if ($userCompanies->count() === 1) {
             $user->delete();
         } else {
-            $user->companies()->where('company_uuid', session('company'))->delete();
+            $user->companies()->where('company_uuid', $company->uuid)->delete();
+
+            // trigger event user removed from company
+            event(new UserRemovedFromCompany($user, $company));
 
             // set to other company for next login
             $nextCompany = $userCompanies->filter(function ($userCompany) {
@@ -286,12 +297,6 @@ class UserController extends FleetbaseController
 
             if ($nextCompany) {
                 $user->update(['company_uuid' => $nextCompany->uuid]);
-
-                // if has a driver record for this company delete it too
-                Driver::where([
-                    'company_uuid' => session('company'),
-                    'user_uuid' => $user->uuid
-                ])->delete();
             } else {
                 $user->delete();
             }
