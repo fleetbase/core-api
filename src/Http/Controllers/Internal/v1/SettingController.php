@@ -442,20 +442,20 @@ class SettingController extends Controller
 	 */
 	public function saveBrandingSettings(Request $request)
 	{
-		$iconUrl = $request->input('brand.icon_url');
-		$logoUrl = $request->input('brand.logo_url');
+		$iconUuid = $request->input('brand.icon_uuid');
+		$logoUuid = $request->input('brand.logo_uuid');
 		$defaultTheme = $request->input('brand.default_theme');
 
 		if ($defaultTheme) {
 			Setting::configure('branding.default_theme', $defaultTheme);
 		}
 
-		if ($iconUrl) {
-			Setting::configure('branding.icon_url', $iconUrl);
+		if ($iconUuid) {
+			Setting::configure('branding.icon_uuid', $iconUuid);
 		}
 
-		if ($logoUrl) {
-			Setting::configure('branding.logo_url', $logoUrl);
+		if ($logoUuid) {
+			Setting::configure('branding.logo_uuid', $logoUuid);
 		}
 
 		$brandingSettings = Setting::getBranding();

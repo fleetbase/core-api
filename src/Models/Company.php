@@ -79,9 +79,7 @@ class Company extends Model
         'plan',
         'status',
         'slug',
-        'trial_ends_at',
-        'created_at', // syncable
-        'updated_at', // syncable
+        'trial_ends_at'
     ];
 
     /**

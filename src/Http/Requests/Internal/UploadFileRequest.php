@@ -34,6 +34,7 @@ class UploadFileRequest extends FleetbaseRequest
                     'image/bmp',
                     'image/tiff',
                     'image/svg+xml',
+                    'image/svg',
                     'application/pdf',
                     'application/vnd.ms-excel',
                     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

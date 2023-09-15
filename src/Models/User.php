@@ -119,9 +119,7 @@ class User extends Authenticatable
         'phone_verified_at',
         'type',
         'slug',
-        'status',
-        'created_at', 
-        'updated_at',
+        'status'
     ];
 
     /**
