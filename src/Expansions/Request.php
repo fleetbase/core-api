@@ -88,6 +88,23 @@ class Request implements Expansion
     }
 
     /**
+     * Check if param is string value.
+     *
+     * @return Closure
+     */
+    public function isString()
+    {
+        return function ($param) {
+            /**
+             * Context.
+             *
+             * @var \Illuminate\Support\Facades\Request $this
+             */
+            return $this->has($param) && is_string($this->input($param));
+        };
+    }
+
+    /**
      * Check if param is array value.
      *
      * @return Closure

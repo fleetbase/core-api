@@ -79,7 +79,11 @@ class Utils
         $bucket = $bucket ?? config('filesystems.disks.s3.bucket', $bucket);
         $region = $region ?? config('filesystems.disks.s3.region', $region);
 
-        return 'https://' . $bucket . '.s3-' . $region . '.amazonaws.com/' . $path;
+        if ($region) {
+            $region = '.s3-' . $region;
+        }
+
+        return 'https://' . $bucket . $region . '.amazonaws.com/' . $path;
     }
 
     /**
