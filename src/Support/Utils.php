@@ -25,13 +25,10 @@ class Utils
      * @param string $subdomain
      * @return string
      */
-    public static function apiUrl(string $path, ?array $queryParams = null, $subdomain = 'api'): string
+    public static function apiUrl(string $path, ?array $queryParams = []): string
     {
-        if (app()->environment(['local', 'development'])) {
-            $subdomain = 'v2api';
-        }
-
-        return static::consoleUrl($path, $queryParams, $subdomain);
+        $isLocalDevelopment = app()->environment(['local', 'development']);
+        return url($path, $queryParams, !$isLocalDevelopment);
     }
 
     /**
@@ -42,24 +39,37 @@ class Utils
      * @param string $subdomain
      * @return string
      */
-    public static function consoleUrl(string $path, ?array $queryParams = null, $subdomain = 'console'): string
+    public static function consoleUrl(string $path, ?array $queryParams = [], $subdomain = null): string
     {
-        $url = 'https://' . $subdomain;
+        // prepare segment variables
+        $isLocalDevelopment = app()->environment(['local', 'development']);
+        $host = config('fleetbase.console.host');
+        $subdomain = config('fleetbase.console.subdomain', $subdomain);
 
-        if (app()->environment(['qa', 'staging'])) {
-            $url .= '.' . app()->environment();
+        // prepare url segments array
+        $segments = [];
+
+        // check if using secure console
+        $segments[] = config('fleetbase.console.secure', !$isLocalDevelopment) ? 'https://' : 'http://';
+
+        // check for subdomain
+
+        if (config('fleetbase.console.subdomain', $subdomain)) {
+            $segments[] = $subdomain . '.';
         }
 
-        if (app()->environment(['local', 'development'])) {
-            $url .= '.fleetbase.engineering';
-        } else {
-            $url .= '.fleetbase.io';
-        }
+        // add the host
+        $segments[] = $host;
 
+        // create the url
+        $url = implode('', $segments);
+
+        // create the path
         if (!empty($path)) {
             $url = Str::startsWith($path, '/') ? $url . $path : $url . '/' . $path;
         }
 
+        // add query params
         if ($queryParams) {
             $url = $url . '?' . http_build_query($queryParams);
         }
@@ -990,8 +1000,12 @@ class Utils
      *
      * @return string
      */
-    public static function getCountryCodeByName($countryName)
+    public static function getCountryCodeByName(?string $countryName): ?string
     {
+        if (static::isEmpty($countryName) || !is_string($countryName)) {
+            return null;
+        }
+
         $countries = new \PragmaRX\Countries\Package\Countries();
         $countries = $countries
             ->all()
@@ -1027,8 +1041,12 @@ class Utils
      * @param string $timezone
      * @return \PragmaRX\Countries\Package\Support\Collection
      */
-    public static function findCountryFromTimezone(string $timezone): \PragmaRX\Countries\Package\Support\Collection
+    public static function findCountryFromTimezone(?string $timezone): \PragmaRX\Countries\Package\Support\Collection
     {
+        if (static::isEmpty($timezone) || !is_string($timezone)) {
+            return new \PragmaRX\Countries\Package\Support\Collection();
+        }
+
         $countries = new \PragmaRX\Countries\Package\Countries(new \PragmaRX\Countries\Package\Services\Config([
             'hydrate' => [
                 'elements' => [
@@ -1051,9 +1069,9 @@ class Utils
      *
      * @return array|null The additional country data.
      */
-    public static function getCountryData(string $country): ?array
+    public static function getCountryData(?string $country): ?array
     {
-        if (static::isEmpty($country)) {
+        if (static::isEmpty($country) || !is_string($country)) {
             return null;
         }
 
@@ -1102,8 +1120,12 @@ class Utils
      *
      * @return string|null The currency code related to the given country code, or null if not found.
      */
-    public static function getCurrenyFromCountryCode(string $countryCode): ?string
+    public static function getCurrenyFromCountryCode(?string $countryCode): ?string
     {
+        if (!is_string($countryCode) || empty($countryCode)) {
+            return null;
+        }
+
         $data = static::getCountryData($countryCode);
 
         return static::get($data, 'currency');
@@ -1116,10 +1138,13 @@ class Utils
      *
      * @return string|null The dial code related to the given country code, or null if not found.
      */
-    public static function getDialCodeFromCountryCode(string $countryCode): ?string
+    public static function getDialCodeFromCountryCode(?string $countryCode): ?string
     {
-        $data = static::getCountryData($countryCode);
+        if (!is_string($countryCode) || empty($countryCode)) {
+            return null;
+        }
 
+        $data = static::getCountryData($countryCode);
         return static::get($data, 'dial_code');
     }
 
@@ -1130,10 +1155,13 @@ class Utils
      *
      * @return string|null The capital city related to the given country code, or null if not found.
      */
-    public static function getCapitalCityFromCountryCode(string $countryCode): ?string
+    public static function getCapitalCityFromCountryCode(?string $countryCode): ?string
     {
-        $data = static::getCountryData($countryCode);
+        if (!is_string($countryCode) || empty($countryCode)) {
+            return null;
+        }
 
+        $data = static::getCountryData($countryCode);
         return static::get($data, 'capital');
     }
 
@@ -1143,7 +1171,7 @@ class Utils
      * @param string $ip
      * @return stdClass
      */
-    public static function lookupIp($ip = null)
+    public static function lookupIp(?string $ip = null)
     {
         if ($ip === null) {
             $ip = request()->ip();

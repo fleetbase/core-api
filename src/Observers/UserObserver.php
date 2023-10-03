@@ -3,6 +3,7 @@
 namespace Fleetbase\Observers;
 
 use Fleetbase\Models\CompanyUser;
+use Fleetbase\Models\Company;
 use Fleetbase\Models\User;
 
 class UserObserver
@@ -15,10 +16,16 @@ class UserObserver
      */
     public function created(User $user)
     {
+        // load user company
+        $user->load(['company']);
+
         // create company user record
-        if (session('company')) {
-            CompanyUser::create(['company_uuid' => session('company'), 'user_uuid' => $user->uuid, 'status' => $user->status]);
+        if ($user->company_uuid) {
+            CompanyUser::create(['company_uuid' => $user->company_uuid, 'user_uuid' => $user->uuid, 'status' => $user->status]);
         }
+
+        // invite user to join company
+        $user->sendInviteFromCompany();
     }
 
     /**
