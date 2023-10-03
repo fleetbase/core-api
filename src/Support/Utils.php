@@ -990,8 +990,12 @@ class Utils
      *
      * @return string
      */
-    public static function getCountryCodeByName($countryName)
+    public static function getCountryCodeByName(?string $countryName): ?string
     {
+        if (static::isEmpty($countryName) || !is_string($countryName)) {
+            return null;
+        }
+
         $countries = new \PragmaRX\Countries\Package\Countries();
         $countries = $countries
             ->all()
@@ -1027,8 +1031,12 @@ class Utils
      * @param string $timezone
      * @return \PragmaRX\Countries\Package\Support\Collection
      */
-    public static function findCountryFromTimezone(string $timezone): \PragmaRX\Countries\Package\Support\Collection
+    public static function findCountryFromTimezone(?string $timezone): \PragmaRX\Countries\Package\Support\Collection
     {
+        if (static::isEmpty($timezone) || !is_string($timezone)) {
+            return new \PragmaRX\Countries\Package\Support\Collection();
+        }
+
         $countries = new \PragmaRX\Countries\Package\Countries(new \PragmaRX\Countries\Package\Services\Config([
             'hydrate' => [
                 'elements' => [
@@ -1051,9 +1059,9 @@ class Utils
      *
      * @return array|null The additional country data.
      */
-    public static function getCountryData(string $country): ?array
+    public static function getCountryData(?string $country): ?array
     {
-        if (static::isEmpty($country)) {
+        if (static::isEmpty($country) || !is_string($country)) {
             return null;
         }
 
@@ -1120,10 +1128,13 @@ class Utils
      *
      * @return string|null The dial code related to the given country code, or null if not found.
      */
-    public static function getDialCodeFromCountryCode(string $countryCode): ?string
+    public static function getDialCodeFromCountryCode(?string $countryCode): ?string
     {
-        $data = static::getCountryData($countryCode);
+        if (!is_string($countryCode) || empty($countryCode)) {
+            return null;
+        }
 
+        $data = static::getCountryData($countryCode);
         return static::get($data, 'dial_code');
     }
 
@@ -1134,10 +1145,13 @@ class Utils
      *
      * @return string|null The capital city related to the given country code, or null if not found.
      */
-    public static function getCapitalCityFromCountryCode(string $countryCode): ?string
+    public static function getCapitalCityFromCountryCode(?string $countryCode): ?string
     {
-        $data = static::getCountryData($countryCode);
+        if (!is_string($countryCode) || empty($countryCode)) {
+            return null;
+        }
 
+        $data = static::getCountryData($countryCode);
         return static::get($data, 'capital');
     }
 
@@ -1147,7 +1161,7 @@ class Utils
      * @param string $ip
      * @return stdClass
      */
-    public static function lookupIp($ip = null)
+    public static function lookupIp(?string $ip = null)
     {
         if ($ip === null) {
             $ip = request()->ip();
