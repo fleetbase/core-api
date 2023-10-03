@@ -1102,8 +1102,12 @@ class Utils
      *
      * @return string|null The currency code related to the given country code, or null if not found.
      */
-    public static function getCurrenyFromCountryCode(string $countryCode): ?string
+    public static function getCurrenyFromCountryCode(?string $countryCode): ?string
     {
+        if (!is_string($countryCode) || empty($countryCode)) {
+            return null;
+        }
+
         $data = static::getCountryData($countryCode);
 
         return static::get($data, 'currency');
