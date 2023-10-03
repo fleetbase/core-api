@@ -21,6 +21,8 @@ use Fleetbase\Models\Company;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Fleetbase\Casts\Json;
+use Fleetbase\Notifications\UserInvited;
+use Fleetbase\Support\Utils;
 use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\HasCacheableAttributes;
 use Fleetbase\Traits\HasMetaAttributes;
@@ -519,5 +521,55 @@ class User extends Authenticatable
         }
 
         return collect($types)->unique()->values()->toArray();
+    }
+
+    /**
+     * Sends an invitation from a company to join.
+     *
+     * This function checks if the user is already invited to the company.
+     * If not, it creates a new invitation and notifies the user.
+     *
+     * @param Company $company The company from which the invitation is being sent.
+     * @return bool Returns true if the invitation is successfully sent, false otherwise.
+     */
+    public function sendInviteFromCompany(?Company $company = null): bool
+    {
+        if ($company === null) {
+            $this->load(['company']);
+            $company = $this->company;
+        }
+
+        // make sure company is valid
+        if (!$company instanceof Company) {
+            return false;
+        }
+
+        // make sure user isn't already invited
+        $isAlreadyInvited = Invite::where([
+            'company_uuid' => $company->uuid,
+            'subject_uuid' => $company->uuid,
+            'protocol' => 'email',
+            'reason' => 'join_company'
+        ])->whereJsonContains('recipients', $this->email)->exists();
+
+        if ($isAlreadyInvited) {
+            return false;
+        }
+
+        // create invitation
+        $invitation = Invite::create([
+            'company_uuid' => $company->uuid,
+            'created_by_uuid' => $this->uuid,
+            'subject_uuid' => $company->uuid,
+            'subject_type' => Utils::getMutationType($company),
+            'protocol' => 'email',
+            'recipients' => [$this->email],
+            'reason' => 'join_company'
+        ]);
+
+        // notify user
+        $this->notify(new UserInvited($invitation));
+
+        return true;
     }
 }

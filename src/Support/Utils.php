@@ -25,13 +25,10 @@ class Utils
      * @param string $subdomain
      * @return string
      */
-    public static function apiUrl(string $path, ?array $queryParams = null, $subdomain = 'api'): string
+    public static function apiUrl(string $path, ?array $queryParams = []): string
     {
-        if (app()->environment(['local', 'development'])) {
-            $subdomain = 'v2api';
-        }
-
-        return static::consoleUrl($path, $queryParams, $subdomain);
+        $isLocalDevelopment = app()->environment(['local', 'development']);
+        return url($path, $queryParams, !$isLocalDevelopment);
     }
 
     /**
@@ -42,24 +39,37 @@ class Utils
      * @param string $subdomain
      * @return string
      */
-    public static function consoleUrl(string $path, ?array $queryParams = null, $subdomain = 'console'): string
+    public static function consoleUrl(string $path, ?array $queryParams = [], $subdomain = null): string
     {
-        $url = 'https://' . $subdomain;
+        // prepare segment variables
+        $isLocalDevelopment = app()->environment(['local', 'development']);
+        $host = config('fleetbase.console.host');
+        $subdomain = config('fleetbase.console.subdomain', $subdomain);
 
-        if (app()->environment(['qa', 'staging'])) {
-            $url .= '.' . app()->environment();
+        // prepare url segments array
+        $segments = [];
+
+        // check if using secure console
+        $segments[] = config('fleetbase.console.secure', !$isLocalDevelopment) ? 'https://' : 'http://';
+
+        // check for subdomain
+
+        if (config('fleetbase.console.subdomain', $subdomain)) {
+            $segments[] = $subdomain . '.';
         }
 
-        if (app()->environment(['local', 'development'])) {
-            $url .= '.fleetbase.engineering';
-        } else {
-            $url .= '.fleetbase.io';
-        }
+        // add the host
+        $segments[] = $host;
 
+        // create the url
+        $url = implode('', $segments);
+
+        // create the path
         if (!empty($path)) {
             $url = Str::startsWith($path, '/') ? $url . $path : $url . '/' . $path;
         }
 
+        // add query params
         if ($queryParams) {
             $url = $url . '?' . http_build_query($queryParams);
         }
