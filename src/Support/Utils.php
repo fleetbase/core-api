@@ -53,7 +53,6 @@ class Utils
         $segments[] = config('fleetbase.console.secure', !$isLocalDevelopment) ? 'https://' : 'http://';
 
         // check for subdomain
-
         if (config('fleetbase.console.subdomain', $subdomain)) {
             $segments[] = $subdomain . '.';
         }
