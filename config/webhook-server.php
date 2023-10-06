@@ -54,6 +54,11 @@ return [
     'backoff_strategy' => \Fleetbase\Webhook\BackoffStrategy\ExponentialBackoffStrategy::class,
 
     /*
+     * This class is used to dispatch webhooks on to the queue.
+     */
+    'webhook_job' => \Fleetbase\Webhook\CallWebhookJob::class,
+
+    /*
      * By default we will verify that the ssl certificate of the destination
      * of the webhook is valid.
      */
