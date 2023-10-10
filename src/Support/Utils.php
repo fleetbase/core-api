@@ -1816,11 +1816,28 @@ class Utils
             return null;
         }
 
+        $useServerPath = false;
         $packagePath = strstr($path, '/src', true);
         $composerJsonPath = $packagePath . '/composer.json';
 
         // Load the composer.json file into an array
-        $composerJson = json_decode(file_get_contents($composerJsonPath), true);
+        try {
+            $composerJson = json_decode(file_get_contents($composerJsonPath), true);
+        } catch (\Throwable $e) {
+            // try monorepo style path `/server`
+            $useServerPath = true;
+            $packagePath = strstr($path, '/server/src', true);
+            $composerJsonPath = $packagePath . '/composer.json';
+        }
+
+        // retry with server path
+        if ($useServerPath === true) {
+            try {
+                $composerJson = json_decode(file_get_contents($composerJsonPath), true);
+            } catch (\Throwable $e) {
+                return null;
+            }
+        }
 
         // Get the package's namespace from its psr-4 autoloading configuration
         $namespace = null;
