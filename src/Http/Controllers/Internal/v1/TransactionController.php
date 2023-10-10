@@ -7,9 +7,9 @@ use Fleetbase\Http\Controllers\FleetbaseController;
 class TransactionController extends FleetbaseController
 {
     /**
-     * The resource to query
+     * The resource to query.
      *
      * @var string
      */
-   public $resource = 'transaction';
+    public $resource = 'transaction';
 }

@@ -11,7 +11,7 @@ class ExportRequest extends FleetbaseRequest
      */
     public function authorize()
     {
-        return $this->session()->has('user');;
+        return $this->session()->has('user');
     }
 
     /**
@@ -22,7 +22,7 @@ class ExportRequest extends FleetbaseRequest
     public function rules()
     {
         return [
-            'format' => 'in:csv,xlsx,xls,html,pdf'
+            'format' => 'in:csv,xlsx,xls,html,pdf',
         ];
     }
 }

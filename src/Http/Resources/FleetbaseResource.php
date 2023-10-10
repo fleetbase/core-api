@@ -12,7 +12,8 @@ class FleetbaseResource extends JsonResource
     /**
      * Transform the resource into an array.
      *
-     * @param  \Illuminate\Http\Request  $request
+     * @param \Illuminate\Http\Request $request
+     *
      * @return array|\Illuminate\Contracts\Support\Arrayable|\JsonSerializable
      */
     public function toArray($request)
@@ -33,7 +34,6 @@ class FleetbaseResource extends JsonResource
     /**
      * Create a new anonymous resource collection.
      *
-     * @param  mixed  $resource
      * @return \Illuminate\Http\Resources\Json\AnonymousResourceCollection
      */
     public static function collection($resource)
@@ -50,8 +50,8 @@ class FleetbaseResource extends JsonResource
 
     /**
      * Checks if resource is null.
-     * 
-     * @return boolean
+     *
+     * @return bool
      */
     public function isEmpty()
     {
@@ -60,12 +60,10 @@ class FleetbaseResource extends JsonResource
 
     /**
      * Get all internal id properties, only when internal request.
-     *
-     * @return array
      */
     public function getInternalIds(): array
     {
-        $attributes = $this->getAttributes();
+        $attributes  = $this->getAttributes();
         $internalIds = [];
 
         foreach ($attributes as $key => $value) {

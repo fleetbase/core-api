@@ -2,22 +2,22 @@
 
 namespace Fleetbase\Models;
 
+use Aloha\Twilio\Support\Laravel\Facade as Twilio;
+use Fleetbase\Casts\Json;
 use Fleetbase\Mail\VerifyEmail;
 use Fleetbase\Traits\Expirable;
+use Fleetbase\Traits\HasMetaAttributes;
 use Fleetbase\Traits\HasSubject;
 use Fleetbase\Traits\HasUuid;
-use Fleetbase\Casts\Json;
-use Fleetbase\Traits\HasMetaAttributes;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Mail;
-use Twilio\Exceptions\RestException;
-use Aloha\Twilio\Support\Laravel\Facade as Twilio;
-use Closure;
-use Exception;
 
 class VerificationCode extends Model
 {
-    use HasUuid, Expirable, HasSubject, HasMetaAttributes;
+    use HasUuid;
+    use Expirable;
+    use HasSubject;
+    use HasMetaAttributes;
 
     /**
      * The database table used by the model.
@@ -40,11 +40,11 @@ class VerificationCode extends Model
      */
     protected $casts = [
         'expires_at' => 'datetime',
-        'meta' => Json::class
+        'meta'       => Json::class,
     ];
 
     /**
-     * Dynamic attributes that are appended to object
+     * Dynamic attributes that are appended to object.
      *
      * @var array
      */
@@ -77,7 +77,7 @@ class VerificationCode extends Model
     /** static method to generate for a subject on the fly */
     public static function generateFor($subject = null, $for = 'general_verification', $save = true)
     {
-        $verifyCode = new static();
+        $verifyCode      = new static();
         $verifyCode->for = $for;
 
         if ($subject) {
@@ -92,11 +92,11 @@ class VerificationCode extends Model
     }
 
     /** static method to generate code for email verification */
-    public static function generateEmailVerificationFor($subject, $for = 'email_verification', ?Closure $messageCallback = null, $meta = [])
+    public static function generateEmailVerificationFor($subject, $for = 'email_verification', \Closure $messageCallback = null, $meta = [])
     {
-        $verifyCode = static::generateFor($subject, $for, false);
+        $verifyCode             = static::generateFor($subject, $for, false);
         $verifyCode->expires_at = Carbon::now()->addHour();
-        $verifyCode->meta = $meta;
+        $verifyCode->meta       = $meta;
         $verifyCode->save();
 
         $emailSubject = $messageCallback ? $messageCallback($verifyCode) : null;
@@ -109,11 +109,11 @@ class VerificationCode extends Model
     }
 
     /** static method to generate code for phone verification */
-    public static function generateSmsVerificationFor($subject, $for = 'phone_verification', ?Closure $messageCallback = null, $meta = [])
+    public static function generateSmsVerificationFor($subject, $for = 'phone_verification', \Closure $messageCallback = null, $meta = [])
     {
-        $verifyCode = static::generateFor($subject, $for, false);
+        $verifyCode             = static::generateFor($subject, $for, false);
         $verifyCode->expires_at = Carbon::now()->addHour();
-        $verifyCode->meta = $meta;
+        $verifyCode->meta       = $meta;
         $verifyCode->save();
 
         if ($subject->phone) {

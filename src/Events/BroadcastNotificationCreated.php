@@ -5,27 +5,24 @@ namespace Fleetbase\Events;
 use Fleetbase\Support\Utils;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Bus\Queueable;
-use Illuminate\Notifications\Notification;
-// use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+// use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Notifications\Notification;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Str;
 
 class BroadcastNotificationCreated implements ShouldBroadcastNow
 {
-    use Queueable, SerializesModels;
+    use Queueable;
+    use SerializesModels;
 
     /**
      * The notifiable entity who received the notification.
-     *
-     * @var mixed
      */
     public $notifiable;
 
     /**
      * The notification instance.
-     *
-     * @var \Illuminate\Notifications\Notification
      */
     public Notification $notification;
 
@@ -39,15 +36,12 @@ class BroadcastNotificationCreated implements ShouldBroadcastNow
     /**
      * Create a new event instance.
      *
-     * @param  mixed  $notifiable
-     * @param  \Illuminate\Notifications\Notification  $notification
-     * @param  array  $data
      * @return void
      */
     public function __construct($notifiable, Notification $notification, array $data = [])
     {
-        $this->data = $data;
-        $this->notifiable = $notifiable;
+        $this->data         = $data;
+        $this->notifiable   = $notifiable;
         $this->notification = $notification;
     }
 
@@ -58,9 +52,9 @@ class BroadcastNotificationCreated implements ShouldBroadcastNow
      */
     public function broadcastOn()
     {
-        $broadcastOn = $this->notification->broadcastOn();
+        $broadcastOn         = $this->notification->broadcastOn();
         $notificableChannels = $this->getNotifiableChannels();
-        $channels = array_merge($broadcastOn, $notificableChannels);
+        $channels            = array_merge($broadcastOn, $notificableChannels);
 
         return collect($channels)->all();
     }
@@ -87,7 +81,7 @@ class BroadcastNotificationCreated implements ShouldBroadcastNow
             }
         }
 
-        $modelName = Str::snake(Utils::classBasename($this->notifiable));
+        $modelName   = Str::snake(Utils::classBasename($this->notifiable));
         $channelKeys = ['uuid', 'public_id', $this->notifiable->getKey()];
 
         foreach ($channelKeys as $key) {
@@ -111,7 +105,7 @@ class BroadcastNotificationCreated implements ShouldBroadcastNow
         }
 
         return array_merge($this->data, [
-            'id' => $this->notification->id,
+            'id'   => $this->notification->id,
             'type' => $this->broadcastType(),
         ]);
     }

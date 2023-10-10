@@ -2,22 +2,27 @@
 
 namespace Fleetbase\Models;
 
-use Fleetbase\Support\Utils;
 use Fleetbase\Casts\Json;
-use Fleetbase\Traits\HasMetaAttributes;
+use Fleetbase\Support\Utils;
 use Fleetbase\Traits\HasApiModelBehavior;
+use Fleetbase\Traits\HasMetaAttributes;
 use Fleetbase\Traits\HasPublicId;
-use Fleetbase\Traits\Searchable;
 use Fleetbase\Traits\HasUuid;
+use Fleetbase\Traits\Searchable;
 use Spatie\Sluggable\HasSlug;
 use Spatie\Sluggable\SlugOptions;
 
 class Category extends Model
 {
-    use HasUuid, HasPublicId, HasApiModelBehavior, HasSlug, HasMetaAttributes, Searchable;
+    use HasUuid;
+    use HasPublicId;
+    use HasApiModelBehavior;
+    use HasSlug;
+    use HasMetaAttributes;
+    use Searchable;
 
     /**
-     * The type of public Id to generate
+     * The type of public Id to generate.
      *
      * @var string
      */
@@ -31,7 +36,7 @@ class Category extends Model
     protected $table = 'categories';
 
     /**
-     * These attributes that can be queried
+     * These attributes that can be queried.
      *
      * @var array
      */
@@ -45,7 +50,7 @@ class Category extends Model
     protected $fillable = ['public_id', 'company_uuid', 'owner_uuid', 'parent_uuid', 'icon_file_uuid', 'owner_type', 'internal_id', 'name', 'description', 'translations', 'meta', 'tags', 'icon', 'icon_color', 'slug', 'order', 'for'];
 
     /**
-     * Dynamic attributes that are appended to object
+     * Dynamic attributes that are appended to object.
      *
      * @var array
      */
@@ -59,7 +64,7 @@ class Category extends Model
     protected $hidden = ['icon_file'];
 
     /**
-     * Attributes that is filterable on this model
+     * Attributes that is filterable on this model.
      *
      * @var array
      */
@@ -71,9 +76,9 @@ class Category extends Model
      * @var array
      */
     protected $casts = [
-        'tags' => 'array',
-        'meta' => Json::class,
-        'translations' => Json::class
+        'tags'         => 'array',
+        'meta'         => Json::class,
+        'translations' => Json::class,
     ];
 
     /**
@@ -111,7 +116,7 @@ class Category extends Model
     }
 
     /**
-     * Sets the owner type
+     * Sets the owner type.
      */
     public function setOwnerTypeAttribute($type)
     {
@@ -120,7 +125,7 @@ class Category extends Model
 
     /**
      * Get avatar URL attribute.
-     * 
+     *
      * @return string
      */
     public function getIconUrlAttribute()

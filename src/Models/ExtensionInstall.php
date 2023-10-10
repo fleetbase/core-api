@@ -4,12 +4,14 @@ namespace Fleetbase\Models;
 
 use Fleetbase\Casts\Json;
 use Fleetbase\Traits\HasApiModelBehavior;
-use Fleetbase\Traits\TracksApiCredential;
 use Fleetbase\Traits\HasUuid;
+use Fleetbase\Traits\TracksApiCredential;
 
 class ExtensionInstall extends Model
 {
-    use HasUuid, TracksApiCredential, HasApiModelBehavior;
+    use HasUuid;
+    use TracksApiCredential;
+    use HasApiModelBehavior;
 
     /**
      * The database connection to use.
@@ -35,7 +37,7 @@ class ExtensionInstall extends Model
         'company_uuid',
         'meta',
         'config',
-        'overwrite'
+        'overwrite',
     ];
 
     /**
@@ -44,8 +46,8 @@ class ExtensionInstall extends Model
      * @var array
      */
     protected $casts = [
-        'meta' => Json::class,
-        'config' => Json::class,
+        'meta'      => Json::class,
+        'config'    => Json::class,
         'overwrite' => Json::class,
     ];
 
@@ -70,7 +72,7 @@ class ExtensionInstall extends Model
      */
     public function asExtension()
     {
-        $data = $this->extension->toArray();
+        $data      = $this->extension->toArray();
         $extension = new Extension($data);
 
         $extension->setAttribute('meta', $this->meta);

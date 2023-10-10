@@ -2,15 +2,17 @@
 
 namespace Fleetbase\Events;
 
-use Fleetbase\Models\User;
 use Fleetbase\Models\Company;
+use Fleetbase\Models\User;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-class AccountCreated 
+class AccountCreated
 {
-    use Dispatchable, InteractsWithSockets, SerializesModels;
+    use Dispatchable;
+    use InteractsWithSockets;
+    use SerializesModels;
 
     public $user;
     public $company;
@@ -22,7 +24,7 @@ class AccountCreated
      */
     public function __construct(User $user, Company $company)
     {
-        $this->user = $user;
+        $this->user    = $user;
         $this->company = $company;
     }
 }

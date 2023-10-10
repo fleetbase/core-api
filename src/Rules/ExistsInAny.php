@@ -10,15 +10,13 @@ use Illuminate\Support\Str;
 class ExistsInAny implements Rule
 {
     /**
-     * The tables to check exists on
-     * 
-     * @var array
+     * The tables to check exists on.
      */
     public array $tables;
 
     /**
-     * The column to check the value for
-     * 
+     * The column to check the value for.
+     *
      * @var string|array
      */
     public $column;
@@ -47,8 +45,8 @@ class ExistsInAny implements Rule
     /**
      * Determine if the validation rule passes.
      *
-     * @param  string  $attribute
-     * @param  mixed  $value
+     * @param string $attribute
+     *
      * @return bool
      */
     public function passes($attribute, $value)

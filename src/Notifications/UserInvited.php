@@ -28,16 +28,15 @@ class UserInvited extends Notification implements ShouldQueue
      */
     public function __construct(Invite $invite)
     {
-        $this->invite = $invite;
+        $this->invite  = $invite;
         $this->company = $this->invite->subject;
-        $this->sender = $this->invite->createdBy;
-        $this->url = Utils::consoleUrl('join/org/' . $invite->uri);
+        $this->sender  = $this->invite->createdBy;
+        $this->url     = Utils::consoleUrl('join/org/' . $invite->uri);
     }
 
     /**
      * Get the notification's delivery channels.
      *
-     * @param  mixed  $notifiable
      * @return array
      */
     public function via($notifiable)
@@ -48,12 +47,11 @@ class UserInvited extends Notification implements ShouldQueue
     /**
      * Get the mail representation of the notification.
      *
-     * @param  mixed  $notifiable
      * @return \Illuminate\Notifications\Messages\MailMessage
      */
     public function toMail($notifiable)
     {
-        return (new MailMessage)
+        return (new MailMessage())
             ->subject('You\'ve been invited to join ' . $this->company->name . ' on Fleetbase!')
             ->greeting('Hello, ' . $notifiable->name . '!')
             ->line($this->sender->name . ' has invited you to join their organization on Fleetbase. Click the button below to accept this invitation and enable access to ' . $this->company->name . ' on Fleetbase.')
@@ -64,13 +62,11 @@ class UserInvited extends Notification implements ShouldQueue
     /**
      * Get the array representation of the notification.
      *
-     * @param  mixed  $notifiable
      * @return array
      */
     public function toArray($notifiable)
     {
         return [
-            //
         ];
     }
 }

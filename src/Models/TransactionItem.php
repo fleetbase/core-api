@@ -3,12 +3,13 @@
 namespace Fleetbase\Models;
 
 use Fleetbase\Casts\Json;
-use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\HasMetaAttributes;
+use Fleetbase\Traits\HasUuid;
 
 class TransactionItem extends Model
 {
-    use HasUuid, HasMetaAttributes;
+    use HasUuid;
+    use HasMetaAttributes;
 
     /**
      * The database table used by the model.
@@ -30,11 +31,11 @@ class TransactionItem extends Model
      * @var array
      */
     protected $casts = [
-        'meta' => Json::class
+        'meta' => Json::class,
     ];
 
     /**
-     * Dynamic attributes that are appended to object
+     * Dynamic attributes that are appended to object.
      *
      * @var array
      */

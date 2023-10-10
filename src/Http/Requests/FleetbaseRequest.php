@@ -3,16 +3,15 @@
 namespace Fleetbase\Http\Requests;
 
 use Fleetbase\Support\Http;
-use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
+use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\ValidationException;
 
 class FleetbaseRequest extends FormRequest
 {
     /**
-     * Form validation to throw JSON formatted errors if validation fails
+     * Form validation to throw JSON formatted errors if validation fails.
      *
-     * @param Illuminate\Contracts\Validation\Validator $validator;
      * @return Illuminate\Http\Exceptions\HttpResponseException;
      */
     protected function failedValidation(Validator $validator)

@@ -2,9 +2,7 @@
 
 namespace Fleetbase\Exceptions;
 
-use InvalidArgumentException;
-
-class PolicyDoesNotExist extends InvalidArgumentException
+class PolicyDoesNotExist extends \InvalidArgumentException
 {
     public static function named(string $policyName)
     {

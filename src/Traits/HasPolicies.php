@@ -18,7 +18,7 @@ trait HasPolicies
     public static function bootHasPolicies()
     {
         static::deleting(function ($model) {
-            if (method_exists($model, 'isForceDeleting') && ! $model->isForceDeleting()) {
+            if (method_exists($model, 'isForceDeleting') && !$model->isForceDeleting()) {
                 return;
             }
 
@@ -28,7 +28,7 @@ trait HasPolicies
 
     public function getPolicyClass()
     {
-        if (! isset($this->policyClass)) {
+        if (!isset($this->policyClass)) {
             $this->policyClass = app(PermissionRegistrar::class)->getPolicyClass();
         }
 
@@ -52,11 +52,8 @@ trait HasPolicies
     /**
      * Scope the model query to certain policies only.
      *
-     * @param \Illuminate\Database\Eloquent\Builder $query
      * @param string|array|\Fleetbase\Contracts\Policy|\Illuminate\Support\Collection $policies
-     * @param string $guard
-     *
-     * @return \Illuminate\Database\Eloquent\Builder
+     * @param string                                                                  $guard
      */
     public function scopePolicy(Builder $query, $policies, $guard = null): Builder
     {
@@ -64,7 +61,7 @@ trait HasPolicies
             $policies = $policies->all();
         }
 
-        if (! is_array($policies)) {
+        if (!is_array($policies)) {
             $policies = [$policies];
         }
 
@@ -74,13 +71,13 @@ trait HasPolicies
             }
 
             $method = is_numeric($role) ? 'findById' : 'findByName';
-            $guard = $guard ?: $this->getDefaultGuardName();
+            $guard  = $guard ?: $this->getDefaultGuardName();
 
             return $this->getPolicyClass()->{$method}($role, $guard);
         }, $policies);
 
         return $query->whereHas('policies', function (Builder $subQuery) use ($policies) {
-            $subQuery->whereIn(config('permission.table_names.policies').'.id', \array_column($policies, 'id'));
+            $subQuery->whereIn(config('permission.table_names.policies') . '.id', \array_column($policies, 'id'));
         });
     }
 
@@ -151,7 +148,7 @@ trait HasPolicies
     /**
      * Remove all current policies and set the given ones.
      *
-     * @param  array|\Fleebase\Contracts\Policy|string  ...$policies
+     * @param array|\Fleebase\Contracts\Policy|string ...$policies
      *
      * @return $this
      */
@@ -166,8 +163,6 @@ trait HasPolicies
      * Determine if the model has (one of) the given role(s).
      *
      * @param string|int|array|\Fleebase\Contracts\Policy|\Illuminate\Support\Collection $policies
-     * @param string|null $guard
-     * @return bool
      */
     public function hasPolicy($policies, string $guard = null): bool
     {
@@ -210,8 +205,6 @@ trait HasPolicies
      * Alias to hasPolicy() but without Guard controls
      *
      * @param string|int|array|\Fleebase\Contracts\Policy|\Illuminate\Support\Collection $policies
-     *
-     * @return bool
      */
     public function hasAnyPolicy(...$policies): bool
     {
@@ -221,9 +214,7 @@ trait HasPolicies
     /**
      * Determine if the model has all of the given role(s).
      *
-     * @param  string|array|\Fleebase\Contracts\Policy|\Illuminate\Support\Collection  $policies
-     * @param  string|null  $guard
-     * @return bool
+     * @param string|array|\Fleebase\Contracts\Policy|\Illuminate\Support\Collection $policies
      */
     public function hasAllPolicies($policies, string $guard = null): bool
     {
@@ -289,13 +280,13 @@ trait HasPolicies
         }
 
         $quoteCharacter = substr($pipeString, 0, 1);
-        $endCharacter = substr($quoteCharacter, -1, 1);
+        $endCharacter   = substr($quoteCharacter, -1, 1);
 
         if ($quoteCharacter !== $endCharacter) {
             return explode('|', $pipeString);
         }
 
-        if (! in_array($quoteCharacter, ["'", '"'])) {
+        if (!in_array($quoteCharacter, ["'", '"'])) {
             return explode('|', $pipeString);
         }
 

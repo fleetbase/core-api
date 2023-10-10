@@ -11,7 +11,7 @@ use Illuminate\Support\Str;
 class CompanyController extends FleetbaseController
 {
     /**
-     * The resource to query
+     * The resource to query.
      *
      * @var string
      */
@@ -20,12 +20,11 @@ class CompanyController extends FleetbaseController
     /**
      * Find company by public_id or invitation code.
      *
-     * @param string $id 
      * @return \Illuminate\Http\Response
      */
     public function findCompany(string $id)
     {
-        $id = trim($id);
+        $id         = trim($id);
         $isPublicId = Str::startsWith($id, ['company_']);
 
         if ($isPublicId) {

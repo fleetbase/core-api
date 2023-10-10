@@ -2,15 +2,13 @@
 
 namespace Fleetbase\Support\SocketCluster;
 
-use WebSocket\Message\Message;
 use Illuminate\Broadcasting\Channel;
+use WebSocket\Message\Message;
 
 /**
- * Class SocketClusterMessage
+ * Class SocketClusterMessage.
  *
  * Represents a message to be sent to a SocketCluster server.
- *
- * @package Fleetbase\Support\SocketCluster
  */
 class SocketClusterMessage extends Message
 {
@@ -33,31 +31,25 @@ class SocketClusterMessage extends Message
 
     /**
      * The channel name to send the message to.
-     *
-     * @var string
      */
     public string $channel;
 
     /**
      * The data to be sent in the message.
-     *
-     * @var array
      */
     public array $data;
 
     /**
      * The socketcluster cid.
-     *
-     * @var int
      */
     public int $cid;
 
     /**
      * Create a new SocketCluster message instance.
      *
-     * @param string|\Illuminate\Broadcasting\Channel $channel The channel name to send the message to.
-     * @param array $data The data to be sent in the message.
-     * @param int $cid The socketcluster cid to use.
+     * @param string|\Illuminate\Broadcasting\Channel $channel the channel name to send the message to
+     * @param array                                   $data    the data to be sent in the message
+     * @param int                                     $cid     the socketcluster cid to use
      */
     public function __construct(string $channel, array $data = [], int $cid = 1)
     {
@@ -67,7 +59,7 @@ class SocketClusterMessage extends Message
             $this->payload = static::createSocketClusterHandshake($cid);
         } else {
             $this->channel = $channel;
-            $this->data = $data;
+            $this->data    = $data;
             $this->payload = static::createSocketClusterPayload($data, $channel, $cid);
         }
 
@@ -82,10 +74,10 @@ class SocketClusterMessage extends Message
     /**
      * Create a SocketCluster payload.
      *
-     * @param array $data The data to be sent in the message.
-     * @param string|Channel $channel The channel name or Channel instance to send the message to.
+     * @param array          $data    the data to be sent in the message
+     * @param string|Channel $channel the channel name or Channel instance to send the message to
      *
-     * @return string The created payload as a JSON string.
+     * @return string the created payload as a JSON string
      */
     public static function createSocketClusterPayload(array $data = [], $channel, int $cid = 1, $event = self::PUBLISH_EVENT)
     {
@@ -105,8 +97,8 @@ class SocketClusterMessage extends Message
 
         $eventObject = [
             'event' => $event,
-            'data' => $eventData,
-            'cid' => $cid
+            'data'  => $eventData,
+            'cid'   => $cid,
         ];
 
         return (string) @json_encode($eventObject);
@@ -115,14 +107,15 @@ class SocketClusterMessage extends Message
     /**
      * Create a new SocketCluster message instance.
      *
-     * @param string|Channel $channel The channel name or Channel instance to send the message to.
-     * @param mixed $data The data to be sent in the message.
+     * @param string|Channel $channel the channel name or Channel instance to send the message to
+     * @param mixed          $data    the data to be sent in the message
      *
-     * @return Message The created message object.
+     * @return Message the created message object
      */
     public static function create($channel, $data): Message
     {
         $payload = static::createSocketClusterPayload($data, $channel);
+
         return new Message('text', $payload);
     }
 }

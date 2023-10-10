@@ -2,10 +2,9 @@
 
 namespace Fleetbase\Webhook\Exceptions;
 
-use Exception;
 use Fleetbase\Webhook\Signer\Signer;
 
-class InvalidSigner extends Exception
+class InvalidSigner extends \Exception
 {
     public static function doesNotImplementSigner(string $invalidClassName): self
     {

@@ -10,16 +10,15 @@ use Illuminate\Http\Request;
 class ExtensionController extends FleetbaseController
 {
     /**
-     * The resource to query
+     * The resource to query.
      *
      * @var string
      */
-   public $resource = 'extension';
+    public $resource = 'extension';
 
     /**
      * Retrieve all installed extensions.
      *
-     * @param \Illuminate\Http\Request $request
      * @return \Illuminate\Http\Response
      */
     public function getInstalled(Request $request)
@@ -31,7 +30,7 @@ class ExtensionController extends FleetbaseController
 
         // morph installed into extensions
         foreach ($installed as $install) {
-            $data = $install->extension->toArray();
+            $data      = $install->extension->toArray();
             $extension = new Extension($data);
 
             $extension->setAttribute('meta', $install->meta);
@@ -55,7 +54,6 @@ class ExtensionController extends FleetbaseController
     /**
      * Retrieve all authored extensions.
      *
-     * @param \Illuminate\Http\Request $request
      * @return \Illuminate\Http\Response
      */
     public function getAuthored(Request $request)

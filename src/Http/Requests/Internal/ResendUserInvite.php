@@ -13,7 +13,7 @@ class ResendUserInvite extends FleetbaseRequest
      */
     public function authorize()
     {
-        return $this->session()->has('company');;
+        return $this->session()->has('company');
     }
 
     /**
@@ -24,7 +24,7 @@ class ResendUserInvite extends FleetbaseRequest
     public function rules()
     {
         return [
-            'user' => ['required', 'exists:users,uuid']
+            'user' => ['required', 'exists:users,uuid'],
         ];
     }
 }

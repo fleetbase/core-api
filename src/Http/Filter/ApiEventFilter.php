@@ -16,7 +16,7 @@ class ApiEventFilter extends Filter
         $this->builder->search($query);
     }
 
-    public function createdAt($createdAt) 
+    public function createdAt($createdAt)
     {
         $createdAt = Utils::dateRange($createdAt);
 
@@ -27,7 +27,7 @@ class ApiEventFilter extends Filter
         }
     }
 
-    public function updatedAt($updatedAt) 
+    public function updatedAt($updatedAt)
     {
         $updatedAt = Utils::dateRange($updatedAt);
 

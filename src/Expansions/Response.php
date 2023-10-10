@@ -24,7 +24,7 @@ class Response implements Expansion
      */
     public function error()
     {
-        /**
+        /*
          * Returns an error response.
          *
          * @param array $params
@@ -36,11 +36,11 @@ class Response implements Expansion
                 $error = $error->all();
             }
 
-            /** @var \Illuminate\Support\Facades\Response $this */
+            /* @var \Illuminate\Support\Facades\Response $this */
             return static::json(
                 [
                     'errors' => is_array($error) ? $error : [$error],
-                    ...$data
+                    ...$data,
                 ],
                 $statusCode
             );

@@ -2,28 +2,28 @@
 
 namespace Fleetbase\Models;
 
-use Illuminate\Database\Eloquent\Model as EloquentModel;
-use Illuminate\Database\Eloquent\SoftDeletes;
-use Fleetbase\Traits\HasCacheableAttributes;
 use Fleetbase\Traits\ClearsHttpCache;
 use Fleetbase\Traits\Expandable;
 use Fleetbase\Traits\Filterable;
+use Fleetbase\Traits\HasCacheableAttributes;
 use Fleetbase\Traits\Insertable;
 use Fleetbase\Traits\Searchable;
+use Illuminate\Database\Eloquent\Model as EloquentModel;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Model extends EloquentModel
 {
-    use SoftDeletes,
-        HasCacheableAttributes,
-        ClearsHttpCache,
-        Expandable,
-        Insertable,
-        Filterable;
+    use SoftDeletes;
+    use HasCacheableAttributes;
+    use ClearsHttpCache;
+    use Expandable;
+    use Insertable;
+    use Filterable;
 
     /**
      * Create a new instance of the model.
      *
-     * @param array $attributes The attributes to set on the model.
+     * @param array $attributes the attributes to set on the model
      *
      * @return void
      */
@@ -58,7 +58,7 @@ class Model extends EloquentModel
     /**
      * Determines if model is searchable.
      *
-     * @return boolean
+     * @return bool
      */
     public static function isSearchable()
     {
@@ -66,9 +66,7 @@ class Model extends EloquentModel
     }
 
     /**
-     * Saves the model instance and returns itself
-     *
-     * @return \Fleetbase\Models\Model
+     * Saves the model instance and returns itself.
      */
     public function saveInstance(): Model
     {
@@ -90,10 +88,8 @@ class Model extends EloquentModel
     /**
      * Retrieve a child model instance by binding it to the parent.
      *
-     * @param  string  $childType
-     * @param  mixed  $value
-     * @param  string|null  $field
-     * @return mixed
+     * @param string      $childType
+     * @param string|null $field
      */
     public function resolveChildRouteBinding($childType, $value, $field)
     {

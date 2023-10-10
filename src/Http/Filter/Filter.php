@@ -5,8 +5,8 @@ namespace Fleetbase\Http\Filter;
 use Fleetbase\Support\Http;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Str;
 
 abstract class Filter
 {
@@ -34,7 +34,6 @@ abstract class Filter
     /**
      * Initialize a new filter instance.
      *
-     * @param  \Illuminate\Http\Request  $request
      * @return void
      */
     public function __construct(Request $request)
@@ -45,9 +44,6 @@ abstract class Filter
 
     /**
      * Apply the filters on the builder.
-     *
-     * @param  \Illuminate\Database\Eloquent\Builder  $builder
-     * @return \Illuminate\Database\Eloquent\Builder
      */
     public function apply(Builder $builder): Builder
     {
@@ -70,19 +66,19 @@ abstract class Filter
      * Find dynamically named column filters and apply them.
      *
      * @param string $name
-     * @param mixed $value
+     *
      * @return void
      */
     private function applyFilter($name, $value)
     {
         $methodNames = [$name, Str::camel($name)];
-        
+
         foreach ($methodNames as $methodName) {
             // if query method value cannot be empty
             if (empty($value)) {
                 continue;
             }
-            
+
             if (method_exists($this, $methodName)) {
                 call_user_func_array([$this, $methodName], [$value]);
                 break;
@@ -91,7 +87,7 @@ abstract class Filter
     }
 
     /**
-     * Apply dynamically named range filters
+     * Apply dynamically named range filters.
      *
      * @return void
      */
@@ -112,8 +108,6 @@ abstract class Filter
 
     /**
      * Find standard range filters methods.
-     *
-     * @return array
      */
     private function getRangeFilterCallbacks(): array
     {
@@ -136,7 +130,7 @@ abstract class Filter
                 }
             )->mapWithKeys(
                 function ($param) use ($prepositions, $ranges) {
-                    $column = Str::replaceLast('_', '', str_replace($prepositions, '', $param));
+                    $column      = Str::replaceLast('_', '', str_replace($prepositions, '', $param));
                     $preposition = Arr::last(explode('_', $param));
 
                     if (empty($column)) {

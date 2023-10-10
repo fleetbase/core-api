@@ -2,8 +2,8 @@
 
 namespace Fleetbase\Traits;
 
-use Fleetbase\Support\Utils;
 use Fleetbase\Models\Company;
+use Fleetbase\Support\Utils;
 use Illuminate\Support\Str;
 
 trait HasInternalId
@@ -25,7 +25,7 @@ trait HasInternalId
     }
 
     /**
-     * Generates an internal ID for this model
+     * Generates an internal ID for this model.
      *
      * @return string
      */
@@ -45,7 +45,7 @@ trait HasInternalId
     }
 
     /**
-     * Generates an internal ID for this model
+     * Generates an internal ID for this model.
      *
      * @return string
      */
@@ -53,7 +53,7 @@ trait HasInternalId
     {
         if (is_array($initialInternalId)) {
             $prepend = data_get($initialInternalId, 'prepend') ?? '';
-            $append = data_get($initialInternalId, 'append') ?? '';
+            $append  = data_get($initialInternalId, 'append') ?? '';
 
             return static::makeInternalId($prepend, $append);
         }
@@ -65,7 +65,7 @@ trait HasInternalId
         if (session('company')) {
             // use company letters as a prepend
             $prepend = '';
-            $append = '';
+            $append  = '';
 
             // get company record
             $company = Company::where('uuid', session('company'))->first();
@@ -73,7 +73,7 @@ trait HasInternalId
             if ($company) {
                 if (Str::contains($company->name, ' ')) {
                     $companyNameExploded = explode(' ', $company->name);
-                    $prepend = strtoupper(mb_substr($companyNameExploded[0], 0, 1, 'utf-8')) . strtoupper(mb_substr($companyNameExploded[1], 0, 1, 'utf-8'));
+                    $prepend             = strtoupper(mb_substr($companyNameExploded[0], 0, 1, 'utf-8')) . strtoupper(mb_substr($companyNameExploded[1], 0, 1, 'utf-8'));
                 }
 
                 if (!$prepend) {

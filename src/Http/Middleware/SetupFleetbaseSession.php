@@ -3,18 +3,15 @@
 namespace Fleetbase\Http\Middleware;
 
 use Fleetbase\Support\Auth;
-use Closure;
 
 class SetupFleetbaseSession
 {
     /**
      * Handle an incoming request.
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  \Closure  $next
-     * @return mixed
+     * @param \Illuminate\Http\Request $request
      */
-    public function handle($request, Closure $next)
+    public function handle($request, \Closure $next)
     {
         Auth::setSession($request->user());
         Auth::setSandboxSession($request);

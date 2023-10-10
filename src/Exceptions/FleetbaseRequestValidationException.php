@@ -5,7 +5,7 @@ namespace Fleetbase\Exceptions;
 class FleetbaseRequestValidationException extends \Exception implements \Throwable
 {
     protected string $message = 'Invalid request';
-    protected array $errors = [];
+    protected array $errors   = [];
 
     public function __construct($errors = [], $message = 'Invalid request', $code = 0, \Throwable $previous = null)
     {

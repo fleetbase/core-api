@@ -11,7 +11,12 @@ use Spatie\Permission\Traits\HasPermissions;
 
 class Policy extends Model
 {
-    use HasUuid, HasApiModelBehavior, HasPermissions, SoftDeletes, Searchable, Filterable;
+    use HasUuid;
+    use HasApiModelBehavior;
+    use HasPermissions;
+    use SoftDeletes;
+    use Searchable;
+    use Filterable;
 
     /** @__construct */
     public function __construct(array $attributes = [])
@@ -57,7 +62,7 @@ class Policy extends Model
     protected $table = 'policies';
 
     /**
-     * The attributes that can be queried
+     * The attributes that can be queried.
      *
      * @var array
      */
@@ -85,7 +90,7 @@ class Policy extends Model
     protected $with = ['permissions'];
 
     /**
-     * Dynamic attributes that are appended to object
+     * Dynamic attributes that are appended to object.
      *
      * @var array
      */
@@ -102,7 +107,7 @@ class Policy extends Model
     }
 
     /**
-     * Check if the company_uuid attribute is set
+     * Check if the company_uuid attribute is set.
      *
      * @return bool
      */
@@ -112,7 +117,7 @@ class Policy extends Model
     }
 
     /**
-     * Check if the company_uuid attribute is set
+     * Check if the company_uuid attribute is set.
      *
      * @return bool
      */
@@ -122,7 +127,7 @@ class Policy extends Model
     }
 
     /**
-     * Get the type of attribute based on the company_uuid
+     * Get the type of attribute based on the company_uuid.
      *
      * @return string
      */
@@ -133,7 +138,7 @@ class Policy extends Model
 
     /**
      * Default guard should be `web`.
-     * 
+     *
      * @return void
      */
     public function setGuardNameAttribute()

@@ -3,8 +3,8 @@
 namespace Fleetbase\Models;
 
 use Fleetbase\Traits\Filterable;
-use Fleetbase\Traits\HasPolicies;
 use Fleetbase\Traits\HasApiModelBehavior;
+use Fleetbase\Traits\HasPolicies;
 use Fleetbase\Traits\HasUuid;
 use Spatie\Permission\Traits\HasPermissions;
 use Spatie\Permission\Traits\HasRoles;
@@ -13,7 +13,13 @@ use Spatie\Sluggable\SlugOptions;
 
 class Group extends Model
 {
-    use HasUuid, HasApiModelBehavior, HasPermissions, HasPolicies, HasRoles, HasSlug, Filterable;
+    use HasUuid;
+    use HasApiModelBehavior;
+    use HasPermissions;
+    use HasPolicies;
+    use HasRoles;
+    use HasSlug;
+    use Filterable;
 
     /**
      * The database connection to use.
@@ -30,7 +36,7 @@ class Group extends Model
     protected $table = 'groups';
 
     /**
-     * The attributes that can be queried
+     * The attributes that can be queried.
      *
      * @var array
      */

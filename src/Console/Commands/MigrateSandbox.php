@@ -2,8 +2,8 @@
 
 namespace Fleetbase\Console\Commands;
 
-use Illuminate\Console\Command;
 use Fleetbase\Support\Utils;
+use Illuminate\Console\Command;
 
 class MigrateSandbox extends Command
 {
@@ -33,19 +33,17 @@ class MigrateSandbox extends Command
 
     /**
      * Execute the console command.
-     *
-     * @return mixed
      */
     public function handle()
     {
         $refresh = Utils::castBoolean($this->option('refresh'));
-        $seed = Utils::castBoolean($this->option('seed'));
-        $force = Utils::castBoolean($this->option('force'));
+        $seed    = Utils::castBoolean($this->option('seed'));
+        $force   = Utils::castBoolean($this->option('force'));
 
         $command = $refresh ? 'migrate:refresh' : 'migrate';
 
         // only run core and fleetops migrations
-        $paths = ['vendor/fleetbase/core-api/migrations'];
+        $paths                = ['vendor/fleetbase/core-api/migrations'];
         $migrationDirectories = $this->getExtensionsMigrationPaths();
 
         if (is_array($migrationDirectories)) {
@@ -54,27 +52,27 @@ class MigrateSandbox extends Command
 
         foreach ($paths as $path) {
             $this->call($command, [
-                '--seed' => $seed,
-                '--force' => $force,
+                '--seed'     => $seed,
+                '--force'    => $force,
                 '--database' => config('fleetbase.connection.sandbox'),
-                '--path' => $path
+                '--path'     => $path,
             ]);
         }
     }
 
     /**
      * Returns the relative paths to the migration directories of all installed Fleetbase extensions.
-     * 
-     * This function retrieves all installed Fleetbase extensions, and then for each extension, 
-     * it checks if sandbox migrations are disabled. If not, it gets the migration directory 
+     *
+     * This function retrieves all installed Fleetbase extensions, and then for each extension,
+     * it checks if sandbox migrations are disabled. If not, it gets the migration directory
      * for the extension. All collected paths are then converted to relative paths and returned.
      *
-     * @return array An array of the relative paths to the migration directories of all installed Fleetbase extensions.
+     * @return array an array of the relative paths to the migration directories of all installed Fleetbase extensions
      */
     private function getExtensionsMigrationPaths(): array
     {
         $packages = Utils::getInstalledFleetbaseExtensions();
-        $paths = [];
+        $paths    = [];
 
         foreach ($packages as $packageName => $package) {
             // check if migrations is disabled for sandbox
@@ -96,14 +94,15 @@ class MigrateSandbox extends Command
 
     /**
      * Converts an array of absolute paths to relative paths.
-     * 
-     * This function maps over an array of paths and for each path, it creates a substring 
-     * from the position of 'vendor' to the end of the string, effectively creating a relative path. 
-     * The trailing slash is also removed from each path. If the provided input is not an array, 
+     *
+     * This function maps over an array of paths and for each path, it creates a substring
+     * from the position of 'vendor' to the end of the string, effectively creating a relative path.
+     * The trailing slash is also removed from each path. If the provided input is not an array,
      * the function will return an empty array.
-     * 
-     * @param array|null $paths An array of absolute paths that will be converted to relative paths.
-     * @return array An array of relative paths.
+     *
+     * @param array|null $paths an array of absolute paths that will be converted to relative paths
+     *
+     * @return array an array of relative paths
      */
     private function makePathsRelative(?array $paths = []): array
     {
@@ -118,6 +117,7 @@ class MigrateSandbox extends Command
             $relativePath = substr($path, $startPosition);
             // Remove the trailing slash
             $relativePath = rtrim($relativePath, '/');
+
             return $relativePath;
         }, $paths);
 

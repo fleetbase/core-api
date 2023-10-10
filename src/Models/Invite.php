@@ -3,17 +3,20 @@
 namespace Fleetbase\Models;
 
 use Fleetbase\Casts\Json;
-use Fleetbase\Traits\HasUuid;
-use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\Expirable;
 use Fleetbase\Traits\HasApiModelBehavior;
+use Fleetbase\Traits\HasPublicId;
+use Fleetbase\Traits\HasUuid;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Vinkla\Hashids\Facades\Hashids;
 
 class Invite extends Model
 {
-    use HasUuid, HasPublicId, Expirable, HasApiModelBehavior;
+    use HasUuid;
+    use HasPublicId;
+    use Expirable;
+    use HasApiModelBehavior;
 
     /**
      * The database table used by the model.
@@ -23,7 +26,7 @@ class Invite extends Model
     protected $table = 'invites';
 
     /**
-     * The type of public Id to generate
+     * The type of public Id to generate.
      *
      * @var string
      */
@@ -37,7 +40,7 @@ class Invite extends Model
     protected $connection = 'mysql';
 
     /**
-     * These attributes that can be queried
+     * These attributes that can be queried.
      *
      * @var array
      */
@@ -59,11 +62,11 @@ class Invite extends Model
         'code',
         'protocol',
         'recipients',
-        'reason'
+        'reason',
     ];
 
     /**
-     * Dynamic attributes that are appended to object
+     * Dynamic attributes that are appended to object.
      *
      * @var array
      */
@@ -82,12 +85,12 @@ class Invite extends Model
      * @var array
      */
     protected $casts = [
-        'recipients' => Json::class
+        'recipients' => Json::class,
     ];
 
-    /** 
+    /**
      * Generate a unqiue uri on creation.
-     * 
+     *
      * @return void
      */
     public static function boot()
@@ -130,8 +133,8 @@ class Invite extends Model
     }
 
     /**
-     * Set a default expiration of "1 hour"
-     * 
+     * Set a default expiration of "1 hour".
+     *
      * @return void
      */
     public function setExpiresAtAttribute($expiry)

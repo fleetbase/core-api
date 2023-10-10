@@ -9,10 +9,10 @@ trait HasMetaAttributes
 {
     /**
      * Sets a meta-data property with a value.
-     * 
+     *
      * $resource->setMeta('id', '1846473');
      * $resource->setMeta('customer.name', 'John Doe');
-     * 
+     *
      * {
      *      "id": "1846473",
      *      "customer": {
@@ -20,9 +20,6 @@ trait HasMetaAttributes
      *      }
      * }
      *
-     * @param string|array $key
-     * @param mixed $value
-     * 
      * @return \Fleetbase\Models\Model
      */
     public function setMeta($keys, $value)
@@ -36,8 +33,8 @@ trait HasMetaAttributes
         }
 
         $value = static::prepareValue($value);
-        $meta = $this->getAllMeta();
-        $meta = Utils::set($meta, $keys, $value);
+        $meta  = $this->getAllMeta();
+        $meta  = Utils::set($meta, $keys, $value);
 
         $this->setAttribute('meta', $meta);
 
@@ -49,6 +46,7 @@ trait HasMetaAttributes
      *
      * @param string|array $key
      * @param [type] $defaultValue
+     *
      * @return void
      */
     public function getMeta($key = null, $defaultValue = null)
@@ -76,8 +74,7 @@ trait HasMetaAttributes
     /**
      * Check if property exists in meta by key.
      *
-     * @param string|array $key
-     * @return boolean
+     * @return bool
      */
     public function hasMeta($keys)
     {
@@ -93,8 +90,9 @@ trait HasMetaAttributes
     /**
      * Update meta with database write.
      *
-     * @param string|array $key 
-     * @param mixed|null $value
+     * @param string|array $key
+     * @param mixed|null   $value
+     *
      * @return $this
      */
     public function updateMeta($key, $value = null)
@@ -112,6 +110,7 @@ trait HasMetaAttributes
         $meta[$key] = static::prepareValue($value);
 
         $this->setAttribute('meta', $meta);
+
         return $this->update(['meta' => $meta]);
     }
 
@@ -119,6 +118,7 @@ trait HasMetaAttributes
      * Checks if key is missing from meta-data.
      *
      * @param [type] $key
+     *
      * @return void
      */
     public function missingMeta($key)
@@ -130,7 +130,8 @@ trait HasMetaAttributes
      * Checks if meta-data key value is true.
      *
      * @param string $key
-     * @return boolean
+     *
+     * @return bool
      */
     public function isMeta($key)
     {
@@ -140,7 +141,6 @@ trait HasMetaAttributes
     /**
      * Prepares value for meta-data insertion.
      *
-     * @param mixed $value
      * @return void
      */
     private static function prepareValue($value)

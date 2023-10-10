@@ -4,36 +4,27 @@ namespace Fleetbase\Traits;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
-use Closure;
 
 trait HasCacheableAttributes
 {
-
     public static function bootHasCacheableAttributes(): void
     {
         static::saving(function (Model $model): void {
-            /** @var Model|HasCacheableAttributes $model */
+            /* @var Model|HasCacheableAttributes $model */
             $model->flushAttributesCache();
         });
     }
 
     /**
-     * Retrieve items from cache for model attributes or get from model if not in cache
-     *
-     * @param Model $target
-     * @param string $key
-     * @param mixed $default
-     * @param integer|null $ttl
-     *
-     * @return mixed
+     * Retrieve items from cache for model attributes or get from model if not in cache.
      */
-    public static function attributeFromCache(Model $target, string $key, $default = null, ?int $ttl = null)
+    public static function attributeFromCache(Model $target, string $key, $default = null, int $ttl = null)
     {
         $cacheKey = $target->getCacheKey($key);
         $cacheTag = $target->getCacheTag();
-        $ttl = $ttl === null ? 60 * 60 * 24 : $ttl;
+        $ttl      = $ttl === null ? 60 * 60 * 24 : $ttl;
 
-        $callback = $default instanceof Closure ? $default : function () use ($target, $key, $default) {
+        $callback = $default instanceof \Closure ? $default : function () use ($target, $key, $default) {
             return data_get($target, $key, $default);
         };
 
@@ -55,9 +46,7 @@ trait HasCacheableAttributes
      * Retrieve items from cache for model attributes.
      *
      * @param string $key
-     * @param mixed $default
-     * @param integer $ttl
-     * @return mixed
+     * @param int    $ttl
      */
     public function fromCache($key, $default = null, $ttl = null)
     {
@@ -65,11 +54,12 @@ trait HasCacheableAttributes
     }
 
     /**
-     * Public alias method for `attributeFromCache`
+     * Public alias method for `attributeFromCache`.
      *
      * @param string $key
      * @param [type] $default
      * @param [type] $ttl
+     *
      * @return void
      */
     public function rememberAttribute($key, $default = null, $ttl = null)
@@ -78,11 +68,12 @@ trait HasCacheableAttributes
     }
 
     /**
-     * Public alias method for `attributeFromCache` but defaults ttl -1
+     * Public alias method for `attributeFromCache` but defaults ttl -1.
      *
      * @param [type] $key
      * @param [type] $default
      * @param [type] $ttl
+     *
      * @return void
      */
     public function rememberAttributeForever($key, $default = null)
@@ -92,9 +83,6 @@ trait HasCacheableAttributes
 
     /**
      * Forgets a cached attribute for this model.
-     *
-     * @param string $attribute
-     * @return boolean
      */
     public function forgetAttribute(string $attribute): bool
     {
@@ -105,8 +93,6 @@ trait HasCacheableAttributes
 
     /**
      * Flushes all attribute cache for this model.
-     *
-     * @return boolean
      */
     public function flushAttributesCache(): bool
     {
@@ -117,9 +103,6 @@ trait HasCacheableAttributes
 
     /**
      * Returns a unique cache tag for this model.
-     *
-     * @param string $attribute
-     * @return string
      */
     protected function getCacheTag(): string
     {
@@ -127,15 +110,12 @@ trait HasCacheableAttributes
             $this->attributeCachePrefix ?? 'model_attribute_cache',
             $this->getConnectionName() ?? 'connection',
             $this->getTable(),
-            $this->getTempKey()
+            $this->getTempKey(),
         ]);
     }
 
     /**
      * Returns a unique cache key for this model attribute.
-     *
-     * @param string $attribute
-     * @return string
      */
     protected function getCacheKey(string $attribute): string
     {
@@ -151,7 +131,7 @@ trait HasCacheableAttributes
     /**
      * Get the temporary key for the instance if the actual key doesn't exists.
      *
-     * @return string The temporary key.
+     * @return string the temporary key
      */
     protected function getTempKey(): string
     {

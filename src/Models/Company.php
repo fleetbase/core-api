@@ -4,18 +4,25 @@ namespace Fleetbase\Models;
 
 use Fleetbase\Casts\Json;
 use Fleetbase\Traits\HasApiModelBehavior;
-use Fleetbase\Traits\HasUuid;
-use Fleetbase\Traits\TracksApiCredential;
-use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasOptionsAttributes;
+use Fleetbase\Traits\HasPublicId;
+use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\Searchable;
 use Fleetbase\Traits\SendsWebhooks;
+use Fleetbase\Traits\TracksApiCredential;
 use Spatie\Sluggable\HasSlug;
 use Spatie\Sluggable\SlugOptions;
 
 class Company extends Model
 {
-    use HasUuid, HasPublicId, TracksApiCredential, HasApiModelBehavior, HasOptionsAttributes, HasSlug, Searchable, SendsWebhooks;
+    use HasUuid;
+    use HasPublicId;
+    use TracksApiCredential;
+    use HasApiModelBehavior;
+    use HasOptionsAttributes;
+    use HasSlug;
+    use Searchable;
+    use SendsWebhooks;
 
     /**
      * The database connection to use.
@@ -39,14 +46,14 @@ class Company extends Model
     public $resource = \Fleetbase\Http\Resources\Organization::class;
 
     /**
-     * The type of public Id to generate
+     * The type of public Id to generate.
      *
      * @var string
      */
     protected $publicIdType = 'company';
 
     /**
-     * These attributes that can be queried
+     * These attributes that can be queried.
      *
      * @var array
      */
@@ -79,11 +86,11 @@ class Company extends Model
         'plan',
         'status',
         'slug',
-        'trial_ends_at'
+        'trial_ends_at',
     ];
 
     /**
-     * Dynamic attributes that are appended to object
+     * Dynamic attributes that are appended to object.
      *
      * @var array
      */
@@ -102,7 +109,7 @@ class Company extends Model
      * @var array
      */
     protected $casts = [
-        'options' => Json::class
+        'options' => Json::class,
     ];
 
     /**
@@ -113,21 +120,21 @@ class Company extends Model
     protected $dates = ['trial_ends_at'];
 
     /**
-     * Properties which activity needs to be logged
+     * Properties which activity needs to be logged.
      *
      * @var array
      */
     protected static $logAttributes = '*';
 
     /**
-     * Do not log empty changed
+     * Do not log empty changed.
      *
-     * @var boolean
+     * @var bool
      */
     protected static $submitEmptyLogs = false;
 
     /**
-     * The name of the subject to log
+     * The name of the subject to log.
      *
      * @var string
      */
@@ -193,8 +200,9 @@ class Company extends Model
 
     /**
      * Assigns the owner of the company.
-     * 
+     *
      * @method assignOwner
+     *
      * @return void
      */
     public function assignOwner(User $user)
@@ -205,8 +213,9 @@ class Company extends Model
 
     /**
      * Set the owner of the company.
-     * 
+     *
      * @method setOwner
+     *
      * @return \Fleetbase\Models\Company
      */
     public function setOwner(User $user)
@@ -218,8 +227,9 @@ class Company extends Model
 
     /**
      * Set the status of the company.
-     * 
+     *
      * @method setStatus
+     *
      * @return \Fleetbase\Models\Company
      */
     public function setStatus($status = 'active')
@@ -230,7 +240,7 @@ class Company extends Model
     }
 
     /**
-     * Sets the owner of the company
+     * Sets the owner of the company.
      */
     public function activate()
     {
@@ -256,7 +266,7 @@ class Company extends Model
     /**
      * Determines if the currently authenticated user is the owner of the company.
      *
-     * @return boolean
+     * @return bool
      */
     public function getIsOwnerAttribute()
     {
@@ -267,9 +277,10 @@ class Company extends Model
      * Checks if a user is the owner of this company.
      *
      * @method isOwner
+     *
      * @param \Fleetbae\Models\User
-     * 
-     * @return boolean
+     *
+     * @return bool
      */
     public function isOwner(User $user)
     {
@@ -289,7 +300,7 @@ class Company extends Model
     /**
      * Uses the current session to get the current company model instance.
      *
-     * @return null|\Fleetbase\Models\Company
+     * @return \Fleetbase\Models\Company|null
      */
     public static function currentSession()
     {
@@ -305,15 +316,14 @@ class Company extends Model
     /**
      * Adds a new user to this company.
      *
-     * @param User|null $user
      * @return void
      */
     public function addUser(?User $user)
     {
         return CompanyUser::create([
             'company_uuid' => $this->uuid,
-            'user_uuid' => $user->uuid,
-            'status' => 'active'
+            'user_uuid'    => $user->uuid,
+            'status'       => 'active',
         ]);
     }
 }

@@ -25,13 +25,12 @@ class UserForgotPassword extends Notification implements ShouldQueue
     public function __construct(?VerificationCode $verificationCode)
     {
         $this->verificationCode = $verificationCode;
-        $this->url = Utils::consoleUrl('auth/reset-password/' . $verificationCode->uuid, ['code' => $verificationCode->code]);
+        $this->url              = Utils::consoleUrl('auth/reset-password/' . $verificationCode->uuid, ['code' => $verificationCode->code]);
     }
 
     /**
      * Get the notification's delivery channels.
      *
-     * @param  mixed  $notifiable
      * @return array
      */
     public function via($notifiable)
@@ -42,12 +41,11 @@ class UserForgotPassword extends Notification implements ShouldQueue
     /**
      * Get the mail representation of the notification.
      *
-     * @param  mixed  $notifiable
      * @return \Illuminate\Notifications\Messages\MailMessage
      */
     public function toMail($notifiable)
     {
-        return (new MailMessage)
+        return (new MailMessage())
             ->subject('Your password reset link for Fleetbase')
             ->greeting('Hello, ' . $notifiable->name)
             ->line('Looks like you (or someone phishy) has requested to reset your password. If you did not request a password reset link, ignore this email. If you have indeed forgot your password click the button below to reset your password using the code provided below.')
@@ -58,13 +56,11 @@ class UserForgotPassword extends Notification implements ShouldQueue
     /**
      * Get the array representation of the notification.
      *
-     * @param  mixed  $notifiable
      * @return array
      */
     public function toArray($notifiable)
     {
         return [
-            //
         ];
     }
 }

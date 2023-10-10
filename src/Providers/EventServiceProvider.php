@@ -12,21 +12,21 @@ class EventServiceProvider extends ServiceProvider
      * @var array
      */
     protected $listen = [
-        /**
+        /*
          * Fleetbase Events
          */
         \Fleetbase\Events\ResourceLifecycleEvent::class => [\Fleetbase\Listeners\SendResourceLifecycleWebhook::class],
 
-        /**
+        /*
          * Framework Events
          */
         \Illuminate\Notifications\Events\BroadcastNotificationCreated::class => [\Fleetbase\Listeners\TriggerPublicNotificationBroadcast::class],
 
-        /**
+        /*
          * Webhook Events
          */
-        \Fleetbase\Webhook\Events\WebhookCallSucceededEvent::class => [\Fleetbase\Listeners\LogSuccessfulWebhook::class],
-        \Fleetbase\Webhook\Events\WebhookCallFailedEvent::class => [\Fleetbase\Listeners\LogFailedWebhook::class],
+        \Fleetbase\Webhook\Events\WebhookCallSucceededEvent::class   => [\Fleetbase\Listeners\LogSuccessfulWebhook::class],
+        \Fleetbase\Webhook\Events\WebhookCallFailedEvent::class      => [\Fleetbase\Listeners\LogFailedWebhook::class],
         \Fleetbase\Webhook\Events\FinalWebhookCallFailedEvent::class => [\Fleetbase\Listeners\LogFinalWebhookAttempt::class],
     ];
 }

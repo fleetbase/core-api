@@ -50,8 +50,8 @@ class UploadFileRequest extends FleetbaseRequest
                     'application/x-pkcs7-certificates',
                     'application/pkix-cert',
                     'application/x-x509-ca-cert',
-                    'application/octet-stream'
-                ])
+                    'application/octet-stream',
+                ]),
             ],
         ];
     }
@@ -65,9 +65,9 @@ class UploadFileRequest extends FleetbaseRequest
     {
         return [
             'file.required' => 'Please select a file to upload.',
-            'file.file' => 'The uploaded file is not valid.',
-            'file.max' => 'The uploaded file exceeds the maximum file size allowed.',
-            'file.mimes' => 'The uploaded file type is not allowed.',
+            'file.file'     => 'The uploaded file is not valid.',
+            'file.max'      => 'The uploaded file exceeds the maximum file size allowed.',
+            'file.mimes'    => 'The uploaded file type is not allowed.',
         ];
     }
 }

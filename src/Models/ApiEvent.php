@@ -3,14 +3,17 @@
 namespace Fleetbase\Models;
 
 use Fleetbase\Casts\Json;
+use Fleetbase\Traits\Filterable;
+use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\Searchable;
-use Fleetbase\Traits\HasApiModelBehavior;
-use Fleetbase\Traits\Filterable;
 
 class ApiEvent extends Model
 {
-    use HasUuid, HasApiModelBehavior, Searchable, Filterable;
+    use HasUuid;
+    use HasApiModelBehavior;
+    use Searchable;
+    use Filterable;
 
     /**
      * The database table used by the model.
@@ -20,14 +23,14 @@ class ApiEvent extends Model
     protected $table = 'api_events';
 
     /**
-     * The type of public Id to generate
+     * The type of public Id to generate.
      *
      * @var string
      */
     protected $publicIdType = 'event';
 
     /**
-     * These attributes that can be queried
+     * These attributes that can be queried.
      *
      * @var array
      */
@@ -50,7 +53,7 @@ class ApiEvent extends Model
     ];
 
     /**
-     * Dynamic attributes that are appended to object
+     * Dynamic attributes that are appended to object.
      *
      * @var array
      */

@@ -7,7 +7,8 @@ use Fleetbase\Traits\TracksApiCredential;
 
 class CompanyUser extends Model
 {
-    use HasUuid, TracksApiCredential;
+    use HasUuid;
+    use TracksApiCredential;
 
     /**
      * The database table used by the model.
@@ -24,7 +25,7 @@ class CompanyUser extends Model
     protected $fillable = [
         'company_uuid',
         'user_uuid',
-        'status'
+        'status',
     ];
 
     /**
@@ -44,8 +45,8 @@ class CompanyUser extends Model
     }
 
     /**
-     * Set the default status to `active`
-     * 
+     * Set the default status to `active`.
+     *
      * @return void
      */
     public function setStatusAttribute($value = 'active')

@@ -20,6 +20,7 @@ class WebhookEventsObserver
      * Listen to the entity created event.
      *
      * @param  \Fleetbase\Models\Model
+     *
      * @return void
      */
     public function created(Model $model)
@@ -31,6 +32,7 @@ class WebhookEventsObserver
      * Listen to the entity updated event.
      *
      * @param  \Fleetbase\Models\Model
+     *
      * @return void
      */
     public function updated(Model $model)
@@ -44,6 +46,7 @@ class WebhookEventsObserver
      * Listen to the entity deleted event.
      *
      * @param  \Fleetbase\Models\Model
+     *
      * @return void
      */
     public function deleted(Model $model)

@@ -2,8 +2,8 @@
 
 namespace Fleetbase\Http\Middleware;
 
-use Fleetbase\Traits\CustomMiddleware;
 use Fleetbase\Jobs\LogApiRequest;
+use Fleetbase\Traits\CustomMiddleware;
 
 class LogApiRequests
 {
@@ -12,9 +12,7 @@ class LogApiRequests
     /**
      * Handle an incoming request.
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  \Closure  $next
-     * @return mixed
+     * @param \Illuminate\Http\Request $request
      */
     public function handle($request, \Closure $next)
     {

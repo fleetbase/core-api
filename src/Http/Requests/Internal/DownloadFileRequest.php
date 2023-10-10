@@ -37,7 +37,7 @@ class DownloadFileRequest extends FleetbaseRequest
     {
         return [
             'id.required' => 'Please provide a file ID.',
-            'id.exists' => 'The requested file does not exist.',
+            'id.exists'   => 'The requested file does not exist.',
         ];
     }
 }

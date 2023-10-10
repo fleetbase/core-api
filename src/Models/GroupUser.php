@@ -7,7 +7,8 @@ use Fleetbase\Traits\TracksApiCredential;
 
 class GroupUser extends Model
 {
-    use HasUuid, TracksApiCredential;
+    use HasUuid;
+    use TracksApiCredential;
 
     /**
      * The database table used by the model.

@@ -3,19 +3,18 @@
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Http\Controllers\FleetbaseController;
-use Illuminate\Http\Request;
 
 class WebhookEndpointController extends FleetbaseController
 {
     /**
-     * The resource to query
+     * The resource to query.
      *
      * @var string
      */
     public $resource = 'webhook_endpoint';
 
     /**
-     * Get all webhook events applicable
+     * Get all webhook events applicable.
      *
      * @return \Illuminate\Http\Response
      */
@@ -25,7 +24,7 @@ class WebhookEndpointController extends FleetbaseController
     }
 
     /**
-     * Get all webhook versions applicable
+     * Get all webhook versions applicable.
      *
      * @return \Illuminate\Http\Response
      */

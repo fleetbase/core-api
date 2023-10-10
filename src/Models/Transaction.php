@@ -4,14 +4,17 @@ namespace Fleetbase\Models;
 
 use Fleetbase\Casts\Json;
 use Fleetbase\Casts\PolymorphicType;
-use Fleetbase\Traits\HasMetaAttributes;
 use Fleetbase\Traits\HasApiModelBehavior;
-use Fleetbase\Traits\HasUuid;
+use Fleetbase\Traits\HasMetaAttributes;
 use Fleetbase\Traits\HasPublicId;
+use Fleetbase\Traits\HasUuid;
 
 class Transaction extends Model
 {
-    use HasUuid, HasPublicId, HasApiModelBehavior, HasMetaAttributes;
+    use HasUuid;
+    use HasPublicId;
+    use HasApiModelBehavior;
+    use HasMetaAttributes;
 
     /**
      * The database table used by the model.
@@ -21,14 +24,14 @@ class Transaction extends Model
     protected $table = 'transactions';
 
     /**
-     * The type of public Id to generate
+     * The type of public Id to generate.
      *
      * @var string
      */
     protected $publicIdType = 'transaction';
 
     /**
-     * The attributes that can be queried
+     * The attributes that can be queried.
      *
      * @var array
      */
@@ -42,7 +45,7 @@ class Transaction extends Model
     protected $fillable = ['public_id', 'owner_uuid', 'owner_type', 'customer_uuid', 'customer_type', 'company_uuid', 'gateway_transaction_id', 'gateway', 'gateway_uuid', 'amount', 'currency', 'description', 'meta', 'type', 'status'];
 
     /**
-     * Dynamic attributes that are appended to object
+     * Dynamic attributes that are appended to object.
      *
      * @var array
      */
@@ -61,12 +64,12 @@ class Transaction extends Model
      * @var array
      */
     protected $casts = [
-        'meta' => Json::class,
-        'customer_type' => PolymorphicType::class
+        'meta'          => Json::class,
+        'customer_type' => PolymorphicType::class,
     ];
 
     /**
-     * Transaction items
+     * Transaction items.
      *
      * @var array
      */
@@ -76,7 +79,7 @@ class Transaction extends Model
     }
 
     /**
-     * The customer if any for this place
+     * The customer if any for this place.
      *
      * @var Model
      */
@@ -86,7 +89,7 @@ class Transaction extends Model
     }
 
     /**
-     * Generates a fleetbase transaction number
+     * Generates a fleetbase transaction number.
      *
      * @var array
      */
@@ -96,23 +99,25 @@ class Transaction extends Model
         for ($i = 0; $i < $length; $i++) {
             $number .= mt_rand(0, 9);
         }
+
         return $number;
     }
 
     /**
-     * Generates a unique transaction number
+     * Generates a unique transaction number.
      *
      * @var array
      */
     public static function generateNumber($length = 10)
     {
-        $n = self::generateInternalNumber($length);
+        $n  = self::generateInternalNumber($length);
         $tr = self::where('gateway_transaction_id', $n)
             ->withTrashed()
             ->first();
         while (is_object($tr) && $n == $tr->gateway_transaction_id) {
             $n = self::generateInternalNumber($length);
         }
+
         return $n;
     }
 }

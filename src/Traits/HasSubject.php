@@ -8,7 +8,8 @@ trait HasSubject
      * Set subject on trait owner.
      *
      * @param \Fleetbase\Models\Model $model
-     * @param boolean $save
+     * @param bool                    $save
+     *
      * @return $this
      */
     public function setSubject($model, $save = false)

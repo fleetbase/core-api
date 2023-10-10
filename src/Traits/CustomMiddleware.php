@@ -6,15 +6,14 @@ trait CustomMiddleware
 {
     /**
      * The URIs that should be excluded from middleware handler.
-     *
-     * @var array
      */
     protected array $except = [];
 
     /**
      * Determine if the HTTP request uses a ‘read’ verb.
      *
-     * @param  \Illuminate\Http\Request  $request
+     * @param \Illuminate\Http\Request $request
+     *
      * @return bool
      */
     protected function isReading($request)
@@ -35,11 +34,9 @@ trait CustomMiddleware
     /**
      * Determine if the request has a URI that should pass through CSRF verification.
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @param array $exceptions
-     * @return bool
+     * @param \Illuminate\Http\Request $request
      */
-    protected function inExceptArray($request, ?array $exceptions = null): bool
+    protected function inExceptArray($request, array $exceptions = null): bool
     {
         $exceptions = $exceptions ?? $this->except;
 

@@ -2,10 +2,9 @@
 
 namespace Fleetbase\Webhook\Exceptions;
 
-use Exception;
 use Fleetbase\Webhook\CallWebhookJob;
 
-class InvalidWebhookJob extends Exception
+class InvalidWebhookJob extends \Exception
 {
     public static function doesNotExtendCallWebhookJob(string $invalidWebhookJobClass): self
     {

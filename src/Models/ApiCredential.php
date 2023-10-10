@@ -2,23 +2,30 @@
 
 namespace Fleetbase\Models;
 
-use Fleetbase\Traits\HasUuid;
-use Fleetbase\Traits\HasPolicies;
-use Fleetbase\Traits\Expirable;
-use Fleetbase\Traits\Searchable;
-use Fleetbase\Traits\HasApiModelBehavior;
-use Fleetbase\Traits\Filterable;
-use Fleetbase\Support\Utils;
 use Fleetbase\Casts\Json;
+use Fleetbase\Support\Utils;
+use Fleetbase\Traits\Expirable;
+use Fleetbase\Traits\Filterable;
+use Fleetbase\Traits\HasApiModelBehavior;
+use Fleetbase\Traits\HasPolicies;
+use Fleetbase\Traits\HasUuid;
+use Fleetbase\Traits\Searchable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
-use Vinkla\Hashids\Facades\Hashids;
-use Spatie\Permission\Traits\HasPermissions;
 use Spatie\Activitylog\Traits\LogsActivity;
+use Spatie\Permission\Traits\HasPermissions;
+use Vinkla\Hashids\Facades\Hashids;
 
 class ApiCredential extends Model
 {
-    use HasUuid, HasApiModelBehavior, LogsActivity, Searchable, Expirable, Filterable, HasPolicies, HasPermissions;
+    use HasUuid;
+    use HasApiModelBehavior;
+    use LogsActivity;
+    use Searchable;
+    use Expirable;
+    use Filterable;
+    use HasPolicies;
+    use HasPermissions;
 
     /**
      * The database table used by the model.
@@ -40,21 +47,21 @@ class ApiCredential extends Model
      * @var array
      */
     protected $casts = [
-        'test_mode' => 'boolean',
-        'last_used_at' => 'datetime',
-        'expires_at' => 'datetime',
-        'browser_origins' => Json::class
+        'test_mode'       => 'boolean',
+        'last_used_at'    => 'datetime',
+        'expires_at'      => 'datetime',
+        'browser_origins' => Json::class,
     ];
 
     /**
-     * These attributes that can be queried
+     * These attributes that can be queried.
      *
      * @var array
      */
     protected $searchableColumns = ['name'];
 
     /**
-     * Dynamic attributes that are appended to object
+     * Dynamic attributes that are appended to object.
      *
      * @var array
      */
@@ -68,21 +75,21 @@ class ApiCredential extends Model
     protected $hidden = [];
 
     /**
-     * Properties which activity needs to be logged
+     * Properties which activity needs to be logged.
      *
      * @var array
      */
     protected static $logAttributes = '*';
 
     /**
-     * Do not log empty changed
+     * Do not log empty changed.
      *
-     * @var boolean
+     * @var bool
      */
     protected static $submitEmptyLogs = false;
 
     /**
-     * The name of the subject to log
+     * The name of the subject to log.
      *
      * @var string
      */
@@ -90,8 +97,6 @@ class ApiCredential extends Model
 
     /**
      * Tables that should be skipped when rolling api credential or initializing `_key`.
-     *
-     * @var array
      */
     public static array $skipTables = ['vehicles_data', 'permissions', 'roles', 'role_has_permissions', 'model_has_permissions', 'model_has_roles', 'model_has_policies'];
 
@@ -124,8 +129,8 @@ class ApiCredential extends Model
     }
 
     /**
-     * Set the expires at, if value is string convert to date
-     * 
+     * Set the expires at, if value is string convert to date.
+     *
      * @return void
      */
     public function setExpiresAtAttribute($expiresAt)
@@ -133,6 +138,7 @@ class ApiCredential extends Model
         // if expires at is null or falsy set to null
         if ($expiresAt === null || !$expiresAt) {
             $this->attributes['expires_at'] = null;
+
             return;
         }
         // if string and not explicit date assume relative time
@@ -141,34 +147,38 @@ class ApiCredential extends Model
             // if never then set to null
             if ($expiresAt === 'never') {
                 $this->attributes['expires_at'] = null;
+
                 return;
             }
             // if immediately then set to current date time
             if ($expiresAt === 'immediately') {
                 $this->attributes['expires_at'] = Carbon::now()->toDatetime();
+
                 return;
             }
             // parse relative time string to datetime
-            $expiresAt = trim(str_replace('in', '', $expiresAt));
+            $expiresAt          = trim(str_replace('in', '', $expiresAt));
             $expiresAtTimestamp = strtotime('+ ' . $expiresAt);
             // convert timestamp to datetime
             $this->attributes['expires_at'] = Utils::toDatetime($expiresAtTimestamp);
+
             return;
         }
         $this->attributes['expires_at'] = Utils::toDatetime($expiresAt);
     }
 
     /**
-     * Generate an API Key
+     * Generate an API Key.
      *
-     * @return Array
+     * @return array
      */
     public static function generateKeys($encode, $testKey = false)
     {
-        $key = Hashids::encode($encode);
+        $key  = Hashids::encode($encode);
         $hash = Hash::make($key);
+
         return [
-            'key' => ($testKey ? 'flb_test_' : 'flb_live_') . $key,
+            'key'    => ($testKey ? 'flb_test_' : 'flb_live_') . $key,
             'secret' => $hash,
         ];
     }

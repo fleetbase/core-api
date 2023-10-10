@@ -5,12 +5,13 @@ namespace Fleetbase\Mail;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
-use Illuminate\Queue\SerializesModels;
 use Illuminate\Notifications\Messages\MailMessage;
+use Illuminate\Queue\SerializesModels;
 
 class TestEmail extends Mailable implements ShouldQueue
 {
-    use Queueable, SerializesModels;
+    use Queueable;
+    use SerializesModels;
 
     /**
      * Build the message.
@@ -23,7 +24,7 @@ class TestEmail extends Mailable implements ShouldQueue
 
         return $this
             ->subject($subject)
-            ->html((new MailMessage)
+            ->html((new MailMessage())
                     ->greeting($subject)
                     ->line('Hello! This is a test email from Fleetbase to confirm that your mail configuration works.')
                     ->render()

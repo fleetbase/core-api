@@ -2,10 +2,10 @@
 
 namespace Fleetbase\Scopes;
 
-use Illuminate\Support\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Scope;
+use Illuminate\Support\Carbon;
 
 class ExpiryScope implements Scope
 {
@@ -19,8 +19,6 @@ class ExpiryScope implements Scope
     /**
      * Apply the scope to a given Eloquent query builder.
      *
-     * @param  \Illuminate\Database\Eloquent\Builder  $builder
-     * @param  \Illuminate\Database\Eloquent\Model  $model
      * @return void
      */
     public function apply(Builder $builder, Model $model)
@@ -32,7 +30,6 @@ class ExpiryScope implements Scope
     /**
      * Extend the query builder with the needed functions.
      *
-     * @param  \Illuminate\Database\Eloquent\Builder  $builder
      * @return void
      */
     public function extend(Builder $builder)
@@ -45,7 +42,6 @@ class ExpiryScope implements Scope
     /**
      * Get the "expired at" column for the builder.
      *
-     * @param  \Illuminate\Database\Eloquent\Builder  $builder
      * @return string
      */
     protected function getExpiredAtColumn(Builder $builder)
@@ -60,7 +56,6 @@ class ExpiryScope implements Scope
     /**
      * Add the withHasExpiry extension to the builder.
      *
-     * @param  \Illuminate\Database\Eloquent\Builder  $builder
      * @return void
      */
     protected function addWithHasExpiry(Builder $builder)
@@ -73,7 +68,6 @@ class ExpiryScope implements Scope
     /**
      * Add the without-HasExpiry extension to the builder.
      *
-     * @param  \Illuminate\Database\Eloquent\Builder  $builder
      * @return void
      */
     protected function addWithoutHasExpiry(Builder $builder)
@@ -92,7 +86,6 @@ class ExpiryScope implements Scope
     /**
      * Add the only-HasExpiry extension to the builder.
      *
-     * @param  \Illuminate\Database\Eloquent\Builder  $builder
      * @return void
      */
     protected function addOnlyHasExpiry(Builder $builder)

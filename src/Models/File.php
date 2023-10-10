@@ -4,26 +4,31 @@ namespace Fleetbase\Models;
 
 use Fleetbase\Casts\Json;
 use Fleetbase\Support\Utils;
-use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasApiModelBehavior;
+use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\SendsWebhooks;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use Spatie\Activitylog\Traits\LogsActivity;
-use Spatie\Sluggable\SlugOptions;
-use Spatie\Sluggable\HasSlug;
 use Mimey\MimeTypes;
+use Spatie\Activitylog\Traits\LogsActivity;
+use Spatie\Sluggable\HasSlug;
+use Spatie\Sluggable\SlugOptions;
 use Vinkla\Hashids\Facades\Hashids;
 
 class File extends Model
 {
-    use HasUuid, HasPublicId, HasApiModelBehavior, HasSlug, LogsActivity, SendsWebhooks;
+    use HasUuid;
+    use HasPublicId;
+    use HasApiModelBehavior;
+    use HasSlug;
+    use LogsActivity;
+    use SendsWebhooks;
 
     /**
-     * The type of public Id to generate
+     * The type of public Id to generate.
      *
      * @var string
      */
@@ -51,7 +56,7 @@ class File extends Model
     protected $fillable = ['public_id', 'company_uuid', 'uploader_uuid', 'subject_uuid', 'subject_type', 'disk', 'path', 'bucket', 'folder', 'meta', 'etag', 'original_filename', 'type', 'content_type', 'file_size', 'slug', 'caption'];
 
     /**
-     * Dynamic attributes that are appended to object
+     * Dynamic attributes that are appended to object.
      *
      * @var array
      */
@@ -70,25 +75,25 @@ class File extends Model
      * @var array
      */
     protected $casts = [
-        'meta' => Json::class
+        'meta' => Json::class,
     ];
 
     /**
-     * Properties which activity needs to be logged
+     * Properties which activity needs to be logged.
      *
      * @var array
      */
     protected static $logAttributes = '*';
 
     /**
-     * Do not log empty changed
+     * Do not log empty changed.
      *
-     * @var boolean
+     * @var bool
      */
     protected static $submitEmptyLogs = false;
 
     /**
-     * The name of the subject to log
+     * The name of the subject to log.
      *
      * @var string
      */
@@ -107,7 +112,7 @@ class File extends Model
     /**
      * Get the disk name for the file.
      *
-     * @return string The disk name.
+     * @return string the disk name
      */
     public function getDisk(): string
     {
@@ -124,11 +129,13 @@ class File extends Model
      * Get the filesystem instance for the specified disk.
      *
      * @param string|null $disk The disk name. If null, the default disk will be used.
-     * @return \Illuminate\Contracts\Filesystem\Filesystem The filesystem instance.
+     *
+     * @return \Illuminate\Contracts\Filesystem\Filesystem the filesystem instance
      */
-    public function getFilesystem(?string $disk = null): \Illuminate\Contracts\Filesystem\Filesystem
+    public function getFilesystem(string $disk = null): \Illuminate\Contracts\Filesystem\Filesystem
     {
         $disk = $disk ?? $this->getDisk();
+
         return Storage::disk($disk);
     }
 
@@ -138,7 +145,7 @@ class File extends Model
      * If the file is stored on S3, a temporary signed URL will be generated.
      * If the file is stored locally, the asset URL will be returned.
      *
-     * @return string The URL for the file.
+     * @return string the URL for the file
      */
     public function getUrlAttribute()
     {
@@ -169,12 +176,11 @@ class File extends Model
 
     /**
      * Sets the uploader of the file.
-     *
-     * @return \Fleetbase\Models\File
      */
     public function setUploader(User $uploader): File
     {
         $this->uploader_uuid = $uploader->uuid;
+
         return $this;
     }
 
@@ -190,7 +196,7 @@ class File extends Model
 
     public static function getExtensionFromMimeType($mimeType)
     {
-        $mimes = new MimeTypes();
+        $mimes     = new MimeTypes();
         $extension = $mimes->getExtension($mimeType);
 
         if (!$extension) {
@@ -208,7 +214,7 @@ class File extends Model
     }
 
     /**
-     * Generate the file url attribute
+     * Generate the file url attribute.
      *
      * @var string
      */
@@ -218,9 +224,8 @@ class File extends Model
     }
 
     /**
-     * Create a new file from uploaded file
+     * Create a new file from uploaded file.
      *
-     * @param \Illuminate\Http\UploadedFile $file
      * @return \Fleetbase\Models\File
      */
     public static function createFromUpload(UploadedFile $file, $path, $type = null, $size = null, $disk = null, $bucket = null)
@@ -236,15 +241,15 @@ class File extends Model
         }
 
         $data = [
-            'company_uuid' => session('company'),
-            'uploader_uuid' => session('user'),
+            'company_uuid'      => session('company'),
+            'uploader_uuid'     => session('user'),
             'original_filename' => $file->getClientOriginalName(),
-            'content_type' => static::getFileMimeType($extension),
-            'disk' => $disk,
-            'path' => $path,
-            'bucket' => $bucket,
-            'type' => $type,
-            'file_size' => $size ?? $file->getSize(),
+            'content_type'      => static::getFileMimeType($extension),
+            'disk'              => $disk,
+            'path'              => $path,
+            'bucket'            => $bucket,
+            'type'              => $type,
+            'file_size'         => $size ?? $file->getSize(),
         ];
 
         return static::create($data);
@@ -256,9 +261,7 @@ class File extends Model
     }
 
     /**
-     * Assosciates the file to another model
-     *
-     * @return \Fleetbase\Models\File
+     * Assosciates the file to another model.
      */
     public function setKey($model, $type = null): File
     {
@@ -275,9 +278,7 @@ class File extends Model
     }
 
     /**
-     * Set the file type
-     *
-     * @return \Fleetbase\Models\File
+     * Set the file type.
      */
     public function setType($type = null): File
     {

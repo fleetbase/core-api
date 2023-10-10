@@ -2,9 +2,7 @@
 
 namespace Fleetbase\Webhook\Exceptions;
 
-use Exception;
-
-class CouldNotCallWebhook extends Exception
+class CouldNotCallWebhook extends \Exception
 {
     public static function urlNotSet(): self
     {

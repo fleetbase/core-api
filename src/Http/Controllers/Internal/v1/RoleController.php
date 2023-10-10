@@ -2,25 +2,23 @@
 
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
-use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Exceptions\FleetbaseRequestValidationException;
+use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Models\Permission;
-use Fleetbase\Support\Utils;
 use Illuminate\Http\Request;
 
 class RoleController extends FleetbaseController
 {
     /**
-     * The resource to query
+     * The resource to query.
      *
      * @var string
      */
     public $resource = 'role';
 
     /**
-     * Creates a record by an identifier with request payload
+     * Creates a record by an identifier with request payload.
      *
-     * @param  \Illuminate\Http\Request  $request
      * @return \Illuminate\Http\Response
      */
     public function createRecord(Request $request)
@@ -44,10 +42,8 @@ class RoleController extends FleetbaseController
     }
 
     /**
-     * Updates a record by an identifier with request payload
+     * Updates a record by an identifier with request payload.
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  string $id
      * @return \Illuminate\Http\Response
      */
     public function updateRecord(Request $request, string $id)

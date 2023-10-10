@@ -16,7 +16,7 @@ function args($expression)
 class Blade implements Expansion
 {
     public static $method = 'extend';
-    
+
     public static function target()
     {
         return Illuminate\Support\Facades\Blade::class;

@@ -16,12 +16,9 @@ class SignUpRequest extends FleetbaseRequest
         return true;
     }
 
-    /**
-     * {@inheritdoc}
-     */
     protected function failedValidation(Validator $validator)
     {
-        $errors = $validator->errors();
+        $errors   = $validator->errors();
         $response = [
             'errors' => [$errors->first()],
         ];
@@ -57,11 +54,11 @@ class SignUpRequest extends FleetbaseRequest
     public function rules()
     {
         return [
-            'user.name' => 'required',
-            'user.email' => 'required|email',
-            'user.password' => 'required|confirmed',
+            'user.name'                  => 'required',
+            'user.email'                 => 'required|email',
+            'user.password'              => 'required|confirmed',
             'user.password_confirmation' => 'required',
-            'company.name' => 'required',
+            'company.name'               => 'required',
         ];
     }
 
@@ -73,9 +70,9 @@ class SignUpRequest extends FleetbaseRequest
     public function messages()
     {
         return [
-            '*.required' => 'Your :attribute is required to signup',
-            'user.email' => 'You must enter a valid :attribute to signup',
-            'user.email.unique' => 'An account with this email address already exists',
+            '*.required'             => 'Your :attribute is required to signup',
+            'user.email'             => 'You must enter a valid :attribute to signup',
+            'user.email.unique'      => 'An account with this email address already exists',
             'user.password.required' => 'You must enter a password to signup',
         ];
     }

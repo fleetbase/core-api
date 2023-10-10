@@ -17,8 +17,8 @@ class FleetbaseResourceCollection extends ResourceCollection
     /**
      * Create a new anonymous resource collection.
      *
-     * @param  mixed  $resource
-     * @param  string  $collects
+     * @param string $collects
+     *
      * @return void
      */
     public function __construct($resource, $collects)
@@ -31,14 +31,15 @@ class FleetbaseResourceCollection extends ResourceCollection
     /**
      * Create a paginate-aware HTTP response.
      *
-     * @param  \Illuminate\Http\Request  $request
+     * @param \Illuminate\Http\Request $request
+     *
      * @return \Illuminate\Http\JsonResponse
      */
     protected function preparePaginatedResponse($request)
     {
         if ($this->preserveAllQueryParameters) {
             $this->resource->appends($request->query());
-        } elseif (! is_null($this->queryParameters)) {
+        } elseif (!is_null($this->queryParameters)) {
             $this->resource->appends($this->queryParameters);
         }
 

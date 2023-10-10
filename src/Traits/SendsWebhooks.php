@@ -13,6 +13,6 @@ trait SendsWebhooks
      */
     public static function bootSendsWebhooks()
     {
-        static::observe(new WebhookEventsObserver);
+        static::observe(new WebhookEventsObserver());
     }
 }

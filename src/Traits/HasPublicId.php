@@ -26,7 +26,7 @@ trait HasPublicId
     }
 
     /**
-     * Generate a hashid
+     * Generate a hashid.
      *
      * @return string
      */
@@ -40,7 +40,7 @@ trait HasPublicId
 
     public static function generatePublicId(string $type)
     {
-        $model = new static();
+        $model  = new static();
         $hashid = static::getPublicId();
         $exists = $model->where('public_id', 'like', '%' . $hashid . '%')->withTrashed()->exists();
 
@@ -52,7 +52,7 @@ trait HasPublicId
     }
 
     /**
-     * The resource table name
+     * The resource table name.
      *
      * @var string
      */
