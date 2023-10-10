@@ -17,12 +17,9 @@ class OnboardRequest extends FleetbaseRequest
         return true;
     }
 
-    /**
-     * {@inheritdoc}
-     */
     protected function failedValidation(Validator $validator)
     {
-        $errors = $validator->errors();
+        $errors   = $validator->errors();
         $response = [
             'errors' => [$errors->first()],
         ];
@@ -58,12 +55,12 @@ class OnboardRequest extends FleetbaseRequest
     public function rules()
     {
         return [
-            'name' => 'required',
-            'email' => ['required', 'email', Rule::unique('users')->whereNull('deleted_at')],
-            'phone' => ['nullable', Rule::unique('users')->whereNull('deleted_at')],
-            'password' => 'required|confirmed',
+            'name'                  => 'required',
+            'email'                 => ['required', 'email', Rule::unique('users')->whereNull('deleted_at')],
+            'phone'                 => ['nullable', Rule::unique('users')->whereNull('deleted_at')],
+            'password'              => 'required|confirmed',
             'password_confirmation' => 'required',
-            'organization_name' => 'required',
+            'organization_name'     => 'required',
         ];
     }
 
@@ -75,10 +72,10 @@ class OnboardRequest extends FleetbaseRequest
     public function messages()
     {
         return [
-            '*.required' => 'Your :attribute is required to signup',
-            'email' => 'You must enter a valid :attribute to signup',
-            'email.unique' => 'An account with this email address already exists',
-            'phone.unique' => 'An account with this phone number already exists',
+            '*.required'        => 'Your :attribute is required to signup',
+            'email'             => 'You must enter a valid :attribute to signup',
+            'email.unique'      => 'An account with this email address already exists',
+            'phone.unique'      => 'An account with this phone number already exists',
             'password.required' => 'You must enter a password to signup',
         ];
     }

@@ -2,50 +2,49 @@
 
 namespace Fleetbase\Models;
 
-use Illuminate\Foundation\Auth\User as Authenticatable;
-use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Notifications\Notifiable;
-use Illuminate\Support\Facades\Hash;
-use Laravel\Sanctum\HasApiTokens;
-use Spatie\Sluggable\HasSlug;
-use Spatie\Sluggable\SlugOptions;
-use Spatie\Activitylog\Traits\LogsActivity;
-use Spatie\Activitylog\Traits\CausesActivity;
-use Spatie\Permission\Traits\HasRoles;
-use Fleetbase\Traits\HasUuid;
-use Fleetbase\Traits\HasPublicId;
-use Fleetbase\Traits\HasApiModelBehavior;
-use Fleetbase\Traits\Expandable;
-use Fleetbase\Traits\Searchable;
-use Fleetbase\Models\Company;
-use Illuminate\Support\Carbon;
-use Illuminate\Support\Str;
 use Fleetbase\Casts\Json;
 use Fleetbase\Notifications\UserInvited;
 use Fleetbase\Support\Utils;
+use Fleetbase\Traits\Expandable;
 use Fleetbase\Traits\Filterable;
+use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasCacheableAttributes;
 use Fleetbase\Traits\HasMetaAttributes;
+use Fleetbase\Traits\HasPublicId;
+use Fleetbase\Traits\HasUuid;
+use Fleetbase\Traits\Searchable;
 use Illuminate\Database\Eloquent\Concerns\HasTimestamps;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
+use Laravel\Sanctum\HasApiTokens;
+use Spatie\Activitylog\Traits\CausesActivity;
+use Spatie\Activitylog\Traits\LogsActivity;
+use Spatie\Permission\Traits\HasRoles;
+use Spatie\Sluggable\HasSlug;
+use Spatie\Sluggable\SlugOptions;
 
 class User extends Authenticatable
 {
-    use HasUuid,
-        HasPublicId,
-        Searchable,
-        Notifiable,
-        HasRoles,
-        HasApiTokens,
-        HasSlug,
-        HasApiModelBehavior,
-        HasCacheableAttributes,
-        HasMetaAttributes,
-        HasTimestamps,
-        LogsActivity,
-        CausesActivity,
-        SoftDeletes,
-        Expandable,
-        Filterable;
+    use HasUuid;
+    use HasPublicId;
+    use Searchable;
+    use Notifiable;
+    use HasRoles;
+    use HasApiTokens;
+    use HasSlug;
+    use HasApiModelBehavior;
+    use HasCacheableAttributes;
+    use HasMetaAttributes;
+    use HasTimestamps;
+    use LogsActivity;
+    use CausesActivity;
+    use SoftDeletes;
+    use Expandable;
+    use Filterable;
 
     /**
      * The database connection to use.
@@ -55,14 +54,14 @@ class User extends Authenticatable
     protected $connection = 'mysql';
 
     /**
-     * Override the default primary key
+     * Override the default primary key.
      *
      * @var string
      */
     protected $primaryKey = 'uuid';
 
     /**
-     * Primary key is non incrementing
+     * Primary key is non incrementing.
      *
      * @var string
      */
@@ -71,7 +70,7 @@ class User extends Authenticatable
     /**
      * Indicates if the model should be timestamped.
      *
-     * @var boolean
+     * @var bool
      */
     public $timestamps = true;
 
@@ -83,14 +82,14 @@ class User extends Authenticatable
     protected $table = 'users';
 
     /**
-     * The type of public Id to generate
+     * The type of public Id to generate.
      *
      * @var string
      */
     protected $publicIdType = 'user';
 
     /**
-     * The attributes that can be queried
+     * The attributes that can be queried.
      *
      * @var array
      */
@@ -121,7 +120,7 @@ class User extends Authenticatable
         'phone_verified_at',
         'type',
         'slug',
-        'status'
+        'status',
     ];
 
     /**
@@ -139,7 +138,7 @@ class User extends Authenticatable
     protected $hidden = ['password', 'remember_token', 'secret', 'avatar', 'username', 'company', 'companies'];
 
     /**
-     * Dynamic attributes that are appended to object
+     * Dynamic attributes that are appended to object.
      *
      * @var array
      */
@@ -157,35 +156,35 @@ class User extends Authenticatable
      * @var array
      */
     protected $casts = [
-        'meta' => Json::class,
+        'meta'              => Json::class,
         'email_verified_at' => 'datetime',
         'phone_verified_at' => 'datetime',
-        'last_login' => 'datetime',
+        'last_login'        => 'datetime',
     ];
 
     /**
-     * Properties which activity needs to be logged
+     * Properties which activity needs to be logged.
      *
      * @var array
      */
     protected static $logAttributes = ['name', 'email', 'timezone', 'country', 'phone', 'status'];
 
     /**
-     * Do not log empty changed
+     * Do not log empty changed.
      *
-     * @var boolean
+     * @var bool
      */
     protected static $submitEmptyLogs = false;
 
     /**
-     * We only want to log changed attributes
+     * We only want to log changed attributes.
      *
-     * @var boolean
+     * @var bool
      */
     protected static $logOnlyDirty = true;
 
     /**
-     * The name of the subject to log
+     * The name of the subject to log.
      *
      * @var string
      */
@@ -202,7 +201,7 @@ class User extends Authenticatable
     }
 
     /**
-     * The company this user belongs to
+     * The company this user belongs to.
      *
      * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
      */
@@ -212,7 +211,7 @@ class User extends Authenticatable
     }
 
     /**
-     * Set the company for this user
+     * Set the company for this user.
      */
     public function assignCompany(Company $company)
     {
@@ -221,7 +220,7 @@ class User extends Authenticatable
     }
 
     /**
-     * Set the company for this user
+     * Set the company for this user.
      */
     public function assignCompanyFromId(?string $id)
     {
@@ -285,7 +284,7 @@ class User extends Authenticatable
     }
 
     /**
-     * Specifies the user's FCM tokens
+     * Specifies the user's FCM tokens.
      *
      * @return string|array
      */
@@ -299,7 +298,7 @@ class User extends Authenticatable
     }
 
     /**
-     * Specifies the user's APNS tokens
+     * Specifies the user's APNS tokens.
      *
      * @return string|array
      */
@@ -347,9 +346,9 @@ class User extends Authenticatable
     }
 
     /**
-     * Checks if the user is admin
+     * Checks if the user is admin.
      *
-     * @return boolean
+     * @return bool
      */
     public function isAdmin()
     {
@@ -357,9 +356,9 @@ class User extends Authenticatable
     }
 
     /**
-     * Checks if the user is NOT admin
+     * Checks if the user is NOT admin.
      *
-     * @return boolean
+     * @return bool
      */
     public function isNotAdmin()
     {
@@ -377,8 +376,8 @@ class User extends Authenticatable
     }
 
     /**
-     * Set and hash password
-     * 
+     * Set and hash password.
+     *
      * @return void
      */
     public function setPasswordAttribute($value)
@@ -387,8 +386,8 @@ class User extends Authenticatable
     }
 
     /**
-     * Set the default status to `active`
-     * 
+     * Set the default status to `active`.
+     *
      * @return void
      */
     public function setStatusAttribute($value = 'active')
@@ -397,9 +396,7 @@ class User extends Authenticatable
     }
 
     /**
-     * Get the user timezone
-     * 
-     * @return string
+     * Get the user timezone.
      */
     public function getTimezone(): string
     {
@@ -407,9 +404,7 @@ class User extends Authenticatable
     }
 
     /**
-     * Updates the users last login
-     * 
-     * @return \Fleetbase\Models\User
+     * Updates the users last login.
      */
     public function updateLastLogin(): User
     {
@@ -420,9 +415,7 @@ class User extends Authenticatable
     }
 
     /**
-     * Changes the users password
-     * 
-     * @return \Fleetbase\Models\User
+     * Changes the users password.
      */
     public function changePassword($newPassword): User
     {
@@ -433,7 +426,7 @@ class User extends Authenticatable
     }
 
     /**
-     * Deactivate this user
+     * Deactivate this user.
      */
     public function deactivate()
     {
@@ -444,7 +437,7 @@ class User extends Authenticatable
     }
 
     /**
-     * Activate this user
+     * Activate this user.
      */
     public function activate()
     {
@@ -456,18 +449,18 @@ class User extends Authenticatable
 
     /**
      * Determines if the model is searchable.
-     * 
-     * @return bool True if the class uses the Searchable trait or the 'searchable' property exists and is true, false otherwise.
+     *
+     * @return bool true if the class uses the Searchable trait or the 'searchable' property exists and is true, false otherwise
      */
     public static function isSearchable()
     {
-        return class_uses_recursive(\Fleetbase\Traits\Searchable::class) || (property_exists(new static, 'searchable') && static::$searchable);
+        return class_uses_recursive(\Fleetbase\Traits\Searchable::class) || (property_exists(new static(), 'searchable') && static::$searchable);
     }
 
     /**
      * Accessor to check if the model instance is searchable.
      *
-     * @return bool True if the model instance is searchable, false otherwise.
+     * @return bool true if the model instance is searchable, false otherwise
      */
     public function searchable()
     {
@@ -477,7 +470,7 @@ class User extends Authenticatable
     /**
      * Get the phone number to which the notification should be routed.
      *
-     * @return string The phone number of the model instance.
+     * @return string the phone number of the model instance
      */
     public function routeNotificationForTwilio()
     {
@@ -487,11 +480,11 @@ class User extends Authenticatable
     /**
      * Accessor to get the types associated with the model instance.
      *
-     * @return array An array of types associated with the model instance.
+     * @return array an array of types associated with the model instance
      */
     public function getTypesAttribute()
     {
-        $driver = false;
+        $driver   = false;
         $customer = false;
 
         // // if (method_exists($this, 'driver')) {
@@ -529,10 +522,11 @@ class User extends Authenticatable
      * This function checks if the user is already invited to the company.
      * If not, it creates a new invitation and notifies the user.
      *
-     * @param Company $company The company from which the invitation is being sent.
-     * @return bool Returns true if the invitation is successfully sent, false otherwise.
+     * @param Company $company the company from which the invitation is being sent
+     *
+     * @return bool returns true if the invitation is successfully sent, false otherwise
      */
-    public function sendInviteFromCompany(?Company $company = null): bool
+    public function sendInviteFromCompany(Company $company = null): bool
     {
         if ($company === null) {
             $this->load(['company']);
@@ -548,8 +542,8 @@ class User extends Authenticatable
         $isAlreadyInvited = Invite::where([
             'company_uuid' => $company->uuid,
             'subject_uuid' => $company->uuid,
-            'protocol' => 'email',
-            'reason' => 'join_company'
+            'protocol'     => 'email',
+            'reason'       => 'join_company',
         ])->whereJsonContains('recipients', $this->email)->exists();
 
         if ($isAlreadyInvited) {
@@ -558,13 +552,13 @@ class User extends Authenticatable
 
         // create invitation
         $invitation = Invite::create([
-            'company_uuid' => $company->uuid,
+            'company_uuid'    => $company->uuid,
             'created_by_uuid' => $this->uuid,
-            'subject_uuid' => $company->uuid,
-            'subject_type' => Utils::getMutationType($company),
-            'protocol' => 'email',
-            'recipients' => [$this->email],
-            'reason' => 'join_company'
+            'subject_uuid'    => $company->uuid,
+            'subject_type'    => Utils::getMutationType($company),
+            'protocol'        => 'email',
+            'recipients'      => [$this->email],
+            'reason'          => 'join_company',
         ]);
 
         // notify user

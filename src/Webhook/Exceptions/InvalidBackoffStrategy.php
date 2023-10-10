@@ -2,10 +2,9 @@
 
 namespace Fleetbase\Webhook\Exceptions;
 
-use Exception;
 use Fleetbase\Webhook\BackoffStrategy\BackoffStrategy;
 
-class InvalidBackoffStrategy extends Exception
+class InvalidBackoffStrategy extends \Exception
 {
     public static function doesNotExtendBackoffStrategy(string $invalidBackoffStrategyClass): self
     {

@@ -24,9 +24,9 @@ class ResetPasswordRequest extends FleetbaseRequest
     public function rules()
     {
         return [
-            'code' => ['required', 'exists:verification_codes,code'],
-            'link' => ['required', 'exists:verification_codes,uuid'],
-            'password' => 'required|confirmed|min:6',
+            'code'                  => ['required', 'exists:verification_codes,code'],
+            'link'                  => ['required', 'exists:verification_codes,uuid'],
+            'password'              => 'required|confirmed|min:6',
             'password_confirmation' => 'required',
         ];
     }

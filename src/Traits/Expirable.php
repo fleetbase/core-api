@@ -2,22 +2,22 @@
 
 namespace Fleetbase\Traits;
 
-use Illuminate\Support\Carbon;
 use Fleetbase\Scopes\ExpiryScope;
+use Illuminate\Support\Carbon;
 
 trait Expirable
 {
     /**
-     * Set the revival time
-     * 
-     * @var integer
+     * Set the revival time.
+     *
+     * @var int
      */
     public $revivalTime = 24 * 60 * 60;
 
     /**
-     * Conver the expiry datetime to timestamp
-     * 
-     * @return integer
+     * Conver the expiry datetime to timestamp.
+     *
+     * @return int
      */
     public function expiresAtTimestamp()
     {
@@ -33,7 +33,7 @@ trait Expirable
      */
     public static function bootExpirable()
     {
-        static::addGlobalScope(new ExpiryScope);
+        static::addGlobalScope(new ExpiryScope());
     }
 
     /**
@@ -58,11 +58,12 @@ trait Expirable
                 return $result;
             }
         }
+
         return false;
     }
 
     /**
-     * return number of seconds left in model's life
+     * return number of seconds left in model's life.
      *
      * @return int/bool
      */
@@ -73,11 +74,12 @@ trait Expirable
         if (is_object($this->{$column})) {
             return -1 * $this->{$column}->diffInSeconds(Carbon::now(), false);
         }
+
         return false;
     }
 
     /**
-     * check if model is expired
+     * check if model is expired.
      *
      * @return bool
      */
@@ -86,25 +88,26 @@ trait Expirable
         $column = $this->getExpiredAtColumn();
 
         if (is_object($this->{$column})) {
-            return ($this->{$column} < Carbon::now());
+            return $this->{$column} < Carbon::now();
         }
+
         return false;
     }
 
-    /** 
-     * Get the name of the "expires at" column. 
-     * 
-     * @return string 
+    /**
+     * Get the name of the "expires at" column.
+     *
+     * @return string
      */
     public function getExpiredAtColumn()
     {
         return isset(static::$expires_at) ? static::$expires_at : 'expires_at';
     }
 
-    /** 
-     * Get the fully qualified "expires at" column. 
-     * 
-     * @return string 
+    /**
+     * Get the fully qualified "expires at" column.
+     *
+     * @return string
      */
     public function getQualifiedExpiredAtColumn()
     {
@@ -112,7 +115,7 @@ trait Expirable
     }
 
     /**
-     * Get Model settings configuration for the current model,
+     * Get Model settings configuration for the current model,.
      *
      * @return array
      */

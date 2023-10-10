@@ -4,14 +4,14 @@ namespace Fleetbase\Traits;
 
 use Fleetbase\Support\Utils;
 
-trait HasOptionsAttributes {
-
+trait HasOptionsAttributes
+{
     /**
      * Sets a option value by key.
-     * 
+     *
      * $resource->setOption('id', '1846473');
      * $resource->setOption('customer.name', 'John Doe');
-     * 
+     *
      * {
      *      "id": "1846473",
      *      "customer": {
@@ -19,9 +19,6 @@ trait HasOptionsAttributes {
      *      }
      * }
      *
-     * @param string|array $key
-     * @param mixed $value
-     * 
      * @return \Fleetbase\Models\Model
      */
     public function setOption($keys, $value)
@@ -46,8 +43,7 @@ trait HasOptionsAttributes {
      * Get a option value by key.
      *
      * @param string|array $key
-     * @param mixed $defaultValue
-     * 
+     *
      * @return array
      */
     public function getOption($key = null, $defaultValue = null)
@@ -61,25 +57,30 @@ trait HasOptionsAttributes {
         return Utils::get($options, $key, $defaultValue);
     }
 
-    public function hasOption($key) {
+    public function hasOption($key)
+    {
         $options = $this->getAllOptions();
 
         return in_array($key, array_keys($options));
     }
 
-    public function updateOption($key, $value) {
-        $options = $this->getAllOptions();
+    public function updateOption($key, $value)
+    {
+        $options       = $this->getAllOptions();
         $options[$key] = $value;
 
         $this->setAttribute('options', $options);
+
         return $this->update(['options' => $options]);
     }
 
-    public function missingOption($key) {
+    public function missingOption($key)
+    {
         return !$this->hasOption($key);
     }
 
-    public function isOption($key) {
+    public function isOption($key)
+    {
         return $this->getOption($key) === true;
     }
 

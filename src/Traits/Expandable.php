@@ -2,22 +2,20 @@
 
 namespace Fleetbase\Traits;
 
-use Illuminate\Support\Facades\DB;
 use Closure;
-use ReflectionMethod;
-use ReflectionClass;
+use Illuminate\Support\Facades\DB;
 
 trait Expandable
 {
     protected static array $added = [];
 
-    public static function expand($name, ?Closure $closure = null)
+    public static function expand($name, \Closure $closure = null)
     {
         if ((is_object($name) || class_exists($name)) && $closure === null) {
             return static::expandFromClass($name);
         }
 
-        $class = get_class(new static);
+        $class = get_class(new static());
 
         if (!isset(static::$added[$class])) {
             static::$added[$class] = [];
@@ -46,7 +44,7 @@ trait Expandable
 
     public static function expandFromClass($class): void
     {
-        $methods = (new ReflectionClass($class))->getMethods(ReflectionMethod::IS_PUBLIC | ReflectionMethod::IS_PROTECTED);
+        $methods = (new \ReflectionClass($class))->getMethods(\ReflectionMethod::IS_PUBLIC | \ReflectionMethod::IS_PROTECTED);
 
         foreach ($methods as $method) {
             $method->setAccessible(true);
@@ -61,21 +59,21 @@ trait Expandable
 
     public static function hasExpansion(string $name): bool
     {
-        $class = get_class(new static);
+        $class = get_class(new static());
 
         return isset(static::$added[$class][$name]);
     }
 
     public static function isExpansion(string $name): bool
     {
-        $class = get_class(new static);
+        $class = get_class(new static());
 
-        return static::hasExpansion($name) && static::$added[$class][$name] instanceof Closure;
+        return static::hasExpansion($name) && static::$added[$class][$name] instanceof \Closure;
     }
 
     public static function getExpansionClosure(string $name)
     {
-        $class = get_class(new static);
+        $class = get_class(new static());
 
         return static::$added[$class][$name];
     }
@@ -108,15 +106,15 @@ trait Expandable
         return $this->$method(...$parameters);
     }
 
-    private static function isMethodExpandable(ReflectionMethod $method, $target)
+    private static function isMethodExpandable(\ReflectionMethod $method, $target)
     {
         $closure = $method->invoke($target);
 
-        return $closure instanceof Closure;
+        return $closure instanceof \Closure;
     }
 
     private static function isModel()
     {
-        return (new static) instanceof \Illuminate\Database\Eloquent\Model;
+        return (new static()) instanceof \Illuminate\Database\Eloquent\Model;
     }
 }

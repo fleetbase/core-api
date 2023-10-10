@@ -23,11 +23,11 @@ class Route implements Expansion
     /**
      * Registers a REST complicit collection of routes.
      *
-     * @return Closure
+     * @return \Closure
      */
     public function fleetbaseRestRoutes()
     {
-        /**
+        /*
          * Registers a REST complicit collection of routes.
          *
          * @param string $name
@@ -36,23 +36,23 @@ class Route implements Expansion
          * @param Closure $callback Can be use to define additional routes
          * @return PendingResourceRegistration
          */
-        return function (string $name, $controller = null, $options = [], ?Closure $callback = null) {
+        return function (string $name, $controller = null, $options = [], \Closure $callback = null) {
             if (is_callable($controller) && $callback === null) {
-                $callback = $controller;
+                $callback   = $controller;
                 $controller = null;
             }
 
             if (is_callable($options) && $callback === null) {
                 $callback = $options;
-                $options = [];
+                $options  = [];
             }
 
             if ($controller === null) {
                 $controller = Str::studly(Str::singular($name)) . 'Controller';
             }
 
-            /** 
-             * @var \Illuminate\Routing\Router $this 
+            /**
+             * @var \Illuminate\Routing\Router $this
              */
             if ($this->container && $this->container->bound(RESTRegistrar::class)) {
                 $registrar = $this->container->make(RESTRegistrar::class);
@@ -66,7 +66,7 @@ class Route implements Expansion
 
     public function fleetbaseRoutes()
     {
-        return function (string $name, ?callable $registerFn = null, $options = [], $controller = null) {
+        return function (string $name, callable $registerFn = null, $options = [], $controller = null) {
             if (is_callable($controller) && $registerFn === null) {
                 $registerFn = $controller;
                 $controller = null;
@@ -74,7 +74,7 @@ class Route implements Expansion
 
             if (is_callable($options) && $registerFn === null) {
                 $registerFn = $options;
-                $options = [];
+                $options    = [];
             }
 
             if ($controller === null) {
@@ -106,8 +106,8 @@ class Route implements Expansion
                 $router->fleetbaseRestRoutes($name, $controller);
             };
 
-            /** 
-             * @var \Illuminate\Routing\Router $this 
+            /*
+             * @var \Illuminate\Routing\Router $this
              */
             return $this->group($options, $register);
         };
@@ -115,9 +115,9 @@ class Route implements Expansion
 
     public function fleetbaseAuthRoutes()
     {
-        return function (?callable $registerFn = null, ?callable $registerProtectedFn = null) {
-            /** 
-             * @var \Illuminate\Routing\Router $this 
+        return function (callable $registerFn = null, callable $registerProtectedFn = null) {
+            /*
+             * @var \Illuminate\Routing\Router $this
              */
             return $this->group(
                 ['prefix' => 'auth'],

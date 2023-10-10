@@ -3,11 +3,9 @@
 namespace Fleetbase\Support\SocketCluster;
 
 /**
- * Class SocketClusterHandshake
+ * Class SocketClusterHandshake.
  *
  * Represents a handshake message to be sent to a SocketCluster server.
- *
- * @package Fleetbase\Support\SocketCluster
  */
 class SocketClusterHandshake extends SocketClusterMessage
 {
@@ -21,7 +19,7 @@ class SocketClusterHandshake extends SocketClusterMessage
     /**
      * Create a new SocketCluster Handshake Message instance.
      *
-     * @param int $cid The socketcluster cid to use.
+     * @param int $cid the socketcluster cid to use
      */
     public function __construct(int $cid)
     {

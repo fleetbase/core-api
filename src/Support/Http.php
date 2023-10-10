@@ -2,38 +2,34 @@
 
 namespace Fleetbase\Support;
 
-use Illuminate\Support\Facades\Http as HttpClient;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http as HttpClient;
 use Illuminate\Support\Str;
-use Exception;
 
 class Http extends HttpClient
 {
-    public static function isInternalRequest(?Request $request = null): bool
+    public static function isInternalRequest(Request $request = null): bool
     {
         $request = $request ?? request();
-        $route = $request->route();
+        $route   = $request->route();
 
         if ($route === null) {
             return false;
         }
 
-        $action = data_get($route, 'action');
+        $action    = data_get($route, 'action');
         $namespace = data_get($action, 'namespace');
 
-        return Str::contains($namespace, 'Internal') ||  Str::contains($route->uri(), '/int/');
+        return Str::contains($namespace, 'Internal') || Str::contains($route->uri(), '/int/');
     }
 
-    public static function isPublicRequest(?Request $request = null): bool
+    public static function isPublicRequest(Request $request = null): bool
     {
         return !static::isInternalRequest($request);
     }
 
     /**
      * Parses the sort request parameter and returns the sort param and direction of sort.
-     *
-     * @param mixed $sort
-     * @return array
      */
     public static function useSort($sort): array
     {
@@ -45,18 +41,18 @@ class Http extends HttpClient
             return $sort;
         }
 
-        $param = $sort;
+        $param     = $sort;
         $direction = 'desc';
 
         if (Str::startsWith($sort, '-')) {
             $direction = Str::startsWith($sort, '-') ? 'desc' : 'asc';
-            $param = Str::startsWith($sort, '-') ? substr($sort, 1) : $sort;
+            $param     = Str::startsWith($sort, '-') ? substr($sort, 1) : $sort;
         } else {
-            $sd = explode(":", $sort);
+            $sd = explode(':', $sort);
 
             if ($sd && count($sd) > 0) {
                 $direction = $sd[1] ?? $direction;
-                $param = $sd[0];
+                $param     = $sd[0];
             } else {
                 $param = $sort;
             }
@@ -68,9 +64,9 @@ class Http extends HttpClient
     public static function trace($key = null)
     {
         $response = HttpClient::get('https://www.cloudflare.com/cdn-cgi/trace');
-        $body = $response->body();
-        $data = array_values(explode("\n", $body));
-        $trace = [];
+        $body     = $response->body();
+        $data     = array_values(explode("\n", $body));
+        $trace    = [];
 
         foreach ($data as $datum) {
             $kv = explode('=', $datum);
@@ -97,7 +93,7 @@ class Http extends HttpClient
             $ip,
             FILTER_VALIDATE_IP,
             FILTER_FLAG_IPV4 | FILTER_FLAG_IPV6 | FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE
-        ) === $ip ? TRUE : FALSE;
+        ) === $ip ? true : false;
     }
 
     public static function isPrivateIp($ip = null)
@@ -106,9 +102,10 @@ class Http extends HttpClient
     }
 
     /**
-     * Looks up a user client info w/ api
+     * Looks up a user client info w/ api.
      *
      * @param string $ip
+     *
      * @return stdClass
      */
     public static function lookupIp($ip = null)
@@ -126,21 +123,21 @@ class Http extends HttpClient
         }
 
         $ipInfoApiKey = config('fleetbase.services.ipinfo.api_key');
-        $lookupUrl = empty($ipInfoApiKey) ? 'https://json.geoiplookup.io/' . $ip :  'https://api.ipdata.co/' . $ip;
-        $query =  empty($ipInfoApiKey) ? [] : ['api-key' => config('fleetbase.services.ipinfo.api_key')];
+        $lookupUrl    = empty($ipInfoApiKey) ? 'https://json.geoiplookup.io/' . $ip : 'https://api.ipdata.co/' . $ip;
+        $query        =  empty($ipInfoApiKey) ? [] : ['api-key' => config('fleetbase.services.ipinfo.api_key')];
 
         $response = HttpClient::get($lookupUrl, $query);
 
         if ($response->failed()) {
-            throw new Exception($response->json('message') ?? 'IP lookup failed.');
+            throw new \Exception($response->json('message') ?? 'IP lookup failed.');
         }
 
         return $response->json();
     }
 
-    public static function action(?string $verb = null)
+    public static function action(string $verb = null)
     {
-        $verb = $verb ?? $_SERVER['REQUEST_METHOD'];
+        $verb   = $verb ?? $_SERVER['REQUEST_METHOD'];
         $action = Str::lower($verb);
 
         switch ($verb) {

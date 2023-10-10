@@ -24,7 +24,7 @@ class AcceptCompanyInvite extends FleetbaseRequest
     public function rules()
     {
         return [
-            'code' => ['required', 'exists:invites,code']
+            'code' => ['required', 'exists:invites,code'],
         ];
     }
 }

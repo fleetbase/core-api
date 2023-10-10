@@ -8,7 +8,7 @@ use Illuminate\Support\Str;
 trait HasAliases
 {
     /**
-     * Set aliases data
+     * Set aliases data.
      */
     public function setAliasesAttribute($value)
     {
@@ -16,7 +16,7 @@ trait HasAliases
     }
 
     /**
-     * Get alias data
+     * Get alias data.
      */
     public function getAliasesAttribute($aliases)
     {
@@ -24,19 +24,19 @@ trait HasAliases
     }
 
     /**
-     * Adds a new alias, returns false if alias could not be added
+     * Adds a new alias, returns false if alias could not be added.
      *
-     * @param string $entry
-     * @return void|boolean
+     * @return void|bool
      */
     public function addAlias(string $entry)
     {
-        $entry = strtolower($entry);
+        $entry   = strtolower($entry);
         $aliases = Utils::get($this, 'aliases', []);
 
         // push new entry into aliases if doesnt exist already
         if ($this && !in_array($entry, $aliases) && !Str::contains($entry, ['-', '+', '/', '\\'])) {
             $aliases[] = $entry;
+
             return $this->update(['aliases' => $aliases]);
         }
 
@@ -67,10 +67,11 @@ trait HasAliases
     }
 
     /**
-     * A helper function to see if alias is found within model
+     * A helper function to see if alias is found within model.
      *
      * @param string $search
-     * @return boolean
+     *
+     * @return bool
      */
     public function hasAlias($search)
     {
@@ -78,10 +79,11 @@ trait HasAliases
     }
 
     /**
-     * A static alias for hasAlias()
+     * A static alias for hasAlias().
      *
      * @param string $search
-     * @return boolean
+     *
+     * @return bool
      */
     public static function includesAlias($search)
     {

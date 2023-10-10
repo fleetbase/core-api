@@ -3,14 +3,17 @@
 namespace Fleetbase\Models;
 
 use Fleetbase\Casts\Json;
+use Fleetbase\Traits\Filterable;
+use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\Searchable;
-use Fleetbase\Traits\HasApiModelBehavior;
-use Fleetbase\Traits\Filterable;
 
 class WebhookRequestLog extends Model
 {
-    use HasUuid, HasApiModelBehavior, Searchable, Filterable;
+    use HasUuid;
+    use HasApiModelBehavior;
+    use Searchable;
+    use Filterable;
 
     /**
      * The database table used by the model.
@@ -20,7 +23,7 @@ class WebhookRequestLog extends Model
     protected $table = 'webhook_request_logs';
 
     /**
-     * The type of public Id to generate
+     * The type of public Id to generate.
      *
      * @var string
      */
@@ -58,19 +61,19 @@ class WebhookRequestLog extends Model
      */
     protected $casts = [
         'response' => Json::class,
-        'headers' => Json::class,
-        'meta' => Json::class,
+        'headers'  => Json::class,
+        'meta'     => Json::class,
     ];
 
     /**
-     * Relationships to always append to model
+     * Relationships to always append to model.
      *
      * @var array
      */
     protected $with = ['apiEvent'];
 
     /**
-     * Dynamic attributes that are appended to object
+     * Dynamic attributes that are appended to object.
      *
      * @var array
      */
@@ -116,9 +119,10 @@ class WebhookRequestLog extends Model
     }
 
     /**
-     * Always uppercase the `method` when saving
+     * Always uppercase the `method` when saving.
      *
-     * @param  string  $value
+     * @param string $value
+     *
      * @return void
      */
     public function setMethodAttribute($value)

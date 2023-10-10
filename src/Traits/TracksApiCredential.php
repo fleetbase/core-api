@@ -14,7 +14,6 @@ trait TracksApiCredential
     public static function bootTracksApiCredential()
     {
         static::creating(function ($model) {
-
             if (Utils::notEmpty($model->_key) || !$model->isFillable('_key')) {
                 return;
             }

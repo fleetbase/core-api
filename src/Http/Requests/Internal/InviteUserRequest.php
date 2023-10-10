@@ -13,7 +13,7 @@ class InviteUserRequest extends FleetbaseRequest
      */
     public function authorize()
     {
-        return $this->session()->has('company');;
+        return $this->session()->has('company');
     }
 
     /**
@@ -25,7 +25,7 @@ class InviteUserRequest extends FleetbaseRequest
     {
         return [
             'user.email' => 'required|email',
-            'user.name' => 'required',
+            'user.name'  => 'required',
         ];
     }
 
@@ -38,7 +38,7 @@ class InviteUserRequest extends FleetbaseRequest
     {
         return [
             'user.email' => 'email address',
-            'user.name' => 'name',
+            'user.name'  => 'name',
         ];
     }
 }

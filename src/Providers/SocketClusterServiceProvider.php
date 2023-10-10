@@ -2,15 +2,15 @@
 
 namespace Fleetbase\Providers;
 
-use Illuminate\Support\ServiceProvider;
-use Illuminate\Support\Facades\Broadcast;
-use Fleetbase\Support\SocketCluster\SocketClusterService;
 use Fleetbase\Support\SocketCluster\SocketClusterBroadcaster;
+use Fleetbase\Support\SocketCluster\SocketClusterService;
+use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Support\ServiceProvider;
 
 class SocketClusterServiceProvider extends ServiceProvider
 {
     /**
-     * Register new BroadcastManager in boot
+     * Register new BroadcastManager in boot.
      *
      * @return void
      */

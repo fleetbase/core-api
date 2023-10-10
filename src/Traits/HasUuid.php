@@ -24,7 +24,7 @@ trait HasUuid
                     foreach ($model->uuidColumn as $column) {
                         $model->{$column} = static::generateUuid($column);
                     }
-                } else if (is_string($model->uuidColumn)) {
+                } elseif (is_string($model->uuidColumn)) {
                     $model->{$model->uuidColumn} = static::generateUuid($model->uuidColumn);
                 }
 
@@ -37,8 +37,8 @@ trait HasUuid
 
     public static function generateUuid($column = 'uuid')
     {
-        $model = new static();
-        $uuid = (string) Str::uuid();
+        $model  = new static();
+        $uuid   = (string) Str::uuid();
         $exists = $model
             ->where($column, $uuid)
             ->withTrashed()

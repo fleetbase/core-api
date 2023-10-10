@@ -7,7 +7,7 @@ use Fleetbase\Http\Controllers\FleetbaseController;
 class ApiRequestLogController extends FleetbaseController
 {
     /**
-     * The resource to query
+     * The resource to query.
      *
      * @var string
      */

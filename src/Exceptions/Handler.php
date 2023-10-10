@@ -2,10 +2,10 @@
 
 namespace Fleetbase\Exceptions;
 
-use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
-use Illuminate\Auth\AuthenticationException;
-use Illuminate\Support\Facades\Log;
 use Fleetbase\Support\Utils;
+use Illuminate\Auth\AuthenticationException;
+use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
+use Illuminate\Support\Facades\Log;
 
 class Handler extends ExceptionHandler
 {
@@ -15,7 +15,6 @@ class Handler extends ExceptionHandler
      * @var array
      */
     protected $dontReport = [
-        //
     ];
 
     /**
@@ -32,8 +31,6 @@ class Handler extends ExceptionHandler
      * It utilizes the Laravel's reportable method to define how exceptions
      * should be reported. Any unhandled exception will be captured and sent
      * to Sentry for monitoring and troubleshooting.
-     *
-     * @return void
      */
     public function register(): void
     {
@@ -48,7 +45,7 @@ class Handler extends ExceptionHandler
      * Handles unauthenticated request esxceptions.
      *
      * @param \Iluminate\Http\Request $request
-     * @param AuthenticationException $exception
+     *
      * @return void
      */
     protected function unauthenticated($request, AuthenticationException $exception)
@@ -59,7 +56,6 @@ class Handler extends ExceptionHandler
     /**
      * Report or log an exception.
      *
-     * @param  \Throwable  $exception
      * @return void
      *
      * @throws \Exception
@@ -75,8 +71,8 @@ class Handler extends ExceptionHandler
     /**
      * Render an exception into an HTTP response.
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  \Throwable  $exception
+     * @param \Illuminate\Http\Request $request
+     *
      * @return \Symfony\Component\HttpFoundation\Response
      *
      * @throws \Throwable
@@ -117,8 +113,9 @@ class Handler extends ExceptionHandler
      * If not, it attempts to JSON encode the exception. If all else fails, it returns
      * the base class name of the exception.
      *
-     * @param  \Throwable  $exception The exception object to extract a loggable message from.
-     * @return string|null The loggable message or class name of the exception, or null if none is found.
+     * @param \Throwable $exception the exception object to extract a loggable message from
+     *
+     * @return string|null the loggable message or class name of the exception, or null if none is found
      */
     public function getCloudwatchLoggableException(\Throwable $exception)
     {
@@ -129,9 +126,9 @@ class Handler extends ExceptionHandler
                 $output = json_encode(
                     [
                         'message' => $exception->getMessage(),
-                        'code' => $exception->getCode(),
-                        'file' => $exception->getFile(),
-                        'line' => $exception->getLine(),
+                        'code'    => $exception->getCode(),
+                        'file'    => $exception->getFile(),
+                        'line'    => $exception->getLine(),
                     ]
                 );
             } catch (\Exception $e) {

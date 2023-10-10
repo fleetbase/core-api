@@ -2,41 +2,40 @@
 
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
-use Illuminate\Http\Request;
-use Fleetbase\Http\Requests\LoginRequest;
+use Aloha\Twilio\Support\Laravel\Facade as Twilio;
 use Fleetbase\Http\Controllers\Controller;
-use Fleetbase\Support\Auth;
-use Fleetbase\Support\Utils;
-use Fleetbase\Models\User;
+use Fleetbase\Http\Requests\Internal\ResetPasswordRequest;
+use Fleetbase\Http\Requests\Internal\UserForgotPasswordRequest;
+use Fleetbase\Http\Requests\JoinOrganizationRequest;
+use Fleetbase\Http\Requests\LoginRequest;
+use Fleetbase\Http\Requests\SignUpRequest;
+use Fleetbase\Http\Requests\SwitchOrganizationRequest;
+use Fleetbase\Http\Resources\Organization;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
+use Fleetbase\Models\User;
 use Fleetbase\Models\VerificationCode;
-use Fleetbase\Http\Requests\SwitchOrganizationRequest;
-use Fleetbase\Http\Requests\JoinOrganizationRequest;
-use Fleetbase\Http\Requests\SignUpRequest;
-use Fleetbase\Http\Requests\Internal\UserForgotPasswordRequest;
-use Fleetbase\Http\Requests\Internal\ResetPasswordRequest;
 use Fleetbase\Notifications\UserForgotPassword;
-use Fleetbase\Http\Resources\Organization;
-use Illuminate\Support\Str;
+use Fleetbase\Support\Auth;
+use Fleetbase\Support\Utils;
+use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Redis;
-use Aloha\Twilio\Support\Laravel\Facade as Twilio;
+use Illuminate\Support\Str;
 
 class AuthController extends Controller
 {
     /**
      * Authenticates a user by email and responds with an auth token.
      *
-     * @param \Fleetbase\Http\Requests\LoginRequest $request
      * @return \Illuminate\Http\Response
      */
     public function login(LoginRequest $request)
     {
-        $ip = $request->ip();
-        $email = $request->input('email');
+        $ip       = $request->ip();
+        $email    = $request->input('email');
         $password = $request->input('password');
-        $user = User::where('email', $email)->first();
+        $user     = User::where('email', $email)->first();
 
         if (!$user) {
             return response()->error('No user found by this email.', 401);
@@ -47,14 +46,14 @@ class AuthController extends Controller
         }
 
         $token = $user->createToken($ip);
+
         return response()->json(['token' => $token->plainTextToken]);
     }
 
     /**
      * Takes a request username/ or email and password and attempts to authenticate user
-     * will return the user model if the authentication was successful, else will 400
+     * will return the user model if the authentication was successful, else will 400.
      *
-     * @param \Illuminate\Http\Request $request
      * @return \Illuminate\Http\Response
      */
     public function session(Request $request)
@@ -82,14 +81,15 @@ class AuthController extends Controller
      * Send a verification SMS code.
      *
      * @param \\Illuminate\Http\Request $request
+     *
      * @return \Illuminate\Http\Response $response
      */
     public function sendVerificationSms(Request $request)
     {
         // Users phone number
-        $phone = $queryPhone = $request->input('phone');
+        $phone       = $queryPhone = $request->input('phone');
         $countryCode = $request->input('countryCode');
-        $for = $request->input('driver');
+        $for         = $request->input('driver');
 
         // set phone number
         if (!Str::startsWith($queryPhone, '+')) {
@@ -110,7 +110,7 @@ class AuthController extends Controller
         }
 
         // Generate hto
-        $verifyCode = mt_rand(100000, 999999);
+        $verifyCode    = mt_rand(100000, 999999);
         $verifyCodeKey = Str::slug($queryPhone . '_verify_code', '_');
 
         // Store verify code for this number
@@ -118,8 +118,8 @@ class AuthController extends Controller
 
         // Send user their verification code
         try {
-            Twilio::message($queryPhone, `Your Fleetbase authentication code is ` . $verifyCode);
-        } catch (\Exception | \Twilio\Exceptions\RestException $e) {
+            Twilio::message($queryPhone, shell_exec('Your Fleetbase authentication code is ') . $verifyCode);
+        } catch (\Exception|\Twilio\Exceptions\RestException $e) {
             return response()->json(['error' => $e->getMessage()], 400);
         }
 
@@ -131,12 +131,13 @@ class AuthController extends Controller
      * Authenticate a user with SMS code.
      *
      * @param \\Illuminate\Http\Request $request
+     *
      * @return \Illuminate\Http\Response $response
      */
     public function authenticateSmsCode(Request $request)
     {
         // Users phone number
-        $phone = $queryPhone = $request->input('phone');
+        $phone       = $queryPhone = $request->input('phone');
         $countryCode = $request->input('countryCode');
 
         // set phone number
@@ -145,7 +146,7 @@ class AuthController extends Controller
         }
 
         // Users verfiy code entered
-        $verifyCode = $request->input('code');
+        $verifyCode    = $request->input('code');
         $verifyCodeKey = Str::slug($queryPhone . '_verify_code', '_');
 
         // Generate hto
@@ -181,7 +182,7 @@ class AuthController extends Controller
             // Send message to notify users authentication
             return response()->json([
                 'token' => $token,
-                'user' => $user,
+                'user'  => $user,
             ]);
         }
 
@@ -193,6 +194,7 @@ class AuthController extends Controller
      * Allow user to verify SMS code.
      *
      * @param \\Illuminate\Http\Request $request
+     *
      * @return \Illuminate\Http\Response $response
      */
     public function verifySmsCode(Request $request)
@@ -201,7 +203,7 @@ class AuthController extends Controller
         $phone = $request->input('phone');
 
         // Users verfiy code entered
-        $verifyCode = $request->input('code');
+        $verifyCode    = $request->input('code');
         $verifyCodeKey = Str::slug($phone . '_verify_code', '_');
 
         // Generate hto
@@ -214,7 +216,7 @@ class AuthController extends Controller
 
             // 200 OK
             return response()->json([
-                'status' => 'OK',
+                'status'  => 'OK',
                 'message' => 'Code verified',
             ]);
         }
@@ -223,17 +225,16 @@ class AuthController extends Controller
         return response()->error('Invalid verification code');
     }
 
-
-
     /**
-     * Creates a new company and user account
+     * Creates a new company and user account.
      *
      * @param \Fleetbase\Http\Requests\SigUpRequest $request
+     *
      * @return \Illuminate\Http\Response
      */
     public function signUp(SignUpRequest $request)
     {
-        $userDetails = $request->input('user');
+        $userDetails    = $request->input('user');
         $companyDetails = $request->input('company');
 
         $newUser = Auth::register($userDetails, $companyDetails);
@@ -246,7 +247,6 @@ class AuthController extends Controller
     /**
      * Initializes a password reset using a verification code.
      *
-     * @param \Fleetbase\Http\Requests\Internal\UserForgotPasswordRequest $request
      * @return \Illuminate\Http\Response
      */
     public function createPasswordReset(UserForgotPasswordRequest $request)
@@ -257,9 +257,9 @@ class AuthController extends Controller
         $verificationCode = VerificationCode::create([
             'subject_uuid' => $user->uuid,
             'subject_type' => Utils::getModelClassName($user),
-            'for' => 'password_reset',
-            'expires_at' => Carbon::now()->addMinutes(15),
-            'status' => 'active'
+            'for'          => 'password_reset',
+            'expires_at'   => Carbon::now()->addMinutes(15),
+            'status'       => 'active',
         ]);
 
         // notify user of password reset
@@ -271,7 +271,6 @@ class AuthController extends Controller
     /**
      * Reset password.
      *
-     * @param \Fleetbase\Http\Requests\Internal\ResetPasswordRequest $request
      * @return \Illuminate\Http\Response
      */
     public function resetPassword(ResetPasswordRequest $request)
@@ -299,14 +298,13 @@ class AuthController extends Controller
 
     /**
      * Takes a request username/ or email and password and attempts to authenticate user
-     * will return the user model if the authentication was successful, else will 400
+     * will return the user model if the authentication was successful, else will 400.
      *
-     * @param \Illuminate\Http\Request $request
      * @return \Illuminate\Http\Response
      */
     public function getUserOrganizations(Request $request)
     {
-        $user = $request->user();
+        $user      = $request->user();
         $companies = Company::whereHas(
             'users',
             function ($q) use ($user) {
@@ -320,18 +318,17 @@ class AuthController extends Controller
     /**
      * Allows a user to simply switch their organization.
      *
-     * @param \Fleetbase\Http\Requests\SwitchOrganizationRequest $request
      * @return \Illuminate\Http\Response
      */
     public function switchOrganization(SwitchOrganizationRequest $request)
     {
         $nextOrganization = $request->input('next');
-        $user = $request->user();
+        $user             = $request->user();
 
         if ($nextOrganization === $user->company_uuid) {
             return response()->json(
                 [
-                    'errors' => ['User is already on this organizations session']
+                    'errors' => ['User is already on this organizations session'],
                 ]
             );
         }
@@ -339,7 +336,7 @@ class AuthController extends Controller
         if (!CompanyUser::where(['user_uuid' => $user->uuid, 'company_uuid' => $nextOrganization])->exists()) {
             return response()->json(
                 [
-                    'errors' => ['You do not belong to this organization']
+                    'errors' => ['You do not belong to this organization'],
                 ]
             );
         }
@@ -353,17 +350,16 @@ class AuthController extends Controller
     /**
      * Allows a user to join an organization.
      *
-     * @param \Fleetbase\Http\Requests\JoinOrganizationRequest $request
      * @return \Illuminate\Http\Response
      */
     public function joinOrganization(JoinOrganizationRequest $request)
     {
         $company = Company::where('public_id', $request->input('next'))->first();
-        $user = $request->user();
+        $user    = $request->user();
 
         if ($company->uuid === $user->company_uuid) {
             return response()->json([
-                'errors' => ['User is already on this organizations session']
+                'errors' => ['User is already on this organizations session'],
             ]);
         }
 
@@ -377,12 +373,11 @@ class AuthController extends Controller
     /**
      * Allows user to create a new organization.
      *
-     * @param \Illuminate\Http\Request $request
      * @return \Illuminate\Http\Response
      */
     public function createOrganization(Request $request)
     {
-        $user = $request->user();
+        $user    = $request->user();
         $company = Company::create(array_merge($request->only(['name', 'description', 'phone', 'email', 'currency', 'country', 'timezone']), ['owner_uuid' => $user->uuid]));
         $company->addUser($user);
 

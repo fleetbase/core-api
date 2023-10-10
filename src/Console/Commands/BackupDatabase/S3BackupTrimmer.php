@@ -2,9 +2,9 @@
 
 namespace Fleetbase\Console\Commands\BackupDatabase;
 
+use Aws\S3\S3Client;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
-use Aws\S3\S3Client;
 
 class S3BackupTrimmer
 {
@@ -14,9 +14,9 @@ class S3BackupTrimmer
 
     private function __construct($days, $bucket)
     {
-        $this->days = $days;
+        $this->days   = $days;
         $this->bucket = $bucket;
-        $this->when = now()->subDays($this->days)->startOfDay();
+        $this->when   = now()->subDays($this->days)->startOfDay();
     }
 
     public static function make($days, $bucket)
@@ -27,7 +27,7 @@ class S3BackupTrimmer
     public function run()
     {
         $s3config = config('laravel-mysql-s3-backup.s3');
-        $s3 = new S3Client($s3config);
+        $s3       = new S3Client($s3config);
 
         with($s3->listObjects(
             [
@@ -59,9 +59,9 @@ class S3BackupTrimmer
                 // date is second to last part of filename
                 $parts = explode('-', $filename);
                 $index = count($parts) - 2;
-                $date = $parts[$index];
+                $date  = $parts[$index];
 
-                return (Carbon::createFromFormat('Ymd', $date))->lt($this->when);
+                return Carbon::createFromFormat('Ymd', $date)->lt($this->when);
             }
         )->tap(
             function ($filenames) use ($s3) {

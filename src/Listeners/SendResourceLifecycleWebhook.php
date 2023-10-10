@@ -3,10 +3,10 @@
 namespace Fleetbase\Listeners;
 
 use Fleetbase\Events\ResourceLifecycleEvent;
-use Fleetbase\Models\WebhookEndpoint;
-use Fleetbase\Models\WebhookRequestLog;
 use Fleetbase\Models\ApiEvent;
 use Fleetbase\Models\User;
+use Fleetbase\Models\WebhookEndpoint;
+use Fleetbase\Models\WebhookRequestLog;
 use Fleetbase\Support\Utils;
 use Fleetbase\Webhook\WebhookCall;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -20,6 +20,7 @@ class SendResourceLifecycleWebhook implements ShouldQueue
      * Handle the event.
      *
      * @param \Fleetbase\Events\ResourceLifecycleEvent $event
+     *
      * @return void
      */
     public function handle($event)
@@ -30,21 +31,21 @@ class SendResourceLifecycleWebhook implements ShouldQueue
         $companyId = session()->get('company', $event->companySession);
         // $userId = session()->get('user', $event->userSession);
         $apiCredentialId = session()->get('api_credential', $event->apiCredential);
-        $apiKey = session()->get('api_key', $event->apiKey);
-        $apiSecret = session()->get('api_secret', $event->apiSecret);
-        $apiEnvironment = session()->get('api_environment', $event->apiEnvironment);
-        $isSandbox = session()->get('is_sandbox', $event->isSandbox);
+        $apiKey          = session()->get('api_key', $event->apiKey);
+        $apiSecret       = session()->get('api_secret', $event->apiSecret);
+        $apiEnvironment  = session()->get('api_environment', $event->apiEnvironment);
+        $isSandbox       = session()->get('is_sandbox', $event->isSandbox);
 
         try {
             // log the api event
             $apiEvent = ApiEvent::create([
-                'company_uuid' => $companyId,
+                'company_uuid'        => $companyId,
                 'api_credential_uuid' => $apiCredentialId,
-                'event' => $event->broadcastAs(),
-                'source' => $apiCredentialId ? 'api' : 'console',
-                'data' => $event->getEventData(),
-                'method' => $event->requestMethod,
-                'description' => $this->getHumanReadableEventDescription($event),
+                'event'               => $event->broadcastAs(),
+                'source'              => $apiCredentialId ? 'api' : 'console',
+                'data'                => $event->getEventData(),
+                'method'              => $event->requestMethod,
+                'description'         => $this->getHumanReadableEventDescription($event),
             ]);
         } catch (QueryException $e) {
             // Log::error('Failed to create ApiEvent! ' . $e->getMessage());
@@ -60,8 +61,8 @@ class SendResourceLifecycleWebhook implements ShouldQueue
         // get all webhooks for current company
         $webhooks = WebhookEndpoint::where([
             'company_uuid' => $companyId,
-            'status' => 'enabled',
-            'mode' => $apiEnvironment,
+            'status'       => 'enabled',
+            'mode'         => $apiEnvironment,
         ])->where(function ($q) use ($apiCredentialId) {
             $q->whereNull('api_credential_uuid');
             $q->orWhere('api_credential_uuid', $apiCredentialId);
@@ -79,19 +80,19 @@ class SendResourceLifecycleWebhook implements ShouldQueue
             }
 
             $durationStart = now();
-            $connection = $isSandbox ? 'sandbox' : 'mysql';
+            $connection    = $isSandbox ? 'sandbox' : 'mysql';
 
             try {
                 // send webhook for the event
                 WebhookCall::create()
                     ->meta([
-                        'is_sandbox' => $isSandbox,
-                        'api_key' => $apiKey,
+                        'is_sandbox'          => $isSandbox,
+                        'api_key'             => $apiKey,
                         'api_credential_uuid' => $apiCredentialId,
-                        'company_uuid' => $webhook->company_uuid,
-                        'api_event_uuid' => $apiEvent->uuid,
-                        'webhook_uuid' => $webhook->uuid,
-                        'sent_at' => Carbon::now(),
+                        'company_uuid'        => $webhook->company_uuid,
+                        'api_event_uuid'      => $apiEvent->uuid,
+                        'webhook_uuid'        => $webhook->uuid,
+                        'sent_at'             => Carbon::now(),
                     ])
                     ->url($webhook->url)
                     ->payload($event->data)
@@ -100,25 +101,25 @@ class SendResourceLifecycleWebhook implements ShouldQueue
             } catch (\Aws\Sqs\Exception\SqsException $exception) {
                 // get webhook attempt request/response interfaces
                 $response = $exception->getResponse();
-                $request = $exception->getRequest();
+                $request  = $exception->getRequest();
 
                 // log webhook error in logs
                 WebhookRequestLog::on($connection)->create([
-                    'company_uuid' => $webhook->company_uuid,
-                    'webhook_uuid' => $webhook->uuid,
+                    'company_uuid'        => $webhook->company_uuid,
+                    'webhook_uuid'        => $webhook->uuid,
                     'api_credential_uuid' => $apiCredentialId,
-                    'api_event_uuid' => $apiEvent->uuid,
-                    'method' => $request->getMethod(),
-                    'status_code' => $exception->getStatusCode(),
-                    'reason_phrase' => $response->getReasonPhrase() ?? $exception->getMessage(),
-                    'duration' => $durationStart->diffInSeconds(now()),
-                    'url' => $request->getUri(),
-                    'attempt' => 1,
-                    'response' => $response->getBody(),
-                    'status' => 'failed',
-                    'headers' => $request->getHeaders(),
-                    'meta' => [
-                        'exception' => get_class($exception)
+                    'api_event_uuid'      => $apiEvent->uuid,
+                    'method'              => $request->getMethod(),
+                    'status_code'         => $exception->getStatusCode(),
+                    'reason_phrase'       => $response->getReasonPhrase() ?? $exception->getMessage(),
+                    'duration'            => $durationStart->diffInSeconds(now()),
+                    'url'                 => $request->getUri(),
+                    'attempt'             => 1,
+                    'response'            => $response->getBody(),
+                    'status'              => 'failed',
+                    'headers'             => $request->getHeaders(),
+                    'meta'                => [
+                        'exception' => get_class($exception),
                     ],
                     'sent_at' => $durationStart,
                 ]);
@@ -161,7 +162,6 @@ class SendResourceLifecycleWebhook implements ShouldQueue
     /**
      * Generate a description for the lifecycle event.
      *
-     * @param \Fleetbase\Events\ResourceLifecycleEvent $event
      * @return string
      */
     public function getHumanReadableEventDescription(ResourceLifecycleEvent $event)
@@ -193,7 +193,7 @@ class SendResourceLifecycleWebhook implements ShouldQueue
 
         if ($event->apiEnvironment && $event->apiKey) {
             $description .= ' via API';
-        } else if ($event->userSession) {
+        } elseif ($event->userSession) {
             // if event is triggered by a user in the console
             // get current user
             $user = User::find($event->userSession);

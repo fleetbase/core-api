@@ -45,7 +45,7 @@ class Request implements Expansion
      */
     public function or()
     {
-        /**
+        /*
          * Iterates request params until a param is found.
          *
          * @param array $params
@@ -53,7 +53,7 @@ class Request implements Expansion
          * @return mixed
          */
         return function (array $params = [], $default = null) {
-            /** @var \Illuminate\Http\Request $this */
+            /* @var \Illuminate\Http\Request $this */
             foreach ($params as $param) {
                 if ($this->has($param)) {
                     return $this->input($param);
@@ -71,7 +71,7 @@ class Request implements Expansion
      */
     public function array()
     {
-        /**
+        /*
          * Retrieve input from the request as a array.
          *
          * @param string $param
@@ -95,7 +95,7 @@ class Request implements Expansion
     public function isString()
     {
         return function ($param) {
-            /**
+            /*
              * Context.
              *
              * @var \Illuminate\Support\Facades\Request $this
@@ -112,7 +112,7 @@ class Request implements Expansion
     public function isArray()
     {
         return function ($param) {
-            /**
+            /*
              * Context.
              *
              * @var \Illuminate\Support\Facades\Request $this
@@ -122,7 +122,7 @@ class Request implements Expansion
     }
 
     /**
-     * Check value exists in request array param
+     * Check value exists in request array param.
      *
      * @return Closure
      */
@@ -151,14 +151,14 @@ class Request implements Expansion
      */
     public function integer()
     {
-        /**
+        /*
          * Retrieve input from the request as a integer.
          *
          * @param string $key
          * @return array
          */
         return function (string $key, $default = 0) {
-            /** @var \Illuminate\Http\Request $this */
+            /* @var \Illuminate\Http\Request $this */
             return intval($this->input($key, $default));
         };
     }
@@ -170,14 +170,14 @@ class Request implements Expansion
      */
     public function removeParam()
     {
-        /**
+        /*
          * Retrieve input from the request as a integer.
          *
          * @param string $key
          * @return array
          */
         return function (string $key) {
-            /** @var \Illuminate\Http\Request $this */
+            /* @var \Illuminate\Http\Request $this */
             return $this->request->remove($key);
         };
     }
@@ -189,7 +189,7 @@ class Request implements Expansion
      */
     public function searchQuery()
     {
-        /**
+        /*
          * Retrieve the search query parameter.
          *
          * @return string
@@ -239,7 +239,8 @@ class Request implements Expansion
                 'global',
             ];
             $filters = is_array($additionalFilters) ? array_merge($defaultFilters, $additionalFilters) : $defaultFilters;
-            /** @var \Illuminate\Http\Request $this */
+
+            /* @var \Illuminate\Http\Request $this */
             return $this->except($filters);
         };
     }

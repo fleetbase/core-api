@@ -14,26 +14,25 @@ use Illuminate\Support\Str;
 class FileController extends FleetbaseController
 {
     /**
-     * The resource to query
+     * The resource to query.
      *
      * @var string
      */
     public $resource = 'file';
 
     /**
-     * Handle file uploads
+     * Handle file uploads.
      *
-     * @param \Fleetbase\Http\Requests\Internal\UploadFileRequest $request
      * @return \Illuminate\Http\Response
      */
     public function upload(UploadFileRequest $request)
     {
-        $disk = $request->input('disk', config('filesystems.default'));
-        $bucket = $request->input('bucket', config('filesystems.disks.' . $disk . '.bucket', config('filesystems.disks.s3.bucket')));
-        $type = $request->input('type');
-        $size = $request->input('file_size', $request->file->getSize());
-        $path = $request->input('path', 'uploads');
-        $subjectId = $request->input('subject_uuid');
+        $disk        = $request->input('disk', config('filesystems.default'));
+        $bucket      = $request->input('bucket', config('filesystems.disks.' . $disk . '.bucket', config('filesystems.disks.s3.bucket')));
+        $type        = $request->input('type');
+        $size        = $request->input('file_size', $request->file->getSize());
+        $path        = $request->input('path', 'uploads');
+        $subjectId   = $request->input('subject_uuid');
         $subjectType = $request->input('subject_type');
 
         // Generate a filename
@@ -45,7 +44,7 @@ class FileController extends FleetbaseController
                 $path,
                 $fileName,
                 [
-                    'disk' => $disk
+                    'disk' => $disk,
                 ]
             );
         } catch (\Aws\S3\Exception\S3Exception $e) {
@@ -63,13 +62,13 @@ class FileController extends FleetbaseController
             $file->update(
                 [
                     'subject_uuid' => $subjectId,
-                    'subject_type' => Utils::getMutationType($subjectType)
+                    'subject_type' => Utils::getMutationType($subjectType),
                 ]
             );
-        } else if ($subjectType) {
+        } elseif ($subjectType) {
             $file->update(
                 [
-                    'subject_type' => Utils::getMutationType($subjectType)
+                    'subject_type' => Utils::getMutationType($subjectType),
                 ]
             );
         }
@@ -77,27 +76,26 @@ class FileController extends FleetbaseController
         // Done ✓
         return response()->json(
             [
-                'file' => $file
+                'file' => $file,
             ]
         );
     }
 
     /**
-     * Handle file upload of base64
+     * Handle file upload of base64.
      *
-     * @param \Fleetbase\Http\Requests\Internal\UploadBase64FileRequest $request
      * @return \Illuminate\Http\Response
      */
     public function uploadBase64(UploadBase64FileRequest $request)
     {
-        $disk = $request->input('disk', config('filesystems.default'));
-        $bucket = $request->input('bucket', config('filesystems.disks.' . $disk . '.bucket', config('filesystems.disks.s3.bucket')));
-        $data = $request->input('data');
-        $path = $request->input('path', 'uploads');
-        $fileName = $request->input('file_name');
-        $fileType = $request->input('file_type', 'image');
+        $disk        = $request->input('disk', config('filesystems.default'));
+        $bucket      = $request->input('bucket', config('filesystems.disks.' . $disk . '.bucket', config('filesystems.disks.s3.bucket')));
+        $data        = $request->input('data');
+        $path        = $request->input('path', 'uploads');
+        $fileName    = $request->input('file_name');
+        $fileType    = $request->input('file_type', 'image');
         $contentType = $request->input('content_type', 'image/png');
-        $subjectId = $request->input('subject_uuid');
+        $subjectId   = $request->input('subject_uuid');
         $subjectType = $request->input('subject_type');
 
         if (!$data) {
@@ -123,19 +121,19 @@ class FileController extends FleetbaseController
 
         // Create file record for upload
         $file = File::create([
-            'company_uuid' => session('company'),
-            'uploader_uuid' => session('user'),
-            'subject_uuid' => $subjectId,
-            'subject_type' => Utils::getMutationType($subjectType),
-            'disk' => $disk,
-            'name' => basename($fullPath),
+            'company_uuid'      => session('company'),
+            'uploader_uuid'     => session('user'),
+            'subject_uuid'      => $subjectId,
+            'subject_type'      => Utils::getMutationType($subjectType),
+            'disk'              => $disk,
+            'name'              => basename($fullPath),
             'original_filename' => basename($fullPath),
-            'extension' => 'png',
-            'content_type' => $contentType,
-            'path' => $fullPath,
-            'bucket' => $bucket,
-            'type' => $fileType,
-            'size' => Utils::getBase64ImageSize($data)
+            'extension'         => 'png',
+            'content_type'      => $contentType,
+            'path'              => $fullPath,
+            'bucket'            => $bucket,
+            'type'              => $fileType,
+            'size'              => Utils::getBase64ImageSize($data),
         ]);
 
         // Done ✓
@@ -147,10 +145,10 @@ class FileController extends FleetbaseController
     }
 
     /**
-     * Handle file uploads
+     * Handle file uploads.
      *
-     * @param string $id
      * @param \Fleetbase\Http\Requests\Internal\UploadFileRequest $request
+     *
      * @return \Illuminate\Http\Response
      */
     public function download(?string $id, DownloadFileRequest $request)

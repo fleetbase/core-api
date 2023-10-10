@@ -12,12 +12,15 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Str;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Str;
 
 class LogApiRequest implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Dispatchable;
+    use InteractsWithQueue;
+    use Queueable;
+    use SerializesModels;
 
     /**
      * The API Request/JsonResponse payload.
@@ -57,13 +60,10 @@ class LogApiRequest implements ShouldQueue
         ApiRequestLog::on($this->dbConnection)->create($this->payload);
     }
 
-
     /**
      * Converts a Request and Response instance into a loggable array.
      *
-     * @param Request $request
      * @param JsonResponse|Response $response
-     * @return array
      */
     public static function getPayload(Request $request, $response): array
     {
@@ -82,27 +82,27 @@ class LogApiRequest implements ShouldQueue
         $duration = round(microtime(true) - LARAVEL_START, 13);
 
         $payload = [
-            '_key' => session('api_key'),
-            'company_uuid' => session('company'),
+            '_key'                => session('api_key'),
+            'company_uuid'        => session('company'),
             'api_credential_uuid' => session('api_credential'),
-            'method' => $request->method(),
-            'path' => $request->path(),
-            'full_url' => $request->url(),
-            'status_code' => $response->getStatusCode() ?? 500,
-            'reason_phrase' => static::getResponseStatusText($response) ?? 'ERR',
-            'duration' => $duration,
-            'ip_address' => $request->ip(),
-            'version' => config('api.version'),
-            'source' => $request->header('User-Agent'),
-            'content_type' => $request->header('Content-Type'),
-            'related' => $related,
-            'query_params' => $request->query(),
-            'request_headers' => getallheaders(),
-            'request_body' => $request->all() ?? [],
-            'request_raw_body' => $request->getContent(),
-            'response_headers' => static::getResponseHeaders($response),
-            'response_body' => $content,
-            'response_raw_body' => $response->content(),
+            'method'              => $request->method(),
+            'path'                => $request->path(),
+            'full_url'            => $request->url(),
+            'status_code'         => $response->getStatusCode() ?? 500,
+            'reason_phrase'       => static::getResponseStatusText($response) ?? 'ERR',
+            'duration'            => $duration,
+            'ip_address'          => $request->ip(),
+            'version'             => config('api.version'),
+            'source'              => $request->header('User-Agent'),
+            'content_type'        => $request->header('Content-Type'),
+            'related'             => $related,
+            'query_params'        => $request->query(),
+            'request_headers'     => getallheaders(),
+            'request_body'        => $request->all() ?? [],
+            'request_raw_body'    => $request->getContent(),
+            'response_headers'    => static::getResponseHeaders($response),
+            'response_body'       => $content,
+            'response_raw_body'   => $response->content(),
         ];
 
         return $payload;
@@ -110,8 +110,6 @@ class LogApiRequest implements ShouldQueue
 
     /**
      * Returns the current request session environment.
-     *
-     * @return string
      */
     public static function getSession(): string
     {
@@ -119,10 +117,11 @@ class LogApiRequest implements ShouldQueue
     }
 
     /**
-     * Array of response headers
+     * Array of response headers.
      *
-     * @param  \Illuminate\Http\Response $response
-     * @return  array
+     * @param \Illuminate\Http\Response $response
+     *
+     * @return array
      */
     public static function getResponseStatusText($response)
     {
@@ -130,14 +129,15 @@ class LogApiRequest implements ShouldQueue
     }
 
     /**
-     * Array of response headers
+     * Array of response headers.
      *
-     * @param  \Illuminate\Http\Response $response
-     * @return  array
+     * @param \Illuminate\Http\Response $response
+     *
+     * @return array
      */
     public static function getResponseHeaders($response)
     {
-        $headers = [];
+        $headers        = [];
         $resposeHeaders = collect($response->headers->all())
             ->map(function ($header) {
                 return Arr::first($header);

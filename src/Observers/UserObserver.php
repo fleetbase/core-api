@@ -2,8 +2,8 @@
 
 namespace Fleetbase\Observers;
 
-use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\Company;
+use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\User;
 
 class UserObserver
@@ -11,7 +11,6 @@ class UserObserver
     /**
      * Handle the User "created" event.
      *
-     * @param  \Fleetbase\Models\User  $user
      * @return void
      */
     public function created(User $user)
@@ -31,7 +30,6 @@ class UserObserver
     /**
      * Handle the User "deleted" event.
      *
-     * @param  \Fleetbase\Models\User  $user
      * @return void
      */
     public function deleted(User $user)

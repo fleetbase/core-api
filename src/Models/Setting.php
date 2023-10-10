@@ -10,7 +10,7 @@ class Setting extends EloquentModel
     /**
      * Create a new instance of the model.
      *
-     * @param array $attributes The attributes to set on the model.
+     * @param array $attributes the attributes to set on the model
      *
      * @return void
      */
@@ -24,7 +24,7 @@ class Setting extends EloquentModel
     /**
      * No timestamp columns.
      *
-     * @var boolean
+     * @var bool
      */
     public $timestamps = false;
 
@@ -43,7 +43,7 @@ class Setting extends EloquentModel
     protected $connection = 'mysql';
 
     /**
-     * These attributes that can be queried
+     * These attributes that can be queried.
      *
      * @var array
      */
@@ -60,7 +60,7 @@ class Setting extends EloquentModel
     ];
 
     /**
-     * Dynamic attributes that are appended to object
+     * Dynamic attributes that are appended to object.
      *
      * @var array
      */
@@ -79,21 +79,19 @@ class Setting extends EloquentModel
      * @var array
      */
     protected $casts = [
-        'value' => Json::class
+        'value' => Json::class,
     ];
 
     /**
      * Finds a system setting.
      *
      * @param string $key
-     * @param mixed $defaultValue
-     * @return mixed
      */
     public static function system($key, $defaultValue = null)
     {
-        $segments = explode('.', $key);
+        $segments   = explode('.', $key);
         $settingKey = 'system.' . $key;
-        $queryKey = 'system.' . $segments[0] . '.' . $segments[1];
+        $queryKey   = 'system.' . $segments[0] . '.' . $segments[1];
 
         if (count($segments) >= 3) {
             // Remove first two segments, join remaining ones
@@ -121,8 +119,6 @@ class Setting extends EloquentModel
      * Updates a system setting.
      *
      * @param string $key
-     * @param mixed $defaultValue
-     * @return mixed
      */
     public static function configureSystem($key, $value = null)
     {
@@ -133,16 +129,14 @@ class Setting extends EloquentModel
      * Updates a system setting.
      *
      * @param string $key
-     * @param mixed $defaultValue
-     * @return mixed
      */
     public static function configure($key, $value = null)
     {
         return static::updateOrCreate(
             ['key' => $key],
             [
-                'key' => $key,
-                'value' => $value
+                'key'   => $key,
+                'value' => $value,
             ]
         );
     }
@@ -150,8 +144,6 @@ class Setting extends EloquentModel
     /**
      * lookup a setting and return the value.
      *
-     * @param string $key
-     * @param mixed $defaultValue
      * @return mixed|null
      */
     public static function lookup(string $key, $defaultValue = null)
@@ -168,9 +160,9 @@ class Setting extends EloquentModel
     public static function getBranding()
     {
         $brandingSettings = ['id' => 1, 'uuid' => 1];
-        $iconUuid = static::where('key', 'branding.icon_uuid')->value('value');
-        $logoUuid = static::where('key', 'branding.logo_uuid')->value('value');
-        $defaultTheme = static::where('key', 'branding.default_theme')->value('value');
+        $iconUuid         = static::where('key', 'branding.icon_uuid')->value('value');
+        $logoUuid         = static::where('key', 'branding.logo_uuid')->value('value');
+        $defaultTheme     = static::where('key', 'branding.default_theme')->value('value');
 
         // get icon file record
         if (\Illuminate\Support\Str::isUuid($iconUuid)) {
@@ -191,8 +183,8 @@ class Setting extends EloquentModel
         }
 
         // set branding settings
-        $brandingSettings['icon_uuid'] = $iconUuid;
-        $brandingSettings['logo_uuid'] = $iconUuid;
+        $brandingSettings['icon_uuid']     = $iconUuid;
+        $brandingSettings['logo_uuid']     = $iconUuid;
         $brandingSettings['default_theme'] = $defaultTheme ?? 'dark';
 
         return $brandingSettings;

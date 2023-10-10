@@ -4,18 +4,14 @@ namespace Fleetbase\Exports;
 
 use Fleetbase\Models\ApiCredential;
 use Maatwebsite\Excel\Concerns\FromCollection;
+use Maatwebsite\Excel\Concerns\WithColumnFormatting;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithMapping;
-use Maatwebsite\Excel\Concerns\WithColumnFormatting;
-use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 use PhpOffice\PhpSpreadsheet\Shared\Date;
+use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 
 class ApiCredentialExport implements FromCollection, WithHeadings, WithMapping, WithColumnFormatting
 {
-
-    /**
-     * @return array
-     */
     public function map($apiCredential): array
     {
         return [
@@ -29,9 +25,6 @@ class ApiCredentialExport implements FromCollection, WithHeadings, WithMapping, 
         ];
     }
 
-    /**
-     * @return array
-     */
     public function headings(): array
     {
         return [
@@ -45,9 +38,6 @@ class ApiCredentialExport implements FromCollection, WithHeadings, WithMapping, 
         ];
     }
 
-    /**
-     * @return array
-     */
     public function columnFormats(): array
     {
         return [

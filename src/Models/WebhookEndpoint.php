@@ -2,15 +2,19 @@
 
 namespace Fleetbase\Models;
 
+use Fleetbase\Traits\Filterable;
+use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\Searchable;
-use Fleetbase\Traits\HasApiModelBehavior;
-use Fleetbase\Traits\Filterable;
 use Spatie\Activitylog\Traits\LogsActivity;
 
 class WebhookEndpoint extends Model
 {
-    use HasUuid, HasApiModelBehavior, LogsActivity, Searchable, Filterable;
+    use HasUuid;
+    use HasApiModelBehavior;
+    use LogsActivity;
+    use Searchable;
+    use Filterable;
 
     /**
      * The database table used by the model.
@@ -20,7 +24,7 @@ class WebhookEndpoint extends Model
     protected $table = 'webhook_endpoints';
 
     /**
-     * These attributes that can be queried
+     * These attributes that can be queried.
      *
      * @var array
      */
@@ -43,7 +47,7 @@ class WebhookEndpoint extends Model
     ];
 
     /**
-     * Dynamic attributes that are appended to object
+     * Dynamic attributes that are appended to object.
      *
      * @var array
      */
@@ -57,21 +61,21 @@ class WebhookEndpoint extends Model
     protected $hidden = ['apiCredential'];
 
     /**
-     * Properties which activity needs to be logged
+     * Properties which activity needs to be logged.
      *
      * @var array
      */
     protected static $logAttributes = '*';
 
     /**
-     * Do not log empty changed
+     * Do not log empty changed.
      *
-     * @var boolean
+     * @var bool
      */
     protected static $submitEmptyLogs = false;
 
     /**
-     * The name of the subject to log
+     * The name of the subject to log.
      *
      * @var string
      */
@@ -94,9 +98,7 @@ class WebhookEndpoint extends Model
     }
 
     /**
-     * Determines if webhook is listening to all events
-     *
-     * @return boolean
+     * Determines if webhook is listening to all events.
      */
     public function getIsListeningOnAllEventsAttribute(): bool
     {
@@ -104,7 +106,7 @@ class WebhookEndpoint extends Model
     }
 
     /**
-     * Get the api credential name or key
+     * Get the api credential name or key.
      *
      * @return string
      */

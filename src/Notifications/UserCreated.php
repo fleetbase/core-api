@@ -2,8 +2,8 @@
 
 namespace Fleetbase\Notifications;
 
-use Fleetbase\Models\User;
 use Fleetbase\Models\Company;
+use Fleetbase\Models\User;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -23,14 +23,13 @@ class UserCreated extends Notification implements ShouldQueue
      */
     public function __construct(User $user, Company $company)
     {
-        $this->user = $user;
+        $this->user    = $user;
         $this->company = $company;
     }
 
     /**
      * Get the notification's delivery channels.
      *
-     * @param  mixed  $notifiable
      * @return array
      */
     public function via($notifiable)
@@ -41,12 +40,11 @@ class UserCreated extends Notification implements ShouldQueue
     /**
      * Get the mail representation of the notification.
      *
-     * @param  mixed  $notifiable
      * @return \Illuminate\Notifications\Messages\MailMessage
      */
     public function toMail($notifiable)
     {
-        return (new MailMessage)
+        return (new MailMessage())
                     ->subject('🥳 New Fleetbase Signup!')
                     ->line('View user details below.')
                     ->line('Name: ' . $this->user->name)

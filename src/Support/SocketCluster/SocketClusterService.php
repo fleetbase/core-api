@@ -5,32 +5,24 @@ namespace Fleetbase\Support\SocketCluster;
 use WebSocket\Client;
 
 /**
- * Class SocketClusterService
+ * Class SocketClusterService.
  *
  * Service class for managing SocketCluster connections and messages.
- *
- * @package Fleetbase\Support\SocketCluster
  */
 class SocketClusterService
 {
     /**
      * WebSocket client instance.
-     *
-     * @var \WebSocket\Client
      */
     protected Client $client;
 
     /**
      * The URI for the WebSocket connection.
-     *
-     * @var string
      */
     protected string $uri;
 
     /**
      * Connection options.
-     *
-     * @var array
      */
     protected array $options = [];
 
@@ -78,8 +70,6 @@ class SocketClusterService
 
     /**
      * Socket protocol error statuses.
-     *
-     * @var array
      */
     public array $socketProtocolErrorStatuses = [
         1001 => 'Socket was disconnected',
@@ -107,13 +97,13 @@ class SocketClusterService
     /**
      * Create a new SocketClusterService instance.
      *
-     * @param array|string $options Connection options or URI.
+     * @param array|string $options connection options or URI
      */
     public function __construct($options = [])
     {
         $this->options = $options = $this->getOptions($options);
-        $this->uri = $uri = $this->parseOptions($options);
-        $this->client = new Client($uri, $options);
+        $this->uri     = $uri = $this->parseOptions($options);
+        $this->client  = new Client($uri, $options);
     }
 
     /**
@@ -139,23 +129,21 @@ class SocketClusterService
     /**
      * Create a new SocketClusterService instance.
      *
-     * @param array|string $options Connection options or URI.
-     *
-     * @return SocketClusterService
+     * @param array|string $options connection options or URI
      */
     public static function instance($options = []): SocketClusterService
     {
-        return (new static($options));
+        return new static($options);
     }
 
     /**
      * Publishes a message to the specified channel.
      *
-     * @param string $channel The channel to publish the message to.
-     * @param array  $data    The data to send in the message (optional).
-     * @param array  $options Additional options for the message (optional).
+     * @param string $channel the channel to publish the message to
+     * @param array  $data    the data to send in the message (optional)
+     * @param array  $options additional options for the message (optional)
      *
-     * @return bool Returns true if the message was sent successfully, false otherwise.
+     * @return bool returns true if the message was sent successfully, false otherwise
      */
     public static function publish($channel, array $data = [], $options = []): bool
     {
@@ -165,19 +153,19 @@ class SocketClusterService
     /**
      * Sends a message to the specified channel.
      *
-     * @param string $channel The channel to send the message to.
-     * @param array  $data    The data to send in the message (optional).
+     * @param string $channel the channel to send the message to
+     * @param array  $data    the data to send in the message (optional)
      *
-     * @return bool Returns true if the message was sent successfully, false otherwise.
+     * @return bool returns true if the message was sent successfully, false otherwise
      *
-     * @throws \WebSocket\ConnectionException If there is a connection error.
-     * @throws \WebSocket\TimeoutException    If the operation times out.
-     * @throws \Throwable                     If any other error occurs.
+     * @throws \WebSocket\ConnectionException if there is a connection error
+     * @throws \WebSocket\TimeoutException    if the operation times out
+     * @throws \Throwable                     if any other error occurs
      */
     public function send($channel, array $data = []): bool
     {
-        $cid = rand();
-        $message = new SocketClusterMessage($channel, $data, $cid);
+        $cid        = rand();
+        $message    = new SocketClusterMessage($channel, $data, $cid);
         $this->sent = false;
 
         try {
@@ -200,23 +188,23 @@ class SocketClusterService
     /**
      * Sends a handshake message to the SocketCluster server.
      *
-     * @param int $cid The connection ID for the handshake.
+     * @param int $cid the connection ID for the handshake
      *
-     * @return bool Returns true if the handshake was sent successfully, false otherwise.
+     * @return bool returns true if the handshake was sent successfully, false otherwise
      *
-     * @throws \WebSocket\ConnectionException If there is a connection error.
-     * @throws \WebSocket\TimeoutException    If the operation times out.
-     * @throws \Throwable                     If any other error occurs.
+     * @throws \WebSocket\ConnectionException if there is a connection error
+     * @throws \WebSocket\TimeoutException    if the operation times out
+     * @throws \Throwable                     if any other error occurs
      */
     public function handshake($cid)
     {
-        $handshake = new SocketClusterHandshake($cid);
+        $handshake           = new SocketClusterHandshake($cid);
         $this->handshakeSent = false;
 
         try {
             $this->client->send($handshake);
             $this->handshakeResponse = $this->client->receive();
-            $this->handshakeSent = true;
+            $this->handshakeSent     = true;
         } catch (\WebSocket\ConnectionException $e) {
             $this->handshakeError = $e->getMessage();
         } catch (\WebSocket\TimeoutException $e) {
@@ -251,10 +239,8 @@ class SocketClusterService
     /**
      * Get a specific option value.
      *
-     * @param string $key The option key.
-     * @param mixed $default Default value if the option is not set.
-     *
-     * @return mixed
+     * @param string $key     the option key
+     * @param mixed  $default default value if the option is not set
      */
     public function getOption(string $key, $default = null)
     {
@@ -270,9 +256,7 @@ class SocketClusterService
     /**
      * Get the connection options.
      *
-     * @param array|string $options Connection options or URI.
-     *
-     * @return array
+     * @param array|string $options connection options or URI
      */
     public function getOptions($options): array
     {
@@ -289,17 +273,17 @@ class SocketClusterService
      * Create a socket server URI from connection options provided.
      *
      * @param string|array $options
-     * 
+     *
      * @return void
      */
     protected function parseOptions($options): string
     {
         $default = [
-            'scheme' => '',
-            'host' => '',
-            'port' => '',
-            'path' => '',
-            'query' => [],
+            'scheme'   => '',
+            'host'     => '',
+            'port'     => '',
+            'path'     => '',
+            'query'    => [],
             'fragment' => '',
         ];
 
@@ -317,10 +301,10 @@ class SocketClusterService
             parse_str($optArr['query'], $query);
         }
 
-        $host = trim($optArr['host'], '/');
-        $port = !empty($optArr['port']) ? ':' . $optArr['port'] : '';
-        $path = trim($optArr['path'], '/');
-        $path = !empty($path) ? $path . '/' : '';
+        $host  = trim($optArr['host'], '/');
+        $port  = !empty($optArr['port']) ? ':' . $optArr['port'] : '';
+        $path  = trim($optArr['path'], '/');
+        $path  = !empty($path) ? $path . '/' : '';
         $query = count($query) ? '?' . http_build_query($query) : '';
 
         return sprintf('%s://%s%s/%s%s', $scheme, $host, $port, $path, $query);

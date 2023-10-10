@@ -4,10 +4,10 @@ namespace Fleetbase\Console\Commands;
 
 use Fleetbase\Models\ApiCredential;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 
 class InitializeSandboxKeyColumn extends Command
 {
@@ -43,7 +43,7 @@ class InitializeSandboxKeyColumn extends Command
     public function handle()
     {
         $skipTables = ApiCredential::$skipTables;
-        $tables = DB::connection('sandbox')
+        $tables     = DB::connection('sandbox')
             ->getDoctrineSchemaManager()
             ->listTableNames();
 

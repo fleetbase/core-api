@@ -8,15 +8,13 @@ trait Insertable
 {
     /**
      * Bulk insert for model as well as generate uuid and setting created_at.
-     *
-     * @return boolean
      */
     public static function bulkInsert(array $rows = []): bool
     {
         $model = new static();
 
         for ($i = 0; $i < count($rows); $i++) {
-            $rows[$i]['uuid'] = static::generateUuid();
+            $rows[$i]['uuid']       = static::generateUuid();
             $rows[$i]['created_at'] = Carbon::now()->toDateTimeString();
 
             if ($model->isFillable('public_id')) {

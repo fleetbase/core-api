@@ -5,20 +5,22 @@ namespace Fleetbase\Events;
 use Fleetbase\Models\Model;
 use Fleetbase\Support\Resolve;
 use Fleetbase\Support\Utils;
-use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\Channel;
+use Illuminate\Broadcasting\InteractsWithSockets;
 // use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
-use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Str;
-use Illuminate\Support\Carbon;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 
 class ResourceLifecycleEvent implements ShouldBroadcastNow
 {
-    use Dispatchable, InteractsWithSockets, SerializesModels;
+    use Dispatchable;
+    use InteractsWithSockets;
+    use SerializesModels;
 
     public $modelUuid;
     public $modelClassNamespace;
@@ -40,58 +42,55 @@ class ResourceLifecycleEvent implements ShouldBroadcastNow
     public $isSandbox;
 
     /**
-     * The lifecycle event name
+     * The lifecycle event name.
      *
      * @var string
      */
     public $eventName;
 
     /**
-     * The datetime instance the broadcast ws triggered
+     * The datetime instance the broadcast ws triggered.
      *
      * @var string
      */
     public $sentAt;
 
     /**
-     * The data sent for this event
-     *
-     * @var array
+     * The data sent for this event.
      */
     public array $data = [];
 
     /**
      * Create a new lifecycle event instance.
      *
-     * @param \Fleetbase\Models\Model $model
      * @param string $eventName
-     * @param integer $version
+     * @param int    $version
      *
      * @return void
      */
     public function __construct(Model $model, $eventName = null, $version = 1)
     {
-        $this->modelUuid = $model->uuid;
+        $this->modelUuid           = $model->uuid;
         $this->modelClassNamespace = get_class($model);
-        $this->modelClassName = Utils::classBasename($model);
-        $this->modelHumanName = Str::humanize($this->modelClassName, false);
-        $this->modelRecordName = Utils::or($model, ['name', 'email', 'public_id']);
-        $this->modelName = Str::snake($this->modelClassName);
-        $this->namespace = $this->getNamespaceFromModel($model);
-        $this->userSession = session('user');
-        $this->companySession = session('company');
-        $this->eventName = $eventName ?? $this->eventName;
-        $this->sentAt = Carbon::now()->toDateTimeString();
-        $this->version = $version;
-        $this->requestMethod = request()->method();
-        $this->eventId = uniqid('event_');
-        $this->apiVersion = config('api.version');
-        $this->apiCredential = session('api_credential');
-        $this->apiSecret = session('api_secret');
-        $this->apiKey = session('api_key');
-        $this->apiEnvironment = session('api_environment', 'live');
-        $this->isSandbox = session('is_sandbox', false);
-        $this->data = $this->getEventData();
+        $this->modelClassName      = Utils::classBasename($model);
+        $this->modelHumanName      = Str::humanize($this->modelClassName, false);
+        $this->modelRecordName     = Utils::or($model, ['name', 'email', 'public_id']);
+        $this->modelName           = Str::snake($this->modelClassName);
+        $this->namespace           = $this->getNamespaceFromModel($model);
+        $this->userSession         = session('user');
+        $this->companySession      = session('company');
+        $this->eventName           = $eventName ?? $this->eventName;
+        $this->sentAt              = Carbon::now()->toDateTimeString();
+        $this->version             = $version;
+        $this->requestMethod       = request()->method();
+        $this->eventId             = uniqid('event_');
+        $this->apiVersion          = config('api.version');
+        $this->apiCredential       = session('api_credential');
+        $this->apiSecret           = session('api_secret');
+        $this->apiKey              = session('api_key');
+        $this->apiEnvironment      = session('api_environment', 'live');
+        $this->isSandbox           = session('is_sandbox', false);
+        $this->data                = $this->getEventData();
     }
 
     /**
@@ -111,9 +110,9 @@ class ResourceLifecycleEvent implements ShouldBroadcastNow
      */
     public function broadcastOn()
     {
-        $model = $this->getModelRecord();
+        $model          = $this->getModelRecord();
         $companySession = session('company', $model->company_uuid);
-        $channels = [new Channel('company.' . $companySession)];
+        $channels       = [new Channel('company.' . $companySession)];
 
         if ($model && isset($model->company)) {
             $channels[] = new Channel('company.' . $model->company->public_id);
@@ -175,7 +174,7 @@ class ResourceLifecycleEvent implements ShouldBroadcastNow
     public function getNamespaceFromModel(Model $model): string
     {
         $namespaceSegments = explode('\Models\\', get_class($model));
-        $modelNamespace = '\\' . Arr::first($namespaceSegments);
+        $modelNamespace    = '\\' . Arr::first($namespaceSegments);
 
         return $modelNamespace;
     }
@@ -197,14 +196,14 @@ class ResourceLifecycleEvent implements ShouldBroadcastNow
      */
     public function getEventData()
     {
-        $model = $this->getModelRecord();
-        $resource = $this->getModelResource($model, $this->namespace, $this->version);
+        $model        = $this->getModelRecord();
+        $resource     = $this->getModelResource($model, $this->namespace, $this->version);
         $resourceData = [];
 
         if ($resource) {
             if (method_exists($resource, 'toWebhookPayload')) {
                 $resourceData = $resource->toWebhookPayload();
-            } else if (method_exists($resource, 'toArray')) {
+            } elseif (method_exists($resource, 'toArray')) {
                 $resourceData = $resource->toArray(request());
             }
         }
@@ -212,46 +211,44 @@ class ResourceLifecycleEvent implements ShouldBroadcastNow
         $resourceData = static::transformResourceChildrenToId($resourceData);
 
         $data = [
-            'id' => $this->eventId,
+            'id'          => $this->eventId,
             'api_version' => $this->apiVersion,
-            'event' => $this->broadcastAs(),
-            'created_at' => $this->sentAt,
-            'data' => $resourceData,
+            'event'       => $this->broadcastAs(),
+            'created_at'  => $this->sentAt,
+            'data'        => $resourceData,
         ];
 
         return $data;
     }
 
     /**
-     * Return the models json resource instance
+     * Return the models json resource instance.
      *
-     * @return  \Fleetbase\Model\Model
+     * @return \Fleetbase\Model\Model
      */
     public function getModelRecord()
     {
         $namespace = $this->modelClassNamespace;
 
-        return (new $namespace)->where('uuid', $this->modelUuid)->withoutGlobalScopes()->first();
+        return (new $namespace())->where('uuid', $this->modelUuid)->withoutGlobalScopes()->first();
     }
 
     /**
-     * Return the models json resource instance
+     * Return the models json resource instance.
      *
-     * @param  \Fleetbase\Model\Model $model
-     * @param  string|null $namespace
-     * @param  int|null $version
-     * @return  \Illuminate\Http\Resources\Json\JsonResource
+     * @param \Fleetbase\Model\Model $model
+     *
+     * @return \Illuminate\Http\Resources\Json\JsonResource
      */
-    public function getModelResource($model, ?string $namespace = null, ?int $version = null)
+    public function getModelResource($model, string $namespace = null, int $version = null)
     {
         return Resolve::httpResourceForModel($model, $namespace, $version);
     }
 
     /**
-     * Return the models json resource instance
+     * Return the models json resource instance.
      *
-     * @param array $data
-     * @return array 
+     * @return array
      */
     public static function transformResourceChildrenToId(array $data = [])
     {
@@ -262,7 +259,7 @@ class ResourceLifecycleEvent implements ShouldBroadcastNow
                     continue;
                 }
 
-                $id = Utils::or($value->resource, ['public_id', 'internal_id', 'uuid']);
+                $id         = Utils::or($value->resource, ['public_id', 'internal_id', 'uuid']);
                 $data[$key] = $id;
             }
 

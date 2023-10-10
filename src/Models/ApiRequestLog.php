@@ -3,14 +3,17 @@
 namespace Fleetbase\Models;
 
 use Fleetbase\Casts\Json;
+use Fleetbase\Traits\Filterable;
+use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\Searchable;
-use Fleetbase\Traits\HasApiModelBehavior;
-use Fleetbase\Traits\Filterable;
 
 class ApiRequestLog extends Model
 {
-    use HasUuid, HasApiModelBehavior, Searchable, Filterable;
+    use HasUuid;
+    use HasApiModelBehavior;
+    use Searchable;
+    use Filterable;
 
     /**
      * The database table used by the model.
@@ -20,7 +23,7 @@ class ApiRequestLog extends Model
     protected $table = 'api_request_logs';
 
     /**
-     * The type of public Id to generate
+     * The type of public Id to generate.
      *
      * @var string
      */
@@ -57,14 +60,14 @@ class ApiRequestLog extends Model
     ];
 
     /**
-     * These attributes that can be queried
+     * These attributes that can be queried.
      *
      * @var array
      */
     protected $searchableColumns = ['path', 'method', 'full_url', 'content_type', 'ip_address'];
 
     /**
-     * Attributes that is filterable on this model
+     * Attributes that is filterable on this model.
      *
      * @var array
      */
@@ -76,16 +79,16 @@ class ApiRequestLog extends Model
      * @var array
      */
     protected $casts = [
-        'query_params' => Json::class,
-        'request_headers' => Json::class,
-        'request_body' => Json::class,
+        'query_params'     => Json::class,
+        'request_headers'  => Json::class,
+        'request_body'     => Json::class,
         'response_headers' => Json::class,
-        'response_body' => Json::class,
-        'related' => Json::class,
+        'response_body'    => Json::class,
+        'related'          => Json::class,
     ];
 
     /**
-     * Dynamic attributes that are appended to object
+     * Dynamic attributes that are appended to object.
      *
      * @var array
      */
@@ -115,7 +118,7 @@ class ApiRequestLog extends Model
     }
 
     /**
-     * Get the api credential name or key
+     * Get the api credential name or key.
      *
      * @var string
      */
@@ -134,7 +137,7 @@ class ApiRequestLog extends Model
     }
 
     /**
-     * The request relation map
+     * The request relation map.
      */
     public function getRelatedResourcesAttribute()
     {

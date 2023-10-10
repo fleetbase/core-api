@@ -5,12 +5,12 @@ namespace Fleetbase\Http\Controllers\Internal\v1;
 use Fleetbase\Events\AccountCreated;
 use Fleetbase\Http\Controllers\Controller;
 use Fleetbase\Http\Requests\OnboardRequest;
-use Fleetbase\Models\User;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
+use Fleetbase\Models\User;
 use Fleetbase\Models\VerificationCode;
-use Illuminate\Support\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 
 class OnboardController extends Controller
 {
@@ -23,7 +23,7 @@ class OnboardController extends Controller
     {
         return response()->json(
             [
-                'should_onboard' => Company::doesntExist()
+                'should_onboard' => Company::doesntExist(),
             ]
         );
     }
@@ -31,7 +31,6 @@ class OnboardController extends Controller
     /**
      * Onboard a new account and send send to verify email.
      *
-     * @param \Fleetbase\Http\Requests\OnboardRequest $request
      * @return \Illuminate\Http\Response
      */
     public function createAccount(OnboardRequest $request)
@@ -41,10 +40,10 @@ class OnboardController extends Controller
 
         // create user account
         $user = User::create([
-            'name' => $request->input('name'),
-            'email' => $request->input('email'),
-            'phone' => $request->input('phone'),
-            'status' => 'active'
+            'name'   => $request->input('name'),
+            'email'  => $request->input('email'),
+            'phone'  => $request->input('phone'),
+            'status' => 'active',
         ]);
 
         // set the user type
@@ -62,9 +61,9 @@ class OnboardController extends Controller
 
         // create company user
         CompanyUser::create([
-            'user_uuid' => $user->uuid,
+            'user_uuid'    => $user->uuid,
             'company_uuid' => $company->uuid,
-            'status' => 'active'
+            'status'       => 'active',
         ]);
 
         // create verification code
@@ -87,22 +86,23 @@ class OnboardController extends Controller
         $token = $user->createToken($request->ip());
 
         return response()->json([
-            'status' => 'success',
-            'session' => $user->uuid,
-            'token' => $token->plainTextToken,
-            'skipVerification' => $user->id === 1
+            'status'           => 'success',
+            'session'          => $user->uuid,
+            'token'            => $token->plainTextToken,
+            'skipVerification' => $user->id === 1,
         ]);
     }
 
     /**
-     * Send/Resend verification email
-     * 
+     * Send/Resend verification email.
+     *
      * @param \\Illuminate\Http\Request $request
+     *
      * @return \Illuminate\Http\Response $response
      */
     public function sendVerificationEmail(Request $request)
     {
-        $user = $request->user() ?? User::where('uuid', session('user'))->first();
+        $user  = $request->user() ?? User::where('uuid', session('user'))->first();
         $email = $request->input('email');
 
         if ($user) {
@@ -117,19 +117,20 @@ class OnboardController extends Controller
         }
 
         return response()->json([
-            'status' => 'success'
+            'status' => 'success',
         ]);
     }
 
     /**
-     * Send/Resend verification SMS
-     * 
+     * Send/Resend verification SMS.
+     *
      * @param \\Illuminate\Http\Request $request
+     *
      * @return \Illuminate\Http\Response $response
      */
     public function sendVerificationSms(Request $request)
     {
-        $user = $request->user() ?? User::where('uuid', session('user'))->first();
+        $user  = $request->user() ?? User::where('uuid', session('user'))->first();
         $phone = $request->input('phone');
 
         if ($user) {
@@ -144,7 +145,7 @@ class OnboardController extends Controller
         }
 
         return response()->json([
-            'status' => 'success'
+            'status' => 'success',
         ]);
     }
 
@@ -152,13 +153,14 @@ class OnboardController extends Controller
      * Verfiy and validate an email address with code.
      *
      * @param \\Illuminate\Http\Request $request
+     *
      * @return \Illuminate\Http\Response $response
      */
     public function verifyEmail(Request $request)
     {
         // users uuid as session
         $session = $request->input('session') ?? session('user');
-        $code = $request->input('code');
+        $code    = $request->input('code');
 
         // make sure session is found
         if (!$session) {
@@ -168,16 +170,16 @@ class OnboardController extends Controller
         // get verification code for session
         $verifyCode = VerificationCode::where([
             'subject_uuid' => $session,
-            'for' => 'email_verification',
-            'code' => $code
+            'for'          => 'email_verification',
+            'code'         => $code,
         ])->first();
 
         // check if sms verification
         if (!$verifyCode) {
             $verifyCode = VerificationCode::where([
                 'subject_uuid' => $session,
-                'for' => 'phone_verification',
-                'code' => $code
+                'for'          => 'phone_verification',
+                'code'         => $code,
             ])->first();
         }
 
@@ -189,13 +191,13 @@ class OnboardController extends Controller
         // get user
         $user = $request->user() ?? User::where('uuid', $session)->first();
 
-        // get verify time 
+        // get verify time
         $verifiedAt = Carbon::now();
 
         // verify users email address or phone depending
         if ($verifyCode->for === 'email_verification') {
             $user->email_verified_at = $verifiedAt;
-        } else if ($verifyCode->for === 'phone_verification') {
+        } elseif ($verifyCode->for === 'phone_verification') {
             $user->phone_verified_at = $verifiedAt;
         }
 
@@ -203,8 +205,8 @@ class OnboardController extends Controller
         $user->save();
 
         return response()->json([
-            'status' => 'success',
-            'verified_at' => $verifiedAt
+            'status'      => 'success',
+            'verified_at' => $verifiedAt,
         ]);
     }
 }

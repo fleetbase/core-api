@@ -5,19 +5,17 @@ namespace Fleetbase\Support;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use ReflectionClass;
-use ReflectionException;
-use Exception;
 
 class Resolve
 {
-    public static function httpResourceForModel($model, ?string $namespace = null, ?int $version = 1)
+    public static function httpResourceForModel($model, string $namespace = null, ?int $version = 1)
     {
         if (is_string($model) && class_exists($model)) {
             $model = static::instance($model);
         }
 
         if (!$model instanceof Model) {
-            throw new Exception('Invalid model to resolve resource for!');
+            throw new \Exception('Invalid model to resolve resource for!');
         }
 
         $resourceNamespace = Find::httpResourceForModel($model, $namespace, $version);
@@ -25,14 +23,14 @@ class Resolve
         return new $resourceNamespace($model);
     }
 
-    public static function httpRequestForModel($model, ?string $namespace = null, ?int $version = 1)
+    public static function httpRequestForModel($model, string $namespace = null, ?int $version = 1)
     {
         if (is_string($model) && class_exists($model)) {
             $model = static::instance($model);
         }
 
         if (!$model instanceof Model) {
-            throw new Exception('Invalid model to resolve request for!');
+            throw new \Exception('Invalid model to resolve request for!');
         }
 
         $requestNamespace = Find::httpRequestForModel($model, $namespace, $version);
@@ -84,7 +82,6 @@ class Resolve
      * Creates a new instance from a ReflectionClass.
      *
      * @param string $class
-     * @return mixed
      */
     public static function instance($class, $args = [])
     {
@@ -95,8 +92,8 @@ class Resolve
         $instance = null;
 
         try {
-            $instance = (new ReflectionClass($class))->newInstance(...$args);
-        } catch (ReflectionException $e) {
+            $instance = (new \ReflectionClass($class))->newInstance(...$args);
+        } catch (\ReflectionException $e) {
             $instance = app($class);
         }
 

@@ -23,11 +23,11 @@ class Arr implements Expansion
      * each element of the array using `array_map`, and returns `true` if all elements pass the truth test,
      * and `false` otherwise.
      *
-     * @return \Closure The higher-order function.
+     * @return \Closure the higher-order function
      */
     public function every()
     {
-        /**
+        /*
          * Returns a higher-order function that checks if every element of an array passes a given truth test.
          *
          * The returned function takes an array and a callback function as arguments. It applies the callback to
@@ -37,7 +37,7 @@ class Arr implements Expansion
          * @return array
          */
         return function ($array, $callback) {
-            return  !in_array(false, array_map($callback, $array));
+            return !in_array(false, array_map($callback, $array));
         };
     }
 
@@ -48,7 +48,7 @@ class Arr implements Expansion
      */
     public function insertAfterKey()
     {
-        /**
+        /*
          * Inserts key value pairs into array after a specific key.
          *
          * @return array
@@ -62,7 +62,7 @@ class Arr implements Expansion
 
             $position++;
             $previous = array_slice($array, 0, $position, true);
-            $next = array_slice($array, $position, null, true);
+            $next     = array_slice($array, $position, null, true);
 
             return $previous + $item + $next;
         };
@@ -75,7 +75,7 @@ class Arr implements Expansion
      */
     public function search()
     {
-        /**
+        /*
          * Returns the first assosciative array key when the first value is matched, fallsback to `array_search` if string provided.
          *
          * @param array $array
@@ -100,15 +100,12 @@ class Arr implements Expansion
     /**
      * Map an array with keys.
      *
-     * This macro extends Laravel's Arr class by allowing you to map over an array 
+     * This macro extends Laravel's Arr class by allowing you to map over an array
      * while also passing the key of each element to the given callable.
      *
      * The resulting array will preserve the original keys of the input array.
      *
-     * @param array $array The array to map over. Defaults to an empty array.
-     * @param callable $callable The function to apply to each element in the array.
-     *                           Receives two arguments: the value and its key.
-     * @return \Closure The closure that performs the mapping operation.
+     * @return \Closure the closure that performs the mapping operation
      */
     public function map()
     {

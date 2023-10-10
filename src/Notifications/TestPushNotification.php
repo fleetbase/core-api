@@ -5,10 +5,10 @@ namespace Fleetbase\Notifications;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Carbon;
-use NotificationChannels\Fcm\FcmChannel;
-use NotificationChannels\Fcm\FcmMessage;
 use NotificationChannels\Apn\ApnChannel;
 use NotificationChannels\Apn\ApnMessage;
+use NotificationChannels\Fcm\FcmChannel;
+use NotificationChannels\Fcm\FcmMessage;
 use NotificationChannels\Fcm\Resources\AndroidConfig;
 use NotificationChannels\Fcm\Resources\AndroidFcmOptions;
 use NotificationChannels\Fcm\Resources\AndroidNotification;
@@ -16,11 +16,9 @@ use NotificationChannels\Fcm\Resources\ApnsConfig;
 use NotificationChannels\Fcm\Resources\ApnsFcmOptions;
 
 /**
- * Class TestPushNotification
+ * Class TestPushNotification.
  *
  * A test push notification class for sending notifications via FCM and APN channels.
- *
- * @package Fleetbase\Notifications
  */
 class TestPushNotification extends Notification
 {
@@ -28,40 +26,34 @@ class TestPushNotification extends Notification
 
     /**
      * The title of the notification.
-     *
-     * @var string
      */
     public string $title;
 
     /**
      * The message body of the notification.
-     *
-     * @var string
      */
     public string $message;
 
     /**
      * Additional data to be sent with the notification.
-     *
-     * @var array
      */
     public array $data = [];
 
     /**
      * TestPushNotification constructor.
      *
-     * @param string $title   The title of the notification.
-     * @param string $message The message body of the notification.
+     * @param string $title   the title of the notification
+     * @param string $message the message body of the notification
      */
     public function __construct(string $title, string $message)
     {
-        $this->title = $title;
+        $this->title   = $title;
         $this->message = $message;
-        $this->data = [
-            'id' => uniqid(),
+        $this->data    = [
+            'id'      => uniqid(),
             'message' => 'Test Push Notification',
-            'type' => 'test',
-            'date' => Carbon::now()->toDateTimeString()
+            'type'    => 'test',
+            'date'    => Carbon::now()->toDateTimeString(),
         ];
     }
 
@@ -78,7 +70,6 @@ class TestPushNotification extends Notification
     /**
      * Get the firebase cloud message representation of the notification.
      *
-     * @param  mixed  $notifiable
      * @return array
      */
     public function toFcm($notifiable)
@@ -105,7 +96,6 @@ class TestPushNotification extends Notification
     /**
      * Get the apns message representation of the notification.
      *
-     * @param  mixed  $notifiable
      * @return array
      */
     public function toApn($notifiable)

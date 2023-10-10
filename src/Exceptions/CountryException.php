@@ -2,8 +2,6 @@
 
 namespace Fleetbase\Exceptions;
 
-use Exception;
-
-class CountryException extends Exception
+class CountryException extends \Exception
 {
 }

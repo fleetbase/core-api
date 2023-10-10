@@ -16,12 +16,9 @@ class LoginRequest extends FleetbaseRequest
         return true;
     }
 
-    /**
-     * {@inheritdoc}
-     */
     protected function failedValidation(Validator $validator)
     {
-        $errors = $validator->errors();
+        $errors   = $validator->errors();
         $response = [
             'errors' => [$errors->first()],
         ];
@@ -43,7 +40,7 @@ class LoginRequest extends FleetbaseRequest
     public function rules()
     {
         return [
-            'email' => 'required|email|exists:users,email',
+            'email'    => 'required|email|exists:users,email',
             'password' => 'required',
         ];
     }
@@ -56,9 +53,9 @@ class LoginRequest extends FleetbaseRequest
     public function messages()
     {
         return [
-            'email.required' => 'A email is required',
-            'email.exists' => 'No user found by this email',
-            'email.email' => 'Email used is invalid',
+            'email.required'    => 'A email is required',
+            'email.exists'      => 'No user found by this email',
+            'email.email'       => 'Email used is invalid',
             'password.required' => 'A password is required',
         ];
     }

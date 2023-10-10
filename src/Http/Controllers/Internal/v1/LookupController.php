@@ -8,26 +8,24 @@ use Fleetbase\Types\Country;
 use Fleetbase\Types\Currency;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
-use Exception;
 
 class LookupController extends Controller
 {
     /**
      * Query and search font awesome icons.
      *
-     * @param \Illuminate\Http\Request $request
      * @return \Illuminate\Http\Response
      */
     public function fontAwesomeIcons(Request $request)
     {
-        $query = $request->input('query');
-        $id = $request->input('id');
+        $query  = $request->input('query');
+        $id     = $request->input('id');
         $prefix = $request->input('prefix');
-        $limit = $request->input('limit');
+        $limit  = $request->input('limit');
 
         $content = file_get_contents('https://raw.githubusercontent.com/FortAwesome/Font-Awesome/master/metadata/icons.json');
-        $json = json_decode($content);
-        $icons = [];
+        $json    = json_decode($content);
+        $icons   = [];
 
         $count = 0;
 
@@ -65,8 +63,8 @@ class LookupController extends Controller
 
                 $icons[] = [
                     'prefix' => $iconPrefix,
-                    'label' => $value->label,
-                    'id' => $icon
+                    'label'  => $value->label,
+                    'id'     => $icon,
                 ];
             }
 
@@ -79,14 +77,13 @@ class LookupController extends Controller
     /**
      * Request IP lookup on user client.
      *
-     * @param \Illuminate\Http\Request $request
      * @return \Illuminate\Http\Response
      */
     public function whois(Request $request)
     {
         try {
             $info = Http::lookupIp($request);
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             return response()->error($e->getMessage());
         }
 
@@ -96,7 +93,6 @@ class LookupController extends Controller
     /**
      * Get all countries with search enabled.
      *
-     * @param \Illuminate\Http\Request $request
      * @return \Illuminate\Http\Response
      */
     public function currencies(Request $request)
@@ -119,13 +115,12 @@ class LookupController extends Controller
     /**
      * Get all countries with search enabled.
      *
-     * @param \Illuminate\Http\Request $request
      * @return \Illuminate\Http\Response
      */
     public function countries(Request $request)
     {
-        $query = strtolower($request->input('query', null));
-        $simple = $request->boolean('simple');
+        $query   = strtolower($request->input('query', null));
+        $simple  = $request->boolean('simple');
         $columns = $request->array('columns');
 
         $countries = Country::search($query);
@@ -153,11 +148,12 @@ class LookupController extends Controller
      * Lookup a country by it's country or currency code.
      *
      * @param string $code
+     *
      * @return \Illuminate\Http\Response
      */
     public function country($code, Request $request)
     {
-        $simple = $request->boolean('simple', true);
+        $simple  = $request->boolean('simple', true);
         $country = Country::search($code)->first();
 
         if ($simple && $country) {
@@ -171,29 +167,30 @@ class LookupController extends Controller
      * Pull the Fleetbase.io blog RSS feed.
      *
      * @param \Illuminate\Http\Request
+     *
      * @return \Illuminate\Http\Response
      */
     public function fleetbaseBlog(Request $request)
     {
-        $limit = $request->integer('limit', 6);
+        $limit  = $request->integer('limit', 6);
         $rssUrl = 'https://www.fleetbase.io/post/rss.xml';
-        $rss = simplexml_load_file($rssUrl);
-        $posts = [];
+        $rss    = simplexml_load_file($rssUrl);
+        $posts  = [];
 
         foreach ($rss->channel->item as $item) {
             $posts[] = [
-                'title' => (string) $item->title,
-                'link' => (string) $item->link,
-                'guid' => (string) $item->guid,
-                'description' => (string) $item->description,
-                'pubDate' => (string) $item->pubDate,
-                'media_content' => (string) data_get($item, 'media:content.url'),
-                'media_thumbnail' => (string) data_get($item, 'media:thumbnail.url')
+                'title'           => (string) $item->title,
+                'link'            => (string) $item->link,
+                'guid'            => (string) $item->guid,
+                'description'     => (string) $item->description,
+                'pubDate'         => (string) $item->pubDate,
+                'media_content'   => (string) data_get($item, 'media:content.url'),
+                'media_thumbnail' => (string) data_get($item, 'media:thumbnail.url'),
             ];
         }
 
         $posts = array_slice($posts, 0, $limit);
-        
+
         return response()->json($posts);
     }
 }

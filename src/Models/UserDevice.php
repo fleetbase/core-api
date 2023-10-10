@@ -2,16 +2,18 @@
 
 namespace Fleetbase\Models;
 
-use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasPublicId;
+use Fleetbase\Traits\HasUuid;
 
 class UserDevice extends Model
 {
-    use HasUuid, HasPublicId, HasApiModelBehavior;
+    use HasUuid;
+    use HasPublicId;
+    use HasApiModelBehavior;
 
     /**
-     * The type of public Id to generate
+     * The type of public Id to generate.
      *
      * @var string
      */
@@ -32,7 +34,7 @@ class UserDevice extends Model
     protected $fillable = ['user_uuid', 'platform', 'token', 'status'];
 
     /**
-     * Dynamic attributes that are appended to object
+     * Dynamic attributes that are appended to object.
      *
      * @var array
      */

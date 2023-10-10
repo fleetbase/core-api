@@ -19,7 +19,7 @@ class InstallerController extends Controller
     {
         $shouldInstall = false;
         $shouldOnboard = false;
-        $defaultTheme = Setting::lookup('branding.default_theme', 'dark');
+        $defaultTheme  = Setting::lookup('branding.default_theme', 'dark');
 
         try {
             DB::connection()->getPdo();
@@ -42,7 +42,7 @@ class InstallerController extends Controller
             [
                 'shouldInstall' => $shouldInstall,
                 'shouldOnboard' => $shouldOnboard,
-                'defaultTheme' => $defaultTheme
+                'defaultTheme'  => $defaultTheme,
             ]
         );
     }
@@ -56,7 +56,7 @@ class InstallerController extends Controller
 
         return response()->json(
             [
-                'status' => 'success'
+                'status' => 'success',
             ]
         );
     }
@@ -71,7 +71,7 @@ class InstallerController extends Controller
 
         return response()->json(
             [
-                'status' => 'success'
+                'status' => 'success',
             ]
         );
     }
@@ -80,12 +80,12 @@ class InstallerController extends Controller
     {
         ini_set('memory_limit', '-1');
         ini_set('max_execution_time', 0);
-        
+
         Artisan::call('fleetbase:seed');
 
         return response()->json(
             [
-                'status' => 'success'
+                'status' => 'success',
             ]
         );
     }

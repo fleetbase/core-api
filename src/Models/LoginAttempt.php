@@ -7,7 +7,8 @@ use Fleetbase\Traits\Searchable;
 
 class LoginAttempt extends Model
 {
-    use HasUuid, Searchable;
+    use HasUuid;
+    use Searchable;
 
     /**
      * The database table used by the model.
@@ -17,7 +18,7 @@ class LoginAttempt extends Model
     protected $table = 'login_attempts';
 
     /**
-     * These attributes that can be searched
+     * These attributes that can be searched.
      *
      * @var array
      */
@@ -38,7 +39,7 @@ class LoginAttempt extends Model
     protected $fillable = ['session_uuid', 'identity', 'password'];
 
     /**
-     * Dynamic attributes that are appended to object
+     * Dynamic attributes that are appended to object.
      *
      * @var array
      */
@@ -52,7 +53,7 @@ class LoginAttempt extends Model
     protected $hidden = ['password', 'identity', 'session_uuid'];
 
     /**
-     * The session during the login attempt if any
+     * The session during the login attempt if any.
      *
      * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
      */
@@ -62,7 +63,7 @@ class LoginAttempt extends Model
     }
 
     /**
-     * Semantic alias of create
+     * Semantic alias of create.
      */
     public static function track($attributes = [])
     {

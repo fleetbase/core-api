@@ -2,27 +2,26 @@
 
 namespace Fleetbase\Http\Resources;
 
-use Fleetbase\Http\Resources\FleetbaseResource;
-
 class Role extends FleetbaseResource
 {
     /**
      * Transform the resource into an array.
      *
-     * @param  \Illuminate\Http\Request  $request
+     * @param \Illuminate\Http\Request $request
+     *
      * @return array|\Illuminate\Contracts\Support\Arrayable|\JsonSerializable
      */
     public function toArray($request)
     {
         return [
-            'id' => $this->id,
+            'id'           => $this->id,
             'company_uuid' => $this->company_uuid,
-            'name' => $this->name,
-            'guard_name' => $this->guard_name,
-            'description' => $this->description,
-            'updated_at' => $this->updated_at,
-            'created_at' => $this->created_at,
-            'permissions' => $this->serializePermissions($this->permissions),
+            'name'         => $this->name,
+            'guard_name'   => $this->guard_name,
+            'description'  => $this->description,
+            'updated_at'   => $this->updated_at,
+            'created_at'   => $this->created_at,
+            'permissions'  => $this->serializePermissions($this->permissions),
         ];
     }
 
@@ -30,19 +29,18 @@ class Role extends FleetbaseResource
      * Map permissins into the correct format with regard to pivot.
      *
      * @param \Illuminate\Support\Collection $permissions
-     * @return \Illuminate\Support\Collection
      */
     public function serializePermissions($permissions): \Illuminate\Support\Collection
     {
         return $permissions->map(
             function ($permission) {
                 return [
-                    'id' => $permission->pivot->permission_id,
-                    'name' => $permission->name,
-                    'guard_name' => $permission->guard_name,
+                    'id'          => $permission->pivot->permission_id,
+                    'name'        => $permission->name,
+                    'guard_name'  => $permission->guard_name,
                     'description' => $permission->description,
-                    'updated_at' => $permission->updated_at,
-                    'created_at' => $permission->created_at,
+                    'updated_at'  => $permission->updated_at,
+                    'created_at'  => $permission->created_at,
                 ];
             }
         );

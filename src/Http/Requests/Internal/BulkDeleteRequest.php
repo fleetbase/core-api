@@ -37,7 +37,7 @@ class BulkDeleteRequest extends FleetbaseRequest
     {
         return [
             'ids.required' => 'Please provide a resource ID.',
-            'ids.array' => 'Please provide multiple resource ID\'s.',
+            'ids.array'    => 'Please provide multiple resource ID\'s.',
         ];
     }
 }

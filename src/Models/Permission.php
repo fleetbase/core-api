@@ -4,13 +4,16 @@ namespace Fleetbase\Models;
 
 use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\HasApiModelBehavior;
-use Fleetbase\Traits\Searchable;
 use Fleetbase\Traits\HasUuid;
+use Fleetbase\Traits\Searchable;
 use Spatie\Permission\Models\Permission as BasePermission;
 
 class Permission extends BasePermission
 {
-    use HasUuid, HasApiModelBehavior, Searchable, Filterable;
+    use HasUuid;
+    use HasApiModelBehavior;
+    use Searchable;
+    use Filterable;
 
     /**
      * The database connection to use.
@@ -43,12 +46,12 @@ class Permission extends BasePermission
     /**
      * Indicates if the IDs are auto-incrementing.
      *
-     * @var boolean
+     * @var bool
      */
     public $incrementing = false;
 
     /**
-     * The attributes that can be queried
+     * The attributes that can be queried.
      *
      * @var array
      */

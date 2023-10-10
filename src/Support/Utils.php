@@ -2,49 +2,42 @@
 
 namespace Fleetbase\Support;
 
-use Illuminate\Support\Str;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Redis;
+use Fleetbase\Models\Company;
+use Fleetbase\Models\File;
+use Fleetbase\Models\Model;
 use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Storage;
-use Fleetbase\Models\Model;
-use Fleetbase\Models\File;
-use Fleetbase\Models\Company;
+use Illuminate\Support\Str;
 
 class Utils
 {
     /**
-     * Generates a URL to this API
-     * 
-     * @param string $path
-     * @param null|array $queryParams
-     * @param string $subdomain
-     * @return string
+     * Generates a URL to this API.
      */
     public static function apiUrl(string $path, ?array $queryParams = []): string
     {
         $isLocalDevelopment = app()->environment(['local', 'development']);
+
         return url($path, $queryParams, !$isLocalDevelopment);
     }
 
     /**
-     * Generate a url to the console
+     * Generate a url to the console.
      *
-     * @param string $path
-     * @param null|array $queryParams
      * @param string $subdomain
-     * @return string
      */
     public static function consoleUrl(string $path, ?array $queryParams = [], $subdomain = null): string
     {
         // prepare segment variables
         $isLocalDevelopment = app()->environment(['local', 'development']);
-        $host = config('fleetbase.console.host');
-        $subdomain = config('fleetbase.console.subdomain', $subdomain);
+        $host               = config('fleetbase.console.host');
+        $subdomain          = config('fleetbase.console.subdomain', $subdomain);
 
         // prepare url segments array
         $segments = [];
@@ -79,9 +72,7 @@ class Utils
     /**
      * Return asset URL from s3.
      *
-     * @param string $string
-     * @param string $pattern
-     * @return boolean
+     * @return bool
      */
     public static function fromS3(string $path, $bucket = null, $region = null): string
     {
@@ -98,9 +89,7 @@ class Utils
     /**
      * Return asset URL from s3.
      *
-     * @param string $string
-     * @param string $pattern
-     * @return boolean
+     * @return bool
      */
     public static function assetFromS3(string $path, $region = null): string
     {
@@ -110,9 +99,7 @@ class Utils
     /**
      * Return asset URL from Fleetbase S3 asset bucket.
      *
-     * @param string $string
-     * @param string $pattern
-     * @return boolean
+     * @return bool
      */
     public static function assetFromFleetbase(string $path): string
     {
@@ -122,9 +109,7 @@ class Utils
     /**
      * Checks if string contains a match for given regex pattern.
      *
-     * @param string $string
      * @param string $pattern
-     * @return boolean
      */
     public static function stringMatches(string $string, $pattern): bool
     {
@@ -137,9 +122,7 @@ class Utils
     /**
      * Extracts the matched pattern from the string.
      *
-     * @param string $string
      * @param string $pattern
-     * @return string|null
      */
     public static function stringExtract(string $string, $pattern): ?string
     {
@@ -157,9 +140,6 @@ class Utils
      *
      * keyHeaders($headers) // ['Content-Type' => 'application/json']
      * ```
-     *
-     * @param array $headers
-     * @return array
      */
     public static function keyHeaders(array $headers): array
     {
@@ -182,9 +162,6 @@ class Utils
      *
      * unkeyHeaders($headers) // ['Content-Type: application/json']
      * ```
-     *
-     * @param array $headers
-     * @return array
      */
     public static function unkeyHeaders(array $headers): array
     {
@@ -202,12 +179,11 @@ class Utils
         return $unkeyedHeaders;
     }
 
-
-
     /**
      * Creates an object from an array.
      *
      * @param array $attributes
+     *
      * @return stdObject
      */
     public static function createObject($attributes = [])
@@ -219,11 +195,13 @@ class Utils
      * Converts a time/date string to a mysql datetime.
      *
      * @param string $string
+     *
      * @return string
      */
     public static function toMySqlDatetime($string)
     {
         $string = preg_replace('/\([a-z0-9 ]+\)/i', '', $string);
+
         return date('Y-m-d H:i:s', strtotime($string));
     }
 
@@ -231,6 +209,7 @@ class Utils
      * Converts a time/date string to a mysql datetime.
      *
      * @param string $string
+     *
      * @return string
      */
     public static function toDatetime($string)
@@ -239,10 +218,9 @@ class Utils
     }
 
     /**
-     * Check if the value is a valid date
+     * Check if the value is a valid date.
      *
-     * @param mixed $value
-     * @return boolean
+     * @return bool
      */
     public static function isDate($value)
     {
@@ -252,6 +230,7 @@ class Utils
 
         try {
             new \DateTime($value);
+
             return true;
         } catch (\Exception $e) {
             return false;
@@ -259,9 +238,10 @@ class Utils
     }
 
     /**
-     * Converts a QueryBuilder to a string
+     * Converts a QueryBuilder to a string.
      *
      * @param QueryBuilder $query
+     *
      * @return string
      */
     public static function queryBuilderToString($query)
@@ -270,9 +250,8 @@ class Utils
     }
 
     /**
-     * Dump and die's a formatted SQL string
+     * Dump and die's a formatted SQL string.
      *
-     * @param string $string
      * @return string
      */
     public static function sqlDump($sql, $die = true, $withoutBinding = false)
@@ -287,24 +266,25 @@ class Utils
         if ($die) {
             exit($sql);
         } else {
-            print($sql);
+            echo $sql;
         }
     }
 
     /**
      * Replaces any parameter placeholders in a query with the value of that
-     * parameter. Useful for debugging. Assumes anonymous parameters from 
-     * $params are are in the same order as specified in $query
+     * parameter. Useful for debugging. Assumes anonymous parameters from
+     * $params are are in the same order as specified in $query.
      *
-     * @param string $query The sql query with parameter placeholders
-     * @param array $params The array of substitution parameters
+     * @param string $query  The sql query with parameter placeholders
+     * @param array  $params The array of substitution parameters
+     *
      * @return string The interpolated query
      */
     public static function interpolateQuery($query, $params)
     {
-        $keys = array();
+        $keys = [];
 
-        # build a regular expression for each parameter
+        // build a regular expression for each parameter
         foreach ($params as $key => $value) {
             if (is_string($key)) {
                 $keys[] = '/:' . $key . '/';
@@ -315,16 +295,15 @@ class Utils
 
         $query = preg_replace($keys, $params, $query, 1, $count);
 
-        #trigger_error('replaced '.$count.' keys');
+        // trigger_error('replaced '.$count.' keys');
 
         return $query;
     }
 
     /**
-     * Determines if variable is not empty
+     * Determines if variable is not empty.
      *
-     * @param mixed $var
-     * @return boolean
+     * @return bool
      */
     public static function isset($var, $key = null)
     {
@@ -336,10 +315,9 @@ class Utils
     }
 
     /**
-     * Determines if variable is not empty
+     * Determines if variable is not empty.
      *
-     * @param mixed $var
-     * @return boolean
+     * @return bool
      */
     public static function notEmpty($var)
     {
@@ -347,10 +325,9 @@ class Utils
     }
 
     /**
-     * Determines if variable is empty
+     * Determines if variable is empty.
      *
-     * @param mixed $var
-     * @return boolean
+     * @return bool
      */
     public static function isEmpty($var)
     {
@@ -359,10 +336,6 @@ class Utils
 
     /**
      * Casts value to boolean.
-     *
-     * @param mixed $val
-     * @param boolean $return_null
-     * @return boolean
      */
     public static function castBoolean($val): bool
     {
@@ -401,9 +374,9 @@ class Utils
     /**
      * Checks if a value is true.
      *
-     * @param mixed $val
-     * @param boolean $return_null
-     * @return boolean
+     * @param bool $return_null
+     *
+     * @return bool
      */
     public static function isTrue($val, $return_null = false)
     {
@@ -415,9 +388,9 @@ class Utils
     /**
      * Checks if a value is false.
      *
-     * @param mixed $val
-     * @param boolean $return_null
-     * @return boolean
+     * @param bool $return_null
+     *
+     * @return bool
      */
     public static function isFalse($val, $return_null = false)
     {
@@ -428,7 +401,8 @@ class Utils
      * Checks if a value is valid json.
      *
      * @param string $string
-     * @return boolean
+     *
+     * @return bool
      */
     public static function isJson($string)
     {
@@ -437,13 +411,15 @@ class Utils
         }
 
         json_decode($string);
+
         return json_last_error() == JSON_ERROR_NONE;
     }
 
     /**
      * Parse a SQL error exception to a string.
      *
-     * @param  string $error
+     * @param string $error
+     *
      * @return string
      */
     public static function sqlExceptionString($error)
@@ -466,7 +442,6 @@ class Utils
      * without its namespace.
      *
      * @param object|string $class
-     * @return string
      */
     public static function classBasename($class): ?string
     {
@@ -479,17 +454,13 @@ class Utils
         try {
             $className = (new \ReflectionClass($class))->getShortName();
         } catch (\ReflectionException $e) {
-            //
         }
 
         return $className;
     }
 
     /**
-     * Pluralizes a string
-     *
-     * @param string $text
-     * @return string
+     * Pluralizes a string.
      */
     public static function pluralize(?string $text): string
     {
@@ -503,10 +474,7 @@ class Utils
     }
 
     /**
-     * Singularizes a string
-     *
-     * @param string $text
-     * @return string
+     * Singularizes a string.
      */
     public static function singularize(?string $text): string
     {
@@ -520,10 +488,9 @@ class Utils
     }
 
     /**
-     * Tableize a string
+     * Tableize a string.
      *
      * @param string $text
-     * @return string
      */
     public static function tableize($text): string
     {
@@ -533,9 +500,10 @@ class Utils
     }
 
     /**
-     * Alias for strtolower
+     * Alias for strtolower.
      *
      * @param string $str
+     *
      * @return string
      */
     public static function lowercase($str)
@@ -544,17 +512,14 @@ class Utils
     }
 
     /**
-     * Humanize a string
-     *
-     * @param string $str
-     * @return string
+     * Humanize a string.
      */
     public static function humanize(string $string): string
     {
         $uppercase = ['api', 'vat', 'id', 'uuid', 'sku', 'ean', 'upc', 'erp', 'tms', 'wms', 'ltl', 'ftl', 'lcl', 'fcl', 'rfid', 'jot', 'roi', 'eta', 'pod', 'asn', 'oem', 'ddp', 'fob'];
-        $string = str_replace('_', ' ', $string);
-        $string = str_replace('-', ' ', $string);
-        $string = ucwords($string);
+        $string    = str_replace('_', ' ', $string);
+        $string    = str_replace('-', ' ', $string);
+        $string    = ucwords($string);
 
         $string = implode(
             ' ',
@@ -574,14 +539,11 @@ class Utils
     }
 
     /**
-     * "Smart" humanize a string by retaining common abbreviation cases
-     *
-     * @param string $str
-     * @return string
+     * "Smart" humanize a string by retaining common abbreviation cases.
      */
     public static function smartHumanize(?string $string): string
     {
-        $search = ['api', 'vat', 'id', 'sku'];
+        $search  = ['api', 'vat', 'id', 'sku'];
         $replace = array_map(function ($word) {
             return strtoupper($word);
         }, $search);
@@ -593,7 +555,7 @@ class Utils
     /**
      * Returns the uuid for a table with where hook.
      *
-     * @param string|array $table
+     * @param string|array   $table
      * @param array|callable $where
      *
      * @return string
@@ -608,6 +570,7 @@ class Utils
                     return ['uuid' => $uuid, 'table' => static::pluralize($t)];
                 }
             }
+
             return;
         }
 
@@ -619,10 +582,10 @@ class Utils
     }
 
     /**
-     * Returns the model for the specific where clause, and can check accross multiple tables
+     * Returns the model for the specific where clause, and can check accross multiple tables.
      *
      * @param string|array $table
-     * @param array $where
+     * @param array        $where
      *
      * @return \Fleetbase\Models\Model
      */
@@ -640,6 +603,7 @@ class Utils
                 }
             }
         }
+
         return DB::table($table)
             ->select(['*'])
             ->where($where)
@@ -647,9 +611,10 @@ class Utils
     }
 
     /**
-     * Generate a random number with specified length
+     * Generate a random number with specified length.
      *
      * @param int length
+     *
      * @return int
      */
     public static function randomNumber($length = 4)
@@ -664,9 +629,10 @@ class Utils
     }
 
     /**
-     * Converts the param to an integer with numbers only
+     * Converts the param to an integer with numbers only.
      *
      * @param string|mixed $string
+     *
      * @return int
      */
     public static function numbersOnly($string)
@@ -675,10 +641,11 @@ class Utils
     }
 
     /**
-     * Removes all special charavters from a string, unless excepted characters are supplied
+     * Removes all special charavters from a string, unless excepted characters are supplied.
      *
      * @param string|mixed $string
-     * @param array $except
+     * @param array        $except
+     *
      * @return string
      */
     public static function removeSpecialCharacters($string, $except = [])
@@ -699,26 +666,27 @@ class Utils
     /**
      * Format number to a particular currency.
      *
-     * @param float $amount amount to format
+     * @param float  $amount   amount to format
      * @param string $currency the currency to format into
-     * @param boolean $cents whether if amount is in cents, this will auto divide by 100
+     * @param bool   $cents    whether if amount is in cents, this will auto divide by 100
+     *
      * @return string
      */
     public static function moneyFormat($amount, $currency = 'USD', $cents = true)
     {
         $amount = $cents === true ? static::numbersOnly($amount) / 100 : $amount;
-        $money = new \Cknow\Money\Money($amount, $currency);
+        $money  = new \Cknow\Money\Money($amount, $currency);
 
         return $money->format();
     }
 
     /**
-     * Calculates the percentage of a integer
+     * Calculates the percentage of a integer.
      *
-     * @param integer|float $percentage
-     * @param integer $number
+     * @param int|float $percentage
+     * @param int       $number
      *
-     * @return integer
+     * @return int
      */
     public static function calculatePercentage($percentage, $number)
     {
@@ -728,10 +696,12 @@ class Utils
     /**
      * Get the fully qualified class name for the given table, including the namespace.
      *
-     * @param string|object $table The table name or an object instance to derive the class name from.
-     * @param string|array $namespaceSegments A string representing the namespace or an array of segments to be appended to the model class name.
-     * @return string The fully qualified class name, including the namespace.
-     * @throws InvalidArgumentException If the provided $namespaceSegments is not a string or an array.
+     * @param string|object $table             the table name or an object instance to derive the class name from
+     * @param string|array  $namespaceSegments a string representing the namespace or an array of segments to be appended to the model class name
+     *
+     * @return string the fully qualified class name, including the namespace
+     *
+     * @throws InvalidArgumentException if the provided $namespaceSegments is not a string or an array
      */
     public static function getModelClassName($table, $namespaceSegments = '\\Fleetbase\\'): string
     {
@@ -748,7 +718,7 @@ class Utils
         // Check if the input is a string (namespace) or an array (segments)
         if (is_string($namespaceSegments)) {
             $namespace = rtrim($namespaceSegments, '\\');
-            $segments = [$namespace, 'Models'];
+            $segments  = [$namespace, 'Models'];
         } elseif (is_array($namespaceSegments)) {
             $segments = $namespaceSegments;
         } else {
@@ -764,14 +734,13 @@ class Utils
 
     /**
      * Converts a model name or table name into a mutation type for eloquent relationships.
-     * 
+     *
      * storefront:store -> Fleetbase\Storefront\Models\Store
      * fleet-ops:order -> Fleetbase\FleetOps\Models\Order
      * user -> Fleetbase\Models\User
      * Fleetbase\Models\Order -> Fleetbase\Models\Order
-     * 
+     *
      * @param string|object type
-     * @return string
      */
     public static function getMutationType($type): string
     {
@@ -785,8 +754,8 @@ class Utils
 
         if (Str::contains($type, ':')) {
             $namespace = explode(':', $type);
-            $package = $namespace[0];
-            $type = $namespace[1];
+            $package   = $namespace[0];
+            $type      = $namespace[1];
             $namespace = 'Fleetbase\\' . Str::studly($package);
 
             return Utils::getModelClassName($type, $namespace);
@@ -796,11 +765,12 @@ class Utils
     }
 
     /**
-     * Retrieves a model class name ans turns it to a type
-     * 
+     * Retrieves a model class name ans turns it to a type.
+     *
      * ex: UserDevice -> user-device
      *
      * @param int length
+     *
      * @return int
      */
     public static function getTypeFromClassName($className)
@@ -812,11 +782,12 @@ class Utils
     }
 
     /**
-     * Retrieves a model class name ans turns it to a type
-     * 
+     * Retrieves a model class name ans turns it to a type.
+     *
      * ex: UserDevice -> user device
      *
      * @param int length
+     *
      * @return int
      */
     public static function humanizeClassName($className)
@@ -827,13 +798,11 @@ class Utils
     }
 
     /**
-     * Retrieve the first value available from the targets
+     * Retrieve the first value available from the targets.
      *
      * @param mixed target
      * @param string key
      * @param mixed default
-     *
-     * @return mixed
      */
     public static function firstValue($target, $keys = [], $default = null)
     {
@@ -853,13 +822,11 @@ class Utils
     }
 
     /**
-     * Alias for data_get
+     * Alias for data_get.
      *
      * @param mixed target
      * @param string key
      * @param mixed default
-     *
-     * @return mixed
      */
     public static function get($target, $key, $default = null)
     {
@@ -872,8 +839,6 @@ class Utils
      * @param mixed target
      * @param string key
      * @param mixed default
-     *
-     * @return mixed
      */
     public static function or($target, $keys = [], $defaultValue = null)
     {
@@ -887,13 +852,11 @@ class Utils
     }
 
     /**
-     * Alias for data_set
+     * Alias for data_set.
      *
      * @param mixed target
      * @param string key
-     * @param boolean overwrite
-     *
-     * @return mixed
+     * @param bool overwrite
      */
     public static function set($target, $key, $value, $overwrite = true)
     {
@@ -901,13 +864,11 @@ class Utils
     }
 
     /**
-     * Alias for data_set
+     * Alias for data_set.
      *
      * @param mixed target
      * @param string key
-     * @param boolean overwrite
-     *
-     * @return mixed
+     * @param bool overwrite
      */
     public static function setProperties($target, $properties, $overwrite = true)
     {
@@ -924,8 +885,6 @@ class Utils
      * @param mixed target
      * @param string key
      * @param mixed default
-     *
-     * @return mixed
      */
     public static function exists($target, $key)
     {
@@ -938,8 +897,6 @@ class Utils
      * @param mixed target
      * @param string key
      * @param mixed default
-     *
-     * @return mixed
      */
     public static function notSet($target, $key)
     {
@@ -947,11 +904,11 @@ class Utils
     }
 
     /**
-     * Validate string if is valid fleetbase public_id
+     * Validate string if is valid fleetbase public_id.
      *
      * @param string $string
      *
-     * @return boolean
+     * @return bool
      */
     public static function isPublicId($string)
     {
@@ -959,13 +916,11 @@ class Utils
     }
 
     /**
-     * Checks if target is iterable and gets the count
+     * Checks if target is iterable and gets the count.
      *
      * @param mixed target
      * @param string key
      * @param mixed default
-     *
-     * @return mixed
      */
     public static function count($target, $key)
     {
@@ -979,13 +934,11 @@ class Utils
     }
 
     /**
-     * Check if target is not scalar
+     * Check if target is not scalar.
      *
      * @param mixed target
      * @param string key
      * @param mixed default
-     *
-     * @return mixed
      */
     public static function isNotScalar($target)
     {
@@ -993,11 +946,9 @@ class Utils
     }
 
     /**
-     * Returns the ISO2 country name by providing a countries full name
+     * Returns the ISO2 country name by providing a countries full name.
      *
      * @param string countryName
-     *
-     * @return string
      */
     public static function getCountryCodeByName(?string $countryName): ?string
     {
@@ -1035,10 +986,7 @@ class Utils
     }
 
     /**
-     * Returns the ISO2 country name by providing a countries full name
-     *
-     * @param string $timezone
-     * @return \PragmaRX\Countries\Package\Support\Collection
+     * Returns the ISO2 country name by providing a countries full name.
      */
     public static function findCountryFromTimezone(?string $timezone): \PragmaRX\Countries\Package\Support\Collection
     {
@@ -1064,9 +1012,9 @@ class Utils
     /**
      * Returns additional country data for a given country in ISO2 format.
      *
-     * @param string $country The ISO2 country code.
+     * @param string $country the ISO2 country code
      *
-     * @return array|null The additional country data.
+     * @return array|null the additional country data
      */
     public static function getCountryData(?string $country): ?array
     {
@@ -1084,22 +1032,22 @@ class Utils
             ->where('cca2', $country)
             ->map(function ($country) {
                 $longitude = (float) static::get($country, 'geo.longitude_desc') ?? 0;
-                $latitude = (float) static::get($country, 'geo.latitude_desc') ?? 0;
+                $latitude  = (float) static::get($country, 'geo.latitude_desc') ?? 0;
 
                 return [
-                    'iso3' => static::get($country, 'cca3'),
-                    'iso2' => static::get($country, 'cca2'),
-                    'emoji' => static::get($country, 'flag.emoji'),
-                    'name' => static::get($country, 'name'),
-                    'aliases' => static::get($country, 'alt_spellings', []),
-                    'capital' => static::get($country, 'capital_rinvex'),
-                    'geo' => static::get($country, 'geo'),
-                    'currency' => Arr::first(static::get($country, 'currencies', [])),
-                    'dial_code' => Arr::first(static::get($country, 'calling_codes', [])),
+                    'iso3'        => static::get($country, 'cca3'),
+                    'iso2'        => static::get($country, 'cca2'),
+                    'emoji'       => static::get($country, 'flag.emoji'),
+                    'name'        => static::get($country, 'name'),
+                    'aliases'     => static::get($country, 'alt_spellings', []),
+                    'capital'     => static::get($country, 'capital_rinvex'),
+                    'geo'         => static::get($country, 'geo'),
+                    'currency'    => Arr::first(static::get($country, 'currencies', [])),
+                    'dial_code'   => Arr::first(static::get($country, 'calling_codes', [])),
                     'coordinates' => [
                         'longitude' => $longitude,
-                        'latitude' => $latitude,
-                    ]
+                        'latitude'  => $latitude,
+                    ],
                 ];
             })
             ->first()
@@ -1115,9 +1063,9 @@ class Utils
     /**
      * Retrieve currency from given ISO country code.
      *
-     * @param string $countryCode The ISO country code to fetch currency information.
+     * @param string $countryCode the ISO country code to fetch currency information
      *
-     * @return string|null The currency code related to the given country code, or null if not found.
+     * @return string|null the currency code related to the given country code, or null if not found
      */
     public static function getCurrenyFromCountryCode(?string $countryCode): ?string
     {
@@ -1133,9 +1081,9 @@ class Utils
     /**
      * Retrieve area/dial code from given ISO country code.
      *
-     * @param string $countryCode The ISO country code to fetch currency information.
+     * @param string $countryCode the ISO country code to fetch currency information
      *
-     * @return string|null The dial code related to the given country code, or null if not found.
+     * @return string|null the dial code related to the given country code, or null if not found
      */
     public static function getDialCodeFromCountryCode(?string $countryCode): ?string
     {
@@ -1144,15 +1092,16 @@ class Utils
         }
 
         $data = static::getCountryData($countryCode);
+
         return static::get($data, 'dial_code');
     }
 
     /**
      * Retrieve country capital from given ISO country code.
      *
-     * @param string $countryCode The ISO country code to fetch currency information.
+     * @param string $countryCode the ISO country code to fetch currency information
      *
-     * @return string|null The capital city related to the given country code, or null if not found.
+     * @return string|null the capital city related to the given country code, or null if not found
      */
     public static function getCapitalCityFromCountryCode(?string $countryCode): ?string
     {
@@ -1161,16 +1110,16 @@ class Utils
         }
 
         $data = static::getCountryData($countryCode);
+
         return static::get($data, 'capital');
     }
 
     /**
-     * Looks up a user client info w/ api
+     * Looks up a user client info w/ api.
      *
-     * @param string $ip
      * @return stdClass
      */
-    public static function lookupIp(?string $ip = null)
+    public static function lookupIp(string $ip = null)
     {
         if ($ip === null) {
             $ip = request()->ip();
@@ -1184,10 +1133,7 @@ class Utils
     }
 
     /**
-     * Filter an array, removing all null values
-     *
-     * @param array $arr
-     * @return array
+     * Filter an array, removing all null values.
      */
     public static function filterArray(array $arr = []): array
     {
@@ -1216,26 +1162,27 @@ class Utils
         });
 
         $instance = app(static::getModelClassName($models->first()));
-        $deleted = $instance->whereIn('uuid', $ids)->delete();
+        $deleted  = $instance->whereIn('uuid', $ids)->delete();
 
         return $deleted;
     }
 
     /**
      * Get an ordinal formatted number.
-     * 
+     *
      * @return string
      */
     public static function ordinalNumber($number, $locale = 'en_US')
     {
         $ordinal = new \NumberFormatter($locale, \NumberFormatter::ORDINAL);
+
         return $ordinal->format($number);
     }
 
     public static function serializeJsonResource(JsonResource $resource)
     {
         $request = request();
-        $data = $resource->toArray($request);
+        $data    = $resource->toArray($request);
 
         foreach ($data as $key => $value) {
             if ($value instanceof JsonResource) {
@@ -1256,13 +1203,13 @@ class Utils
 
     public static function getBase64ImageSize(string $base64ImageString)
     {
-        return (int)(strlen(rtrim($base64ImageString, '=')) * 0.75);
+        return (int) (strlen(rtrim($base64ImageString, '=')) * 0.75);
     }
 
     public static function getImageSizeFromString(string $data)
     {
         $data = static::isBase64($data) ? base64_decode($data) : $data;
-        $uri = 'data://application/octet-stream;base64,' . $data;
+        $uri  = 'data://application/octet-stream;base64,' . $data;
 
         return getimagesize($uri);
     }
@@ -1274,8 +1221,6 @@ class Utils
 
     /**
      * Generates a public id given a type.
-     *
-     * @return string
      */
     public static function generatePublicId(string $type): string
     {
@@ -1284,8 +1229,6 @@ class Utils
 
         return $type . '_' . $hashid;
     }
-
-
 
     public static function formatSeconds($seconds)
     {
@@ -1304,7 +1247,7 @@ class Utils
         $varchars = DB::connection($connection)
             ->select(DB::raw("select * from INFORMATION_SCHEMA.COLUMNS where DATA_TYPE = 'varchar' and (CHARACTER_SET_NAME != '{$charset}' or COLLATION_NAME != '{$collate}') AND TABLE_SCHEMA = '{$dbName}'"));
         // Check if shrinking field size will truncate!
-        $skip = [];  // List of table.column that will be handled manually
+        $skip    = [];  // List of table.column that will be handled manually
         $indexed = [];
         if ($charset == 'utf8mb4') {
             $error = false;
@@ -1334,7 +1277,7 @@ class Utils
             }
         }
 
-        $query = "SET FOREIGN_KEY_CHECKS = 0";
+        $query = 'SET FOREIGN_KEY_CHECKS = 0';
         static::dbExec($query, $dryRun, $connection);
 
         $query = "ALTER SCHEMA {$dbName} DEFAULT CHARACTER SET {$charset} DEFAULT COLLATE {$collate}";
@@ -1347,7 +1290,7 @@ class Utils
                 if ($charset == 'utf8mb4' && $t->CHARACTER_MAXIMUM_LENGTH > 191 && $indexed["{$t->TABLE_NAME}.{$t->COLUMN_NAME}"]) {
                     $tableChanges["{$t->TABLE_NAME}"][] = "CHANGE `{$t->COLUMN_NAME}` `{$t->COLUMN_NAME}` VARCHAR(191) CHARACTER SET {$charset} COLLATE {$collate}";
                     echo "-- Shrinking: {$t->TABLE_NAME}.{$t->COLUMN_NAME}({$t->CHARACTER_MAXIMUM_LENGTH})" . PHP_EOL;
-                } else if ($charset == 'utf8' && $t->CHARACTER_MAXIMUM_LENGTH == 191) {
+                } elseif ($charset == 'utf8' && $t->CHARACTER_MAXIMUM_LENGTH == 191) {
                     $tableChanges["{$t->TABLE_NAME}"][] = "CHANGE `{$t->COLUMN_NAME}` `{$t->COLUMN_NAME}` VARCHAR(255) CHARACTER SET {$charset} COLLATE {$collate}";
                     echo "-- Expanding: {$t->TABLE_NAME}.{$t->COLUMN_NAME}({$t->CHARACTER_MAXIMUM_LENGTH})";
                 } else {
@@ -1374,7 +1317,7 @@ class Utils
             static::dbExec($query, $dryRun, $connection);
         }
 
-        $query = "SET FOREIGN_KEY_CHECKS = 1";
+        $query = 'SET FOREIGN_KEY_CHECKS = 1';
         static::dbExec($query, $dryRun, $connection);
 
         echo "-- {$dbName} CONVERTED TO {$charset}-{$collate}" . PHP_EOL;
@@ -1391,7 +1334,7 @@ class Utils
 
     public static function numberAsWord(int $number): string
     {
-        $formatter = new \NumberFormatter("en", \NumberFormatter::SPELLOUT);
+        $formatter = new \NumberFormatter('en', \NumberFormatter::SPELLOUT);
 
         return $formatter->format($number);
     }
@@ -1401,7 +1344,7 @@ class Utils
         // Replace all number words with an equivalent numeric value
         $data = strtr(
             $number,
-            array(
+            [
                 'zero'      => '0',
                 'a'         => '1',
                 'one'       => '1',
@@ -1437,7 +1380,7 @@ class Utils
                 'million'   => '1000000',
                 'billion'   => '1000000000',
                 'and'       => '',
-            )
+            ]
         );
 
         // Coerce all tokens to numbers
@@ -1448,7 +1391,7 @@ class Utils
             preg_split('/[\s-]+/', $data)
         );
 
-        $stack = new \SplStack; // Current work stack
+        $stack = new \SplStack(); // Current work stack
         $sum   = 0; // Running total
         $last  = null;
 
@@ -1493,11 +1436,11 @@ class Utils
     public static function resolveSubject(string $publicId)
     {
         $resourceMap = [
-            'store' => 'store:storefront',
-            'product' => 'store:storefront',
-            'order' => 'order',
+            'store'    => 'store:storefront',
+            'product'  => 'store:storefront',
+            'order'    => 'order',
             'customer' => 'contact',
-            'contact' => 'contact'
+            'contact'  => 'contact',
         ];
 
         list($type) = explode('_', $publicId);
@@ -1532,7 +1475,7 @@ class Utils
         }
 
         $delimiters = ['|', ','];
-        $score = [];
+        $score      = [];
 
         foreach ($delimiters as $delimiter) {
             if (Str::contains($string, $delimiter)) {
@@ -1546,12 +1489,11 @@ class Utils
     }
 
     /**
-     * @param string $path
      * @param string $type
-     * @param \Fleetbase\Models\Model $owner
-     * @return null|\Fleetbase\Models\File
+     *
+     * @return \Fleetbase\Models\File|null
      */
-    public static function urlToStorefrontFile($url, $type = 'source', ?Model $owner = null)
+    public static function urlToStorefrontFile($url, $type = 'source', Model $owner = null)
     {
         if (!is_string($url)) {
             return null;
@@ -1578,8 +1520,8 @@ class Utils
         }
 
         // parsed path
-        $path = urldecode(parse_url($url, PHP_URL_PATH));
-        $fileName = basename($path);
+        $path         = urldecode(parse_url($url, PHP_URL_PATH));
+        $fileName     = basename($path);
         $fileNameInfo = pathinfo($fileName);
 
         // if no file extension use guess extension
@@ -1588,22 +1530,22 @@ class Utils
         }
 
         $bucketPath = 'uploads/storefront/' . $owner->uuid . '/' . Str::slug($type) . '/' . $fileName;
-        $pathInfo = pathinfo($bucketPath);
+        $pathInfo   = pathinfo($bucketPath);
 
         // upload to bucket
         Storage::disk('s3')->put($bucketPath, $contents, 'public');
 
         $fileInfo = [
-            'company_uuid' => $owner->company_uuid ?? null,
+            'company_uuid'  => $owner->company_uuid ?? null,
             'uploader_uuid' => $owner->uuid,
             // 'name' => $pathInfo['filename'],
             'original_filename' => $fileName,
             // 'extension' => $pathInfo['extension'],
             'content_type' => File::getFileMimeType($pathInfo['extension']),
-            'path' => $bucketPath,
-            'bucket' => config('filesystems.disks.s3.bucket'),
-            'type' => Str::slug($type, '_'),
-            'file_size' => Utils::getBase64ImageSize($contents)
+            'path'         => $bucketPath,
+            'bucket'       => config('filesystems.disks.s3.bucket'),
+            'type'         => Str::slug($type, '_'),
+            'file_size'    => Utils::getBase64ImageSize($contents),
         ];
 
         if ($owner) {
@@ -1611,7 +1553,7 @@ class Utils
             $fileInfo['subject_type'] = Utils::getMutationType($owner);
         }
 
-        // create file 
+        // create file
         $file = File::create($fileInfo);
 
         return $file;
@@ -1625,8 +1567,8 @@ class Utils
             return false;
         }
 
-        $guarded = config('api.subscription_required_endpoints');
-        $method = strtolower($request->method());
+        $guarded  = config('api.subscription_required_endpoints');
+        $method   = strtolower($request->method());
         $endpoint = strtolower(last($request->segments()));
 
         $current = $method . ':' . $endpoint;
@@ -1647,7 +1589,7 @@ class Utils
      * Additionally, if the 'QUEUE_URL_EVENTS' environment variable is set,
      * the queue name is extracted from the URL.
      *
-     * @return string The name of the queue for events.
+     * @return string the name of the queue for events
      */
     public static function getEventsQueue(): string
     {
@@ -1655,7 +1597,7 @@ class Utils
             $sqs_events_queue = env('SQS_EVENTS_QUEUE', 'events');
 
             if ($queueUrl = getenv('QUEUE_URL_EVENTS')) {
-                $url = parse_url($queueUrl);
+                $url              = parse_url($queueUrl);
                 $sqs_events_queue = basename($url['path']);
             }
 
@@ -1669,11 +1611,11 @@ class Utils
     /**
      * Chooses the queue connection for the event.
      *
-     * If the AWS SQS credentials (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY) and the SQS_EVENTS_QUEUE 
+     * If the AWS SQS credentials (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY) and the SQS_EVENTS_QUEUE
      * environment variable are all set, it will return the value of SQS_EVENTS_QUEUE as the chosen queue connection.
      * If not, it defaults to using the 'redis' connection.
      *
-     * @return string The name of the queue connection.
+     * @return string the name of the queue connection
      */
     public static function chooseQueueConnection()
     {
@@ -1687,9 +1629,11 @@ class Utils
     }
 
     /**
-     * Converts a string or class name to an ember resource type \Fleetbase\FleetOps\Models\IntegratedVendor -> integrated-vendor
+     * Converts a string or class name to an ember resource type \Fleetbase\FleetOps\Models\IntegratedVendor -> integrated-vendor.
+     *
      * @param string $className
-     * @return null|string
+     *
+     * @return string|null
      */
     public static function toEmberResourceType($className)
     {
@@ -1697,7 +1641,7 @@ class Utils
             return null;
         }
 
-        $baseClassName = static::classBasename($className);
+        $baseClassName     = static::classBasename($className);
         $emberResourceType = Str::snake($baseClassName, '-');
 
         return $emberResourceType;
@@ -1726,9 +1670,9 @@ class Utils
      * Retrieves the values of a specified key from the "extra" property of all packages
      * with the "fleetbase" key.
      *
-     * @param string $key The key to search for in the "extra" property of packages with the "fleetbase" key.
+     * @param string $key the key to search for in the "extra" property of packages with the "fleetbase" key
      *
-     * @return array An array of values for the specified key from the "extra" property of packages with the "fleetbase" key.
+     * @return array an array of values for the specified key from the "extra" property of packages with the "fleetbase" key
      *
      * @throws \RuntimeException If the installed.json file cannot be found.
      */
@@ -1740,7 +1684,7 @@ class Utils
             throw new \RuntimeException('Unable to find the installed.json file.');
         }
 
-        $installedPackages = json_decode(file_get_contents($installedJsonPath), true);
+        $installedPackages   = json_decode(file_get_contents($installedJsonPath), true);
         $fleetbaseExtensions = [];
 
         if (isset($installedPackages['packages'])) {
@@ -1758,8 +1702,9 @@ class Utils
      * Retrieves the values of a specified key from the "extra" property for a specific package
      * with the "fleetbase" key.
      *
-     * @param string $extension The fleetbase extension to lookup the property for.
-     * @param string $key The key to search for in the "extra" property of packages with the "fleetbase" key.
+     * @param string $extension the fleetbase extension to lookup the property for
+     * @param string $key       the key to search for in the "extra" property of packages with the "fleetbase" key
+     *
      * @return mixed The value of the key
      *
      * @throws \RuntimeException If the installed.json file cannot be found.
@@ -1773,7 +1718,7 @@ class Utils
         }
 
         $installedPackages = json_decode(file_get_contents($installedJsonPath), true);
-        $value = null;
+        $value             = null;
 
         if (isset($installedPackages['packages'])) {
             foreach ($installedPackages['packages'] as $package) {
@@ -1794,11 +1739,11 @@ class Utils
     /**
      * Retrieves the database name for the Fleetbase connection from the configuration.
      *
-     * @return string|null The database name for the Fleetbase connection, or null if not found.
+     * @return string|null the database name for the Fleetbase connection, or null if not found
      */
     public static function getFleetbaseDatabaseName(): ?string
     {
-        $connection = config('fleetbase.connection.db');
+        $connection   = config('fleetbase.connection.db');
         $databaseName = config('database.connections.' . $connection . '.database');
 
         return $databaseName;
@@ -1808,7 +1753,8 @@ class Utils
      * Find the package namespace for a given path.
      *
      * @param string|null $path The path to search for the package namespace. If null, no namespace is returned.
-     * @return string|null The package namespace, or null if the path is not valid.
+     *
+     * @return string|null the package namespace, or null if the path is not valid
      */
     public static function findPackageNamespace($path = null): ?string
     {
@@ -1816,11 +1762,28 @@ class Utils
             return null;
         }
 
-        $packagePath = strstr($path, '/src', true);
+        $useServerPath    = false;
+        $packagePath      = strstr($path, '/src', true);
         $composerJsonPath = $packagePath . '/composer.json';
 
         // Load the composer.json file into an array
-        $composerJson = json_decode(file_get_contents($composerJsonPath), true);
+        try {
+            $composerJson = json_decode(file_get_contents($composerJsonPath), true);
+        } catch (\Throwable $e) {
+            // try monorepo style path `/server`
+            $useServerPath    = true;
+            $packagePath      = strstr($path, '/server/src', true);
+            $composerJsonPath = $packagePath . '/composer.json';
+        }
+
+        // retry with server path
+        if ($useServerPath === true) {
+            try {
+                $composerJson = json_decode(file_get_contents($composerJsonPath), true);
+            } catch (\Throwable $e) {
+                return null;
+            }
+        }
 
         // Get the package's namespace from its psr-4 autoloading configuration
         $namespace = null;
@@ -1841,12 +1804,12 @@ class Utils
      * The function reads the composer.lock file, which includes the exact versions of installed packages.
      * If the keyword is found, the package's information is added to the result array.
      *
-     * @param string $keyword The keyword to search for within the packages' keywords array.
-     * 
-     * @throws Exception If the composer.lock file does not exist or if packages are not defined in it.
+     * @param string $keyword the keyword to search for within the packages' keywords array
      *
      * @return array An associative array of packages that contain the keyword in their keywords array.
      *               The keys are the package names, and the values are the corresponding composer.json information.
+     *
+     * @throws Exception If the composer.lock file does not exist or if packages are not defined in it.
      */
     public static function findComposerPackagesWithKeyword($keyword = 'fleetbase-extension')
     {
@@ -1859,7 +1822,7 @@ class Utils
         }
 
         // Read composer.lock content.
-        $fileContent = file_get_contents($filePath);
+        $fileContent  = file_get_contents($filePath);
         $composerData = json_decode($fileContent, true);
 
         // Check if packages are defined.
@@ -1868,7 +1831,7 @@ class Utils
         }
 
         $foundPackages = [];
-        $packages = array_values($composerData['packages']);
+        $packages      = array_values($composerData['packages']);
 
         // Loop through packages.
         foreach ($packages as $package) {
@@ -1899,13 +1862,13 @@ class Utils
      * and checks for a 'seeds' directory within each one. If it exists, the directory path
      * is added to an array. The function finally returns this array of migration directories.
      *
-     * @return array The array containing the paths to seeder directories of all installed Fleetbase extensions.
+     * @return array the array containing the paths to seeder directories of all installed Fleetbase extensions
      *
-     * @throws \RuntimeException if an error occurs during directory retrieval.
+     * @throws \RuntimeException if an error occurs during directory retrieval
      */
     public static function getSeederClassesFromExtensions(): array
     {
-        $packages = static::getInstalledFleetbaseExtensions();
+        $packages      = static::getInstalledFleetbaseExtensions();
         $seederClasses = [];
 
         foreach ($packages as $packageName => $package) {
@@ -1943,15 +1906,15 @@ class Utils
      * to their fully qualified class names based on the PSR-4 autoload configuration in the extension's composer.json.
      * The resulting array contains the fully qualified class names and the full paths to the corresponding PHP files.
      *
-     * @return array Each item is an associative array with two keys:
+     * @return array each item is an associative array with two keys:
      *               'class' => the fully qualified class name of a seeder,
-     *               'path' => the full path to the PHP file of the seeder.
+     *               'path' => the full path to the PHP file of the seeder
      *
      * @throws \Exception if the composer.lock file does not exist or does not contain packages data.
      */
     public static function getSeedersFromExtensions(): array
     {
-        $packages = static::getInstalledFleetbaseExtensions();
+        $packages      = static::getInstalledFleetbaseExtensions();
         $seederClasses = [];
 
         foreach ($packages as $packageName => $package) {
@@ -1976,7 +1939,7 @@ class Utils
                 // Combine the namespace and class name to get the fully qualified class name
                 $seederClasses[] = [
                     'class' => $namespace . '\\' . $className,
-                    'path' => $file,
+                    'path'  => $file,
                 ];
             }
         }
@@ -1987,11 +1950,11 @@ class Utils
     /**
      * Determines the namespace of a given directory from a given PSR-4 autoload configuration.
      *
-     * @param array $psr4 The PSR-4 autoload configuration, mapping namespace prefixes to directories.
-     * @param string $directory The directory whose corresponding namespace should be returned.
+     * @param array  $psr4      the PSR-4 autoload configuration, mapping namespace prefixes to directories
+     * @param string $directory the directory whose corresponding namespace should be returned
      *
-     * @return string|null The namespace corresponding to the given directory in the autoload configuration,
-     * or null if no such namespace exists.
+     * @return string|null the namespace corresponding to the given directory in the autoload configuration,
+     *                     or null if no such namespace exists
      */
     private static function getNamespaceFromAutoload(array $psr4, string $directory): ?string
     {
@@ -1999,6 +1962,7 @@ class Utils
             if (strpos($path, $directory) !== false) {
                 // Remove trailing backslashes from the namespace
                 $namespace = rtrim($namespace, '\\');
+
                 return $namespace;
             }
         }
@@ -2013,13 +1977,13 @@ class Utils
      * and checks for a 'migrations' directory within each one. If it exists, the directory path
      * is added to an array. The function finally returns this array of migration directories.
      *
-     * @return array The array containing the paths to migration directories of all installed Fleetbase extensions.
+     * @return array the array containing the paths to migration directories of all installed Fleetbase extensions
      *
-     * @throws \RuntimeException if an error occurs during directory retrieval.
+     * @throws \RuntimeException if an error occurs during directory retrieval
      */
     public static function getMigrationDirectories(): array
     {
-        $packages = static::getInstalledFleetbaseExtensions();
+        $packages    = static::getInstalledFleetbaseExtensions();
         $directories = [];
 
         foreach ($packages as $packageName => $package) {
@@ -2040,15 +2004,15 @@ class Utils
      * until it finds the specified extension. If the extension is found, the function constructs
      * the path to its 'migrations' directory and returns this path.
      *
-     * @param string $extension The name of the Fleetbase extension for which the migration directory is to be retrieved.
+     * @param string $extension the name of the Fleetbase extension for which the migration directory is to be retrieved
      *
-     * @return string|null The path to the migration directory of the specified Fleetbase extension, or null if the extension is not found.
+     * @return string|null the path to the migration directory of the specified Fleetbase extension, or null if the extension is not found
      *
-     * @throws \RuntimeException if an error occurs during directory retrieval.
+     * @throws \RuntimeException if an error occurs during directory retrieval
      */
     public static function getMigrationDirectoryForExtension(string $extension): ?string
     {
-        $packages = static::getInstalledFleetbaseExtensions();
+        $packages           = static::getInstalledFleetbaseExtensions();
         $migrationDirectory = null;
 
         foreach ($packages as $packageName => $package) {
@@ -2070,12 +2034,12 @@ class Utils
      */
     public static function getAuthSchemaNamespaces()
     {
-        $packages = static::getInstalledFleetbaseExtensions();
+        $packages          = static::getInstalledFleetbaseExtensions();
         $authSchemaClasses = [];
 
         // Local package directory
-        $localNamespace = 'Fleetbase\\';
-        $localPackageSrcDirectory = base_path('vendor/fleetbase/core-api/src/');
+        $localNamespace            = 'Fleetbase\\';
+        $localPackageSrcDirectory  = base_path('vendor/fleetbase/core-api/src/');
         $localPackageDirectoryPath = $localPackageSrcDirectory . 'Auth/Schemas';
 
         if (file_exists($localPackageDirectoryPath)) {
@@ -2083,7 +2047,7 @@ class Utils
 
             foreach ($localDirectoryIterator as $file) {
                 if ($file->isFile() && $file->getExtension() == 'php') {
-                    $className = 'Auth\\Schemas\\' . $file->getBasename('.php');
+                    $className           = 'Auth\\Schemas\\' . $file->getBasename('.php');
                     $authSchemaClasses[] = $localNamespace . $className;
                 }
             }
@@ -2112,7 +2076,7 @@ class Utils
 
                 foreach ($directoryIterator as $file) {
                     if ($file->isFile() && $file->getExtension() == 'php') {
-                        $className = $namespace . 'Auth\\Schemas\\' . $file->getBasename('.php');
+                        $className           = $namespace . 'Auth\\Schemas\\' . $file->getBasename('.php');
                         $authSchemaClasses[] = $className;
                     }
                 }
@@ -2141,7 +2105,7 @@ class Utils
 
     /**
      * UTF-8 aware parse_url() replacement.
-     * 
+     *
      * @return array
      */
     public static function parseUrl($url)
@@ -2166,7 +2130,7 @@ class Utils
      * If that's not set, it constructs the email address using the 'CONSOLE_HOST' environment variable.
      * If neither is available, it uses the server's IP address.
      *
-     * @return string The default "from" email address.
+     * @return string the default "from" email address
      */
     public static function getDefaultMailFromAddress(?string $default = 'hello@fleetbase.io'): string
     {

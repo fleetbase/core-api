@@ -2,16 +2,16 @@
 
 namespace Fleetbase\Traits;
 
-use Fleetbase\Support\Http;
-use Fleetbase\Support\Utils;
-use Fleetbase\Support\Resolve;
-use Fleetbase\Http\Requests\Internal\BulkDeleteRequest;
 use Fleetbase\Exceptions\FleetbaseRequestValidationException;
+use Fleetbase\Http\Requests\Internal\BulkDeleteRequest;
+use Fleetbase\Support\Http;
+use Fleetbase\Support\Resolve;
+use Fleetbase\Support\Utils;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
-use Illuminate\Support\Arr;
-use Illuminate\Http\Request;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 
@@ -47,14 +47,14 @@ trait HasApiControllerBehavior
 
     /**
      * The target API Resource.
-     * 
+     *
      * @var \Fleetbase\Http\Resources\FleetbaseResource
      */
     public $resource;
 
     /**
      * The target API Filter.
-     * 
+     *
      * @var \Fleetbase\Http\Filter\Filter
      */
     public $filter;
@@ -70,12 +70,12 @@ trait HasApiControllerBehavior
      * Determines the action to perform based on the HTTP verb.
      *
      * @param string|null $verb The HTTP verb to check. Defaults to the request method if not provided.
-     * 
-     * @return string The action to perform based on the HTTP verb.
+     *
+     * @return string the action to perform based on the HTTP verb
      */
-    private function actionFromHttpVerb(?string $verb = null)
+    private function actionFromHttpVerb(string $verb = null)
     {
-        $verb = $verb ?? $_SERVER['REQUEST_METHOD'];
+        $verb   = $verb ?? $_SERVER['REQUEST_METHOD'];
         $action = Str::lower($verb);
 
         switch ($verb) {
@@ -101,17 +101,17 @@ trait HasApiControllerBehavior
     }
 
     /**
-     * Set the model instance to use
+     * Set the model instance to use.
      *
      * @param \Illuminate\Database\Eloquent\Model $model - The Model Instance
      */
-    public function setApiModel(?Model $model = null, string $namespace = '\\Fleetbase')
+    public function setApiModel(Model $model = null, string $namespace = '\\Fleetbase')
     {
-        $this->modelClassName = $modelName = Utils::getModelClassName($model ?? $this->resource, $namespace);
-        $this->model = $model = Resolve::instance($modelName);
-        $this->resource = $this->getApiResourceForModel($model, $namespace);
-        $this->request = $this->getApiRequestForModel($model, $namespace);
-        $this->resourcePluralName = $model->getPluralName();
+        $this->modelClassName        = $modelName = Utils::getModelClassName($model ?? $this->resource, $namespace);
+        $this->model                 = $model = Resolve::instance($modelName);
+        $this->resource              = $this->getApiResourceForModel($model, $namespace);
+        $this->request               = $this->getApiRequestForModel($model, $namespace);
+        $this->resourcePluralName    = $model->getPluralName();
         $this->resourceSingularlName = $model->getSingularName();
 
         if ($this->filter) {
@@ -120,9 +120,7 @@ trait HasApiControllerBehavior
     }
 
     /**
-     * Set the Resource object to use
-     *
-     * @param Resource|string $resources
+     * Set the Resource object to use.
      */
     public function setApiResource($resource, ?string $namespace)
     {
@@ -142,12 +140,13 @@ trait HasApiControllerBehavior
     }
 
     /**
-     * Resolves the api resource for this model
+     * Resolves the api resource for this model.
      *
      * @param \Fleetbase\Models\Model $model
+     *
      * @return \Fleetbase\Http\Resources\FleetbaseResource
      */
-    public function getApiResourceForModel(Model $model, ?string $namespace = null)
+    public function getApiResourceForModel(Model $model, string $namespace = null)
     {
         $resource = $this->resource;
 
@@ -162,9 +161,10 @@ trait HasApiControllerBehavior
      * Resolves the form request for this model.
      *
      * @param \Fleetbase\Models\Model $model
+     *
      * @return \Fleetbase\Http\Requests\FleetbaseRequest
      */
-    public function getApiRequestForModel(Model $model, ?string $namespace = null)
+    public function getApiRequestForModel(Model $model, string $namespace = null)
     {
         $request = $this->request;
 
@@ -178,15 +178,15 @@ trait HasApiControllerBehavior
     /**
      * Resolves the resource form request and validates.
      *
-     * @throws \Fleetbase\Exceptions\FleetbaseRequestValidationException
-     * @param \Illuminate\Http\Request $request
      * @return void
+     *
+     * @throws \Fleetbase\Exceptions\FleetbaseRequestValidationException
      */
     public function validateRequest(Request $request)
     {
         if (class_exists($this->request)) {
             $formRequest = new $this->request($request->all());
-            $validator = Validator::make($request->all(), $formRequest->rules(), $formRequest->messages());
+            $validator   = Validator::make($request->all(), $formRequest->rules(), $formRequest->messages());
 
             if ($validator->fails()) {
                 throw new FleetbaseRequestValidationException($validator->errors());
@@ -195,7 +195,7 @@ trait HasApiControllerBehavior
     }
 
     /**
-     * Get All
+     * Get All.
      *
      * Returns a list of items in this resource and allows filtering the data based on fields in the database
      *
@@ -216,12 +216,13 @@ trait HasApiControllerBehavior
      * @queryParam fieldName Pass any field and value to filter results e.g. `name=John&email=any@aol.com`. No-example
      *
      * @authenticated
+     *
      * @return \Illuminate\Http\Response
      */
     public function queryRecord(Request $request)
     {
         $single = $request->boolean('single');
-        $data = $this->model->queryFromRequest($request);
+        $data   = $this->model->queryFromRequest($request);
 
         if ($single) {
             $data = Arr::first($data);
@@ -232,6 +233,7 @@ trait HasApiControllerBehavior
 
             if (Http::isInternalRequest($request)) {
                 $this->resource::wrap($this->resourceSingularlName);
+
                 return new $this->resource($data);
             }
 
@@ -240,6 +242,7 @@ trait HasApiControllerBehavior
 
         if (Http::isInternalRequest($request)) {
             $this->resource::wrap($this->resourcePluralName);
+
             return $this->resource::collection($data);
         }
 
@@ -247,14 +250,16 @@ trait HasApiControllerBehavior
     }
 
     /**
-     * View Resource
+     * View Resource.
      *
      * Returns information about a specific record in this resource. You can return related data or counts of related data
      * in the response using the `count` and `contain` query params
      *
      * @authenticated
+     *
      * @queryParam count Count related models. Alternatively `with_count` e.g. `?count=relation1,relation2`. No-example
      * @queryParam contain Contain data from related model e.g. `?contain=relation1,relation2`. No-example
+     *
      * @urlParam id integer required The id of the resource to view
      *
      * @response 404 {
@@ -262,7 +267,8 @@ trait HasApiControllerBehavior
      *  "message": "Resource not found"
      * }
      *
-     * @param  int  $id
+     * @param int $id
+     *
      * @return \Illuminate\Http\Response
      */
     public function findRecord(Request $request, $id)
@@ -277,12 +283,13 @@ trait HasApiControllerBehavior
     }
 
     /**
-     * Create Resource
+     * Create Resource.
      *
      * Create a new record of this resource in the database. You can return related data or counts of related data
      * in the response using the `count` and `contain` query params
      *
      * @authenticated
+     *
      * @queryParam count Count related models. Alternatively `with_count` e.g. `?count=relation1,relation2`. No-example
      * @queryParam with|expand Contain data from related model e.g. `?with=relation1,relation2`. No-example
      *
@@ -292,13 +299,11 @@ trait HasApiControllerBehavior
      *     "validation error message"
      *  ]
      * }
-     *
      * @response 500 {
      *  "status": "error",
      *  "message": "Details of error message"
      * }
      *
-     * @param  \Illuminate\Http\Request $request
      * @return \Illuminate\Http\Response
      */
     public function createRecord(Request $request)
@@ -309,6 +314,7 @@ trait HasApiControllerBehavior
 
             if (Http::isInternalRequest($request)) {
                 $this->resource::wrap($this->resourceSingularlName);
+
                 return new $this->resource($record);
             }
 
@@ -323,12 +329,13 @@ trait HasApiControllerBehavior
     }
 
     /**
-     * Update Resource
+     * Update Resource.
      *
      * Updates the data of the record with the specified `id`. You can return related data or counts of related data
      * in the response using the `count` and `contain` query params
      *
      * @authenticated
+     *
      * @queryParam count Count related models. Alternatively `with_count` e.g. `?count=relation1,relation2`. No-example
      * @queryParam contain Contain data from related model e.g. `?contain=relation1,relation2`. No-example
      *
@@ -338,19 +345,15 @@ trait HasApiControllerBehavior
      *     "validation error messages"
      *  ]
      * }
-     *
      * @response 404 {
      *  "status": "failed",
      *  "message": "Resource not found"
      * }
-     *
      * @response 500 {
      *  "status": "error",
      *  "message": "Details of error message"
      * }
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  string  $id
      * @return \Illuminate\Http\Response
      */
     public function updateRecord(Request $request, string $id)
@@ -361,6 +364,7 @@ trait HasApiControllerBehavior
 
             if (Http::isInternalRequest($request)) {
                 $this->resource::wrap($this->resourceSingularlName);
+
                 return new $this->resource($record);
             }
 
@@ -375,7 +379,7 @@ trait HasApiControllerBehavior
     }
 
     /**
-     * Delete Resource
+     * Delete Resource.
      *
      * Deletes the record with the specified `id`
      *
@@ -388,19 +392,19 @@ trait HasApiControllerBehavior
      *     "id": 1
      *  }
      * }
-     *
      * @response 404 {
      *  "status": "failed",
      *  "message": "Resource not found"
      * }
      *
-     * @param  string  $id
+     * @param string $id
+     *
      * @return \Illuminate\Http\Response
      */
     public function deleteRecord($id, Request $request)
     {
         if (Http::isInternalRequest($request)) {
-            $key = $this->model->getKeyName();
+            $key       = $this->model->getKeyName();
             $dataModel = $this->model->where($key, $id)->first();
         } else {
             $dataModel = $this->model->wherePublicId($id)->first();
@@ -411,21 +415,22 @@ trait HasApiControllerBehavior
 
             if (Http::isInternalRequest($request)) {
                 $this->resource::wrap($this->resourceSingularlName);
+
                 return new $this->resource($dataModel);
             }
 
             return response()->json(
                 [
-                    'status' => 'success',
+                    'status'  => 'success',
                     'message' => Str::title($this->resourceSingularlName) . ' deleted',
-                    'data' => new $this->resource($dataModel),
+                    'data'    => new $this->resource($dataModel),
                 ]
             );
         }
 
         return response()->json(
             [
-                'status' => 'failed',
+                'status'  => 'failed',
                 'message' => Str::title($this->resourceSingularlName) . ' not found',
             ],
             404
@@ -433,7 +438,7 @@ trait HasApiControllerBehavior
     }
 
     /**
-     * Delete Resource
+     * Delete Resource.
      *
      * Deletes the record with the specified `id`
      *
@@ -446,18 +451,16 @@ trait HasApiControllerBehavior
      *     "id": 1
      *  }
      * }
-     *
      * @response 404 {
      *  "status": "failed",
      *  "message": "Resource not found"
      * }
      *
-     * @param  \Fleetbase\Http\Requests\Internal\BulkDeleteRequest  $request
      * @return \Illuminate\Http\Response
      */
     public function bulkDelete(BulkDeleteRequest $request)
     {
-        $ids = $request->input('ids', []);
+        $ids   = $request->input('ids', []);
         $count = 0;
 
         try {
@@ -472,15 +475,15 @@ trait HasApiControllerBehavior
 
         return response()->json(
             [
-                'status' => 'success',
+                'status'  => 'success',
                 'message' => 'Deleted ' . $count . ' ' . Str::plural($this->resourceSingularlName, $count),
-                'count' => $count,
+                'count'   => $count,
             ]
         );
     }
 
     /**
-     * Search Resources
+     * Search Resources.
      *
      * Allows searching for data in this resource using multiple options.
      *
@@ -510,7 +513,7 @@ trait HasApiControllerBehavior
     }
 
     /**
-     * Count Resources
+     * Count Resources.
      *
      * Returns a simple count of data in this resource
      *

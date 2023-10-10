@@ -6,47 +6,45 @@ use Fleetbase\Exports\ApiCredentialExport;
 use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Http\Requests\ExportRequest;
 use Fleetbase\Models\ApiCredential;
-use Maatwebsite\Excel\Facades\Excel;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Maatwebsite\Excel\Facades\Excel;
 
 class ApiCredentialController extends FleetbaseController
 {
     /**
-     * The resource to query
+     * The resource to query.
      *
      * @var string
      */
     public $resource = 'api_credential';
 
     /**
-     * Export the companies/users api credentials to excel or csv
+     * Export the companies/users api credentials to excel or csv.
      *
-     * @param  \Illuminate\Http\Request  $query
      * @return \Illuminate\Http\Response
      */
     public static function export(ExportRequest $request)
     {
-        $format = $request->input('format', 'xlsx');
+        $format   = $request->input('format', 'xlsx');
         $fileName = trim(Str::slug('api-credentials-' . date('Y-m-d-H:i')) . '.' . $format);
 
         return Excel::download(new ApiCredentialExport(), $fileName);
     }
 
     /**
-     * Rolls an API key
+     * Rolls an API key.
      *
-     * @param  \Illuminate\Http\Request  $query
      * @return \Illuminate\Http\Response
      */
     public static function roll($id, Request $request)
     {
         // get incoming params
-        $password = $request->input('password');
+        $password   = $request->input('password');
         $expiration = $request->input('expiration');
-        $user = $request->user();
+        $user       = $request->user();
 
         // authenticate the users request
         if (!$user || !Auth::validate(['email' => $user->email, 'password' => $password, 'request' => $request])) {
@@ -71,7 +69,7 @@ class ApiCredentialController extends FleetbaseController
         $previousApiKey = $apiCredential->key;
 
         // update credentials
-        $apiCredential->key = data_get($newCredentials, 'key');
+        $apiCredential->key    = data_get($newCredentials, 'key');
         $apiCredential->secret = data_get($newCredentials, 'secret');
 
         // update expiration if applicable
@@ -81,7 +79,7 @@ class ApiCredentialController extends FleetbaseController
 
         try {
             $apiCredential->save();
-        } catch (\Exception | \Illuminate\Database\QueryException $e) {
+        } catch (\Exception|\Illuminate\Database\QueryException $e) {
             return response()->error('Attempt to roll key failed.');
         }
 

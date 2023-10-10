@@ -46,25 +46,25 @@ class MetricController extends Controller
         // dashboard config
         $dashboardConfig = [
             [
-                'size' => 12,
-                'title' => 'Identity & Access Management Metrics',
-                'classList' => [],
-                'component' => null,
+                'size'        => 12,
+                'title'       => 'Identity & Access Management Metrics',
+                'classList'   => [],
+                'component'   => null,
                 'queryParams' => [],
-                'widgets' => collect($metrics)
+                'widgets'     => collect($metrics)
                     ->map(function ($value, $key) {
                         return [
                             'component' => 'count',
-                            'options' => [
+                            'options'   => [
                                 'format' => null,
-                                'title' => str_replace('_', ' ', \Illuminate\Support\Str::title($key)),
-                                'value' => $value
-                            ]
+                                'title'  => str_replace('_', ' ', \Illuminate\Support\Str::title($key)),
+                                'value'  => $value,
+                            ],
                         ];
                     })
                     ->values()
-                    ->toArray()
-            ]
+                    ->toArray(),
+            ],
         ];
 
         return response()->json(array_values($dashboardConfig));

@@ -2,24 +2,24 @@
 
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
-use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Exceptions\FleetbaseRequestValidationException;
+use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Models\Permission;
 use Fleetbase\Models\Policy;
 use Illuminate\Http\Request;
+
 class PolicyController extends FleetbaseController
 {
     /**
-     * The resource to query
+     * The resource to query.
      *
      * @var string
      */
     public $resource = 'policy';
 
     /**
-     * Creates a record by an identifier with request payload
+     * Creates a record by an identifier with request payload.
      *
-     * @param  \Illuminate\Http\Request  $request
      * @return \Illuminate\Http\Response
      */
     public function createRecord(Request $request)
@@ -43,9 +43,8 @@ class PolicyController extends FleetbaseController
     }
 
     /**
-     * Updates a record by an identifier with request payload
+     * Updates a record by an identifier with request payload.
      *
-     * @param  \Illuminate\Http\Request  $request
      * @return \Illuminate\Http\Response
      */
     public function updateRecord(Request $request, string $id)
@@ -60,23 +59,22 @@ class PolicyController extends FleetbaseController
 
             return ['policy' => new $this->resource($record)];
         } catch (\Exception $e) {
-			return response()->error($e->getMessage());
-		} catch (\Illuminate\Database\QueryException $e) {
-			return response()->error($e->getMessage());
-		} catch (FleetbaseRequestValidationException $e) {
-			return response()->error($e->getErrors());
-		}
+            return response()->error($e->getMessage());
+        } catch (\Illuminate\Database\QueryException $e) {
+            return response()->error($e->getMessage());
+        } catch (FleetbaseRequestValidationException $e) {
+            return response()->error($e->getErrors());
+        }
     }
 
     /**
-     * Deletes a policy record
+     * Deletes a policy record.
      *
-     * @param  \Illuminate\Http\Request  $request
      * @return \Illuminate\Http\Response
      */
     public function deleteRecord($id, Request $request)
     {
-        $id = $request->segment(4);
+        $id     = $request->segment(4);
         $policy = Policy::find($id);
 
         if (!$policy) {

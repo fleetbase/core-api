@@ -5,16 +5,21 @@ namespace Fleetbase\Models;
 use Fleetbase\Casts\Json;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasPublicId;
+use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\Searchable;
 use Fleetbase\Traits\TracksApiCredential;
-use Fleetbase\Traits\HasUuid;
 use Illuminate\Support\Str;
 use Spatie\Sluggable\HasSlug;
 use Spatie\Sluggable\SlugOptions;
 
 class Extension extends Model
 {
-    use HasUuid, HasPublicId, TracksApiCredential, HasApiModelBehavior, Searchable, HasSlug;
+    use HasUuid;
+    use HasPublicId;
+    use TracksApiCredential;
+    use HasApiModelBehavior;
+    use Searchable;
+    use HasSlug;
 
     /**
      * The database connection to use.
@@ -31,21 +36,21 @@ class Extension extends Model
     protected $table = 'extensions';
 
     /**
-     * The type of public Id to generate
+     * The type of public Id to generate.
      *
      * @var string
      */
     protected $publicIdType = 'ext';
 
     /**
-     * The attributes that can be queried
+     * The attributes that can be queried.
      *
      * @var array
      */
     protected $searchableColumns = [
         'name',
         'description',
-        'tags'
+        'tags',
     ];
 
     /**
@@ -82,11 +87,11 @@ class Extension extends Model
         'secret',
         'client_token',
         'status',
-        'slug'
+        'slug',
     ];
 
     /**
-     * Attributes that is filterable on this model
+     * Attributes that is filterable on this model.
      *
      * @var array
      */
@@ -99,13 +104,13 @@ class Extension extends Model
      */
     protected $casts = [
         'core_service' => 'boolean',
-        'tags' => Json::class,
-        'meta' => Json::class,
-        'config' => Json::class,
+        'tags'         => Json::class,
+        'meta'         => Json::class,
+        'config'       => Json::class,
     ];
 
     /**
-     * Dynamic attributes that are appended to object
+     * Dynamic attributes that are appended to object.
      *
      * @var array
      */
@@ -142,7 +147,7 @@ class Extension extends Model
      */
     public function getIsInstalledAttribute()
     {
-        $isInstalled = (bool) $this->installs()->where('company_uuid', session('company'))->count();
+        $isInstalled   = (bool) $this->installs()->where('company_uuid', session('company'))->count();
         $isCoreService = $this->core_service;
 
         return $isCoreService || $isInstalled;
@@ -181,7 +186,7 @@ class Extension extends Model
     }
 
     /**
-     * @var integer
+     * @var int
      */
     public function getInstallCountAttribute()
     {
@@ -228,17 +233,18 @@ class Extension extends Model
         return $this->belongsTo(File::class);
     }
 
-    /** 
-     * @method install 
+    /**
+     * @method install
+     *
      * @return \Fleetbase\Models\ExtensionInstall
      */
     public function install()
     {
         $install = ExtensionInstall::create([
             'extension_uuid' => $this->uuid,
-            'company_uuid' => session('company'),
-            'config' => $this->config,
-            'meta' => $this->meta
+            'company_uuid'   => session('company'),
+            'config'         => $this->config,
+            'meta'           => $this->meta,
         ]);
 
         return $install;

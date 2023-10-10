@@ -2,15 +2,17 @@
 
 namespace Fleetbase\Events;
 
-use Fleetbase\Models\User;
 use Fleetbase\Models\Company;
+use Fleetbase\Models\User;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-class UserRemovedFromCompany 
+class UserRemovedFromCompany
 {
-    use Dispatchable, InteractsWithSockets, SerializesModels;
+    use Dispatchable;
+    use InteractsWithSockets;
+    use SerializesModels;
 
     public User $user;
     public Company $company;
@@ -22,7 +24,7 @@ class UserRemovedFromCompany
      */
     public function __construct(User $user, Company $company)
     {
-        $this->user = $user->setRelations([]);
-        $this->company = $company->setRelations([]);;
+        $this->user    = $user->setRelations([]);
+        $this->company = $company->setRelations([]);
     }
 }

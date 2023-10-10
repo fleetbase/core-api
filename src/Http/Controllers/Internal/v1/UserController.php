@@ -25,7 +25,7 @@ use Maatwebsite\Excel\Facades\Excel;
 class UserController extends FleetbaseController
 {
     /**
-     * The resource to query
+     * The resource to query.
      *
      * @var string
      */
@@ -34,7 +34,6 @@ class UserController extends FleetbaseController
     /**
      * Responds with the currently authenticated user.
      *
-     * @param  \Illuminate\Http\Request $request
      * @return \Illuminate\Http\Response
      */
     public function current(Request $request)
@@ -55,27 +54,26 @@ class UserController extends FleetbaseController
     /**
      * Creates a user, adds the user to company and sends an email to user about being added.
      *
-     * @param  \Fleetbase\Http\Requests\Internal\InviteUserRequest $request
      * @return \Illuminate\Http\Response
      */
     public function inviteUser(InviteUserRequest $request)
     {
         // $data = $request->input(['name', 'email', 'phone', 'status', 'country', 'date_of_birth']);
-        $data = $request->input('user');
+        $data  = $request->input('user');
         $email = strtolower($data['email']);
 
         // set company
         $data['company_uuid'] = session('company');
-        $data['status'] = 'pending'; // pending acceptance
-        $data['type'] = 'user'; // set type as regular user
-        $data['created_at'] = Carbon::now(); // jic
+        $data['status']       = 'pending'; // pending acceptance
+        $data['type']         = 'user'; // set type as regular user
+        $data['created_at']   = Carbon::now(); // jic
 
         // make sure user isn't already invited
         $isAlreadyInvited = Invite::where([
             'company_uuid' => session('company'),
             'subject_uuid' => session('company'),
-            'protocol' => 'email',
-            'reason' => 'join_company'
+            'protocol'     => 'email',
+            'reason'       => 'join_company',
         ])->whereJsonContains('recipients', $email)->exists();
 
         if ($isAlreadyInvited) {
@@ -95,13 +93,13 @@ class UserController extends FleetbaseController
 
         // create invitation
         $invitation = Invite::create([
-            'company_uuid' => session('company'),
+            'company_uuid'    => session('company'),
             'created_by_uuid' => session('user'),
-            'subject_uuid' => $company->uuid,
-            'subject_type' => Utils::getMutationType($company),
-            'protocol' => 'email',
-            'recipients' => [$user->email],
-            'reason' => 'join_company'
+            'subject_uuid'    => $company->uuid,
+            'subject_type'    => Utils::getMutationType($company),
+            'protocol'        => 'email',
+            'recipients'      => [$user->email],
+            'reason'          => 'join_company',
         ]);
 
         // notify user
@@ -113,23 +111,22 @@ class UserController extends FleetbaseController
     /**
      * Resend invitation to pending user.
      *
-     * @param \Fleetbase\Http\Requests\Internal\ResendUserInvite $request
      * @return \Illuminate\Http\Response
      */
     public function resendInvitation(ResendUserInvite $request)
     {
-        $user = User::where('uuid', $request->input('user'))->first();
+        $user    = User::where('uuid', $request->input('user'))->first();
         $company = Company::where('uuid', session('company'))->first();
 
         // create invitation
         $invitation = Invite::create([
-            'company_uuid' => session('company'),
+            'company_uuid'    => session('company'),
             'created_by_uuid' => session('user'),
-            'subject_uuid' => $company->uuid,
-            'subject_type' => Utils::getMutationType($company),
-            'protocol' => 'email',
-            'recipients' => [$user->email],
-            'reason' => 'join_company'
+            'subject_uuid'    => $company->uuid,
+            'subject_type'    => Utils::getMutationType($company),
+            'protocol'        => 'email',
+            'recipients'      => [$user->email],
+            'reason'          => 'join_company',
         ]);
 
         // notify user
@@ -141,7 +138,6 @@ class UserController extends FleetbaseController
     /**
      * Accept invitation to join a company/organization.
      *
-     * @param \Fleetbase\Http\Requests\Internal\AcceptCompanyInvite $request
      * @return \Illuminate\Http\Response
      */
     public function acceptCompanyInvite(AcceptCompanyInvite $request)
@@ -174,8 +170,8 @@ class UserController extends FleetbaseController
 
         // add user to company
         CompanyUser::create([
-            'user_uuid' => $user->uuid,
-            'company_uuid' => $company->uuid
+            'user_uuid'    => $user->uuid,
+            'company_uuid' => $company->uuid,
         ]);
 
         // activate user
@@ -187,16 +183,15 @@ class UserController extends FleetbaseController
         $token = $user->createToken($invite->code);
 
         return response()->json([
-            'status' => 'ok',
-            'token' => $token->plainTextToken,
-            'needs_password' => $needsPassword
+            'status'         => 'ok',
+            'token'          => $token->plainTextToken,
+            'needs_password' => $needsPassword,
         ]);
     }
 
     /**
-     * Deactivates a user
+     * Deactivates a user.
      *
-     * @param \Illuminate\Http\Request $request
      * @return \Illuminate\Http\Response
      */
     public function deactivate($id)
@@ -218,14 +213,13 @@ class UserController extends FleetbaseController
 
         return response()->json([
             'message' => 'User deactivated',
-            'status' => $user->session_status
+            'status'  => $user->session_status,
         ]);
     }
 
     /**
-     * Activates/re-activates a user
+     * Activates/re-activates a user.
      *
-     * @param \Illuminate\Http\Request $request
      * @return \Illuminate\Http\Response
      */
     public function activate($id)
@@ -248,14 +242,13 @@ class UserController extends FleetbaseController
 
         return response()->json([
             'message' => 'User activated',
-            'status' => $user->session_status
+            'status'  => $user->session_status,
         ]);
     }
 
     /**
      * Removes this user from the current company.
      *
-     * @param \Illuminate\Http\Request $request
      * @return \Illuminate\Http\Response
      */
     public function removeFromCompany($id)
@@ -303,14 +296,13 @@ class UserController extends FleetbaseController
         }
 
         return response()->json([
-            'message' => 'User removed'
+            'message' => 'User removed',
         ]);
     }
 
     /**
      * Updates the current users password.
      *
-     * @param \Fleetbase\Http\Requests\Internal\UpdatePasswordRequest $request
      * @return \Illuminate\Http\Response
      */
     public function setCurrentUserPassword(UpdatePasswordRequest $request)
@@ -329,14 +321,13 @@ class UserController extends FleetbaseController
     }
 
     /**
-     * Endpoint to quickly search/query
+     * Endpoint to quickly search/query.
      *
-     * @param \Illuminate\Http\Request $request
      * @return \Illuminate\Http\Response
      */
     public function searchRecords(Request $request)
     {
-        $query = $request->input('query');
+        $query   = $request->input('query');
         $results = User::select(['uuid', 'name'])
             ->search($query)
             ->limit(12)
@@ -346,14 +337,13 @@ class UserController extends FleetbaseController
     }
 
     /**
-     * Export the users to excel or csv
+     * Export the users to excel or csv.
      *
-     * @param  \Illuminate\Http\Request  $query
      * @return \Illuminate\Http\Response
      */
     public static function export(ExportRequest $request)
     {
-        $format = $request->input('format', 'xlsx');
+        $format   = $request->input('format', 'xlsx');
         $fileName = trim(Str::slug('users-' . date('Y-m-d-H:i')) . '.' . $format);
 
         return Excel::download(new UserExport(), $fileName);
@@ -362,13 +352,12 @@ class UserController extends FleetbaseController
     /**
      * Get user and always return with driver.
      *
-     * @param  \Illuminate\Http\Request  $query
      * @return \Illuminate\Http\Response
      */
     public static function getWithDriver($id, Request $request)
     {
-        $user = User::select(['public_id', 'uuid', 'email', 'name', 'phone', 'type'])->where('uuid', $id)->with(['driver'])->first();
-        $json = $user->toArray();
+        $user           = User::select(['public_id', 'uuid', 'email', 'name', 'phone', 'type'])->where('uuid', $id)->with(['driver'])->first();
+        $json           = $user->toArray();
         $json['driver'] = $user->driver;
 
         return response()->json(['user' => $user]);

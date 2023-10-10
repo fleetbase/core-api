@@ -24,9 +24,9 @@ class UploadBase64FileRequest extends FleetbaseRequest
     public function rules()
     {
         return [
-            'data' => ['required'],
-            'file_name' => ['required'],
-            'file_type' => ['nullable', 'string'],
+            'data'         => ['required'],
+            'file_name'    => ['required'],
+            'file_type'    => ['nullable', 'string'],
             'content_type' => ['nullable', 'string'],
             'subject_uuid' => ['nullable', 'string'],
             'subject_type' => ['nullable', 'string'],
@@ -41,7 +41,7 @@ class UploadBase64FileRequest extends FleetbaseRequest
     public function messages()
     {
         return [
-            'data.required' => 'Please provide a base64 encoded file.',
+            'data.required'      => 'Please provide a base64 encoded file.',
             'file_name.required' => 'Please provide a file name.',
         ];
     }

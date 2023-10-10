@@ -9,10 +9,12 @@ use Illuminate\Routing\Controller as BaseController;
 
 class Controller extends BaseController
 {
-    use AuthorizesRequests, DispatchesJobs, ValidatesRequests;
+    use AuthorizesRequests;
+    use DispatchesJobs;
+    use ValidatesRequests;
 
     /**
-     * Welcome message only
+     * Welcome message only.
      */
     public function hello()
     {
@@ -25,7 +27,7 @@ class Controller extends BaseController
     }
 
     /**
-     * Response time only
+     * Response time only.
      */
     public function time()
     {

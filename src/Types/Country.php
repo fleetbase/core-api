@@ -8,9 +8,8 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use PragmaRX\Countries\Package\Countries;
-use JsonSerializable;
 
-class Country implements JsonSerializable
+class Country implements \JsonSerializable
 {
     /**
      * ISO-3166-1 Alpha-3 Code.
@@ -64,11 +63,11 @@ class Country implements JsonSerializable
             $data = static::all()->where('cca2', $code)->first();
         }
 
-        $this->name = $data['name'] = Utils::or($data, ['name.common', 'name.official', 'name_long', 'name_en']);
+        $this->name     = $data['name'] = Utils::or($data, ['name.common', 'name.official', 'name_long', 'name_en']);
         $this->currency = $data['currency'] = Utils::or($data, ['currencies.0', 'currencies.0.name']);
-        $this->emoji = $data['emoji'] = Utils::get($data, 'flag.emoji');
-        $this->code = $code;
-        $this->data = $data;
+        $this->emoji    = $data['emoji'] = Utils::get($data, 'flag.emoji');
+        $this->code     = $code;
+        $this->data     = $data;
 
         foreach ($data as $key => $value) {
             $this->{$key} = $value;
@@ -77,12 +76,13 @@ class Country implements JsonSerializable
 
     /**
      * Magic helper methods to access and query country properties.
-     * 
+     *
      * $country->getCurrency();
      *
      * @param string $name
-     * @param array $args
-     * @return null|mixed
+     * @param array  $args
+     *
+     * @return mixed|null
      */
     public function __call($name, $args)
     {
@@ -103,9 +103,8 @@ class Country implements JsonSerializable
 
     /**
      * Converts the country into an array with only the selected keys.
-     * 
+     *
      * @param array $keys
-     * @return array
      */
     public function only($keys = []): array
     {
@@ -115,7 +114,7 @@ class Country implements JsonSerializable
             $as = $key;
 
             if (is_array($key)) {
-                $as = Arr::first(array_values($key));
+                $as  = Arr::first(array_values($key));
                 $key = Arr::first(array_keys($key));
             }
 
@@ -127,8 +126,6 @@ class Country implements JsonSerializable
 
     /**
      * Converts country into array with only the basic column data for a country.
-     *
-     * @return array
      */
     public function simple(): array
     {
@@ -137,12 +134,13 @@ class Country implements JsonSerializable
 
     /**
      * Magic helper methods to access and query country properties.
-     * 
+     *
      * static::whereCurrency('USD');
      *
      * @param string $name
-     * @param array $args
-     * @return null|mixed
+     * @param array  $args
+     *
+     * @return mixed|null
      */
     public static function __callStatic($name, $args)
     {
@@ -160,10 +158,7 @@ class Country implements JsonSerializable
     }
 
     /**
-     * Check currency existence (within the class)
-     *
-     * @access public
-     * @return bool
+     * Check currency existence (within the class).
      */
     public static function has(?string $code): bool
     {
@@ -176,8 +171,6 @@ class Country implements JsonSerializable
 
     /**
      * Get all countries from repository.
-     *
-     * @return \Illuminate\Support\Collection
      */
     public static function all(): Collection
     {
@@ -193,31 +186,28 @@ class Country implements JsonSerializable
 
     /**
      * Finds the first currency of which the callback returns true.
-     * 
-     * @param callable|null $callback
+     *
      * @return \Fleetbase\Support\Currency
      */
-    public static function first(?callable $callback = null)
+    public static function first(callable $callback = null)
     {
         return static::all()->first($callback);
     }
 
     /**
      * Filter currencies by providing a callback.
-     * 
-     * @param callable|null $callback
-     * @return \Illuminate\Support\Collection 
+     *
+     * @return \Illuminate\Support\Collection
      */
-    public static function filter(?callable $callback = null)
+    public static function filter(callable $callback = null)
     {
         return static::all()->filter($callback)->values();
     }
 
     /**
      * Search all countries by keyword.
-     * 
-     * @param string $query
-     * @return \Illuminate\Support\Collection 
+     *
+     * @return \Illuminate\Support\Collection
      */
     public static function search(string $query)
     {
@@ -230,11 +220,11 @@ class Country implements JsonSerializable
                 $query = strtolower($query);
 
                 $matches = [
-                    strtolower($country->getCurrency()) === $query, 
+                    strtolower($country->getCurrency()) === $query,
                     strtolower($country->getCode()) === $query,
                     strtolower($country->getCca2()) === $query,
                     Str::contains(strtolower($country->getAbbrev()), $query),
-                    Str::contains(strtolower($country->getName()), $query)
+                    Str::contains(strtolower($country->getName()), $query),
                 ];
 
                 return count(array_filter($matches));
@@ -246,6 +236,7 @@ class Country implements JsonSerializable
      * Find a country by it's currency code.
      *
      * @param string $currency
+     *
      * @return void
      */
     public static function fromCurrency($currency)
@@ -260,8 +251,7 @@ class Country implements JsonSerializable
     /**
      * Get the collection of items as JSON.
      *
-     * @param  int  $options
-     * @return string
+     * @param int $options
      */
     public function toJson($options = 0): string
     {
@@ -270,8 +260,6 @@ class Country implements JsonSerializable
 
     /**
      * Converts data to array.
-     *
-     * @return array
      */
     public function toArray(): array
     {
@@ -280,8 +268,6 @@ class Country implements JsonSerializable
 
     /**
      * Convert the object into something JSON serializable.
-     *
-     * @return array
      */
     public function jsonSerialize(): array
     {

@@ -12,9 +12,7 @@ class SocketClusterBroadcaster implements Broadcaster
     protected SocketClusterService $socketcluster;
 
     /**
-     * Construct
-     *
-     * @param \Fleetbase\Support\SocketCluster\SocketClusterService $socketcluster
+     * Construct.
      *
      * @param void
      */
@@ -26,8 +24,7 @@ class SocketClusterBroadcaster implements Broadcaster
     /**
      * Authenticate the incoming request for a given channel.
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @return mixed
+     * @param \Illuminate\Http\Request $request
      */
     public function auth($request)
     {
@@ -36,20 +33,16 @@ class SocketClusterBroadcaster implements Broadcaster
     /**
      * Return the valid authentication response.
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  mixed  $result
-     * @return mixed
+     * @param \Illuminate\Http\Request $request
      */
     public function validAuthenticationResponse($request, $result)
     {
     }
 
     /**
-     * Broadcast
+     * Broadcast.
      *
-     * @param array  $channels
      * @param string $event
-     * @param array  $payload
      *
      * @return void
      */

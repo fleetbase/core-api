@@ -3,16 +3,16 @@
 namespace Fleetbase\Traits;
 
 use Fleetbase\Support\Http;
-use Fleetbase\Support\Utils;
 use Fleetbase\Support\Resolve;
+use Fleetbase\Support\Utils;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
-use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Arr;
 
 /**
- * Adds API Model Behavior 
+ * Adds API Model Behavior.
  */
 trait HasApiModelBehavior
 {
@@ -26,7 +26,7 @@ trait HasApiModelBehavior
     /**
      * Get the fully qualified name of the database column used to store the public ID for this model.
      *
-     * @return string The fully qualified name of the public ID column.
+     * @return string the fully qualified name of the public ID column
      */
     public function getQualifiedPublicId()
     {
@@ -36,7 +36,7 @@ trait HasApiModelBehavior
     /**
      * Get the plural name of this model, either from the `pluralName` property or by inflecting the table name.
      *
-     * @return string The plural name of this model.
+     * @return string the plural name of this model
      */
     public function getPluralName(): string
     {
@@ -54,7 +54,7 @@ trait HasApiModelBehavior
     /**
      * Get the singular name of this model, either from the `singularName` property or by inflecting the table name.
      *
-     * @return string The singular name of this model.
+     * @return string the singular name of this model
      */
     public function getSingularName(): string
     {
@@ -71,9 +71,9 @@ trait HasApiModelBehavior
 
     /**
      * Returns a list of fields that can be searched / filtered by. This includes
-     * all fillable columns, the primary key column, and the created_at 
-     * and updated_at columns
-     * 
+     * all fillable columns, the primary key column, and the created_at
+     * and updated_at columns.
+     *
      * @return array
      */
     public function searcheableFields()
@@ -87,25 +87,26 @@ trait HasApiModelBehavior
             [
                 $this->getKeyName(),
                 $this->getCreatedAtColumn(),
-                $this->getUpdatedAtColumn()
+                $this->getUpdatedAtColumn(),
             ]
         );
     }
 
     /**
-     * Retrieves all records based on request data passed in
-     * 
-     * @param  \Illuminate\Http\Request  $request The HTTP request containing the input data.
-     * @param  \Closure|null  $queryCallback Optional callback to modify data with Request and QueryBuilder instance.
+     * Retrieves all records based on request data passed in.
+     *
+     * @param \Illuminate\Http\Request $request       the HTTP request containing the input data
+     * @param \Closure|null            $queryCallback optional callback to modify data with Request and QueryBuilder instance
+     *
      * @return \Illuminate\Database\Eloquent\Collection|\Illuminate\Contracts\Pagination\LengthAwarePaginator
      */
-    public function queryFromRequest(Request $request, ?\Closure $queryCallback = null)
+    public function queryFromRequest(Request $request, \Closure $queryCallback = null)
     {
-        $limit = $request->integer('limit', 30);
+        $limit   = $request->integer('limit', 30);
         $columns = $request->input('columns', ['*']);
 
-        /** 
-         * @var \Illuminate\Database\Query\Builder $builder 
+        /**
+         * @var \Illuminate\Database\Query\Builder $builder
          */
         $builder = $this->searchBuilder($request, $columns);
 
@@ -118,13 +119,14 @@ trait HasApiModelBehavior
             $queryCallback($builder, $request);
         }
 
-        /** debug */
+        /* debug */
         // Utils::sqlDump($builder);
 
         if (Http::isInternalRequest($request)) {
             if ($limit === -1) {
                 $limit = 999999999;
             }
+
             return $builder->paginate($limit, $columns);
         }
 
@@ -139,26 +141,30 @@ trait HasApiModelBehavior
      * Static alias for queryFromRequest().
      *
      * @see queryFromRequest()
-     * @param  \Illuminate\Http\Request  $request The HTTP request containing the input data.
-     * @param  \Closure|null  $queryCallback Optional callback to modify data with Request and QueryBuilder instance.
+     *
+     * @param \Illuminate\Http\Request $request       the HTTP request containing the input data
+     * @param \Closure|null            $queryCallback optional callback to modify data with Request and QueryBuilder instance
+     *
      * @return \Illuminate\Database\Eloquent\Collection|\Illuminate\Contracts\Pagination\LengthAwarePaginator
+     *
      * @static
      */
-    public static function queryWithRequest(Request $request, ?\Closure $queryCallback = null)
+    public static function queryWithRequest(Request $request, \Closure $queryCallback = null)
     {
-        return (new static)->queryFromRequest($request, $queryCallback);
+        return (new static())->queryFromRequest($request, $queryCallback);
     }
 
     /**
      * Create a new record in the database based on the input data in the given request.
      *
-     * @param  \Illuminate\Http\Request  $request The HTTP request containing the input data.
-     * @param  callable|null  $onBefore An optional callback function to execute before creating the record.
-     * @param  callable|null  $onAfter An optional callback function to execute after creating the record.
-     * @param  array  $options An optional array of additional options.
-     * @return mixed The newly created record, or a JSON response if the callbacks return one.
+     * @param \Illuminate\Http\Request $request  the HTTP request containing the input data
+     * @param callable|null            $onBefore an optional callback function to execute before creating the record
+     * @param callable|null            $onAfter  an optional callback function to execute after creating the record
+     * @param array                    $options  an optional array of additional options
+     *
+     * @return mixed the newly created record, or a JSON response if the callbacks return one
      */
-    public function createRecordFromRequest($request, ?callable $onBefore = null, ?callable $onAfter = null, array $options = [])
+    public function createRecordFromRequest($request, callable $onBefore = null, callable $onAfter = null, array $options = [])
     {
         $input = $this->getApiPayloadFromRequest($request);
         $input = $this->fillSessionAttributes($input);
@@ -195,16 +201,18 @@ trait HasApiModelBehavior
     /**
      * Update an existing record in the database based on the input data in the given request.
      *
-     * @param  \Illuminate\Http\Request  $request The HTTP request containing the input data.
-     * @param  mixed  $id The ID of the record to update.
-     * @param  callable|null  $onBefore An optional callback function to execute before updating the record.
-     * @param  callable|null  $onAfter An optional callback function to execute after updating the record.
-     * @param  array  $options An optional array of additional options.
-     * @return mixed The updated record, or a JSON response if the callbacks return one.
-     * @throws \Symfony\Component\HttpKernel\Exception\NotFoundHttpException If the record with the given ID is not found.
-     * @throws \Exception If the input contains an invalid parameter that is not fillable.
+     * @param \Illuminate\Http\Request $request  the HTTP request containing the input data
+     * @param mixed                    $id       the ID of the record to update
+     * @param callable|null            $onBefore an optional callback function to execute before updating the record
+     * @param callable|null            $onAfter  an optional callback function to execute after updating the record
+     * @param array                    $options  an optional array of additional options
+     *
+     * @return mixed the updated record, or a JSON response if the callbacks return one
+     *
+     * @throws \Symfony\Component\HttpKernel\Exception\NotFoundHttpException if the record with the given ID is not found
+     * @throws \Exception                                                    if the input contains an invalid parameter that is not fillable
      */
-    public function updateRecordFromRequest(Request $request, $id, ?callable $onBefore = null, ?callable $onAfter = null, array $options = [])
+    public function updateRecordFromRequest(Request $request, $id, callable $onBefore = null, callable $onAfter = null, array $options = [])
     {
         $record = $this->where(function ($q) use ($id) {
             $publicIdColumn = $this->getQualifiedPublicId();
@@ -272,7 +280,9 @@ trait HasApiModelBehavior
      * Removes a record from the database based on the given ID.
      *
      * @param mixed $id The ID or public ID of the record to remove
+     *
      * @return bool|int The number of records affected, or false if the record is not found
+     *
      * @throws \Exception If there's an issue while deleting the record
      */
     public function remove($id)
@@ -301,7 +311,9 @@ trait HasApiModelBehavior
      * Removes multiple records from the database based on the given IDs.
      *
      * @param array $ids The array of IDs or public IDs of the records to remove
+     *
      * @return bool|int The number of records affected, or false if no records are found
+     *
      * @throws \Exception If there's an issue while deleting the records
      */
     public function bulkRemove($ids = [])
@@ -323,6 +335,7 @@ trait HasApiModelBehavior
 
         try {
             $records->delete();
+
             return $count;
         } catch (\Exception $e) {
             throw $e;
@@ -334,12 +347,13 @@ trait HasApiModelBehavior
      * Applies 'with' and 'without' parameters to the result.
      *
      * @param Request $request The request object containing the 'with' and 'without' parameters
-     * @param mixed $result The model, collection or array of results to be mutated
+     * @param mixed   $result  The model, collection or array of results to be mutated
+     *
      * @return mixed The mutated model, collection or array of results
      */
     public static function mutateModelWithRequest(Request $request, $result)
     {
-        $with = $request->or(['with', 'expand'], []);
+        $with    = $request->or(['with', 'expand'], []);
         $without = $request->array('without');
 
         // handle collection or array of results
@@ -368,20 +382,21 @@ trait HasApiModelBehavior
      *
      * @param array $target The target array to fill with session attributes
      * @param array $except The list of attributes that should not be filled (default: [])
-     * @param array $only The list of attributes that should only be filled (default: [])
+     * @param array $only   The list of attributes that should only be filled (default: [])
+     *
      * @return array The filled target array with session attributes
      */
     public function fillSessionAttributes(?array $target = [], array $except = [], array $only = []): array
     {
-        $fill = [];
+        $fill       = [];
         $attributes = [
-            'user_uuid' => 'user',
-            'author_uuid' => 'user',
-            'uploader_uuid' => 'user',
-            'creator_uuid' => 'user',
+            'user_uuid'       => 'user',
+            'author_uuid'     => 'user',
+            'uploader_uuid'   => 'user',
+            'creator_uuid'    => 'user',
             'created_by_uuid' => 'user',
             'updated_by_uuid' => 'user',
-            'company_uuid' => 'company'
+            'company_uuid'    => 'company',
         ];
 
         foreach ($attributes as $attr => $key) {
@@ -400,14 +415,13 @@ trait HasApiModelBehavior
     /**
      * Checks if request contains relationships.
      *
-     * @param Request $request
      * @param \Illuminate\Database\Query\Builder $builder
-     * 
+     *
      * @return \Illuminate\Database\Query\Builder
      */
     public function withRelationships(Request $request, $builder)
     {
-        $with = $request->or(['with', 'expand']);
+        $with    = $request->or(['with', 'expand']);
         $without = $request->array('without', []);
 
         if (!$with && !$without) {
@@ -417,7 +431,6 @@ trait HasApiModelBehavior
         $contains = is_array($with) ? $with : explode(',', $with);
 
         foreach ($contains as $contain) {
-
             $camelVersion = Str::camel(trim($contain));
             if (\method_exists($this, $camelVersion)) {
                 $builder->with($camelVersion);
@@ -437,7 +450,7 @@ trait HasApiModelBehavior
                     },
                     explode('.', $contain)
                 );
-                $contain = implode(".", $parts);
+                $contain = implode('.', $parts);
 
                 $builder->with($contain);
                 continue;
@@ -454,9 +467,9 @@ trait HasApiModelBehavior
     /**
      * Checks if request includes counts.
      *
-     * @param Request $request
+     * @param Request                            $request
      * @param \Illuminate\Database\Query\Builder $builder
-     * 
+     *
      * @return \Illuminate\Database\Query\Builder
      */
     public function withCounts($request, $builder)
@@ -467,7 +480,7 @@ trait HasApiModelBehavior
             return $builder;
         }
 
-        $counters = explode(",", $count);
+        $counters = explode(',', $count);
 
         foreach ($counters as $counter) {
             if (\method_exists($this, $counter)) {
@@ -488,9 +501,9 @@ trait HasApiModelBehavior
     /**
      * Apply sorts to query.
      *
-     * @param Request $request - HTTP Request
+     * @param Request                            $request - HTTP Request
      * @param \Illuminate\Database\Query\Builder $builder - Query Builder
-     * 
+     *
      * @return \Illuminate\Database\Query\Builder
      */
     public function applySorts($request, $builder)
@@ -525,13 +538,13 @@ trait HasApiModelBehavior
                 foreach ($columns as $column) {
                     if (Str::startsWith($column, '-')) {
                         $direction = Str::startsWith($column, '-') ? 'desc' : 'asc';
-                        $param = Str::startsWith($column, '-') ? substr($column, 1) : $column;
+                        $param     = Str::startsWith($column, '-') ? substr($column, 1) : $column;
 
                         $builder->orderBy($column, $direction);
                         continue;
                     }
 
-                    $sd = explode(":", $column);
+                    $sd = explode(':', $column);
                     if ($sd && count($sd) > 0) {
                         count($sd) == 2
                             ? $builder->orderBy(trim($sd[0]), trim($sd[1]))
@@ -555,11 +568,11 @@ trait HasApiModelBehavior
     }
 
     /**
-     * Retrieves a record based on primary key id
-     * 
-     * @param string $id - The ID
+     * Retrieves a record based on primary key id.
+     *
+     * @param string                   $id      - The ID
      * @param \Illuminate\Http\Request $request - HTTP Request
-     * 
+     *
      * @return \Illuminate\Database\Eloquent\Model|null
      */
     public function getById($id, Request $request)
@@ -591,13 +604,13 @@ trait HasApiModelBehavior
             ->orderBy($this->option_label, 'asc')
             ->get();
 
-        //convert data to standard object {value:'', label:''}
+        // convert data to standard object {value:'', label:''}
         $arr = [];
         foreach ($builder as $x) {
             if ($x[$this->option_label]) {
                 $arr[] = [
                     'value' => $x[$this->option_key],
-                    'label' => $x[$this->option_label]
+                    'label' => $x[$this->option_label],
                 ];
             }
         }
@@ -609,11 +622,12 @@ trait HasApiModelBehavior
      * Searches for records based on the request parameters and returns a paginated result.
      *
      * @param Request $request The request object containing the search parameters
+     *
      * @return \Illuminate\Contracts\Pagination\LengthAwarePaginator The paginated search results
      */
     public function searchRecordFromRequest(Request $request)
     {
-        $limit = $request->integer('limit', 30);
+        $limit   = $request->integer('limit', 30);
         $builder =  $this->searchBuilder($request);
 
         return $builder->paginate($limit);
@@ -623,6 +637,7 @@ trait HasApiModelBehavior
      * Builds the search query based on the request parameters.
      *
      * @param Request $request The request object containing the search parameters
+     *
      * @return \Illuminate\Database\Eloquent\Builder The search query builder
      */
     public function searchBuilder(Request $request, $columns = ['*'])
@@ -641,8 +656,9 @@ trait HasApiModelBehavior
     /**
      * Applies custom filters to the search query based on the request parameters.
      *
-     * @param Request $request The request object containing the custom filter parameters
+     * @param Request                               $request The request object containing the custom filter parameters
      * @param \Illuminate\Database\Eloquent\Builder $builder The search query builder
+     *
      * @return \Illuminate\Database\Eloquent\Builder The search query builder with custom filters applied
      */
     public function applyCustomFilters(Request $request, $builder)
@@ -654,8 +670,8 @@ trait HasApiModelBehavior
         }
 
         // handle with/without here
-        $with = $request->or(['with', 'expand'], []);
-        $without = $request->array('without');
+        $with             = $request->or(['with', 'expand'], []);
+        $without          = $request->array('without');
         $withoutRelations = $request->boolean('without_relations');
 
         // camelcase all params in with and apply
@@ -693,29 +709,30 @@ trait HasApiModelBehavior
     /**
      * Applies filters to the search query based on the request parameters.
      *
-     * @param Request $request The request object containing the filter parameters
+     * @param Request                               $request The request object containing the filter parameters
      * @param \Illuminate\Database\Eloquent\Builder $builder The search query builder
+     *
      * @return \Illuminate\Database\Eloquent\Builder The search query builder with filters applied
      */
     public function applyFilters(Request $request, $builder)
     {
         $operators = $this->getQueryOperators();
-        $filters = $request->input('filters', []);
+        $filters   = $request->input('filters', []);
 
         foreach ($filters as $column => $values) {
             if (!in_array($column, $this->searcheableFields())) {
                 continue;
             }
 
-            $valueParts = explode(":", $values);
-            $operator = "eq";
+            $valueParts      = explode(':', $values);
+            $operator        = 'eq';
             $operator_symbol = '=';
-            $value = null;
+            $value           = null;
 
             if (count($valueParts) > 1) {
-                $operator = $valueParts[0];
+                $operator        = $valueParts[0];
                 $operator_symbol = $operators[$operator] ?? '=';
-                $value = $valueParts[1];
+                $value           = $valueParts[1];
             } else {
                 $value = $valueParts[0];
             }
@@ -730,11 +747,11 @@ trait HasApiModelBehavior
         return $builder;
     }
 
-
     /**
      * Counts the records based on the request search parameters.
      *
      * @param Request $request The request object containing the search parameters
+     *
      * @return int The number of records found
      */
     public function count(Request $request)
@@ -745,14 +762,15 @@ trait HasApiModelBehavior
     /**
      * Checks if the custom column filter should be prioritized.
      *
-     * @param \Illuminate\Http\Request $request The request object containing filter parameters
+     * @param \Illuminate\Http\Request              $request The request object containing filter parameters
      * @param \Illuminate\Database\Eloquent\Builder $builder The search query builder
-     * @param string $column The column name
+     * @param string                                $column  The column name
+     *
      * @return bool True if the custom column filter should be prioritized, false otherwise
      */
     public function prioritizedCustomColumnFilter($request, $builder, $column)
     {
-        $resourceFilter = Resolve::httpFilterForModel($this, $request);
+        $resourceFilter     = Resolve::httpFilterForModel($this, $request);
         $camlizedColumnName = Str::camel($column);
 
         return method_exists($resourceFilter, $camlizedColumnName) || method_exists($resourceFilter, $column);
@@ -761,8 +779,9 @@ trait HasApiModelBehavior
     /**
      * Builds the search parameters based on the request.
      *
-     * @param Request $request The request object containing the search parameters
+     * @param Request                               $request The request object containing the search parameters
      * @param \Illuminate\Database\Eloquent\Builder $builder The search query builder
+     *
      * @return \Illuminate\Database\Eloquent\Builder The search query builder with search parameters applied
      */
     public function buildSearchParams(Request $request, $builder)
@@ -775,7 +794,7 @@ trait HasApiModelBehavior
             }
 
             $fieldEndsWithOperator = Str::endsWith($key, array_keys($operators));
-            $isFillable = $this->isFillable($key) || in_array($key, ['uuid', 'public_id']);
+            $isFillable            = $this->isFillable($key) || in_array($key, ['uuid', 'public_id']);
 
             if (!$fieldEndsWithOperator && $isFillable) {
                 $builder->where($key, '=', $value);
@@ -784,9 +803,9 @@ trait HasApiModelBehavior
 
             // apply special operators based on the column name passed
             foreach ($operators as $op_key => $op_type) {
-                $key = strtolower($key);
-                $op_key = strtolower($op_key);
-                $column = Str::replaceLast($op_key, '', $key);
+                $key                   = strtolower($key);
+                $op_key                = strtolower($op_key);
+                $column                = Str::replaceLast($op_key, '', $key);
                 $fieldEndsWithOperator = Str::endsWith($key, $op_key);
 
                 if (!$fieldEndsWithOperator) {
@@ -800,7 +819,6 @@ trait HasApiModelBehavior
         return $builder;
     }
 
-
     /**
      * Returns the query operators for filtering.
      *
@@ -809,27 +827,28 @@ trait HasApiModelBehavior
     private function getQueryOperators()
     {
         return [
-            '_not' => '!=',
-            '_gt' => '>',
-            '_lt' => '<',
-            '_gte' => '>=',
-            '_lte' => '<=',
-            '_like' => 'LIKE',
-            '_in' => true,
-            '_notIn' => true,
-            '_isNull' => true,
-            '_isNotNull' => true
+            '_not'       => '!=',
+            '_gt'        => '>',
+            '_lt'        => '<',
+            '_gte'       => '>=',
+            '_lte'       => '<=',
+            '_like'      => 'LIKE',
+            '_in'        => true,
+            '_notIn'     => true,
+            '_isNull'    => true,
+            '_isNotNull' => true,
         ];
     }
 
     /**
      * Applies the query operators to the search query builder.
      *
-     * @param \Illuminate\Database\Eloquent\Builder $builder The search query builder
-     * @param string $column_name The column name
-     * @param string $op_key The operator key
-     * @param string $op_type The operator type
-     * @param mixed $value The value for the query operator
+     * @param \Illuminate\Database\Eloquent\Builder $builder     The search query builder
+     * @param string                                $column_name The column name
+     * @param string                                $op_key      The operator key
+     * @param string                                $op_type     The operator type
+     * @param mixed                                 $value       The value for the query operator
+     *
      * @return \Illuminate\Database\Eloquent\Builder The search query builder with query operators applied
      */
     private function applyOperators($builder, $column_name, $op_key, $op_type, $value)
@@ -840,13 +859,13 @@ trait HasApiModelBehavior
 
         if ($op_key == '_in') {
             $builder->whereIn($column_name, explode(',', $value));
-        } else if ($op_key == strtolower('_notIn')) {
+        } elseif ($op_key == strtolower('_notIn')) {
             $builder->whereNotIn($column_name, explode(',', $value));
-        } else if ($op_key == strtolower('_isNull')) {
+        } elseif ($op_key == strtolower('_isNull')) {
             $builder->whereNull($column_name);
-        } else if ($op_key == strtolower('_isNotNull')) {
+        } elseif ($op_key == strtolower('_isNotNull')) {
             $builder->whereNotNull($column_name);
-        } else if ($op_key == '_like') {
+        } elseif ($op_key == '_like') {
             $builder->where($column_name, 'LIKE', "{$value}%");
         } else {
             $builder->where($column_name, $op_type, $value);
@@ -859,6 +878,7 @@ trait HasApiModelBehavior
      * Determines whether the given column name should be qualified.
      *
      * @param string $column_name The column name
+     *
      * @return bool True if the column should be qualified, false otherwise
      */
     public function shouldQualifyColumn($column_name)
@@ -867,15 +887,16 @@ trait HasApiModelBehavior
             $this->getKey() ?? 'uuid',
             $this->getCreatedAtColumn() ?? 'created_at',
             $this->getUpdatedAtColumn() ?? 'updated_at',
-            $this->getDeletedAtColumn() ?? 'deleted_at'
+            $this->getDeletedAtColumn() ?? 'deleted_at',
         ]);
     }
 
     /**
      * Checks if a given key exists in the filter parameters.
      *
-     * @param string $key The key to be checked for existence in the filter parameters.
-     * @return bool Returns true if the key exists in the filter parameters, otherwise returns false.
+     * @param string $key the key to be checked for existence in the filter parameters
+     *
+     * @return bool returns true if the key exists in the filter parameters, otherwise returns false
      */
     public function isFilterParam(string $key): bool
     {
@@ -891,7 +912,7 @@ trait HasApiModelBehavior
      *
      * This function converts the table name of the model into a singular, title-cased string to be used as a human-readable name.
      *
-     * @return string The human-readable name for the API model.
+     * @return string the human-readable name for the API model
      */
     public function getApiHumanReadableName()
     {
@@ -903,13 +924,14 @@ trait HasApiModelBehavior
      *
      * This function extracts the payload from the request using the singular name or camel-cased singular name as keys. If neither is found, it returns all input data.
      *
-     * @param Request $request The incoming HTTP request instance.
-     * @return array The extracted payload from the request.
+     * @param Request $request the incoming HTTP request instance
+     *
+     * @return array the extracted payload from the request
      */
     public function getApiPayloadFromRequest(Request $request): array
     {
         $payloadKeys = [$this->getSingularName(), Str::camel($this->getSingularName())];
-        $input = $request->or($payloadKeys) ?? $request->all();
+        $input       = $request->or($payloadKeys) ?? $request->all();
         // the following input keys should always be managed by the server
         $input = Arr::except($input, ['company_uuid', 'created_by_uuid', 'updated_by_uuid', 'uploader_uuid']);
 
@@ -918,14 +940,11 @@ trait HasApiModelBehavior
 
     /**
      * Determines whether a given column exists in the table associated with the model.
-     *
-     * @param  string  $columnName
-     * @return bool
      */
     public function isColumn(string $columnName): bool
     {
         $connectionName = config('database.default');
-        $connection = $this->getConnection();
+        $connection     = $this->getConnection();
 
         if ($connection instanceof \Illuminate\Database\Connection) {
             $connectionName = $connection->getName();
@@ -941,17 +960,18 @@ trait HasApiModelBehavior
      * not a relation (either in its given form or in its camel case equivalent), not a filter parameter,
      * and not an appended attribute.
      *
-     * @param string $key The parameter key to evaluate.
-     * @return bool Returns true if the key is not valid for updating; false otherwise.
+     * @param string $key the parameter key to evaluate
+     *
+     * @return bool returns true if the key is not valid for updating; false otherwise
      */
     public function isInvalidUpdateParam(string $key): bool
     {
-        $isNotTimestamp = !in_array($key, ['created_at', 'updated_at', 'deleted_at']);
-        $isNotFillable = !$this->isFillable($key);
-        $isNotRelation = !$this->isRelation($key) && !$this->isRelation(Str::camel($key));
-        $isNotFilterParam = !$this->isFilterParam($key);
+        $isNotTimestamp          = !in_array($key, ['created_at', 'updated_at', 'deleted_at']);
+        $isNotFillable           = !$this->isFillable($key);
+        $isNotRelation           = !$this->isRelation($key) && !$this->isRelation(Str::camel($key));
+        $isNotFilterParam        = !$this->isFilterParam($key);
         $isNotAppenededAttribute = !in_array($key, $this->appends ?? []);
-        $isNotIdParam = !in_array($key, ['id', 'uuid', 'public_id']);
+        $isNotIdParam            = !in_array($key, ['id', 'uuid', 'public_id']);
 
         return $isNotTimestamp && $isNotFillable && $isNotRelation && $isNotFilterParam && $isNotAppenededAttribute && $isNotIdParam;
     }
@@ -959,21 +979,22 @@ trait HasApiModelBehavior
     /**
      * Find a model by its `public_id` or `internal_id` key or throw an exception.
      *
-     * @param  mixed  $id ID of the record to find
-     * @param  array  $with Relationships to include
-     * @param  array  $columns Columns to select in query
-     * @param  Closure|null  $queryCallback Optional callback to modify the QueryBuilder
+     * @param mixed        $id            ID of the record to find
+     * @param array        $with          Relationships to include
+     * @param array        $columns       Columns to select in query
+     * @param Closure|null $queryCallback Optional callback to modify the QueryBuilder
+     *
      * @return \Illuminate\Database\Eloquent\Model|\Illuminate\Database\Eloquent\Collection|static|static[]
      *
      * @throws \Illuminate\Database\Eloquent\ModelNotFoundException
      */
-    public static function findRecordOrFail($id, $with = [], $columns = ['*'], ?\Closure $queryCallback = null)
+    public static function findRecordOrFail($id, $with = [], $columns = ['*'], \Closure $queryCallback = null)
     {
         if (is_null($columns) || empty($columns)) {
             $columns = ['*'];
         }
 
-        /** @var \Illuminate\Database\Eloquent\Model $instance New instance of current Model **/
+        /** @var \Illuminate\Database\Eloquent\Model $instance New instance of current Model * */
         $instance = (new static());
 
         // has internal id?

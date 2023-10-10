@@ -10,7 +10,9 @@ use Spatie\Sluggable\SlugOptions;
 
 class Type extends Model
 {
-    use HasUuid, HasSlug, HasApiModelBehavior;
+    use HasUuid;
+    use HasSlug;
+    use HasApiModelBehavior;
 
     /**
      * The database connection to use.
@@ -43,7 +45,7 @@ class Type extends Model
     ];
 
     /**
-     * Dynamic attributes that are appended to object
+     * Dynamic attributes that are appended to object.
      *
      * @var array
      */

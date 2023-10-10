@@ -22,15 +22,12 @@ class Builder implements Expansion
      * Adds a universal query scope `searchWhere` which performs a case insensitive like on a column.
      * If `$strict` is true, then it will use a classic `where()` on the column.
      *
-     * @param string $column
-     * @param string $search
-     * @param boolean $strict
      * @return void
      */
     public function searchWhere()
     {
         return function ($column, $search, $strict = false) {
-            /** @var \Illuminate\Database\Eloquent\Builder $this */
+            /* @var \Illuminate\Database\Eloquent\Builder $this */
             if (is_array($column)) {
                 return $this->where(
                     function ($query) use ($column, $search, $strict) {
@@ -57,15 +54,11 @@ class Builder implements Expansion
 
     /**
      * Removes a where clause by column and value.
-     * 
+     *
      * Example:
      *      $query->removeWhereFromQuery('status', 'active');
      *      will remove any query = $query->where('status', 'active');
      *
-     * @param string $column
-     * @param mixed $value
-     * @param string $operator
-     * @param string $type
      * @return void
      */
     public function removeWhereFromQuery()
@@ -73,31 +66,31 @@ class Builder implements Expansion
         return function (string $column, $value, string $operator = '=', string $type = 'Basic') {
             /** @var \Illuminate\Database\Eloquent\Builder $this */
             $underlyingQuery = $this->getQuery();
-            $wheres = $underlyingQuery->wheres;
-            $bindings = $underlyingQuery->bindings['where'];
+            $wheres          = $underlyingQuery->wheres;
+            $bindings        = $underlyingQuery->bindings['where'];
 
             // find key to remove based on where clause match
             $removeKey = Arr::search(
                 $wheres,
                 function ($where) use ($column, $value, $operator, $type) {
-                    $isColumn = data_get($where, 'column') === $column;
-                    $isValue = data_get($where, 'value') === $value;
+                    $isColumn   = data_get($where, 'column') === $column;
+                    $isValue    = data_get($where, 'value') === $value;
                     $isOperator = data_get($where, 'operator') === $operator;
-                    $isType = data_get($where, 'type') === $type;
+                    $isType     = data_get($where, 'type') === $type;
 
                     return $isColumn && $isValue && $isOperator && $isType;
                 }
             );
-            
+
             // remove using key found
             if (is_int($removeKey)) {
                 unset($wheres[$removeKey]);
                 unset($bindings[$removeKey]);
             }
 
-            $underlyingQuery->wheres = $wheres;
+            $underlyingQuery->wheres            = $wheres;
             $underlyingQuery->bindings['where'] = $bindings;
-    
+
             return $this;
         };
     }

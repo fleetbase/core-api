@@ -2,15 +2,16 @@
 
 namespace Fleetbase\Listeners;
 
-use Illuminate\Notifications\Events\BroadcastNotificationCreated;
 use Fleetbase\Events\BroadcastNotificationCreated as InternalBroadcastNotificationCreated;
+use Illuminate\Notifications\Events\BroadcastNotificationCreated;
 
 class TriggerPublicNotificationBroadcast
 {
     /**
      * Handle the event.
      *
-     * @param  object  $event
+     * @param object $event
+     *
      * @return void
      */
     public function handle(BroadcastNotificationCreated $event)

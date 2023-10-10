@@ -4,17 +4,16 @@ namespace Fleetbase\Casts;
 
 use Fleetbase\Support\Utils;
 use Illuminate\Contracts\Database\Eloquent\CastsAttributes;
-use Illuminate\Support\Str;
 
 class Json implements CastsAttributes
 {
     /**
      * Cast the given value.
      *
-     * @param  \Illuminate\Database\Eloquent\Model  $model
-     * @param  string  $key
-     * @param  mixed  $value
-     * @param  array  $attributes
+     * @param \Illuminate\Database\Eloquent\Model $model
+     * @param string                              $key
+     * @param array                               $attributes
+     *
      * @return array
      */
     public function get($model, $key, $value, $attributes)
@@ -25,10 +24,11 @@ class Json implements CastsAttributes
     /**
      * Prepare the given value for storage.
      *
-     * @param  \Illuminate\Database\Eloquent\Model  $model
-     * @param  string  $key
-     * @param  array  $value
-     * @param  array  $attributes
+     * @param \Illuminate\Database\Eloquent\Model $model
+     * @param string                              $key
+     * @param array                               $value
+     * @param array                               $attributes
+     *
      * @return string
      */
     public function set($model, $key, $value, $attributes)
@@ -37,9 +37,10 @@ class Json implements CastsAttributes
     }
 
     /**
-     * Unwrap JSON string and unescape JSON and decode JSON
-     * 
+     * Unwrap JSON string and unescape JSON and decode JSON.
+     *
      * @param string $json
+     *
      * @return string
      */
     public static function decode($json)

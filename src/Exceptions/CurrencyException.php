@@ -2,8 +2,6 @@
 
 namespace Fleetbase\Exceptions;
 
-use Exception;
-
-class CurrencyException extends Exception
+class CurrencyException extends \Exception
 {
 }

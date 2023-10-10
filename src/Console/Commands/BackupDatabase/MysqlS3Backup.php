@@ -2,10 +2,10 @@
 
 namespace Fleetbase\Console\Commands\BackupDatabase;
 
-use Illuminate\Console\Command;
-use Aws\S3\S3Client;
-use Aws\S3\MultipartUploader;
 use Aws\Exception\MultipartUploadException;
+use Aws\S3\MultipartUploader;
+use Aws\S3\S3Client;
+use Illuminate\Console\Command;
 use Symfony\Component\Process\Process;
 
 class MysqlS3Backup extends Command
@@ -32,7 +32,7 @@ class MysqlS3Backup extends Command
     public function handle()
     {
         $connections = ['mysql', 'sandbox'];
-        $databases = array_map(
+        $databases   = array_map(
             function ($connectionName) {
                 return config('database.connections.' . $connectionName . '.database');
             },
@@ -100,10 +100,10 @@ class MysqlS3Backup extends Command
 
             // Upload to S3
             $s3config = config('laravel-mysql-s3-backup.s3');
-            $s3 = new S3Client($s3config);
+            $s3       = new S3Client($s3config);
 
             $bucket = config('laravel-mysql-s3-backup.s3.bucket');
-            $key = basename($fileName);
+            $key    = basename($fileName);
 
             if ($folder = config('laravel-mysql-s3-backup.s3.folder')) {
                 $key = $folder . '/' . $key;
@@ -118,7 +118,7 @@ class MysqlS3Backup extends Command
                 $fileName,
                 [
                     'bucket' => $bucket,
-                    'key' => $key,
+                    'key'    => $key,
                 ]
             );
 

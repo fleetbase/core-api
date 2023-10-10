@@ -2,18 +2,18 @@
 
 namespace Fleetbase\Traits;
 
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 trait Searchable
 {
     public static $searchable = true;
 
     /**
-     * Searches a column where LIKE
+     * Searches a column where LIKE.
      *
-     * @param  \Illuminate\Database\Query\Builder  $query
-     * @param  array   $coordinates
+     * @param \Illuminate\Database\Query\Builder $query
+     *
      * @return \Illuminate\Database\Query\Builder
      */
     public function scopeSearch($query, $search)
@@ -46,6 +46,7 @@ trait Searchable
                 $relationPathArray = explode('.', $column);
                 // get the actual relation
                 $trueRelationPath = implode('.', array_slice($relationPathArray, 0, -1));
+
                 // group by true relation path
                 return $trueRelationPath;
             })
@@ -54,6 +55,7 @@ trait Searchable
                 $group = $group->map(function ($path) use ($key) {
                     return str_replace($key . '.', '', $path);
                 });
+
                 // return new group
                 return [$key => $group];
             });
@@ -70,14 +72,14 @@ trait Searchable
                         continue;
                     }
 
-                    $column = $jsonQueryPath[0];
+                    $column   = $jsonQueryPath[0];
                     $property = $jsonQueryPath[1];
 
                     $q->orWhere(DB::raw("lower(json_unquote(json_extract($column, '$.$property')))"), 'LIKE', '%' . str_replace('.', '%', str_replace(',', '%', $search)) . '%');
                     continue;
                 }
 
-                $q->orWhere(DB::raw("lower($column)"), 'like', '%' . str_replace('.', '%', str_replace(',', '%', $search))  . '%');
+                $q->orWhere(DB::raw("lower($column)"), 'like', '%' . str_replace('.', '%', str_replace(',', '%', $search)) . '%');
             }
 
             // now do relations

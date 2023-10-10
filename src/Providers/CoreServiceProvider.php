@@ -6,15 +6,15 @@ use Fleetbase\Models\Setting;
 use Fleetbase\Support\Expansion;
 use Fleetbase\Support\Utils;
 use Illuminate\Console\Scheduling\Schedule;
-use Illuminate\Support\ServiceProvider;
-use Illuminate\Support\Arr;
-use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\ServiceProvider;
 
 /**
- * CoreServiceProvider
+ * CoreServiceProvider.
  */
 class CoreServiceProvider extends ServiceProvider
 {
@@ -24,8 +24,8 @@ class CoreServiceProvider extends ServiceProvider
      * @var array
      */
     public $observers = [
-        \Fleetbase\Models\User::class => \Fleetbase\Observers\UserObserver::class,
-        \Fleetbase\Models\ApiCredential::class => \Fleetbase\Observers\ApiCredentialObserver::class,
+        \Fleetbase\Models\User::class              => \Fleetbase\Observers\UserObserver::class,
+        \Fleetbase\Models\ApiCredential::class     => \Fleetbase\Observers\ApiCredentialObserver::class,
         \Spatie\Activitylog\Models\Activity::class => \Fleetbase\Observers\ActivityObserver::class,
     ];
 
@@ -39,7 +39,7 @@ class CoreServiceProvider extends ServiceProvider
             \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
             \Illuminate\Session\Middleware\StartSession::class,
             'auth:sanctum',
-            \Fleetbase\Http\Middleware\SetupFleetbaseSession::class
+            \Fleetbase\Http\Middleware\SetupFleetbaseSession::class,
         ],
         'fleetbase.api' => [
             'throttle:60,1',
@@ -61,7 +61,7 @@ class CoreServiceProvider extends ServiceProvider
         \Fleetbase\Console\Commands\MigrateSandbox::class,
         \Fleetbase\Console\Commands\InitializeSandboxKeyColumn::class,
         \Fleetbase\Console\Commands\SyncSandbox::class,
-        \Fleetbase\Console\Commands\BackupDatabase\MysqlS3Backup::class
+        \Fleetbase\Console\Commands\BackupDatabase\MysqlS3Backup::class,
     ];
 
     /**
@@ -126,10 +126,10 @@ class CoreServiceProvider extends ServiceProvider
         }
 
         $putsenv = [
-            'services.aws' => ['key' => 'AWS_ACCESS_KEY_ID', 'secret' => 'AWS_SECRET_ACCESS_KEY', 'region' => 'AWS_DEFAULT_REGION'],
+            'services.aws'         => ['key' => 'AWS_ACCESS_KEY_ID', 'secret' => 'AWS_SECRET_ACCESS_KEY', 'region' => 'AWS_DEFAULT_REGION'],
             'services.google_maps' => ['api_key' => 'GOOGLE_MAPS_API_KEY', 'locale' => 'GOOGLE_MAPS_LOCALE'],
-            'services.twilio' => ['sid' => 'TWILIO_SID', 'token' => 'TWILIO_TOKEN', 'from' => 'TWILIO_FROM'],
-            'services.sentry' => ['dsn' => 'SENTRY_DSN']
+            'services.twilio'      => ['sid' => 'TWILIO_SID', 'token' => 'TWILIO_TOKEN', 'from' => 'TWILIO_FROM'],
+            'services.sentry'      => ['dsn' => 'SENTRY_DSN'],
         ];
 
         $settings = [
@@ -167,21 +167,21 @@ class CoreServiceProvider extends ServiceProvider
         ];
 
         $priorityEnvs = [
-            'AWS_ACCESS_KEY_ID' => ['services.aws.key'],
+            'AWS_ACCESS_KEY_ID'     => ['services.aws.key'],
             'AWS_SECRET_ACCESS_KEY' => ['services.aws.secret', 'filesystems.disks.s3.secret', 'cache.stores.dynamodb.secret', 'queue.connections.sqs.secret', 'mail.mailers.ses.secret'],
-            'AWS_DEFAULT_REGION' => ['services.aws.region', 'filesystems.disks.s3.region', 'cache.stores.dynamodb.region', 'queue.connections.sqs.region', 'mail.mailers.ses.region'],
-            'AWS_BUCKET' => ['filesystems.disks.s3'],
-            'FILESYSTEM_DRIVER' => ['filesystems.default'],
-            'MAIL_MAILER' => ['mail.default'],
-            'QUEUE_CONNECTION' => ['queue.default'],
-            'SQS_PREFIX' => ['queue.connections.sqs'],
-            'MAIL_FROM_ADDRESS' => ['mail.from'],
-            'MAIL_HOST' => ['mail.mailers.smtp']
+            'AWS_DEFAULT_REGION'    => ['services.aws.region', 'filesystems.disks.s3.region', 'cache.stores.dynamodb.region', 'queue.connections.sqs.region', 'mail.mailers.ses.region'],
+            'AWS_BUCKET'            => ['filesystems.disks.s3'],
+            'FILESYSTEM_DRIVER'     => ['filesystems.default'],
+            'MAIL_MAILER'           => ['mail.default'],
+            'QUEUE_CONNECTION'      => ['queue.default'],
+            'SQS_PREFIX'            => ['queue.connections.sqs'],
+            'MAIL_FROM_ADDRESS'     => ['mail.from'],
+            'MAIL_HOST'             => ['mail.mailers.smtp'],
         ];
 
         foreach ($settings as $setting) {
             $settingsKey = $setting['settingsKey'];
-            $configKey = $setting['configKey'];
+            $configKey   = $setting['configKey'];
 
             // Check if the setting should be skipped based on priorityEnvs
             $shouldSkip = false;
@@ -210,9 +210,9 @@ class CoreServiceProvider extends ServiceProvider
                             continue;
                         }
 
-                        $envValue = data_get($value, $configEnvKey);
+                        $envValue         = data_get($value, $configEnvKey);
                         $doesntHaveEnvSet = empty(env($envKey));
-                        $hasValue = !empty($envValue);
+                        $hasValue         = !empty($envValue);
 
                         // only set if env variable is not set already
                         if ($doesntHaveEnvSet && $hasValue) {
@@ -250,7 +250,7 @@ class CoreServiceProvider extends ServiceProvider
      */
     public function addServerIpAsAllowedOrigin()
     {
-        $cacheKey = 'server_public_ip';
+        $cacheKey               = 'server_public_ip';
         $cacheExpirationMinutes = 60 * 60 * 24 * 30;
 
         // Check the cache first
@@ -280,10 +280,8 @@ class CoreServiceProvider extends ServiceProvider
     /**
      * Registers all class extension macros from the specified path and namespace.
      *
-     * @param string|null $from The path to load the macros from. If null, the default path is used.
+     * @param string|null $from      The path to load the macros from. If null, the default path is used.
      * @param string|null $namespace The namespace to load the macros from. If null, the default namespaces are used.
-     *
-     * @return void
      */
     public function registerExpansionsFrom($from = null, $namespace = null): void
     {
@@ -333,7 +331,7 @@ class CoreServiceProvider extends ServiceProvider
                 }
             }
 
-            $class = $namespace . $className;
+            $class  = $namespace . $className;
             $target = $class::target();
 
             if (!class_exists($target)) {
@@ -341,14 +339,12 @@ class CoreServiceProvider extends ServiceProvider
             }
 
             $method = $class::$method ?? Expansion::isExpandable($target) ? 'expand' : 'mixin';
-            $target::$method(new $class);
+            $target::$method(new $class());
         }
     }
 
     /**
      * Register the middleware groups defined by the service provider.
-     *
-     * @return void
      */
     public function registerMiddleware(): void
     {
@@ -361,8 +357,6 @@ class CoreServiceProvider extends ServiceProvider
 
     /**
      * Register the model observers defined by the service provider.
-     *
-     * @return void
      */
     public function registerObservers(): void
     {
@@ -374,7 +368,8 @@ class CoreServiceProvider extends ServiceProvider
     /**
      * Load configuration files from the specified directory.
      *
-     * @param  string  $path
+     * @param string $path
+     *
      * @return void
      */
     protected function loadConfigFromDirectory($path)
@@ -391,8 +386,6 @@ class CoreServiceProvider extends ServiceProvider
 
     /**
      * Register the console commands defined by the service provider.
-     *
-     * @return void
      */
     public function registerCommands(): void
     {
@@ -409,18 +402,16 @@ class CoreServiceProvider extends ServiceProvider
      *                                The callback is used to define the scheduling of commands.
      *                                If no callback is provided, no scheduling will occur.
      *
-     * @return void
-     *
-     * @example 
+     * @example
      * $this->scheduleCommands(function ($schedule) {
      *     $schedule->command('your-package:command')->daily();
      * });
      */
-    public function scheduleCommands(?callable $callback = null): void
+    public function scheduleCommands(callable $callback = null): void
     {
         $this->app->booted(function () use ($callback) {
             $schedule = $this->app->make(Schedule::class);
-            
+
             if (is_callable($callback)) {
                 $callback($schedule);
             }
@@ -431,7 +422,8 @@ class CoreServiceProvider extends ServiceProvider
      * Find the package namespace for a given path.
      *
      * @param string|null $path The path to search for the package namespace. If null, no namespace is returned.
-     * @return string|null The package namespace, or null if the path is not valid.
+     *
+     * @return string|null the package namespace, or null if the path is not valid
      */
     private function findPackageNamespace($path = null): ?string
     {

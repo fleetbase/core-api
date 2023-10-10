@@ -4,12 +4,12 @@ namespace Fleetbase\Support;
 
 use Fleetbase\Models\Company;
 use Fleetbase\Models\User;
-use libphonenumber\PhoneNumberUtil;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 use libphonenumber\NumberParseException;
 use libphonenumber\PhoneNumberFormat;
+use libphonenumber\PhoneNumberUtil;
 use PragmaRX\Countries\Package\Countries;
-use Illuminate\Support\Str;
-use Illuminate\Database\Eloquent\Model;
 
 /**
  * Class ParsePhone
@@ -30,19 +30,19 @@ class ParsePhone
     /**
      * Parse and format a phone number from an Eloquent model.
      *
-     * @param Model $model   The Eloquent model to extract phone number data from.
-     * @param array $options Additional options for parsing and formatting.
+     * @param Model $model   the Eloquent model to extract phone number data from
+     * @param array $options additional options for parsing and formatting
      * @param int   $format  The phone number format. Defaults to E164.
      *
-     * @return string|null Formatted phone number or null.
+     * @return string|null formatted phone number or null
      */
     public static function fromModel(Model $model, $options = [], $format = PhoneNumberFormat::E164)
     {
-        $phoneUtil = static::phoneNumberUtilInstance();
-        $phone = Utils::or($model, ['phone', 'phone_number', 'tel', 'telephone']);
-        $country = Utils::or($model, ['country']);
-        $currency = Utils::or($model, ['currency']);
-        $timezone = Utils::or($model, ['timezone']);
+        $phoneUtil    = static::phoneNumberUtilInstance();
+        $phone        = Utils::or($model, ['phone', 'phone_number', 'tel', 'telephone']);
+        $country      = Utils::or($model, ['country']);
+        $currency     = Utils::or($model, ['currency']);
+        $timezone     = Utils::or($model, ['timezone']);
         $parsedNumber = '';
 
         // if no phone number return null
@@ -149,11 +149,11 @@ class ParsePhone
     /**
      * Parse and format a phone number from a Company model.
      *
-     * @param Company $company The Company model to extract phone number data from.
-     * @param array   $options Additional options for parsing and formatting.
+     * @param Company $company the Company model to extract phone number data from
+     * @param array   $options additional options for parsing and formatting
      * @param int     $format  The phone number format. Defaults to E164.
      *
-     * @return string|null Formatted phone number or null.
+     * @return string|null formatted phone number or null
      */
     public static function fromCompany(Company $company, $options = [], $format = PhoneNumberFormat::E164)
     {
@@ -163,11 +163,11 @@ class ParsePhone
     /**
      * Parse and format a phone number from a User model.
      *
-     * @param User  $user    The User model to extract phone number data from.
-     * @param array $options Additional options for parsing and formatting.
+     * @param User  $user    the User model to extract phone number data from
+     * @param array $options additional options for parsing and formatting
      * @param int   $format  The phone number format. Defaults to E164.
      *
-     * @return string|null Formatted phone number or null.
+     * @return string|null formatted phone number or null
      */
     public static function fromUser(User $user, $options = [], $format = PhoneNumberFormat::E164)
     {

@@ -2,9 +2,9 @@
 
 namespace Fleetbase\Console\Commands;
 
-use Illuminate\Support\Carbon;
 use Fleetbase\Support\Utils;
 use Illuminate\Console\Command;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -105,9 +105,8 @@ class SyncSandbox extends Command
                     ->table($record->getTable())
                     ->updateOrInsert(['uuid' => $clone['uuid']], $clone);
 
-                /** @var \Fleetbase\Models\Model **/
-                $sandboxRecord = $model
-                    ::on('sandbox')
+                /** @var \Fleetbase\Models\Model * */
+                $sandboxRecord = $model::on('sandbox')
                     ->where('uuid', $clone['uuid'])
                     ->first();
 

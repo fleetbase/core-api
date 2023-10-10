@@ -3,15 +3,19 @@
 namespace Fleetbase\Models;
 
 use Fleetbase\Traits\Filterable;
-use Fleetbase\Traits\HasPolicies;
 use Fleetbase\Traits\HasApiModelBehavior;
+use Fleetbase\Traits\HasPolicies;
 use Fleetbase\Traits\HasUuid;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Permission\Models\Role as BaseRole;
 
 class Role extends BaseRole
 {
-    use HasUuid, HasApiModelBehavior, SoftDeletes, HasPolicies, Filterable;
+    use HasUuid;
+    use HasApiModelBehavior;
+    use SoftDeletes;
+    use HasPolicies;
+    use Filterable;
 
     /**
      * The database connection to use.
@@ -37,14 +41,14 @@ class Role extends BaseRole
     /**
      * Indicates if the IDs are auto-incrementing.
      *
-     * @var boolean
+     * @var bool
      */
     public $incrementing = false;
 
     /**
      * Indicates if the model should be timestamped.
      *
-     * @var boolean
+     * @var bool
      */
     public $timestamps = true;
 
@@ -56,7 +60,7 @@ class Role extends BaseRole
     public $uuidColumn = 'id';
 
     /**
-     * The attributes that can be queried
+     * The attributes that can be queried.
      *
      * @var array
      */
@@ -100,7 +104,7 @@ class Role extends BaseRole
 
     /**
      * Default guard should be `web`.
-     * 
+     *
      * @return void
      */
     public function setGuardNameAttribute()

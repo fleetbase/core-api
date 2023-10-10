@@ -13,9 +13,7 @@ class AuthenticateOnceWithBasicAuth
     /**
      * Handle an incoming request.
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  \Closure  $next
-     * @return mixed
+     * @param \Illuminate\Http\Request $request
      */
     public function handle($request, \Closure $next)
     {
@@ -34,10 +32,6 @@ class AuthenticateOnceWithBasicAuth
 
     /**
      * Handle an incoming request.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  \Closure  $next
-     * @return mixed
      */
     public function authenticatedWithBasic(Request $request, $connection = null)
     {
@@ -78,6 +72,7 @@ class AuthenticateOnceWithBasicAuth
         if ($request->isMethod('OPTIONS')) {
             // Set api credential session
             Auth::setApiKey($apiCredential);
+
             return true;
         }
 
