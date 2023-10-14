@@ -446,11 +446,11 @@ class SettingController extends Controller
             Setting::configure('branding.default_theme', $defaultTheme);
         }
 
-        if ($iconUuid) {
+        if (is_string($iconUuid) || is_null($iconUuid)) {
             Setting::configure('branding.icon_uuid', $iconUuid);
         }
 
-        if ($logoUuid) {
+        if (is_string($logoUuid) || is_null($logoUuid)) {
             Setting::configure('branding.logo_uuid', $logoUuid);
         }
 
