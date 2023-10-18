@@ -478,6 +478,16 @@ class User extends Authenticatable
     }
 
     /**
+     * The channels the user receives notification broadcasts on.
+     *
+     * @return string
+     */
+    public function receivesBroadcastNotificationsOn()
+    {
+        return 'user.' . $this->uuid;
+    }
+
+    /**
      * Accessor to get the types associated with the model instance.
      *
      * @return array an array of types associated with the model instance

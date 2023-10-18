@@ -5,6 +5,7 @@ namespace Fleetbase\Observers;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\User;
+use Fleetbase\Notifications\UserCreated;
 
 class UserObserver
 {
@@ -16,7 +17,7 @@ class UserObserver
     public function created(User $user)
     {
         // load user company
-        $user->load(['company']);
+        $user->load(['company.owner']);
 
         // create company user record
         if ($user->company_uuid) {
@@ -25,6 +26,9 @@ class UserObserver
 
         // invite user to join company
         $user->sendInviteFromCompany();
+
+        // Notify the company owner a user has been created
+        $user->company->owner->notify(new UserCreated($user, $user->company));
     }
 
     /**

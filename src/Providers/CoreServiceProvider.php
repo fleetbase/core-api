@@ -26,6 +26,7 @@ class CoreServiceProvider extends ServiceProvider
     public $observers = [
         \Fleetbase\Models\User::class              => \Fleetbase\Observers\UserObserver::class,
         \Fleetbase\Models\ApiCredential::class     => \Fleetbase\Observers\ApiCredentialObserver::class,
+        \Fleetbase\Models\Notification::class      => \Fleetbase\Observers\NotificationObserver::class,
         \Spatie\Activitylog\Models\Activity::class => \Fleetbase\Observers\ActivityObserver::class,
     ];
 
