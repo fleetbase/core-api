@@ -79,18 +79,15 @@ class UserCreated extends Notification
     public function toArray($notifiable)
     {
         return [
-            'id'          => $this->notificationId,
-            'created_at'  => $this->sentAt,
-            'notifiable' => $notifiable->{$notifiable->getKeyName()},
-            'data'        => [
-                'subject' => '🥳 New Fleetbase Signup!',
-                'message' => 'New user ' . $this->user->name . ' added to organization ' . $this->company->name,
-                'id' => $this->user->uuid,
-                'email' => $this->user->email,
-                'phone' => $this->user->phone,
-                'companyId' => $this->company->uuid,
-                'company' => $this->company->name,
-            ],
+            'notification_id' => $this->notificationId,
+            'sent_at'  => $this->sentAt,
+            'subject' => '🥳 New Fleetbase Signup!',
+            'message' => 'New user ' . $this->user->name . ' added to organization ' . $this->company->name,
+            'id' => $this->user->uuid,
+            'email' => $this->user->email,
+            'phone' => $this->user->phone,
+            'companyId' => $this->company->uuid,
+            'company' => $this->company->name,
         ];
     }
 }

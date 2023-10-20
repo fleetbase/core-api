@@ -157,6 +157,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     }
                                 );
                                 $router->fleetbaseRoutes('transactions');
+                                $router->fleetbaseRoutes('notifications');
                             }
                         );
                     }
