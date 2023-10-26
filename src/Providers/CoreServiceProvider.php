@@ -3,6 +3,7 @@
 namespace Fleetbase\Providers;
 
 use Fleetbase\Models\Setting;
+use Fleetbase\Notifications\NotificationRegistry;
 use Fleetbase\Support\Expansion;
 use Fleetbase\Support\Utils;
 use Illuminate\Console\Scheduling\Schedule;
@@ -78,6 +79,7 @@ class CoreServiceProvider extends ServiceProvider
         $this->registerObservers();
         $this->registerExpansionsFrom();
         $this->registerMiddleware();
+        $this->registerNotifications();
         $this->loadRoutesFrom(__DIR__ . '/../routes.php');
         $this->loadMigrationsFrom(__DIR__ . '/../../migrations');
         $this->mergeConfigFrom(__DIR__ . '/../../config/database.connections.php', 'database.connections');
@@ -342,6 +344,11 @@ class CoreServiceProvider extends ServiceProvider
             $method = $class::$method ?? Expansion::isExpandable($target) ? 'expand' : 'mixin';
             $target::$method(new $class());
         }
+    }
+
+    private function registerNotifications()
+    {
+        NotificationRegistry::register(\Fleetbase\Notifications\UserCreated::class);
     }
 
     /**

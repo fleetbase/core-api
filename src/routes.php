@@ -157,7 +157,12 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     }
                                 );
                                 $router->fleetbaseRoutes('transactions');
-                                $router->fleetbaseRoutes('notifications');
+                                $router->fleetbaseRoutes('notifications', function ($router, $controller) {
+                                    $router->get('registry', $controller('registry'));
+                                    $router->put('mark-as-read', $controller('markAsRead'));
+                                    $router->put('mark-all-read', $controller('markAllAsRead'));
+                                    $router->delete('bulk-delete', $controller('bulkDelete'));
+                                });
                             }
                         );
                     }

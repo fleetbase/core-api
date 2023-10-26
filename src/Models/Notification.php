@@ -24,4 +24,31 @@ class Notification extends DatabaseNotification
      * @var array
      */
     protected $searchableColumns = ['data->message'];
+
+    /**
+     * Marks the notification as read.
+     *
+     * @param boolean $save
+     * @return \Fleetbase\Models\Notification
+     */
+    public function markAsRead($save = true): Notification
+    {
+        $this->read_at = now();
+
+        if ($save) {
+            $this->save();
+        }
+
+        return $this;
+    }
+    /**
+     * Delete the notification.
+     *
+     * @return void
+     */
+    public function deleteNotification()
+    {
+        $this->delete();
+    }
+
 }

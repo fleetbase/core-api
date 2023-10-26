@@ -19,6 +19,9 @@ class UserCreated extends Notification
     public ?Company $company;
     public ?string $sentAt;
     public ?string $notificationId;
+    public static string $name = 'User Created';
+    public static string $description = 'Notify when a new user has been created.';
+    public static string $package = 'core';
 
     /**
      * Create a new notification instance.
