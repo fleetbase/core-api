@@ -6,11 +6,15 @@ use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasPolicies;
 use Fleetbase\Traits\HasUuid;
+use Illuminate\Notifications\Notifiable;
 use Spatie\Permission\Traits\HasPermissions;
 use Spatie\Permission\Traits\HasRoles;
 use Spatie\Sluggable\HasSlug;
 use Spatie\Sluggable\SlugOptions;
 
+/**
+ * @property \Illuminate\Database\Eloquent\Collection $users
+ */
 class Group extends Model
 {
     use HasUuid;
@@ -20,6 +24,7 @@ class Group extends Model
     use HasRoles;
     use HasSlug;
     use Filterable;
+    use Notifiable;
 
     /**
      * The database connection to use.
@@ -57,6 +62,11 @@ class Group extends Model
     protected $with = ['users', 'permissions', 'policies'];
 
     /**
+     * The relationship of the multiple notifiables.
+     */
+    public string $containsMultipleNotifiables = 'users';
+
+    /**
      * Get the options for generating the slug.
      */
     public function getSlugOptions(): SlugOptions
@@ -74,5 +84,13 @@ class Group extends Model
     public function users()
     {
         return $this->hasManyThrough(User::class, GroupUser::class, 'group_uuid', 'uuid', 'uuid', 'user_uuid');
+    }
+
+    /**
+     * An array of each group members email to send notification emails to.
+     */
+    public function routeNotificationForMail(): \Illuminate\Support\Collection
+    {
+        return $this->users->pluck('email');
     }
 }

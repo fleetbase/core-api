@@ -2,14 +2,14 @@
 
 namespace Fleetbase\Webhook;
 
-use Illuminate\Foundation\Bus\PendingDispatch;
-use Illuminate\Support\Str;
 use Fleetbase\Webhook\BackoffStrategy\BackoffStrategy;
 use Fleetbase\Webhook\Exceptions\CouldNotCallWebhook;
 use Fleetbase\Webhook\Exceptions\InvalidBackoffStrategy;
 use Fleetbase\Webhook\Exceptions\InvalidSigner;
 use Fleetbase\Webhook\Exceptions\InvalidWebhookJob;
 use Fleetbase\Webhook\Signer\Signer;
+use Illuminate\Foundation\Bus\PendingDispatch;
+use Illuminate\Support\Str;
 
 class WebhookCall
 {
@@ -119,7 +119,7 @@ class WebhookCall
 
     public function useBackoffStrategy(string $backoffStrategyClass): self
     {
-        if (! is_subclass_of($backoffStrategyClass, BackoffStrategy::class)) {
+        if (!is_subclass_of($backoffStrategyClass, BackoffStrategy::class)) {
             throw InvalidBackoffStrategy::doesNotExtendBackoffStrategy($backoffStrategyClass);
         }
 
@@ -137,7 +137,7 @@ class WebhookCall
 
     public function signUsing(string $signerClass): self
     {
-        if (! is_subclass_of($signerClass, Signer::class)) {
+        if (!is_subclass_of($signerClass, Signer::class)) {
             throw InvalidSigner::doesNotImplementSigner($signerClass);
         }
 
@@ -181,7 +181,7 @@ class WebhookCall
         return $this;
     }
 
-    public function useProxy(array|string|null $proxy = null): self
+    public function useProxy(array|string $proxy = null): self
     {
         $this->callWebhookJob->proxy = $proxy;
 
@@ -206,7 +206,7 @@ class WebhookCall
     {
         $job = app($webhookJobClass);
 
-        if (! $job instanceof CallWebhookJob) {
+        if (!$job instanceof CallWebhookJob) {
             throw InvalidWebhookJob::doesNotExtendCallWebhookJob($webhookJobClass);
         }
 
@@ -233,7 +233,7 @@ class WebhookCall
 
     public function dispatchUnless($condition): PendingDispatch|null
     {
-        return $this->dispatchIf(! $condition);
+        return $this->dispatchIf(!$condition);
     }
 
     public function dispatchSync(): void
@@ -252,12 +252,12 @@ class WebhookCall
 
     public function dispatchSyncUnless($condition): void
     {
-        $this->dispatchSyncIf(! $condition);
+        $this->dispatchSyncIf(!$condition);
     }
 
     protected function prepareForDispatch(): void
     {
-        if (! $this->callWebhookJob->webhookUrl) {
+        if (!$this->callWebhookJob->webhookUrl) {
             throw CouldNotCallWebhook::urlNotSet();
         }
 
@@ -272,7 +272,7 @@ class WebhookCall
     {
         $headers = $this->headers;
 
-        if (! $this->signWebhook) {
+        if (!$this->signWebhook) {
             return $headers;
         }
 

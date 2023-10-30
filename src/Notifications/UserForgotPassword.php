@@ -14,7 +14,14 @@ class UserForgotPassword extends Notification implements ShouldQueue
 {
     use Queueable;
 
+    /**
+     * Instance of the verification code for the password reset.
+     */
     public ?VerificationCode $verificationCode;
+
+    /**
+     * The URL where the user can reset their password.
+     */
     public string $url;
 
     /**
@@ -61,6 +68,7 @@ class UserForgotPassword extends Notification implements ShouldQueue
     public function toArray($notifiable)
     {
         return [
+            'code' => $this->verificationCode->code,
         ];
     }
 }

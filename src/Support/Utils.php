@@ -43,7 +43,9 @@ class Utils
         $segments = [];
 
         // check if using secure console
-        $segments[] = config('fleetbase.console.secure', !$isLocalDevelopment) ? 'https://' : 'http://';
+        if (!Str::startsWith($host, 'http')) {
+            $segments[] = config('fleetbase.console.secure', !$isLocalDevelopment) ? 'https://' : 'http://';
+        }
 
         // check for subdomain
         if (config('fleetbase.console.subdomain', $subdomain)) {

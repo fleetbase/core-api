@@ -137,6 +137,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                         $router->patch('deactivate/{id}', $controller('deactivate'));
                                         $router->patch('activate/{id}', $controller('activate'));
                                         $router->delete('remove-from-company/{id}', $controller('removeFromCompany'));
+                                        $router->delete('bulk-delete', $controller('bulkDelete'));
                                         $router->post('resend-invite', $controller('resendInvitation'));
                                         $router->post('set-password', $controller('setCurrentUserPassword'));
                                     }
@@ -157,6 +158,15 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     }
                                 );
                                 $router->fleetbaseRoutes('transactions');
+                                $router->fleetbaseRoutes('notifications', function ($router, $controller) {
+                                    $router->get('registry', $controller('registry'));
+                                    $router->get('notifiables', $controller('notifiables'));
+                                    $router->get('get-settings', $controller('getSettings'));
+                                    $router->put('mark-as-read', $controller('markAsRead'));
+                                    $router->put('mark-all-read', $controller('markAllAsRead'));
+                                    $router->delete('bulk-delete', $controller('bulkDelete'));
+                                    $router->post('save-settings', $controller('saveSettings'));
+                                });
                             }
                         );
                     }

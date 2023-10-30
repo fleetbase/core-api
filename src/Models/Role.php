@@ -7,6 +7,7 @@ use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasPolicies;
 use Fleetbase\Traits\HasUuid;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Notifications\Notifiable;
 use Spatie\Permission\Models\Role as BaseRole;
 
 class Role extends BaseRole
@@ -16,6 +17,7 @@ class Role extends BaseRole
     use SoftDeletes;
     use HasPolicies;
     use Filterable;
+    use Notifiable;
 
     /**
      * The database connection to use.

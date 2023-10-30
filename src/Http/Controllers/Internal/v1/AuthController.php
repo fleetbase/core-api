@@ -275,10 +275,12 @@ class AuthController extends Controller
      */
     public function resetPassword(ResetPasswordRequest $request)
     {
-        // get verification code
         $verificationCode = VerificationCode::where('code', $request->input('code'))->with(['subject'])->first();
+        $link             = $request->input('link');
+        $password         = $request->input('password');
 
-        if ($verificationCode->uuid !== $request->input('link')) {
+        // If link isn't valid
+        if ($verificationCode->uuid !== $link) {
             return response()->error('Invalid password reset request!');
         }
 
@@ -288,7 +290,7 @@ class AuthController extends Controller
         }
 
         // reset users password
-        $verificationCode->subject->changePassword($request->input('password'));
+        $verificationCode->subject->changePassword($password);
 
         // verify code by deleting so its unusable
         $verificationCode->delete();

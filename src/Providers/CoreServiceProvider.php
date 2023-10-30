@@ -4,6 +4,7 @@ namespace Fleetbase\Providers;
 
 use Fleetbase\Models\Setting;
 use Fleetbase\Support\Expansion;
+use Fleetbase\Support\NotificationRegistry;
 use Fleetbase\Support\Utils;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -26,6 +27,7 @@ class CoreServiceProvider extends ServiceProvider
     public $observers = [
         \Fleetbase\Models\User::class              => \Fleetbase\Observers\UserObserver::class,
         \Fleetbase\Models\ApiCredential::class     => \Fleetbase\Observers\ApiCredentialObserver::class,
+        \Fleetbase\Models\Notification::class      => \Fleetbase\Observers\NotificationObserver::class,
         \Spatie\Activitylog\Models\Activity::class => \Fleetbase\Observers\ActivityObserver::class,
     ];
 
@@ -77,6 +79,7 @@ class CoreServiceProvider extends ServiceProvider
         $this->registerObservers();
         $this->registerExpansionsFrom();
         $this->registerMiddleware();
+        $this->registerNotifications();
         $this->loadRoutesFrom(__DIR__ . '/../routes.php');
         $this->loadMigrationsFrom(__DIR__ . '/../../migrations');
         $this->mergeConfigFrom(__DIR__ . '/../../config/database.connections.php', 'database.connections');
@@ -341,6 +344,14 @@ class CoreServiceProvider extends ServiceProvider
             $method = $class::$method ?? Expansion::isExpandable($target) ? 'expand' : 'mixin';
             $target::$method(new $class());
         }
+    }
+
+    private function registerNotifications()
+    {
+        NotificationRegistry::register([
+            \Fleetbase\Notifications\UserCreated::class,
+            \Fleetbase\Notifications\UserAcceptedCompanyInvite::class,
+        ]);
     }
 
     /**

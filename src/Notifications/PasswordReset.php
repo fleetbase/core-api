@@ -2,22 +2,52 @@
 
 namespace Fleetbase\Notifications;
 
+use Fleetbase\Models\VerificationCode;
+use Fleetbase\Support\Utils;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
+use Illuminate\Support\HtmlString;
 
 class PasswordReset extends Notification implements ShouldQueue
 {
     use Queueable;
 
     /**
+     * Instance of the verification code for the password reset.
+     */
+    public ?VerificationCode $verificationCode;
+
+    /**
+     * The URL where the user can reset their password.
+     */
+    public string $url;
+
+    /**
+     * The notification name.
+     */
+    public static string $name = 'Password Reset';
+
+    /**
+     * The notification description.
+     */
+    public static string $description = 'Notification sent to user when they request to reset password.';
+
+    /**
+     * The notification package.
+     */
+    public static string $package = 'core';
+
+    /**
      * Create a new notification instance.
      *
      * @return void
      */
-    public function __construct()
+    public function __construct(?VerificationCode $verificationCode)
     {
+        $this->verificationCode = $verificationCode;
+        $this->url              = Utils::consoleUrl('auth/reset-password/' . $verificationCode->uuid, ['code' => $verificationCode->code]);
     }
 
     /**
@@ -38,9 +68,11 @@ class PasswordReset extends Notification implements ShouldQueue
     public function toMail($notifiable)
     {
         return (new MailMessage())
-                    ->line('The introduction to the notification.')
-                    ->action('Notification Action', url('/'))
-                    ->line('Thank you for using our application!');
+            ->subject('Your password reset link for Fleetbase')
+            ->greeting('Hello, ' . $notifiable->name)
+            ->line('Looks like you (or someone phishy) has requested to reset your password. If you did not request a password reset link, ignore this email. If you have indeed forgot your password click the button below to reset your password using the code provided below.')
+            ->line(new HtmlString('<br><p style="font-family: monospace;">Your password reset code: <strong>' . $this->verificationCode->code . '</strong></p>'))
+            ->action('Reset Password', $this->url);
     }
 
     /**
@@ -51,6 +83,7 @@ class PasswordReset extends Notification implements ShouldQueue
     public function toArray($notifiable)
     {
         return [
+            'code' => $this->verificationCode->code,
         ];
     }
 }

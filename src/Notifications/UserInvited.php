@@ -12,13 +12,33 @@ use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\HtmlString;
 
+/**
+ * Class UserInvited.
+ *
+ * Notification for when a user is invited to a company.
+ */
 class UserInvited extends Notification implements ShouldQueue
 {
     use Queueable;
 
+    /**
+     * The invite related to this notification.
+     */
     public Invite $invite;
+
+    /**
+     * The company related to this notification.
+     */
     public Company $company;
+
+    /**
+     * The user who sent the invitation.
+     */
     public User $sender;
+
+    /**
+     * The URL for accepting the invite.
+     */
     public string $url;
 
     /**
@@ -67,6 +87,8 @@ class UserInvited extends Notification implements ShouldQueue
     public function toArray($notifiable)
     {
         return [
+            'invite_id'  => $this->invite->uuid,
+            'subject_id' => Utils::or($this->invite, ['uuid', 'public_id', 'id']),
         ];
     }
 }
