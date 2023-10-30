@@ -2,7 +2,9 @@
 
 namespace Fleetbase\Webhook;
 
-use Exception;
+use Fleetbase\Webhook\Events\FinalWebhookCallFailedEvent;
+use Fleetbase\Webhook\Events\WebhookCallFailedEvent;
+use Fleetbase\Webhook\Events\WebhookCallSucceededEvent;
 use GuzzleHttp\Client;
 use GuzzleHttp\ClientInterface;
 use GuzzleHttp\Exception\ConnectException;
@@ -15,13 +17,13 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Str;
-use Fleetbase\Webhook\Events\FinalWebhookCallFailedEvent;
-use Fleetbase\Webhook\Events\WebhookCallFailedEvent;
-use Fleetbase\Webhook\Events\WebhookCallSucceededEvent;
 
 class CallWebhookJob implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Dispatchable;
+    use InteractsWithQueue;
+    use Queueable;
+    use SerializesModels;
 
     public ?string $webhookUrl = null;
 
@@ -44,7 +46,7 @@ class CallWebhookJob implements ShouldQueue
     public bool $throwExceptionOnFailure;
 
     /** @var string|null */
-    public $queue = null;
+    public $queue;
 
     public array $payload = [];
 
@@ -73,26 +75,26 @@ class CallWebhookJob implements ShouldQueue
 
             $this->response = $this->createRequest($body);
 
-            if (! Str::startsWith($this->response->getStatusCode(), 2)) {
-                throw new Exception('Webhook call failed');
+            if (!Str::startsWith($this->response->getStatusCode(), 2)) {
+                throw new \Exception('Webhook call failed');
             }
 
             $this->dispatchEvent(WebhookCallSucceededEvent::class);
 
             return;
-        } catch (Exception $exception) {
+        } catch (\Exception $exception) {
             if ($exception instanceof RequestException) {
-                $this->response = $exception->getResponse();
-                $this->errorType = get_class($exception);
+                $this->response     = $exception->getResponse();
+                $this->errorType    = get_class($exception);
                 $this->errorMessage = $exception->getMessage();
             }
 
             if ($exception instanceof ConnectException) {
-                $this->errorType = get_class($exception);
+                $this->errorType    = get_class($exception);
                 $this->errorMessage = $exception->getMessage();
             }
 
-            if (! $lastAttempt) {
+            if (!$lastAttempt) {
                 /** @var \Fleetbase\Webhook\BackoffStrategy\BackoffStrategy $backoffStrategy */
                 $backoffStrategy = app($this->backoffStrategyClass);
 
@@ -131,9 +133,9 @@ class CallWebhookJob implements ShouldQueue
         $client = $this->getClient();
 
         return $client->request($this->httpVerb, $this->webhookUrl, array_merge([
-            'timeout' => $this->requestTimeout,
-            'verify' => $this->verifySsl,
-            'headers' => $this->headers,
+            'timeout'  => $this->requestTimeout,
+            'verify'   => $this->verifySsl,
+            'headers'  => $this->headers,
             'on_stats' => function (TransferStats $stats) {
                 $this->transferStats = $stats;
             },

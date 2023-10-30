@@ -3,7 +3,6 @@
 namespace Fleetbase\Support;
 
 use Fleetbase\Models\Setting;
-use Fleetbase\Support\Utils;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
@@ -34,10 +33,10 @@ class NotificationRegistry
     /**
      * Register a notification.
      *
-     * @param string|array $notificationClass The class or an array of classes to register.
-     * @param sarray $notificationClass The class or an array of classes to register.
+     * @param string|array $notificationClass the class or an array of classes to register
+     * @param sarray       $notificationClass the class or an array of classes to register
+     *
      * @throws \Exception
-     * @return void
      */
     public static function register($notificationClass, ?array $options = []): void
     {
@@ -45,7 +44,7 @@ class NotificationRegistry
             foreach ($notificationClass as $notificationClassElement) {
                 if (is_array($notificationClassElement) && count($notificationClassElement) === 2) {
                     static::register($notificationClassElement[0], $notificationClassElement[1]);
-                } else if (is_string($notificationClassElement)) {
+                } elseif (is_string($notificationClassElement)) {
                     static::register($notificationClassElement);
                 } else {
                     throw new \Exception('Attempted to register invalid notification.');
@@ -56,20 +55,19 @@ class NotificationRegistry
         }
 
         static::$notifications[] = [
-            'definition' => $notificationClass,
-            'name' => static::getNotificationClassProperty($notificationClass, 'name', data_get($options, 'name', null)),
+            'definition'  => $notificationClass,
+            'name'        => static::getNotificationClassProperty($notificationClass, 'name', data_get($options, 'name', null)),
             'description' => static::getNotificationClassProperty($notificationClass, 'description', data_get($options, 'description', null)),
-            'package' => static::getNotificationClassProperty($notificationClass, 'package', data_get($options, 'package', null)),
-            'params' => static::getNotificationClassParameters($notificationClass),
-            'options' => static::getNotificationClassProperty($notificationClass, 'notificationOptions', data_get($options, 'notificationOptions', [])),
+            'package'     => static::getNotificationClassProperty($notificationClass, 'package', data_get($options, 'package', null)),
+            'params'      => static::getNotificationClassParameters($notificationClass),
+            'options'     => static::getNotificationClassProperty($notificationClass, 'notificationOptions', data_get($options, 'notificationOptions', [])),
         ];
     }
 
     /**
      * Register a notifiable.
      *
-     * @param string|array $notifiableClass The class of the notifiable.
-     * @return void
+     * @param string|array $notifiableClass the class of the notifiable
      */
     public static function registerNotifiable($notifiableClass): void
     {
@@ -87,10 +85,11 @@ class NotificationRegistry
     /**
      * Get a property of a notification class.
      *
-     * @param string $notificationClass The class name.
-     * @param string $property The name of the property to retrieve.
-     * @param mixed $defaultValue The default value if the property is not found.
-     * @return mixed|null The value of the property or null if not found.
+     * @param string $notificationClass the class name
+     * @param string $property          the name of the property to retrieve
+     * @param mixed  $defaultValue      the default value if the property is not found
+     *
+     * @return mixed|null the value of the property or null if not found
      */
     private static function getNotificationClassProperty(string $notificationClass, string $property, $defaultValue = null)
     {
@@ -99,15 +98,16 @@ class NotificationRegistry
         }
 
         $properties = get_class_vars($notificationClass);
+
         return data_get($properties, $property, $defaultValue);
     }
 
     /**
      * Get the parameters required by a specific notification class constructor.
      *
-     * @param string $notificationClass The class name of the notification.
+     * @param string $notificationClass the class name of the notification
      *
-     * @return array An array of associative arrays, each containing details about a parameter required by the constructor.
+     * @return array an array of associative arrays, each containing details about a parameter required by the constructor
      */
     private function getNotificationClassParameters(string $notificationClass): array
     {
@@ -136,9 +136,9 @@ class NotificationRegistry
             $isOptional = $param->isOptional();
 
             $requiredParams[] = [
-                'name' => $name,
-                'type' => $type ? $type->getName() : 'mixed',  // If type is null, set it as 'mixed'
-                'optional' => $isOptional
+                'name'     => $name,
+                'type'     => $type ? $type->getName() : 'mixed',  // If type is null, set it as 'mixed'
+                'optional' => $isOptional,
             ];
         }
 
@@ -147,8 +147,6 @@ class NotificationRegistry
 
     /**
      * Get all notificables for a company.
-     *
-     * @return array
      */
     public static function getNotifiablesForCompany(string $companyId): array
     {
@@ -164,24 +162,24 @@ class NotificationRegistry
         // iterate through each notifiable types and get records
         foreach (static::$notifiables as $notifiableClass) {
             $notifiableModel = app($notifiableClass);
-            $type = class_basename($notifiableClass);
+            $type            = class_basename($notifiableClass);
 
             if ($notifiableModel && $notifiableModel instanceof \Illuminate\Database\Eloquent\Model) {
-                $table = $notifiableModel->getTable();
-                $modelClass = get_class($notifiableModel);
+                $table            = $notifiableModel->getTable();
+                $modelClass       = get_class($notifiableModel);
                 $hasCompanyColumn = Schema::hasColumn($table, 'company_uuid');
 
                 if ($hasCompanyColumn) {
                     $records = $notifiableModel->where('company_uuid', $companySessionId)->get();
 
                     foreach ($records as $record) {
-                        $recordId = Utils::or($record, ['uuid', 'id']);
+                        $recordId      = Utils::or($record, ['uuid', 'id']);
                         $notifiables[] = [
-                            'label' => Str::title($type) . ': ' . Utils::or($record, ['name', 'public_id']),
-                            'key' => $recordId,
+                            'label'      => Str::title($type) . ': ' . Utils::or($record, ['name', 'public_id']),
+                            'key'        => $recordId,
                             'primaryKey' => $notifiableModel->getKeyName(),
                             'definition' => $modelClass,
-                            'value' => Str::slug(str_replace('\\', '-', $modelClass)) . ':' . $recordId,
+                            'value'      => Str::slug(str_replace('\\', '-', $modelClass)) . ':' . $recordId,
                         ];
                     }
                 }
@@ -193,20 +191,16 @@ class NotificationRegistry
 
     /**
      * Gets all notifiables for the current company session.
-     *
-     * @return array
      */
     public static function getNotifiables(): array
     {
         $companySessionId = session('company');
+
         return static::getNotifiablesForCompany($companySessionId);
     }
 
     /**
      * Finda a notification registration by it's class.
-     *
-     * @param string $notificationClass
-     * @return array|null
      */
     public static function findNotificationRegistrationByDefinition(string $notificationClass): ?array
     {
@@ -222,10 +216,9 @@ class NotificationRegistry
     /**
      * Notify one or multiple notifiables using a specific notification class.
      *
-     * @param string $notificationClass The class name of the notification to use.
-     * @param mixed ...$params           Additional parameters for the notification class.
+     * @param string $notificationClass the class name of the notification to use
+     * @param mixed  ...$params         Additional parameters for the notification class.
      *
-     * @return void
      * @throws \Exception
      */
     public static function notify($notificationClass, ...$params): void
@@ -255,10 +248,10 @@ class NotificationRegistry
                 foreach ($notifiables as $notifiable) {
                     $notifiableModel = static::resolveNotifiable($notifiable);
 
-                    // if has multiple notifiables 
+                    // if has multiple notifiables
                     if (isset($notifiableModel->containsMultipleNotifiables) && is_string($notifiableModel->containsMultipleNotifiables)) {
                         $notifiablesRelationship = $notifiableModel->containsMultipleNotifiables;
-                        $multipleNotifiables = data_get($notifiableModel, $notifiablesRelationship, []);
+                        $multipleNotifiables     = data_get($notifiableModel, $notifiablesRelationship, []);
 
                         // notifiy each
                         foreach ($multipleNotifiables as $singleNotifiable) {
@@ -280,11 +273,10 @@ class NotificationRegistry
     /**
      * Notify one or multiple notifiables using a specific notification class.
      *
-     * @param string $notificationClass The class name of the notification to use.
-     * @param string $notificationName The name defined for the notification class.
-     * @param mixed ...$params           Additional parameters for the notification class.
+     * @param string $notificationClass the class name of the notification to use
+     * @param string $notificationName  the name defined for the notification class
+     * @param mixed  ...$params         Additional parameters for the notification class.
      *
-     * @return void
      * @throws \Exception
      */
     public static function notifyUsingDefinitionName($notificationClass, $notificationName, ...$params): void
@@ -311,10 +303,10 @@ class NotificationRegistry
                 foreach ($notifiables as $notifiable) {
                     $notifiableModel = static::resolveNotifiable($notifiable);
 
-                    // if has multiple notifiables 
+                    // if has multiple notifiables
                     if (isset($notifiableModel->containsMultipleNotifiables) && is_string($notifiableModel->containsMultipleNotifiables)) {
                         $notifiablesRelationship = $notifiableModel->containsMultipleNotifiables;
-                        $multipleNotifiables = data_get($notifiableModel, $notifiablesRelationship, []);
+                        $multipleNotifiables     = data_get($notifiableModel, $notifiablesRelationship, []);
 
                         // notifiy each
                         foreach ($multipleNotifiables as $singleNotifiable) {
@@ -336,15 +328,15 @@ class NotificationRegistry
     /**
      * Resolve a notifiable object to an Eloquent model.
      *
-     * @param array $notifiableObject An associative array containing the definition and primary key to resolve the notifiable object.
+     * @param array $notifiableObject an associative array containing the definition and primary key to resolve the notifiable object
      *
-     * @return \Illuminate\Database\Eloquent\Model|null The Eloquent model or null if it cannot be resolved.
+     * @return \Illuminate\Database\Eloquent\Model|null the Eloquent model or null if it cannot be resolved
      */
     protected static function resolveNotifiable(array $notifiableObject): ?\Illuminate\Database\Eloquent\Model
     {
         $definition = data_get($notifiableObject, 'definition');
         $primaryKey = data_get($notifiableObject, 'primaryKey');
-        $key = data_get($notifiableObject, 'key');
+        $key        = data_get($notifiableObject, 'key');
 
         // resolve the notifiable
         $modelInstance = app($definition);

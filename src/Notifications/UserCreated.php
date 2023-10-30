@@ -6,17 +6,13 @@ use Fleetbase\Models\Company;
 use Fleetbase\Models\User;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Messages\BroadcastMessage;
+use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Carbon;
 
 /**
- * Class UserCreated
- *
- * @package Fleetbase\Notifications
- *
- * Notification for when a new user is created.
+ * Class UserCreated.
  */
 class UserCreated extends Notification implements ShouldQueue
 {
@@ -24,66 +20,49 @@ class UserCreated extends Notification implements ShouldQueue
 
     /**
      * The user that has been created.
-     *
-     * @var \Fleetbase\Models\User|null
      */
     public ?User $user;
 
     /**
      * The company the user belongs to.
-     *
-     * @var \Fleetbase\Models\Company|null
      */
     public ?Company $company;
 
     /**
      * The time the notification was sent.
-     *
-     * @var string|null
      */
     public ?string $sentAt;
 
     /**
      * The ID of the notification.
-     *
-     * @var string|null
      */
     public ?string $notificationId;
 
     /**
      * The notification name.
-     *
-     * @var string
      */
     public static string $name = 'User Created';
 
     /**
      * The notification description.
-     *
-     * @var string
      */
     public static string $description = 'Notification when a new user has been added to your organization.';
 
     /**
      * The notification package.
-     *
-     * @var string
      */
     public static string $package = 'core';
 
     /**
      * Create a new notification instance.
      *
-     * @param \Fleetbase\Models\User $user
-     * @param \Fleetbase\Models\Company $company
-     *
      * @return void
      */
     public function __construct(User $user, Company $company)
     {
-        $this->user    = $user;
-        $this->company = $company;
-        $this->sentAt  = Carbon::now()->toDateTimeString();
+        $this->user           = $user;
+        $this->company        = $company;
+        $this->sentAt         = Carbon::now()->toDateTimeString();
         $this->notificationId = uniqid('notification_');
     }
 
@@ -115,7 +94,6 @@ class UserCreated extends Notification implements ShouldQueue
     /**
      * Get the broadcastable representation of the notification.
      *
-     * @param  mixed  $notifiable
      * @return \Illuminate\Notifications\Messages\BroadcastMessage
      */
     public function toBroadcast($notifiable)
@@ -126,21 +104,20 @@ class UserCreated extends Notification implements ShouldQueue
     /**
      * Get the array representation of the notification.
      *
-     * @param  mixed  $notifiable
      * @return array
      */
     public function toArray($notifiable)
     {
         return [
             'notification_id' => $this->notificationId,
-            'sent_at'  => $this->sentAt,
-            'subject' => 'New User Added to Your Organization',
-            'message' => 'A new user (' . $this->user->name . ') has been added to your organization (' . $this->company->name . ').',
-            'id' => $this->user->uuid,
-            'email' => $this->user->email,
-            'phone' => $this->user->phone,
-            'companyId' => $this->company->uuid,
-            'company' => $this->company->name,
+            'sent_at'         => $this->sentAt,
+            'subject'         => 'New User Added to Your Organization',
+            'message'         => 'A new user (' . $this->user->name . ') has been added to your organization (' . $this->company->name . ').',
+            'id'              => $this->user->uuid,
+            'email'           => $this->user->email,
+            'phone'           => $this->user->phone,
+            'companyId'       => $this->company->uuid,
+            'company'         => $this->company->name,
         ];
     }
 }

@@ -16,36 +16,26 @@ class PasswordReset extends Notification implements ShouldQueue
 
     /**
      * Instance of the verification code for the password reset.
-     *
-     * @var \Fleetbase\Models\VerificationCode|null
      */
     public ?VerificationCode $verificationCode;
 
     /**
      * The URL where the user can reset their password.
-     *
-     * @var string
      */
     public string $url;
 
     /**
      * The notification name.
-     *
-     * @var string
      */
     public static string $name = 'Password Reset';
 
     /**
      * The notification description.
-     *
-     * @var string
      */
     public static string $description = 'Notification sent to user when they request to reset password.';
 
     /**
      * The notification package.
-     *
-     * @var string
      */
     public static string $package = 'core';
 
@@ -93,7 +83,7 @@ class PasswordReset extends Notification implements ShouldQueue
     public function toArray($notifiable)
     {
         return [
-            'code' => $this->verificationCode->code
+            'code' => $this->verificationCode->code,
         ];
     }
 }

@@ -23,14 +23,15 @@ class NotificationController extends FleetbaseController
     /**
      * Receives an array of ID's for notifications which should be marked as read.
      *
-     * @param \Illuminate\Http\Request $request The HTTP request object.
-     * @return \Illuminate\Http\Response The HTTP response.
+     * @param \Illuminate\Http\Request $request the HTTP request object
+     *
+     * @return \Illuminate\Http\Response the HTTP response
      */
     public function markAsRead(Request $request)
     {
         $notifications = $request->input('notifications');
-        $total = count($notifications);
-        $read = [];
+        $total         = count($notifications);
+        $read          = [];
 
         foreach ($notifications as $id) {
             $notification = Notification::where('id', $id)->first();
@@ -41,17 +42,17 @@ class NotificationController extends FleetbaseController
         }
 
         return response()->json([
-            'status' => 'ok',
-            'message' => 'Notifications marked as read',
+            'status'         => 'ok',
+            'message'        => 'Notifications marked as read',
             'marked_as_read' => count($read),
-            'total' => $total
+            'total'          => $total,
         ]);
     }
 
     /**
      * Receives an array of ID's for notifications which should be marked as read.
      *
-     * @return \Illuminate\Http\Response The HTTP response.
+     * @return \Illuminate\Http\Response the HTTP response
      */
     public function markAllAsRead()
     {
@@ -62,7 +63,7 @@ class NotificationController extends FleetbaseController
         }
 
         return response()->json([
-            'status' => 'ok',
+            'status'  => 'ok',
             'message' => 'All notifications marked as read',
         ]);
     }
@@ -70,8 +71,9 @@ class NotificationController extends FleetbaseController
     /**
      * Deletes a single notification.
      *
-     * @param int $notificationId The ID of the notification to delete.
-     * @return \Illuminate\Http\Response The HTTP response.
+     * @param int $notificationId the ID of the notification to delete
+     *
+     * @return \Illuminate\Http\Response the HTTP response
      */
     public function deleteNotification($notificationId)
     {
@@ -79,6 +81,7 @@ class NotificationController extends FleetbaseController
 
         if ($notification) {
             $notification->deleteNotification();
+
             return response()->json(['message' => 'Notification deleted successfully'], 200);
         } else {
             return response()->json(['error' => 'Notification not found'], 404);
@@ -88,8 +91,9 @@ class NotificationController extends FleetbaseController
     /**
      * Deletes all notifications for the authenticated user.
      *
-     * @param \Illuminate\Http\Request $request The HTTP request object.
-     * @return \Illuminate\Http\Response The HTTP response.
+     * @param \Illuminate\Http\Request $request the HTTP request object
+     *
+     * @return \Illuminate\Http\Response the HTTP response
      */
     public function bulkDelete(Request $request)
     {
@@ -102,7 +106,7 @@ class NotificationController extends FleetbaseController
         }
 
         return response()->json([
-            'status' => 'ok',
+            'status'  => 'ok',
             'message' => 'Selected notifications deleted successfully',
         ]);
     }
@@ -125,12 +129,11 @@ class NotificationController extends FleetbaseController
     /**
      * Save user notification settings.
      *
+     * @param Request $request the HTTP request object containing the notification settings data
      *
-     * @param Request $request The HTTP request object containing the notification settings data.
+     * @return \Illuminate\Http\JsonResponse a JSON response
      *
-     * @throws \Exception If the provided notification settings data is not an array.
-     *
-     * @return \Illuminate\Http\JsonResponse A JSON response.
+     * @throws \Exception if the provided notification settings data is not an array
      */
     public function saveSettings(Request $request)
     {
@@ -141,7 +144,7 @@ class NotificationController extends FleetbaseController
         Setting::configure('notification_settings', $notificationSettings);
 
         return response()->json([
-            'status' => 'ok',
+            'status'  => 'ok',
             'message' => 'Notification settings succesfully saved.',
         ]);
     }
@@ -149,16 +152,15 @@ class NotificationController extends FleetbaseController
     /**
      * Retrieve and return the notification settings for the user.
      *
-     *
-     * @return \Illuminate\Http\JsonResponse 
+     * @return \Illuminate\Http\JsonResponse
      */
     public function getSettings()
     {
         $notificationSettings = Setting::lookup('notification_settings');
 
         return response()->json([
-            'status' => 'ok',
-            'message' => 'Notification settings successfully fetched.',
+            'status'               => 'ok',
+            'message'              => 'Notification settings successfully fetched.',
             'notificationSettings' => $notificationSettings,
         ]);
     }

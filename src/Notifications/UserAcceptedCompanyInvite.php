@@ -11,7 +11,7 @@ use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 /**
- * Class UserAcceptedCompanyInvite
+ * Class UserAcceptedCompanyInvite.
  *
  * Notification for when a user accepts an invitation to a company.
  */
@@ -21,55 +21,45 @@ class UserAcceptedCompanyInvite extends Notification implements ShouldQueue
 
     /**
      * The company that the user has joined.
-     *
-     * @var \Fleetbase\Models\Company
      */
     public Company $company;
 
     /**
      * The user who has accepted the invite.
-     *
-     * @var \Fleetbase\Models\User
      */
     public User $user;
 
     /**
      * The notification name.
-     *
-     * @var string
      */
     public static string $name = 'User Accepted Company Invite';
 
     /**
      * The notification description.
-     *
-     * @var string
      */
     public static string $description = 'Notification sent when a user has accepted a company invite.';
 
     /**
      * The notification package.
-     *
-     * @var string
      */
     public static string $package = 'core';
 
     /**
      * Create a new notification instance.
      *
-     * @param \Fleetbase\Models\Company $company The company model instance.
-     * @param \Fleetbase\Models\User $user The user model instance.
+     * @param \Fleetbase\Models\Company $company the company model instance
+     * @param \Fleetbase\Models\User    $user    the user model instance
      */
     public function __construct(Company $company, User $user)
     {
         $this->company = $company;
-        $this->user = $user;
+        $this->user    = $user;
     }
 
     /**
      * Get the notification's delivery channels.
      *
-     * @param mixed $notifiable The notifiable entity.
+     * @param mixed $notifiable the notifiable entity
      *
      * @return array
      */
@@ -81,7 +71,7 @@ class UserAcceptedCompanyInvite extends Notification implements ShouldQueue
     /**
      * Get the mail representation of the notification.
      *
-     * @param mixed $notifiable The notifiable entity.
+     * @param mixed $notifiable the notifiable entity
      *
      * @return \Illuminate\Notifications\Messages\MailMessage
      */
@@ -99,7 +89,7 @@ class UserAcceptedCompanyInvite extends Notification implements ShouldQueue
     /**
      * Get the array representation of the notification.
      *
-     * @param mixed $notifiable The notifiable entity.
+     * @param mixed $notifiable the notifiable entity
      *
      * @return array
      */
@@ -107,7 +97,7 @@ class UserAcceptedCompanyInvite extends Notification implements ShouldQueue
     {
         return [
             'company_id' => $this->company->id,
-            'user_id' => $this->user->id,
+            'user_id'    => $this->user->id,
         ];
     }
 }

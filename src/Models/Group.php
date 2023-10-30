@@ -13,7 +13,7 @@ use Spatie\Sluggable\HasSlug;
 use Spatie\Sluggable\SlugOptions;
 
 /**
- * @property \Illuminate\Database\Eloquent\Collection  $users
+ * @property \Illuminate\Database\Eloquent\Collection $users
  */
 class Group extends Model
 {
@@ -63,8 +63,6 @@ class Group extends Model
 
     /**
      * The relationship of the multiple notifiables.
-     *
-     * @var string
      */
     public string $containsMultipleNotifiables = 'users';
 
@@ -90,8 +88,6 @@ class Group extends Model
 
     /**
      * An array of each group members email to send notification emails to.
-     *
-     * @return \Illuminate\Support\Collection
      */
     public function routeNotificationForMail(): \Illuminate\Support\Collection
     {

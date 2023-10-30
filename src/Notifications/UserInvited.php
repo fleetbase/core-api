@@ -13,7 +13,7 @@ use Illuminate\Notifications\Notification;
 use Illuminate\Support\HtmlString;
 
 /**
- * Class UserInvited
+ * Class UserInvited.
  *
  * Notification for when a user is invited to a company.
  */
@@ -23,29 +23,21 @@ class UserInvited extends Notification implements ShouldQueue
 
     /**
      * The invite related to this notification.
-     *
-     * @var \Fleetbase\Models\Invite
      */
     public Invite $invite;
 
     /**
      * The company related to this notification.
-     *
-     * @var \Fleetbase\Models\Company
      */
     public Company $company;
 
     /**
      * The user who sent the invitation.
-     *
-     * @var \Fleetbase\Models\User
      */
     public User $sender;
 
     /**
      * The URL for accepting the invite.
-     *
-     * @var string
      */
     public string $url;
 
@@ -95,8 +87,8 @@ class UserInvited extends Notification implements ShouldQueue
     public function toArray($notifiable)
     {
         return [
-            'invite_id' => $this->invite->uuid,
-            'subject_id' => Utils::or($this->invite, ['uuid', 'public_id', 'id'])
+            'invite_id'  => $this->invite->uuid,
+            'subject_id' => Utils::or($this->invite, ['uuid', 'public_id', 'id']),
         ];
     }
 }

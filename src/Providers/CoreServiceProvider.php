@@ -3,8 +3,8 @@
 namespace Fleetbase\Providers;
 
 use Fleetbase\Models\Setting;
-use Fleetbase\Support\NotificationRegistry;
 use Fleetbase\Support\Expansion;
+use Fleetbase\Support\NotificationRegistry;
 use Fleetbase\Support\Utils;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -350,7 +350,7 @@ class CoreServiceProvider extends ServiceProvider
     {
         NotificationRegistry::register([
             \Fleetbase\Notifications\UserCreated::class,
-            \Fleetbase\Notifications\UserAcceptedCompanyInvite::class
+            \Fleetbase\Notifications\UserAcceptedCompanyInvite::class,
         ]);
     }
 

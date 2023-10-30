@@ -9,7 +9,9 @@ use Illuminate\Notifications\DatabaseNotification;
 
 class Notification extends DatabaseNotification
 {
-    use HasApiModelBehavior, Searchable, Filterable;
+    use HasApiModelBehavior;
+    use Searchable;
+    use Filterable;
 
     /**
      * The attributes that are mass assignable.
@@ -28,8 +30,7 @@ class Notification extends DatabaseNotification
     /**
      * Marks the notification as read.
      *
-     * @param boolean $save
-     * @return \Fleetbase\Models\Notification
+     * @param bool $save
      */
     public function markAsRead($save = true): Notification
     {
@@ -41,6 +42,7 @@ class Notification extends DatabaseNotification
 
         return $this;
     }
+
     /**
      * Delete the notification.
      *
@@ -50,5 +52,4 @@ class Notification extends DatabaseNotification
     {
         $this->delete();
     }
-
 }

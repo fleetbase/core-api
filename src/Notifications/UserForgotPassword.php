@@ -16,15 +16,11 @@ class UserForgotPassword extends Notification implements ShouldQueue
 
     /**
      * Instance of the verification code for the password reset.
-     *
-     * @var \Fleetbase\Models\VerificationCode|null
      */
     public ?VerificationCode $verificationCode;
 
     /**
      * The URL where the user can reset their password.
-     *
-     * @var string
      */
     public string $url;
 
@@ -72,7 +68,7 @@ class UserForgotPassword extends Notification implements ShouldQueue
     public function toArray($notifiable)
     {
         return [
-            'code' => $this->verificationCode->code
+            'code' => $this->verificationCode->code,
         ];
     }
 }
