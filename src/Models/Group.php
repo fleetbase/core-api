@@ -12,6 +12,9 @@ use Spatie\Permission\Traits\HasRoles;
 use Spatie\Sluggable\HasSlug;
 use Spatie\Sluggable\SlugOptions;
 
+/**
+ * @property \Illuminate\Database\Eloquent\Collection  $users
+ */
 class Group extends Model
 {
     use HasUuid;
@@ -59,6 +62,13 @@ class Group extends Model
     protected $with = ['users', 'permissions', 'policies'];
 
     /**
+     * The relationship of the multiple notifiables.
+     *
+     * @var string
+     */
+    public string $containsMultipleNotifiables = 'users';
+
+    /**
      * Get the options for generating the slug.
      */
     public function getSlugOptions(): SlugOptions
@@ -76,5 +86,15 @@ class Group extends Model
     public function users()
     {
         return $this->hasManyThrough(User::class, GroupUser::class, 'group_uuid', 'uuid', 'uuid', 'user_uuid');
+    }
+
+    /**
+     * An array of each group members email to send notification emails to.
+     *
+     * @return \Illuminate\Support\Collection
+     */
+    public function routeNotificationForMail(): \Illuminate\Support\Collection
+    {
+        return $this->users->pluck('email');
     }
 }

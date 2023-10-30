@@ -6,6 +6,7 @@ use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\User;
 use Fleetbase\Notifications\UserCreated;
+use Fleetbase\Support\NotificationRegistry;
 
 class UserObserver
 {
@@ -28,7 +29,8 @@ class UserObserver
         $user->sendInviteFromCompany();
 
         // Notify the company owner a user has been created
-        $user->company->owner->notify(new UserCreated($user, $user->company));
+        // $user->company->owner->notify(new UserCreated($user, $user->company));
+        NotificationRegistry::notify(UserCreated::class, $user, $user->company);
     }
 
     /**

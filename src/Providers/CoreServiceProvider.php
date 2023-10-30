@@ -3,7 +3,7 @@
 namespace Fleetbase\Providers;
 
 use Fleetbase\Models\Setting;
-use Fleetbase\Notifications\NotificationRegistry;
+use Fleetbase\Support\NotificationRegistry;
 use Fleetbase\Support\Expansion;
 use Fleetbase\Support\Utils;
 use Illuminate\Console\Scheduling\Schedule;

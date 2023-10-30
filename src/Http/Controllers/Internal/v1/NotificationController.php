@@ -5,7 +5,7 @@ namespace Fleetbase\Http\Controllers\Internal\v1;
 use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Models\Notification;
 use Fleetbase\Models\Setting;
-use Fleetbase\Notifications\NotificationRegistry;
+use Fleetbase\Support\NotificationRegistry;
 use Illuminate\Http\Request;
 
 /**

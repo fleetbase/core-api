@@ -5,13 +5,13 @@ namespace Fleetbase\Notifications;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\User;
 use Illuminate\Bus\Queueable;
-// use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Messages\BroadcastMessage;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Carbon;
 
-class UserCreated extends Notification
+class UserCreated extends Notification implements ShouldQueue
 {
     use Queueable;
 
