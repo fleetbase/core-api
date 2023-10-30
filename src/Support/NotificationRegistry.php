@@ -94,6 +94,13 @@ class NotificationRegistry
         return data_get($properties, $property, $defaultValue);
     }
 
+    /**
+     * Get the parameters required by a specific notification class constructor.
+     *
+     * @param string $notificationClass The class name of the notification.
+     *
+     * @return array An array of associative arrays, each containing details about a parameter required by the constructor.
+     */
     private function getNotificationClassParameters(string $notificationClass): array
     {
         // Make sure class exists
@@ -187,13 +194,21 @@ class NotificationRegistry
         return static::getNotifiablesForCompany($companySessionId);
     }
 
-    public static function notify($notificationClass,  ...$params)
+    /**
+     * Notify one or multiple notifiables using a specific notification class.
+     *
+     * @param string $notificationClass The class name of the notification to use.
+     * @param mixed ...$params           Additional parameters for the notification class.
+     *
+     * @return void
+     * @throws \Exception
+     */
+    public static function notify($notificationClass,  ...$params): void
     {
         // if the class doesn't exist return false
         if (!class_exists($notificationClass)) {
-            return false;
+            return;
         }
-
 
         // resolve settings for notification
         $notificationSettings = Setting::lookup('notification_settings');
@@ -219,7 +234,7 @@ class NotificationRegistry
                         foreach ($multipleNotifiables as $singleNotifiable) {
                             $singleNotifiable->notify(new $notificationClass(...$params));
                         }
-                        
+
                         // continue
                         continue;
                     }
@@ -232,6 +247,14 @@ class NotificationRegistry
         }
     }
 
+
+    /**
+     * Resolve a notifiable object to an Eloquent model.
+     *
+     * @param array $notifiableObject An associative array containing the definition and primary key to resolve the notifiable object.
+     *
+     * @return \Illuminate\Database\Eloquent\Model|null The Eloquent model or null if it cannot be resolved.
+     */
     protected static function resolveNotifiable(array $notifiableObject): ?\Illuminate\Database\Eloquent\Model
     {
         $definition = data_get($notifiableObject, 'definition');
