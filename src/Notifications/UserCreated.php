@@ -11,20 +11,71 @@ use Illuminate\Notifications\Messages\BroadcastMessage;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Carbon;
 
+/**
+ * Class UserCreated
+ *
+ * @package Fleetbase\Notifications
+ *
+ * Notification for when a new user is created.
+ */
 class UserCreated extends Notification implements ShouldQueue
 {
     use Queueable;
 
+    /**
+     * The user that has been created.
+     *
+     * @var \Fleetbase\Models\User|null
+     */
     public ?User $user;
+
+    /**
+     * The company the user belongs to.
+     *
+     * @var \Fleetbase\Models\Company|null
+     */
     public ?Company $company;
+
+    /**
+     * The time the notification was sent.
+     *
+     * @var string|null
+     */
     public ?string $sentAt;
+
+    /**
+     * The ID of the notification.
+     *
+     * @var string|null
+     */
     public ?string $notificationId;
+
+    /**
+     * The notification name.
+     *
+     * @var string
+     */
     public static string $name = 'User Created';
-    public static string $description = 'Notify when a new user has been created.';
+
+    /**
+     * The notification description.
+     *
+     * @var string
+     */
+    public static string $description = 'Notification when a new user has been added to your organization.';
+
+    /**
+     * The notification package.
+     *
+     * @var string
+     */
     public static string $package = 'core';
 
     /**
      * Create a new notification instance.
+     *
+     * @param \Fleetbase\Models\User $user
+     * @param \Fleetbase\Models\Company $company
      *
      * @return void
      */
@@ -54,12 +105,11 @@ class UserCreated extends Notification implements ShouldQueue
     public function toMail($notifiable)
     {
         return (new MailMessage())
-            ->subject('🥳 New Fleetbase Signup!')
-            ->line('View user details below.')
+            ->subject('New User Added to Your Organization')
+            ->line('A new user has been added to your organization.')
             ->line('Name: ' . $this->user->name)
             ->line('Email: ' . $this->user->email)
-            ->line('Phone: ' . $this->user->phone)
-            ->line('Company: ' . $this->company->name);
+            ->line('Phone: ' . $this->user->phone);
     }
 
     /**
@@ -84,8 +134,8 @@ class UserCreated extends Notification implements ShouldQueue
         return [
             'notification_id' => $this->notificationId,
             'sent_at'  => $this->sentAt,
-            'subject' => '🥳 New Fleetbase Signup!',
-            'message' => 'New user ' . $this->user->name . ' added to organization ' . $this->company->name,
+            'subject' => 'New User Added to Your Organization',
+            'message' => 'A new user (' . $this->user->name . ') has been added to your organization (' . $this->company->name . ').',
             'id' => $this->user->uuid,
             'email' => $this->user->email,
             'phone' => $this->user->phone,

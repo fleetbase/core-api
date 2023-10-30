@@ -137,6 +137,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                         $router->patch('deactivate/{id}', $controller('deactivate'));
                                         $router->patch('activate/{id}', $controller('activate'));
                                         $router->delete('remove-from-company/{id}', $controller('removeFromCompany'));
+                                        $router->delete('bulk-delete', $controller('bulkDelete'));
                                         $router->post('resend-invite', $controller('resendInvitation'));
                                         $router->post('set-password', $controller('setCurrentUserPassword'));
                                     }

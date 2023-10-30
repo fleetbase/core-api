@@ -35,13 +35,21 @@ class NotificationRegistry
      * Register a notification.
      *
      * @param string|array $notificationClass The class or an array of classes to register.
+     * @param sarray $notificationClass The class or an array of classes to register.
+     * @throws \Exception
      * @return void
      */
-    public static function register($notificationClass): void
+    public static function register($notificationClass, ?array $options = []): void
     {
         if (is_array($notificationClass)) {
             foreach ($notificationClass as $notificationClassElement) {
-                static::register($notificationClassElement);
+                if (is_array($notificationClassElement) && count($notificationClassElement) === 2) {
+                    static::register($notificationClassElement[0], $notificationClassElement[1]);
+                } else if (is_string($notificationClassElement)) {
+                    static::register($notificationClassElement);
+                } else {
+                    throw new \Exception('Attempted to register invalid notification.');
+                }
             }
 
             return;
@@ -49,11 +57,11 @@ class NotificationRegistry
 
         static::$notifications[] = [
             'definition' => $notificationClass,
-            'name' => static::getNotificationClassProperty($notificationClass, 'name'),
-            'description' => static::getNotificationClassProperty($notificationClass, 'description'),
-            'package' => static::getNotificationClassProperty($notificationClass, 'package'),
+            'name' => static::getNotificationClassProperty($notificationClass, 'name', data_get($options, 'name', null)),
+            'description' => static::getNotificationClassProperty($notificationClass, 'description', data_get($options, 'description', null)),
+            'package' => static::getNotificationClassProperty($notificationClass, 'package', data_get($options, 'package', null)),
             'params' => static::getNotificationClassParameters($notificationClass),
-            'options' => static::getNotificationClassProperty($notificationClass, 'notificationOptions', []),
+            'options' => static::getNotificationClassProperty($notificationClass, 'notificationOptions', data_get($options, 'notificationOptions', [])),
         ];
     }
 
@@ -195,6 +203,23 @@ class NotificationRegistry
     }
 
     /**
+     * Finda a notification registration by it's class.
+     *
+     * @param string $notificationClass
+     * @return array|null
+     */
+    public static function findNotificationRegistrationByDefinition(string $notificationClass): ?array
+    {
+        foreach (static::$notifications as $notificationRegistration) {
+            if ($notificationRegistration['definition'] === $notificationClass) {
+                return $notificationRegistration;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Notify one or multiple notifiables using a specific notification class.
      *
      * @param string $notificationClass The class name of the notification to use.
@@ -203,7 +228,7 @@ class NotificationRegistry
      * @return void
      * @throws \Exception
      */
-    public static function notify($notificationClass,  ...$params): void
+    public static function notify($notificationClass, ...$params): void
     {
         // if the class doesn't exist return false
         if (!class_exists($notificationClass)) {
@@ -212,7 +237,12 @@ class NotificationRegistry
 
         // resolve settings for notification
         $notificationSettings = Setting::lookup('notification_settings');
-        $notificationSettingsKey = Str::camel(str_replace('\\', '', $notificationClass));
+
+        // Get the notification class definition
+        $definition = static::findNotificationRegistrationByDefinition($notificationClass);
+
+        // iterate the properties to find the notifications key starting with the class
+        $notificationSettingsKey = Str::camel(str_replace('\\', '', $notificationClass)) . '__' . Str::camel($definition['name']);
 
         // get the notification settings for this $notificationClass
         $settings = data_get($notificationSettings, $notificationSettingsKey, []);
@@ -247,6 +277,61 @@ class NotificationRegistry
         }
     }
 
+    /**
+     * Notify one or multiple notifiables using a specific notification class.
+     *
+     * @param string $notificationClass The class name of the notification to use.
+     * @param string $notificationName The name defined for the notification class.
+     * @param mixed ...$params           Additional parameters for the notification class.
+     *
+     * @return void
+     * @throws \Exception
+     */
+    public static function notifyUsingDefinitionName($notificationClass, $notificationName, ...$params): void
+    {
+        // if the class doesn't exist return false
+        if (!class_exists($notificationClass)) {
+            return;
+        }
+
+        // resolve settings for notification
+        $notificationSettings = Setting::lookup('notification_settings');
+
+        // iterate the properties to find the notifications key starting with the class
+        $notificationSettingsKey = Str::camel(str_replace('\\', '', $notificationClass)) . '__' . Str::camel($notificationName);
+
+        // get the notification settings for this $notificationClass
+        $settings = data_get($notificationSettings, $notificationSettingsKey, []);
+
+        // if we have the settings resolve the notifiables
+        if ($settings) {
+            $notifiables = data_get($settings, 'notifiables', []);
+
+            if (is_array($notifiables)) {
+                foreach ($notifiables as $notifiable) {
+                    $notifiableModel = static::resolveNotifiable($notifiable);
+
+                    // if has multiple notifiables 
+                    if (isset($notifiableModel->containsMultipleNotifiables) && is_string($notifiableModel->containsMultipleNotifiables)) {
+                        $notifiablesRelationship = $notifiableModel->containsMultipleNotifiables;
+                        $multipleNotifiables = data_get($notifiableModel, $notifiablesRelationship, []);
+
+                        // notifiy each
+                        foreach ($multipleNotifiables as $singleNotifiable) {
+                            $singleNotifiable->notify(new $notificationClass(...$params));
+                        }
+
+                        // continue
+                        continue;
+                    }
+
+                    if ($notifiableModel) {
+                        $notifiableModel->notify(new $notificationClass(...$params));
+                    }
+                }
+            }
+        }
+    }
 
     /**
      * Resolve a notifiable object to an Eloquent model.

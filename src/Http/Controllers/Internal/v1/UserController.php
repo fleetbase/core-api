@@ -14,7 +14,9 @@ use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\Invite;
 use Fleetbase\Models\User;
+use Fleetbase\Notifications\UserAcceptedCompanyInvite;
 use Fleetbase\Notifications\UserInvited;
+use Fleetbase\Support\NotificationRegistry;
 use Fleetbase\Support\Utils;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -181,6 +183,9 @@ class UserController extends FleetbaseController
 
         // create authentication token for user
         $token = $user->createToken($invite->code);
+
+        // Notify company that user has accepted their invite
+        NotificationRegistry::notify(UserAcceptedCompanyInvite::class, $company, $user);
 
         return response()->json([
             'status'         => 'ok',
