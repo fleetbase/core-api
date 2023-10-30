@@ -6,6 +6,7 @@ use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasPolicies;
 use Fleetbase\Traits\HasUuid;
+use Illuminate\Notifications\Notifiable;
 use Spatie\Permission\Traits\HasPermissions;
 use Spatie\Permission\Traits\HasRoles;
 use Spatie\Sluggable\HasSlug;
@@ -20,6 +21,7 @@ class Group extends Model
     use HasRoles;
     use HasSlug;
     use Filterable;
+    use Notifiable;
 
     /**
      * The database connection to use.

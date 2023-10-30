@@ -10,6 +10,7 @@ use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\Searchable;
 use Fleetbase\Traits\SendsWebhooks;
 use Fleetbase\Traits\TracksApiCredential;
+use Illuminate\Notifications\Notifiable;
 use Spatie\Sluggable\HasSlug;
 use Spatie\Sluggable\SlugOptions;
 
@@ -23,6 +24,7 @@ class Company extends Model
     use HasSlug;
     use Searchable;
     use SendsWebhooks;
+    use Notifiable;
 
     /**
      * The database connection to use.

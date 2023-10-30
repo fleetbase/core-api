@@ -4,6 +4,8 @@ namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Models\Notification;
+use Fleetbase\Models\Setting;
+use Fleetbase\Notifications\NotificationRegistry;
 use Illuminate\Http\Request;
 
 /**
@@ -108,10 +110,56 @@ class NotificationController extends FleetbaseController
     /**
      * Get the list of registered notifications from the NotificationRegistry.
      *
-     * @return \Illuminate\Http\JsonResponse The JSON response containing registered notifications.
+     * @return \Illuminate\Http\JsonResponse The JSON response
      */
     public function registry()
     {
-        return response()->json(\Fleetbase\Notifications\NotificationRegistry::$notifications);
+        return response()->json(NotificationRegistry::$notifications);
+    }
+
+    public function notifiables()
+    {
+        return response()->json(NotificationRegistry::getNotifiables());
+    }
+
+    /**
+     * Save user notification settings.
+     *
+     *
+     * @param Request $request The HTTP request object containing the notification settings data.
+     *
+     * @throws \Exception If the provided notification settings data is not an array.
+     *
+     * @return \Illuminate\Http\JsonResponse A JSON response.
+     */
+    public function saveSettings(Request $request)
+    {
+        $notificationSettings = $request->input('notificationSettings');
+        if (!is_array($notificationSettings)) {
+            throw new \Exception('Invalid notification settings data.');
+        }
+        Setting::configure('notification_settings', $notificationSettings);
+
+        return response()->json([
+            'status' => 'ok',
+            'message' => 'Notification settings succesfully saved.',
+        ]);
+    }
+
+    /**
+     * Retrieve and return the notification settings for the user.
+     *
+     *
+     * @return \Illuminate\Http\JsonResponse 
+     */
+    public function getSettings()
+    {
+        $notificationSettings = Setting::lookup('notification_settings');
+
+        return response()->json([
+            'status' => 'ok',
+            'message' => 'Notification settings successfully fetched.',
+            'notificationSettings' => $notificationSettings,
+        ]);
     }
 }
