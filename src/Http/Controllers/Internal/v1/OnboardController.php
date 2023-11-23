@@ -89,7 +89,7 @@ class OnboardController extends Controller
             'status'           => 'success',
             'session'          => $user->uuid,
             'token'            => $token->plainTextToken,
-            'skipVerification' => $user->id === 1,
+            'skipVerification' => $isAdmin,
         ]);
     }
 
