@@ -78,6 +78,12 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                         $router->group(
                             ['middleware' => ['fleetbase.protected']],
                             function ($router) {
+                                $router->group(
+                                    ['prefix' => 'extensions'],
+                                    function ($router) {
+                                        $router->get('/', 'ExtensionController@query');
+                                    }
+                                );
                                 $router->fleetbaseRoutes(
                                     'api-credentials',
                                     function ($router, $controller) {
@@ -147,7 +153,6 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 $router->fleetbaseRoutes('roles');
                                 $router->fleetbaseRoutes('policies');
                                 $router->fleetbaseRoutes('permissions');
-                                $router->fleetbaseRoutes('extensions');
                                 $router->fleetbaseRoutes('categories');
                                 $router->fleetbaseRoutes(
                                     'files',

@@ -30,7 +30,7 @@ class Verdaccio
      * @return array|Response The response from the Verdaccio server.
      * @throws \Exception If the server URL is not configured or if the request fails.
      */
-    protected static function request(string $method, string $endpoint, array $data = [], array $headers = [], array $adapterOptions = [])
+    public static function request(string $method, string $endpoint, array $data = [], array $headers = [], array $adapterOptions = [])
     {
         $baseUrl = static::getServerUrl();
 

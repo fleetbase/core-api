@@ -2,7 +2,6 @@
 
 namespace Fleetbase\Http\Controllers;
 
-use Fleetbase\Support\Verdaccio;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Foundation\Bus\DispatchesJobs;
 use Illuminate\Foundation\Validation\ValidatesRequests;
@@ -44,10 +43,6 @@ class Controller extends BaseController
      */
     public function test()
     {
-        $response = Verdaccio::listPackages();
-        dump($response);
-        $response = Verdaccio::searchPackages();
-        dump($response);
-        return response()->json(['status' => 'ok']);
+        return response()->json([]);
     }
 }
