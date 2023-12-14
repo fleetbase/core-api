@@ -3,7 +3,6 @@
 namespace Fleetbase\Providers;
 
 use Fleetbase\Models\Setting;
-use Fleetbase\Support\Expansion;
 use Fleetbase\Support\NotificationRegistry;
 use Fleetbase\Support\Utils;
 use Illuminate\Console\Scheduling\Schedule;
@@ -13,7 +12,6 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
-use Illuminate\Support\Str;
 
 /**
  * CoreServiceProvider.
