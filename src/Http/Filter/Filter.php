@@ -3,6 +3,7 @@
 namespace Fleetbase\Http\Filter;
 
 use Fleetbase\Support\Http;
+use Fleetbase\Traits\Expandable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -10,6 +11,11 @@ use Illuminate\Support\Str;
 
 abstract class Filter
 {
+    /**
+     * Make expandable.
+     */
+    use Expandable;
+
     /**
      * The request instance.
      *
@@ -39,7 +45,7 @@ abstract class Filter
     public function __construct(Request $request)
     {
         $this->request = $request;
-        $this->session = $request->session();
+        $this->session = $request->hasSession() ? $request->session() : session();
     }
 
     /**
@@ -79,7 +85,7 @@ abstract class Filter
                 continue;
             }
 
-            if (method_exists($this, $methodName)) {
+            if (method_exists($this, $methodName) || static::isExpansion($methodName)) {
                 call_user_func_array([$this, $methodName], [$value]);
                 break;
             }

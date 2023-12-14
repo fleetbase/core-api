@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Str;
 
 /**
  * CoreServiceProvider.
@@ -341,8 +342,14 @@ class CoreServiceProvider extends ServiceProvider
                 continue;
             }
 
-            $method = $class::$method ?? Expansion::isExpandable($target) ? 'expand' : 'mixin';
-            $target::$method(new $class());
+            try {
+                $target::expand(new $class());
+            } catch (\Throwable $e) {
+                try {
+                    $target::mixin(new $class());
+                } catch (\Throwable $e) {
+                }
+            }
         }
     }
 

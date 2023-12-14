@@ -4,6 +4,7 @@ namespace Fleetbase\Traits;
 
 use Fleetbase\Support\Utils;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
 
 trait HasMetaAttributes
 {
@@ -110,8 +111,17 @@ trait HasMetaAttributes
         $meta[$key] = static::prepareValue($value);
 
         $this->setAttribute('meta', $meta);
-
         return $this->update(['meta' => $meta]);
+    }
+
+    public function updateMetaProperties(array $data = [])
+    {
+        $currentMetaObject = data_get($this, 'meta', []);
+        $currentMetaObject = array_merge($currentMetaObject, $data);
+
+        return DB::table($this->getTable())->where($this->getKeyName(), $this->getKey())->update([
+            'meta' => json_encode($currentMetaObject)
+        ]);
     }
 
     /**

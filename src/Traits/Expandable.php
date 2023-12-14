@@ -2,8 +2,8 @@
 
 namespace Fleetbase\Traits;
 
-use Closure;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 trait Expandable
 {
@@ -15,7 +15,7 @@ trait Expandable
             return static::expandFromClass($name);
         }
 
-        $class = get_class(new static());
+        $class = get_class(app(static::class));
 
         if (!isset(static::$added[$class])) {
             static::$added[$class] = [];
@@ -59,21 +59,21 @@ trait Expandable
 
     public static function hasExpansion(string $name): bool
     {
-        $class = get_class(new static());
+        $class = get_class(app(static::class));
 
         return isset(static::$added[$class][$name]);
     }
 
     public static function isExpansion(string $name): bool
     {
-        $class = get_class(new static());
+        $class = get_class(app(static::class));
 
         return static::hasExpansion($name) && static::$added[$class][$name] instanceof \Closure;
     }
 
     public static function getExpansionClosure(string $name)
     {
-        $class = get_class(new static());
+        $class = get_class(app(static::class));
 
         return static::$added[$class][$name];
     }
@@ -87,7 +87,7 @@ trait Expandable
         }
 
         if (static::isModel()) {
-            if (in_array($method, ['increment', 'decrement'])) {
+            if (method_exists($this, $method)) {
                 return $this->$method(...$parameters);
             }
 
@@ -97,7 +97,7 @@ trait Expandable
                 DB::connection()->getPdo();
             } catch (\Exception $e) {
                 // Connection failed, or other error occurred
-                return;
+                return $this->$method(...$parameters);
             }
 
             return $this->forwardCallTo($this->newQuery(), $method, $parameters);
