@@ -31,7 +31,12 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
         $router->prefix('v1')
             ->namespace('Api\v1')
             ->group(function ($router) {
-                $router->get('organizations', 'OrganizationController@getOrganization');
+                $router->group(
+                    ['prefix' => 'organizations'],
+                    function ($router) {
+                        $router->get('current', 'OrganizationController@getCurrent');
+                    }
+                );
             });
 
         /*

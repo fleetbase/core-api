@@ -11,7 +11,7 @@ use Illuminate\Support\Str;
 
 class OrganizationController extends Controller
 {
-    public function getOrganization(Request $request)
+    public function getCurrent(Request $request)
     {
         $token       = $request->bearerToken();
         $isSecretKey = Str::startsWith($token, '$');
