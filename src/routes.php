@@ -21,7 +21,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
     function ($router) {
         $router->get('/', 'Controller@hello');
 
-         /*
+        /*
         |--------------------------------------------------------------------------
         | Public/Consumable Routes
         |--------------------------------------------------------------------------
@@ -29,10 +29,10 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
         | Routes for users and public applications to consume.
         */
         $router->prefix('v1')
-        ->namespace('Api\v1')
-        ->group(function ($router) {
-            $router->get('organizations','OrganizationController@getOrganization');
-        });
+            ->namespace('Api\v1')
+            ->group(function ($router) {
+                $router->get('organizations', 'OrganizationController@getOrganization');
+            });
 
         /*
         |--------------------------------------------------------------------------

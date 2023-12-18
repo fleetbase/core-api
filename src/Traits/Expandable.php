@@ -3,7 +3,6 @@
 namespace Fleetbase\Traits;
 
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 
 trait Expandable
 {

@@ -111,6 +111,7 @@ trait HasMetaAttributes
         $meta[$key] = static::prepareValue($value);
 
         $this->setAttribute('meta', $meta);
+
         return $this->update(['meta' => $meta]);
     }
 
@@ -120,7 +121,7 @@ trait HasMetaAttributes
         $currentMetaObject = array_merge($currentMetaObject, $data);
 
         return DB::table($this->getTable())->where($this->getKeyName(), $this->getKey())->update([
-            'meta' => json_encode($currentMetaObject)
+            'meta' => json_encode($currentMetaObject),
         ]);
     }
 

@@ -2,9 +2,8 @@
 
 namespace Fleetbase\Http\Resources;
 
-use Fleetbase\Support\Http;
 use Fleetbase\Models\Setting;
-
+use Fleetbase\Support\Http;
 
 class Organization extends FleetbaseResource
 {

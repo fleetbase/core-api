@@ -2,21 +2,21 @@
 
 namespace Fleetbase\Http\Controllers\Api\v1;
 
-use Illuminate\Http\Request;
 use Fleetbase\Http\Controllers\Controller;
 use Fleetbase\Http\Resources\Organization;
 use Fleetbase\Models\ApiCredential;
 use Fleetbase\Models\Company;
+use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
 class OrganizationController extends Controller
 {
     public function getOrganization(Request $request)
     {
-        $token = $request->bearerToken();
+        $token       = $request->bearerToken();
         $isSecretKey = Str::startsWith($token, '$');
 
-         // Depending on API key format set the connection to find credential on
+        // Depending on API key format set the connection to find credential on
         $connection = Str::startsWith($token, 'flb_test_') ? 'sandbox' : 'mysql';
 
         // Find the API Credential record
@@ -41,7 +41,7 @@ class OrganizationController extends Controller
 
         // Get the organization owning the API key
         $organization = Company::where('uuid', $apiCredential->company_uuid)->first();
-    
+
         return new Organization($organization);
     }
 }
