@@ -2197,4 +2197,34 @@ class Utils
 
         return $url;
     }
+
+    public static function getModelCountry(\Illuminate\Database\Eloquent\Model $model): ?string
+    {
+        if (isset($model->country) && is_string($model->country)) {
+            if (strlen($model->country) === 2) {
+                return $model->country;
+            }
+
+            $countryCode = static::getCountryCodeByName($model->country);
+
+            if (strlen($countryCode) === 2) {
+                return $countryCode;
+            }
+        }
+
+        if ($model instanceof Company) {
+            return null;
+        }
+
+        // attempt to get country code from current company session
+        if (session()->has('company')) {
+            $company = Company::where('uuid', session('company'))->first();
+
+            if ($company) {
+                return static::getModelCountry($company);
+            }
+        }
+
+        return null;
+    }
 }

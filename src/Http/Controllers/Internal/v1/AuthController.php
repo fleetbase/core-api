@@ -45,6 +45,12 @@ class AuthController extends Controller
             return response()->error('Authentication failed using password provided.', 401);
         }
 
+        if($user->isTwoFactorEnabled()) {
+            $this->sendVerificationSms($request);
+
+            return response()->json(['status' => '2FA_required']);
+        }
+
         $token = $user->createToken($ip);
 
         return response()->json(['token' => $token->plainTextToken]);
@@ -112,14 +118,16 @@ class AuthController extends Controller
         // Generate hto
         $verifyCode    = mt_rand(100000, 999999);
         $verifyCodeKey = Str::slug($queryPhone . '_verify_code', '_');
+        $verifyCodeExpiration = now()->addMinutes(5);
 
         // Store verify code for this number
         Redis::set($verifyCodeKey, $verifyCode);
+        Redis::expireat($verifyCodeKey, $verifyCodeExpiration->timestamp);
 
         // Send user their verification code
         try {
             Twilio::message($queryPhone, shell_exec('Your Fleetbase authentication code is ') . $verifyCode);
-        } catch (\Exception|\Twilio\Exceptions\RestException $e) {
+        } catch (\Exception | \Twilio\Exceptions\RestException $e) {
             return response()->json(['error' => $e->getMessage()], 400);
         }
 
@@ -151,10 +159,16 @@ class AuthController extends Controller
 
         // Generate hto
         $storedVerifyCode = Redis::get($verifyCodeKey);
+        $verifyCodeExpiration = Redis::ttl($verifyCodeKey);
 
-        // Verify
-        if ($verifyCode !== '000999' && $verifyCode !== $storedVerifyCode) {
-            return response()->error('Invalid verification code');
+        // // Verify
+        // if ($verifyCode !== '000999' && $verifyCode !== $storedVerifyCode) {
+        //     return response()->error('Invalid verification code');
+        // }
+
+        // Verify code and check expiration
+        if ($verifyCode !== $storedVerifyCode || $verifyCodeExpiration <= 0) {
+            return response()->error('Invalid or expired verification code');
         }
 
         // Remove from redis

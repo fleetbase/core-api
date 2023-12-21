@@ -191,6 +191,38 @@ class User extends Authenticatable
     protected static $logName = 'user';
 
     /**
+     * Check if Two-Factor Authentication (2FA) is enabled for the user.
+     *
+     * @return bool
+     */
+    public function isTwoFactorEnabled()
+    {
+        return data_get($this->meta, 'two_factor_enabled', false);
+    }
+
+    /**
+     * Enable Two-Factor Authentication (2FA) for the user.
+     *
+     * @return void
+     */
+    public function enableTwoFactor()
+    {
+        $this->meta = array_merge($this->meta ?? [], ['two_factor_enabled' => true]);
+        $this->save();
+    }
+
+    /**
+     * Disable Two-Factor Authentication (2FA) for the user.
+     *
+     * @return void
+     */
+    public function disableTwoFactor()
+    {
+        $this->meta = array_merge($this->meta ?? [], ['two_factor_enabled' => false]);
+        $this->save();
+    }
+
+    /**
      * Get the options for generating the slug.
      */
     public function getSlugOptions(): SlugOptions
