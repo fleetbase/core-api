@@ -271,6 +271,8 @@ class SettingController extends Controller
         return response()->json(['status' => $status, 'message' => $message]);
     }
 
+
+
     /**
      * Loads and sends the services configuration.
      *

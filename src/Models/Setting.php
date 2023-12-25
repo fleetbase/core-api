@@ -2,11 +2,18 @@
 
 namespace Fleetbase\Models;
 
+use Fleetbase\Traits\Filterable;
+use Fleetbase\Traits\HasApiModelBehavior;
+use Fleetbase\Traits\Searchable;
 use Fleetbase\Casts\Json;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 
 class Setting extends EloquentModel
 {
+    use HasApiModelBehavior;
+    use Searchable;
+    use Filterable;
+
     /**
      * Create a new instance of the model.
      *

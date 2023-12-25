@@ -167,6 +167,9 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     $router->delete('bulk-delete', $controller('bulkDelete'));
                                     $router->post('save-settings', $controller('saveSettings'));
                                 });
+                                $router->fleetbaseRoutes('two-fa-settings', function ($router, $controller) {
+                                    $router->post('save-settings', $controller('saveSettings'));
+                                });
                             }
                         );
                     }
