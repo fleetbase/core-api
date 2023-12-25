@@ -448,10 +448,14 @@ class SettingController extends Controller
 
         if ($iconUuid) {
             Setting::configure('branding.icon_uuid', $iconUuid);
+        } else {
+            Setting::configure('branding.icon_uuid', null);
         }
 
         if ($logoUuid) {
             Setting::configure('branding.logo_uuid', $logoUuid);
+        } else {
+            Setting::configure('branding.logo_uuid', null);
         }
 
         $brandingSettings = Setting::getBranding();
