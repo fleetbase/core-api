@@ -159,7 +159,7 @@ class Setting extends EloquentModel
 
     public static function getBranding()
     {
-        $brandingSettings = ['id' => 1, 'uuid' => 1];
+        $brandingSettings = ['id' => 1, 'uuid' => 1, 'icon_url' => null, 'logo_url' => null];
         $iconUuid         = static::where('key', 'branding.icon_uuid')->value('value');
         $logoUuid         = static::where('key', 'branding.logo_uuid')->value('value');
         $defaultTheme     = static::where('key', 'branding.default_theme')->value('value');
@@ -184,7 +184,7 @@ class Setting extends EloquentModel
 
         // set branding settings
         $brandingSettings['icon_uuid']     = $iconUuid;
-        $brandingSettings['logo_uuid']     = $iconUuid;
+        $brandingSettings['logo_uuid']     = $logoUuid;
         $brandingSettings['default_theme'] = $defaultTheme ?? 'dark';
 
         return $brandingSettings;

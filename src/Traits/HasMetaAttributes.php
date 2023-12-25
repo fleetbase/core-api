@@ -4,37 +4,34 @@ namespace Fleetbase\Traits;
 
 use Fleetbase\Support\Utils;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
 
 trait HasMetaAttributes
 {
     /**
-     * Sets a meta-data property with a value.
+     * Sets a single or multiple meta-data properties with values.
      *
+     * Usage:
      * $resource->setMeta('id', '1846473');
      * $resource->setMeta('customer.name', 'John Doe');
+     * $resource->setMeta(['id' => '1846473', 'customer.name' => 'John Doe']);
      *
-     * {
-     *      "id": "1846473",
-     *      "customer": {
-     *          "name": "John Doe"
-     *      }
-     * }
+     * @param string|array $keys  key(s) of the meta-data to set
+     * @param mixed        $value value to set if keys is a string
      *
-     * @return \Fleetbase\Models\Model
+     * @return $this
      */
-    public function setMeta($keys, $value)
+    public function setMeta($keys, $value = null)
     {
+        $meta = $this->getAllMeta();
+
         if (is_array($keys)) {
             foreach ($keys as $key => $value) {
-                $this->setMeta($key, $value);
+                Arr::set($meta, $key, static::prepareValue($value));
             }
-
-            return $this;
+        } else {
+            Arr::set($meta, $keys, static::prepareValue($value));
         }
-
-        $value = static::prepareValue($value);
-        $meta  = $this->getAllMeta();
-        $meta  = Utils::set($meta, $keys, $value);
 
         $this->setAttribute('meta', $meta);
 
@@ -42,12 +39,18 @@ trait HasMetaAttributes
     }
 
     /**
-     * Get a meta-data property.
+     * Retrieves all meta-data properties.
+     */
+    public function getAllMeta(): array
+    {
+        return $this->getAttribute('meta') ?? [];
+    }
+
+    /**
+     * Retrieves a meta-data property or all meta-data if no key is provided.
      *
-     * @param string|array $key
-     * @param [type] $defaultValue
-     *
-     * @return void
+     * @param string|array|null $key          key of the meta-data to retrieve
+     * @param mixed|null        $defaultValue default value if the key does not exist
      */
     public function getMeta($key = null, $defaultValue = null)
     {
@@ -57,91 +60,102 @@ trait HasMetaAttributes
             return $meta;
         }
 
-        return Utils::get($meta, $key, $defaultValue);
+        return Arr::get($meta, $key, $defaultValue);
     }
 
-    public function getMetaAttributes($properties = [])
+    /**
+     * Retrieves meta-data for the specified properties.
+     *
+     * @param array $properties keys of meta-data to retrieve
+     */
+    public function getMetaAttributes(array $properties = []): array
     {
         $metaAttributes = [];
 
         foreach ($properties as $key) {
-            Utils::set($metaAttributes, $key, $this->getMeta($key));
+            Arr::set($metaAttributes, $key, $this->getMeta($key));
         }
 
         return $metaAttributes;
     }
 
     /**
-     * Check if property exists in meta by key.
+     * Checks if a meta-data property exists.
      *
-     * @return bool
+     * @param string|array $keys key(s) to check existence in the meta-data
      */
-    public function hasMeta($keys)
+    public function hasMeta($keys): bool
     {
+        $meta = $this->getAllMeta();
+
         if (is_array($keys)) {
-            return Arr::every($keys, function ($key) {
-                return $this->hasMeta($key);
-            });
+            foreach ($keys as $key) {
+                if (!Arr::has($meta, $key)) {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
-        return in_array($keys, array_keys($this->getAttribute('meta') ?? []));
+        return Arr::has($meta, $keys);
     }
 
     /**
-     * Update meta with database write.
+     * Updates meta-data properties in the database.
      *
-     * @param string|array $key
-     * @param mixed|null   $value
+     * @param string|array $key   key(s) of the meta-data to update
+     * @param mixed|null   $value value to update if key is a string
      *
      * @return $this
      */
     public function updateMeta($key, $value = null)
     {
+        $this->setMeta($key, $value);
         $meta = $this->getAttribute('meta');
-
-        if (is_array($key)) {
-            foreach ($key as $k => $v) {
-                $this->updateMeta($k, $v);
-            }
-
-            return $this;
-        }
-
-        $meta[$key] = static::prepareValue($value);
-
-        $this->setAttribute('meta', $meta);
 
         return $this->update(['meta' => $meta]);
     }
 
     /**
-     * Checks if key is missing from meta-data.
+     * Updates multiple meta-data properties in the database.
      *
-     * @param [type] $key
-     *
-     * @return void
+     * @param array $data array of key-value pairs to update in meta-data
      */
-    public function missingMeta($key)
+    public function updateMetaProperties(array $data = []): bool
+    {
+        $currentMetaObject = $this->getAllMeta();
+        $updatedMetaObject = array_merge($currentMetaObject, $data);
+
+        return DB::table($this->getTable())->where($this->getKeyName(), $this->getKey())->update([
+            'meta' => json_encode($updatedMetaObject),
+        ]);
+    }
+
+    /**
+     * Checks if a meta-data key is missing.
+     *
+     * @param string $key key of the meta-data to check
+     */
+    public function missingMeta($key): bool
     {
         return !$this->hasMeta($key);
     }
 
     /**
-     * Checks if meta-data key value is true.
+     * Checks if a meta-data property's value is true.
      *
-     * @param string $key
-     *
-     * @return bool
+     * @param string $key key of the meta-data to check
      */
-    public function isMeta($key)
+    public function isMeta($key): bool
     {
         return $this->getMeta($key) === true;
     }
 
     /**
-     * Prepares value for meta-data insertion.
+     * Prepares a value for meta-data insertion.
      *
-     * @return void
+     * @param mixed $value value to prepare
      */
     private static function prepareValue($value)
     {
@@ -150,10 +164,5 @@ trait HasMetaAttributes
         }
 
         return $value;
-    }
-
-    public function getAllMeta()
-    {
-        return $this->getAttribute('meta') ?? [];
     }
 }

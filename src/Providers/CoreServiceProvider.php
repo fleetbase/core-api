@@ -3,7 +3,6 @@
 namespace Fleetbase\Providers;
 
 use Fleetbase\Models\Setting;
-use Fleetbase\Support\Expansion;
 use Fleetbase\Support\NotificationRegistry;
 use Fleetbase\Support\Utils;
 use Illuminate\Console\Scheduling\Schedule;
@@ -341,8 +340,14 @@ class CoreServiceProvider extends ServiceProvider
                 continue;
             }
 
-            $method = $class::$method ?? Expansion::isExpandable($target) ? 'expand' : 'mixin';
-            $target::$method(new $class());
+            try {
+                $target::expand(new $class());
+            } catch (\Throwable $e) {
+                try {
+                    $target::mixin(new $class());
+                } catch (\Throwable $e) {
+                }
+            }
         }
     }
 

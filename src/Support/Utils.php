@@ -2152,4 +2152,50 @@ class Utils
 
         return $from;
     }
+
+    /**
+     * Adds 'www.' to the beginning of a URL if it is not already present.
+     *
+     * This function checks if the given URL starts with 'http://' or 'https://'.
+     * If it does, it parses the URL and adds 'www.' to the host part if it's not already there.
+     * If the URL does not start with 'http://' or 'https://', it simply checks if 'www.' is
+     * already present at the start of the URL. If not, it adds 'www.'.
+     *
+     * @param string $url The URL to which 'www.' should be added if it's not already present.
+     *
+     * @return string The modified URL with 'www.' added if it was absent.
+     *
+     * Example usage:
+     * echo addWwwToUrl("example.com"); // Outputs: www.example.com
+     * echo addWwwToUrl("https://example.com"); // Outputs: https://www.example.com
+     */
+    public static function addWwwToUrl($url)
+    {
+        // Check if the URL already starts with 'http://' or 'https://'
+        if (strpos($url, 'http://') !== 0 && strpos($url, 'https://') !== 0) {
+            // Check if the URL starts with 'www.'
+            if (strpos($url, 'www.') !== 0) {
+                // Add 'www.' to the start of the URL
+                $url = 'www.' . $url;
+            }
+        } else {
+            // Parse the URL and extract its components
+            $parsedUrl = parse_url($url);
+
+            // Check if the host is set and does not start with 'www.'
+            if (isset($parsedUrl['host']) && substr($parsedUrl['host'], 0, 4) !== 'www.') {
+                // Add 'www.' to the start of the host
+                $parsedUrl['host'] = 'www.' . $parsedUrl['host'];
+            }
+
+            // Rebuild the URL
+            $url = (isset($parsedUrl['scheme']) ? $parsedUrl['scheme'] . '://' : '')
+                . (isset($parsedUrl['host']) ? $parsedUrl['host'] : '')
+                . (isset($parsedUrl['path']) ? $parsedUrl['path'] : '')
+                . (isset($parsedUrl['query']) ? '?' . $parsedUrl['query'] : '')
+                . (isset($parsedUrl['fragment']) ? '#' . $parsedUrl['fragment'] : '');
+        }
+
+        return $url;
+    }
 }
