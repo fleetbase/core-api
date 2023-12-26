@@ -183,7 +183,7 @@ class Company extends Model
     {
         return $this->belongsTo(File::class);
     }
-    
+
     /**
      * @return \Illuminate\Database\Eloquent\Relations\HasMany
      */
