@@ -45,12 +45,6 @@ class AuthController extends Controller
             return response()->error('Authentication failed using password provided.', 401);
         }
 
-        if($user->isTwoFactorEnabled()) {
-            $this->sendVerificationSms($request);
-
-            return response()->json(['status' => '2FA_required']);
-        }
-
         $token = $user->createToken($ip);
 
         return response()->json(['token' => $token->plainTextToken]);
