@@ -109,7 +109,7 @@ class NotificationRegistry
      *
      * @return array an array of associative arrays, each containing details about a parameter required by the constructor
      */
-    private function getNotificationClassParameters(string $notificationClass): array
+    private static function getNotificationClassParameters(string $notificationClass): array
     {
         // Make sure class exists
         if (!class_exists($notificationClass)) {
