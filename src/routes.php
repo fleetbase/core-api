@@ -169,6 +169,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 });
                                 $router->fleetbaseRoutes('two-fa-settings', function ($router, $controller) {
                                     $router->post('save-settings', $controller('saveSettings'));
+                                    $router->post('verify-2fa', $controller('verifyTwoFactor'));
                                 });
                             }
                         );

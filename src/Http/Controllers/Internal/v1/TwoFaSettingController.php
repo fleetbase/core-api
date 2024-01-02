@@ -7,6 +7,8 @@ use Fleetbase\Models\VerificationCode;
 use Illuminate\Http\Request;
 use Aloha\Twilio\Support\Laravel\Facade as Twilio;
 use Fleetbase\Models\Setting;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Validation\ValidationException;
 
 class TwoFaSettingController extends Controller
 {
@@ -33,78 +35,57 @@ class TwoFaSettingController extends Controller
         ]);
     }
 
-    /**
-     * Generate and send SMS code for 2FA.
-     *
-     * @param Request $request the HTTP request object
-     *
-     * @return \Illuminate\Http\JsonResponse a JSON response
-     */
-    public function generateAndSendSmsCode(Request $request)
+    public function verifyTwoFactor(Request $request)
     {
+        if (!RateLimiter::attempt($this->throttleKey($request),$this->throttleMaxAttempts(),$this->throttleDecayMinutes()))
+        {
+            throw ValidationException::withMessages([
+                'code' => ['Too many verification attempts.Please try again later.'],
+            ])->status(429);
+        }
+
         $user = auth()->user();
+        $codeToVerify = $request->input('code');
 
-        // Check if 2FA is enabled for the organization
-        $enabledValue = Setting::lookup('Enabled', false); 
+        $latestCode = VerificationCode::where('subject_uuid', $user->uuid)
+            ->where('subject_type', get_class($user))
+            ->where('for', 'phone_verification')
+            ->latest()
+            ->first();
 
-        if (!$enabledValue) {
-            return response()->json(['status' => 'error', 'message' => '2FA is not enabled for the organization'], 400);
+        if (!$latestCode || $latestCode->code !== $codeToVerify || $latestCode->isExpired()) {
+            RateLimiter::hit($this->throttleKey($request));
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Invalid or expired verification code.',
+            ], 401);
         }
 
-        // Generate a random 6-digit code
-        $smsCode = str_pad(mt_rand(0, 999999), 6, '0', STR_PAD_LEFT);
+        $this->sendVerificationSuccessSms($user);
 
-        // Store the SMS code in the VerificationCode table
-        $verificationCode = VerificationCode::create([
-            'subject_uuid' => $user->uuid,
-            'subject_type' => get_class($user),
-            'code' => $smsCode,
-            'for' => 'phone_verification',
-            'expires_at' => now()->addMinutes(5),
-            'status' => 'active',
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Verification Successful',
         ]);
-
-        // Send the SMS code to the user's phone number
-        try {
-            Twilio::message($user->phone, "Your Fleetbase verification code is {$smsCode}");
-        } catch (\Exception | \Twilio\Exceptions\RestException $e) {
-            $verificationCode->update(['status' => 'failed']);
-            return response()->json(['error' => $e->getMessage()], 400);
-        }
-
-        return response()->json(['status' => 'ok', 'message' => 'SMS code sent successfully']);
     }
 
-    /**
-     * Verify SMS code for 2FA.
-     *
-     * @param Request $request the HTTP request object containing the entered code
-     *
-     * @return \Illuminate\Http\JsonResponse a JSON response
-     */
-    public function verifySmsCode(Request $request)
+    protected function throttleKey(Request $request)
     {
-        $user = auth()->user();
-        $enteredCode = $request->input('code');
+        return 'verify_two_factor_'.$request->ip();
+    }
 
-        // Retrieve the stored SMS code from the VerificationCode table
-        $verificationCode = VerificationCode::where([
-            'subject_uuid' => $user->uuid,
-            'subject_type' => get_class($user),
-            'code' => $enteredCode,
-            'for' => 'phone_verification',
-            'status' => 'active',
-        ])->first();
+    protected function throttleMaxAttempts() {
+        return 5;
+    }
 
-        // Verify the entered code
-        if ($verificationCode && !$verificationCode->isExpired()) {
-            // Mark the verification code as used
-            $verificationCode->update(['status' => 'used']);
+    protected function throttleDecayMinutes()
+    {
+        return 2;
+    }
 
-            return response()->json(['status' => 'ok', 'message' => 'SMS code is valid']);
-        } else {
-            // Code is invalid or expired
-            return response()->json(['status' => 'error', 'message' => 'Invalid or expired SMS code'], 401);
-        }
+    private function sendVerificationSuccessSms($user)
+    {
+        Twilio::message($user->phone, 'Your Fleetbase verification was succesfull. Welcome!');
     }
 }

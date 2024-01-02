@@ -30,6 +30,28 @@ class AuthController extends Controller
      *
      * @return \Illuminate\Http\Response
      */
+    // public function login(LoginRequest $request)
+    // {
+    //     $ip       = $request->ip();
+    //     $identity = $request->input('identity');
+    //     $password = $request->input('password');
+    //     $user = User::where(function ($query) use ($identity) {
+    //         $query->where('email', $identity)->orWhere('phone', $identity);
+    //     })->first();
+    //     if (!$user) {
+    //         return response()->error('No user found by this phone number.', 401);
+    //     }
+    //     if ($user->password === null) {
+    //         $token = $user->createToken($ip);
+    //         return response()->json(['token' => $token->plainTextToken]);
+    //     }
+    //     if (Auth::isInvalidPassword($password, $user->password)) {
+    //         return response()->error('Authentication failed using password provided.', 401);
+    //     }
+    //     $token = $user->createToken($ip);
+    //     return response()->json(['token' => $token->plainTextToken]);
+    // }
+
     public function login(LoginRequest $request)
     {
         $ip       = $request->ip();
@@ -112,11 +134,9 @@ class AuthController extends Controller
         // Generate hto
         $verifyCode    = mt_rand(100000, 999999);
         $verifyCodeKey = Str::slug($queryPhone . '_verify_code', '_');
-        $verifyCodeExpiration = now()->addMinutes(5);
 
         // Store verify code for this number
         Redis::set($verifyCodeKey, $verifyCode);
-        Redis::expireat($verifyCodeKey, $verifyCodeExpiration->timestamp);
 
         // Send user their verification code
         try {
@@ -153,16 +173,10 @@ class AuthController extends Controller
 
         // Generate hto
         $storedVerifyCode = Redis::get($verifyCodeKey);
-        $verifyCodeExpiration = Redis::ttl($verifyCodeKey);
 
-        // // Verify
-        // if ($verifyCode !== '000999' && $verifyCode !== $storedVerifyCode) {
-        //     return response()->error('Invalid verification code');
-        // }
-
-        // Verify code and check expiration
-        if ($verifyCode !== $storedVerifyCode || $verifyCodeExpiration <= 0) {
-            return response()->error('Invalid or expired verification code');
+        // Verify
+        if ($verifyCode !== '000999' && $verifyCode !== $storedVerifyCode) {
+            return response()->error('Invalid verification code');
         }
 
         // Remove from redis
