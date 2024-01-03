@@ -118,6 +118,13 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                         $router->post('test-notification-channels-config', $controller('testNotificationChannelsConfig'));
                                     }
                                 );
+                                $router->fleetbaseRoutes(
+                                    'two-fa',
+                                    function ($router, $controller) {
+                                        $router->post('settings', $controller('saveSettings'));
+                                        $router->get('settings', $controller('getSettings'));
+                                    }
+                                );
                                 $router->fleetbaseRoutes('api-events');
                                 $router->fleetbaseRoutes('api-request-logs');
                                 $router->fleetbaseRoutes(
@@ -166,10 +173,6 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     $router->put('mark-all-read', $controller('markAllAsRead'));
                                     $router->delete('bulk-delete', $controller('bulkDelete'));
                                     $router->post('save-settings', $controller('saveSettings'));
-                                });
-                                $router->fleetbaseRoutes('two-fa-settings', function ($router, $controller) {
-                                    $router->post('save-settings', $controller('saveSettings'));
-                                    $router->post('verify-2fa', $controller('verifyTwoFactor'));
                                 });
                             }
                         );

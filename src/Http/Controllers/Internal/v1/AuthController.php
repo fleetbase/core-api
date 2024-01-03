@@ -17,6 +17,7 @@ use Fleetbase\Models\User;
 use Fleetbase\Models\VerificationCode;
 use Fleetbase\Notifications\UserForgotPassword;
 use Fleetbase\Support\Auth;
+use Fleetbase\Support\TwoFactorAuth;
 use Fleetbase\Support\Utils;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -30,47 +31,57 @@ class AuthController extends Controller
      *
      * @return \Illuminate\Http\Response
      */
-    // public function login(LoginRequest $request)
-    // {
-    //     $ip       = $request->ip();
-    //     $identity = $request->input('identity');
-    //     $password = $request->input('password');
-    //     $user = User::where(function ($query) use ($identity) {
-    //         $query->where('email', $identity)->orWhere('phone', $identity);
-    //     })->first();
-    //     if (!$user) {
-    //         return response()->error('No user found by this phone number.', 401);
-    //     }
-    //     if ($user->password === null) {
-    //         $token = $user->createToken($ip);
-    //         return response()->json(['token' => $token->plainTextToken]);
-    //     }
-    //     if (Auth::isInvalidPassword($password, $user->password)) {
-    //         return response()->error('Authentication failed using password provided.', 401);
-    //     }
-    //     $token = $user->createToken($ip);
-    //     return response()->json(['token' => $token->plainTextToken]);
-    // }
-
     public function login(LoginRequest $request)
     {
         $ip       = $request->ip();
-        $email    = $request->input('email');
+        $identity = $request->input('identity');
         $password = $request->input('password');
-        $user     = User::where('email', $email)->first();
+
+        $user = User::where(function ($query) use ($identity) {
+            $query->where('email', $identity)->orWhere('phone', $identity);
+        })->first();
 
         if (!$user) {
-            return response()->error('No user found by this email.', 401);
+            return response()->error('No user found by this phone number.', 401);
         }
+
+        $token = $user->createToken($ip);
+
+        // Check if 2FA enabled
+        if (TwoFactorAuth::isEnabled()) {
+            $twoFaSession = TwoFactorAuth::start();
+            return response()->json(['two_fa_session' => $twoFaSession]);
+        }
+
+        return response()->json(['token' => $token->plainTextToken]);
 
         if (Auth::isInvalidPassword($password, $user->password)) {
             return response()->error('Authentication failed using password provided.', 401);
         }
 
         $token = $user->createToken($ip);
-
         return response()->json(['token' => $token->plainTextToken]);
     }
+
+    // public function login(LoginRequest $request)
+    // {
+    //     $ip       = $request->ip();
+    //     $email    = $request->input('email');
+    //     $password = $request->input('password');
+    //     $user     = User::where('email', $email)->first();
+
+    //     if (!$user) {
+    //         return response()->error('No user found by this email.', 401);
+    //     }
+
+    //     if (Auth::isInvalidPassword($password, $user->password)) {
+    //         return response()->error('Authentication failed using password provided.', 401);
+    //     }
+
+    //     $token = $user->createToken($ip);
+
+    //     return response()->json(['token' => $token->plainTextToken]);
+    // }
 
     /**
      * Takes a request username/ or email and password and attempts to authenticate user
