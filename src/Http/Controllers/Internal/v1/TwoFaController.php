@@ -61,4 +61,30 @@ class TwoFaController extends Controller
     {
         return TwoFactorAuth::verifyTwoFactor($request);
     }
+
+    public function checkTwoFactor(Request $request)
+    {
+        $identity = $request->input('identity');
+        $isTwoFaEnabled = TwoFactorAuth::isEnabled();
+        $twoFaSession = null;
+        $isTwoFaValidated = false;
+        $error = null;
+
+        if ($isTwoFaEnabled) {
+            $twoFaSession = TwoFactorAuth::start($identity);
+
+            if ($twoFaSession === null) {
+                $error = 'No user found using identity provided';
+            } else {
+                $isTwoFaValidated = TwoFactorAuth::isTwoFactorSessionValidated($twoFaSession);
+            }
+        }
+
+        return response()->json([
+            'isTwoFaEnabled' => $isTwoFaEnabled,
+            'isTwoFaValidated' => $isTwoFaValidated,
+            'twoFaSession' => $twoFaSession,
+            'error' => $error
+        ]);
+    }
 }

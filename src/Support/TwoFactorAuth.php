@@ -5,7 +5,10 @@ namespace Fleetbase\Support;
 use Fleetbase\Models\VerificationCode;
 use Aloha\Twilio\Support\Laravel\Facade as Twilio;
 use Fleetbase\Models\Setting;
+use Fleetbase\Models\User;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -129,13 +132,49 @@ class TwoFactorAuth
         Twilio::message($user->phone, 'Your Fleetbase verification was successful. Welcome!');
     }
 
+    /**
+     * Check if Two-Factor Authentication is enabled.
+     *
+     * @return bool
+     */
     public static function isEnabled()
     {
-        return Setting::lookup('2fa', ['enabled']);
+        $twoFaSettings = Setting::lookup('2fa');
+
+        // dd(data_get($twoFaSettings, 'enabled'));
+
+        return isset($twoFaSettings['enabled']) ? (bool)$twoFaSettings['enabled'] : false;
+
+        // return data_get($twoFaSettings, 'enabled');
     }
 
-    public static function start()
+    /**
+     * Start the Two-Factor Authentication process and return the session key.
+     *
+     * @return string
+     */
+    public static function start(string $identity): ?string
     {
-        return true;
+        $twoFaSession = Str::random(40);
+
+        $user = User::where(function ($query) use ($identity) {
+            $query->where('email', $identity)->orWhere('phone', $identity);
+        })->first();
+
+        if ($user) {
+            Cache::put('two_fa_session:' . $user->uuid, true, now()->addMinutes(10));
+            return $twoFaSession;
+        }
+
+        return null;
+    }
+
+    public static function isTwoFactorSessionValidated(?string $twoFaSession = null): bool 
+    {
+        if ($twoFaSession === null) {
+            return false;
+        }
+        // do check here
+        return false;
     }
 }

@@ -123,6 +123,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     function ($router, $controller) {
                                         $router->post('settings', $controller('saveSettings'));
                                         $router->get('settings', $controller('getSettings'));
+                                        $router->get('settings', $controller('checkTwoFactor'));
                                     }
                                 );
                                 $router->fleetbaseRoutes('api-events');
