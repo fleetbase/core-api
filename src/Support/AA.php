@@ -3,13 +3,15 @@
 namespace Fleetbase\Support;
 
 use Fleetbase\Models\VerificationCode;
-use Fleetbase\Http\Requests\TwoFaValidationRequest;
+use Aloha\Twilio\Support\Laravel\Facade as Twilio;
 use Fleetbase\Models\Setting;
 use Fleetbase\Models\User;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
+use Fleetbase\Support\Utils;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
 
 /**
  * Class TwoFactorAuth
@@ -54,61 +56,37 @@ class TwoFactorAuth
     /**
      * Verify Two-Factor Authentication code.
      *
-     * @param \Fleetbase\Http\Requests\TwoFaValidationRequest $request
+     * @param \Illuminate\Http\Request $request
      * @return \Illuminate\Http\JsonResponse
      */
-    public static function validateSession(TwoFaValidationRequest $request)
+    public static function validateSession($request)
     {
-        if (!self::isEnabled()) {
-            return response()->error('Two Factor Authentication is not enabled.', 400);
-        }
-        
-        $token = $request->input('token');
-        $identity = $request->input('identity');
+        try {
+            $request->validate([
+                'token' => 'required',
+            ]);
 
-        $user = User::where(function ($query) use ($identity) {
-            $query->where('email', $identity)->orWhere('phone', $identity);
-        })->first(); 
-
-        if ($user) {
-            $twoFaSessionKey = 'two_fa_session:' . $user->uuid . ':' . $token;
-
-            if (Cache::has($twoFaSessionKey)) {
-                // send two factor code
-                static::sendVerificationCode($user);
-                return response()->json(['status' => 'ok']);
-            }
-        }
-
-        return response()->json([
-            'errors' => ['Two factor authentication session is invalid']
-        ], 400);
-    }
-
-    public static function sendVerificationCode(User $user): void
-    {
-        $twoFaSettings = Setting::lookup('2fa');
-        $method = data_get($twoFaSettings, 'method');
-        $expireAfter = Carbon::now()->addMinutes(20);
-
-        if ($method === 'sms') {
-            // if user has no phone number throw error
-            if (!$user->phone) {
-                throw new \Exception('No phone number to send 2FA code to.');
+            if (!self::isEnabled()) {
+                return response()->error('Two Factor Authentication is not enabled.', 400);
             }
 
-            // create verification code
-            VerificationCode::generateSmsVerificationFor($user, '2fa', null, [], $expireAfter);
-        }
+            $identity = $request->input('identity');
 
-        if ($method === 'email') {
-            // if user has no phone number throw error
-            if (!$user->email) {
-                throw new \Exception('No email to send 2FA code to.');
+            $user = User::where(function ($query) use ($identity) {
+                $query->where('email', $identity)->orWhere('phone', $identity);
+            })->first();
+
+            if (!$user) {
+                return response()->error('No user found by this phone number.', 401);
             }
 
-            // create verification code
-            VerificationCode::generateEmailVerificationFor($user, '2fa', null, [], $expireAfter);
+            VerificationCode::generateSmsVerificationFor($user);
+
+            return response()->json(['status' => 'ok']);
+        } catch (ValidationException $e) {
+            return response()->error($e->getMessage(), 400);
+        } catch (\Exception $e) {
+            return response()->error($e->getMessage(), 500);
         }
     }
 
@@ -170,8 +148,7 @@ class TwoFactorAuth
         })->first();
 
         if ($user) {
-            $twoFaSessionKey = 'two_fa_session:' . $user->uuid . ':' . $twoFaSession;
-            Cache::put($twoFaSessionKey, $user->uuid, now()->addMinutes(10));
+            Cache::put('two_fa_session:' . $user->uuid, true, now()->addMinutes(10));
             return $twoFaSession;
         }
 
@@ -192,4 +169,5 @@ class TwoFactorAuth
         // do check here
         return false;
     }
+    
 }

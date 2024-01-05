@@ -92,10 +92,10 @@ class VerificationCode extends Model
     }
 
     /** static method to generate code for email verification */
-    public static function generateEmailVerificationFor($subject, $for = 'email_verification', \Closure $messageCallback = null, $meta = [])
+    public static function generateEmailVerificationFor($subject, $for = 'email_verification', \Closure $messageCallback = null, $meta = [], $expireAfter = null)
     {
         $verifyCode             = static::generateFor($subject, $for, false);
-        $verifyCode->expires_at = Carbon::now()->addHour();
+        $verifyCode->expires_at = $expireAfter === null ? Carbon::now()->addHour() : $expireAfter;
         $verifyCode->meta       = $meta;
         $verifyCode->save();
 
@@ -109,10 +109,10 @@ class VerificationCode extends Model
     }
 
     /** static method to generate code for phone verification */
-    public static function generateSmsVerificationFor($subject, $for = 'phone_verification', \Closure $messageCallback = null, $meta = [])
+    public static function generateSmsVerificationFor($subject, $for = 'phone_verification', \Closure $messageCallback = null, $meta = [], $expireAfter = null)
     {
         $verifyCode             = static::generateFor($subject, $for, false);
-        $verifyCode->expires_at = Carbon::now()->addHour();
+        $verifyCode->expires_at = $expireAfter === null ? Carbon::now()->addHour() : $expireAfter;
         $verifyCode->meta       = $meta;
         $verifyCode->save();
 

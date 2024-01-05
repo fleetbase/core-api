@@ -76,6 +76,13 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                             }
                         );
                         $router->group(
+                            ['prefix' => 'two-fa'],
+                            function ($router) {
+                                $router->get('check', 'TwoFaController@checkTwoFactor');
+                                $router->post('validate-session', 'TwoFaController@validateSession');
+                            }
+                        );
+                        $router->group(
                             ['middleware' => ['fleetbase.protected']],
                             function ($router) {
                                 $router->fleetbaseRoutes(
@@ -121,9 +128,8 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 $router->fleetbaseRoutes(
                                     'two-fa',
                                     function ($router, $controller) {
-                                        $router->post('settings', $controller('saveSettings'));
-                                        $router->get('settings', $controller('getSettings'));
-                                        $router->get('settings', $controller('checkTwoFactor'));
+                                        $router->post('save-settings', $controller('saveSettings'));
+                                        $router->get('get-settings', $controller('getSettings'));
                                     }
                                 );
                                 $router->fleetbaseRoutes('api-events');

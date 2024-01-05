@@ -3,6 +3,7 @@
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Http\Controllers\Controller;
+use Fleetbase\Http\Requests\TwoFaValidationRequest;
 use Illuminate\Http\Request;
 use Fleetbase\Support\TwoFactorAuth;
 
@@ -57,34 +58,21 @@ class TwoFaController extends Controller
      * @param \Illuminate\Http\Request $request
      * @return \Illuminate\Http\JsonResponse
      */
-    public function verifyTwoFactor(Request $request)
+    public function validateSession(Request $request)
     {
-        return TwoFactorAuth::verifyTwoFactor($request);
+        return TwoFactorAuth::validateSession(new TwoFaValidationRequest($request->all()));
     }
 
+    /**
+     * Check Two-Factor Authentication status for a given user identity.
+     *
+     * @param \Illuminate\Http\Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
     public function checkTwoFactor(Request $request)
     {
-        $identity = $request->input('identity');
-        $isTwoFaEnabled = TwoFactorAuth::isEnabled();
-        $twoFaSession = null;
-        $isTwoFaValidated = false;
-        $error = null;
-
-        if ($isTwoFaEnabled) {
-            $twoFaSession = TwoFactorAuth::start($identity);
-
-            if ($twoFaSession === null) {
-                $error = 'No user found using identity provided';
-            } else {
-                $isTwoFaValidated = TwoFactorAuth::isTwoFactorSessionValidated($twoFaSession);
-            }
-        }
-
-        return response()->json([
-            'isTwoFaEnabled' => $isTwoFaEnabled,
-            'isTwoFaValidated' => $isTwoFaValidated,
-            'twoFaSession' => $twoFaSession,
-            'error' => $error
-        ]);
+        $result = TwoFactorAuth::checkTwoFactorStatus($request);
+    
+    return response()->json($result);
     }
 }
