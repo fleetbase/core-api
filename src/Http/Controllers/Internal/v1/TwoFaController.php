@@ -55,12 +55,12 @@ class TwoFaController extends Controller
     /**
      * Verify Two-Factor Authentication code.
      *
-     * @param \Illuminate\Http\Request $request
+     * @param \Fleetbase\Http\Requests\TwoFaValidationRequest $request
      * @return \Illuminate\Http\JsonResponse
      */
-    public function validateSession(Request $request)
+    public function validateSession(TwoFaValidationRequest $request)
     {
-        return TwoFactorAuth::validateSession(new TwoFaValidationRequest($request->all()));
+        return TwoFactorAuth::validateSession($request);
     }
 
     /**
@@ -75,4 +75,15 @@ class TwoFaController extends Controller
     
     return response()->json($result);
     }
+
+    /**
+     * Verify Two-Factor Authentication code.
+     *
+     * @param \Illuminate\Http\Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function verifyCode(Request $request) {
+        return TwoFactorAuth::verifyCode($request);
+    }
+    
 }

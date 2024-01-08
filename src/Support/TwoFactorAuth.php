@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Support;
 
+use Carbon\Carbon as CarbonDateTime;
 use Fleetbase\Models\VerificationCode;
 use Fleetbase\Http\Requests\TwoFaValidationRequest;
 use Fleetbase\Models\Setting;
@@ -62,21 +63,25 @@ class TwoFactorAuth
         if (!self::isEnabled()) {
             return response()->error('Two Factor Authentication is not enabled.', 400);
         }
-        
+
         $token = $request->input('token');
         $identity = $request->input('identity');
 
         $user = User::where(function ($query) use ($identity) {
             $query->where('email', $identity)->orWhere('phone', $identity);
-        })->first(); 
+        })->first();
 
         if ($user) {
             $twoFaSessionKey = 'two_fa_session:' . $user->uuid . ':' . $token;
 
+            // create token creating info about the session
+            $expireAfter = Carbon::now()->addSeconds(61);
+            $clientSessionToken = base64_encode($expireAfter . '|' . Str::random());
+
             if (Cache::has($twoFaSessionKey)) {
                 // send two factor code
-                static::sendVerificationCode($user);
-                return response()->json(['status' => 'ok']);
+                static::sendVerificationCode($user, $expireAfter);
+                return response()->json(['status' => 'ok', 'client_token' => $clientSessionToken]);
             }
         }
 
@@ -85,11 +90,21 @@ class TwoFactorAuth
         ], 400);
     }
 
-    public static function sendVerificationCode(User $user): void
+    /**
+     * Send Two-Factor Authentication verification code.
+     *
+     * @param \Fleetbase\Models\User $user
+     * @throws \Exception
+     */
+    public static function sendVerificationCode(User $user, ?CarbonDateTime $expireAfter): void
     {
         $twoFaSettings = Setting::lookup('2fa');
         $method = data_get($twoFaSettings, 'method');
-        $expireAfter = Carbon::now()->addMinutes(20);
+
+        // if no expiration provided default to 1 min
+        if (!$expireAfter) {
+            $expireAfter = Carbon::now()->addSeconds(61);
+        }
 
         if ($method === 'sms') {
             // if user has no phone number throw error
@@ -191,5 +206,52 @@ class TwoFactorAuth
         }
         // do check here
         return false;
+    }
+
+    /**
+     * Verify the Two-Factor Authentication code received via SMS.
+     *
+     * @param \Illuminate\Http\Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public static function verifyCode(Request $request)
+    {
+        $token = $request->input('token');
+        $identity = $request->input('identity');
+
+        $user = User::where(function ($query) use ($identity) {
+            $query->where('email', $identity)->orWhere('phone', $identity);
+        })->first();
+
+        if (!$user) {
+            return response()->json([
+                'errors' => ['No user found using the provided identity']
+            ], 400);
+        }
+
+        $twoFaSessionKey = 'two_fa_session:' . $user->uuid . ':' . $token;
+
+        if (Cache::has($twoFaSessionKey)) {
+            $verificationCode = $request->input('verificationCode');
+
+            $verifyCode = VerificationCode::where('code', $verificationCode)
+                ->where('subject_uuid', $user->uuid)
+                ->where('status', 'active')
+                ->where('expires_at', '>', now())
+                ->first();
+
+            if ($verifyCode) {
+                Cache::forget($twoFaSessionKey);
+
+                // authenticate the user
+                $ip       = $request->ip();
+                $token = $user->createToken($ip);
+
+                return response()->json(['auth_token' => $token->plainTextToken]);
+            }
+        }
+        return response()->json([
+            'errors' => ['Invalid verification code']
+        ], 400);
     }
 }
