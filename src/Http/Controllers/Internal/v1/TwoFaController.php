@@ -39,7 +39,14 @@ class TwoFaController extends Controller
      */
     public function saveSettings(Request $request)
     {
-        return TwoFactorAuth::saveSettings($request);
+        try {
+            $result = $this->twoFactorAuth->saveSettings($request);
+            return response()->json($result);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => $e->getMessage(),
+            ], 400);
+        }
     }
 
     /**
@@ -49,7 +56,14 @@ class TwoFaController extends Controller
      */
     public function getSettings()
     {
-        return TwoFactorAuth::getSettings();
+        try {
+            $result = $this->twoFactorAuth->getSettings();
+            return response()->json($result);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => $e->getMessage(),
+            ], 400);
+        }
     }
 
     /**
@@ -60,7 +74,18 @@ class TwoFaController extends Controller
      */
     public function validateSession(TwoFaValidationRequest $request)
     {
-        return TwoFactorAuth::validateSession($request);
+        try {
+            $clientSessionToken = $this->twoFactorAuth->validateSession($request);
+
+            return response()->json([
+                'status' => 'ok',
+                'clientToken' => $clientSessionToken,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => $e->getMessage(),
+            ], 400);
+        }
     }
 
     /**
@@ -71,9 +96,15 @@ class TwoFaController extends Controller
      */
     public function checkTwoFactor(Request $request)
     {
-        $result = TwoFactorAuth::checkTwoFactorStatus($request);
-    
-    return response()->json($result);
+        try {
+            $result = $this->twoFactorAuth->checkTwoFactorStatus($request);
+
+            return response()->json($result);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => $e->getMessage(),
+            ], 400);
+        }
     }
 
     /**
@@ -82,8 +113,36 @@ class TwoFaController extends Controller
      * @param \Illuminate\Http\Request $request
      * @return \Illuminate\Http\JsonResponse
      */
-    public function verifyCode(Request $request) {
-        return TwoFactorAuth::verifyCode($request);
+    public function verifyCode(Request $request)
+    {
+        try {
+            $authToken = $this->twoFactorAuth->verifyCode($request);
+
+            return response()->json([
+                'authToken' => $authToken
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => $e->getMessage(),
+            ], 400);
+        }
     }
-    
+
+    /**
+     * Resend Two-Factor Authentication verification code.
+     *
+     * @param \Illuminate\Http\Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function resendCode(Request $request)
+    {
+        try {
+            $result = $this->twoFactorAuth->resendCode($request);
+            return response()->json($result);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => $e->getMessage(),
+            ], 400);
+        }
+    }
 }

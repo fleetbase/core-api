@@ -81,6 +81,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 $router->get('check', 'TwoFaController@checkTwoFactor');
                                 $router->post('validate-session', 'TwoFaController@validateSession');
                                 $router->post('verify-code', 'TwoFaController@verifyCode');
+                                $router->post('resend-code', 'TwoFaController@resendCode');
                             }
                         );
                         $router->group(

@@ -23,6 +23,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Str;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class AuthController extends Controller
 {
@@ -36,6 +37,16 @@ class AuthController extends Controller
         $ip       = $request->ip();
         $identity = $request->input('identity');
         $password = $request->input('password');
+        $authToken = $request->input('authToken');
+
+        // if attempting to authenticate with auth token validate it first against database and respond with it
+        if ($authToken) {
+            $personalAccessToken = PersonalAccessToken::findToken($authToken);
+
+            if ($personalAccessToken) {
+                return response()->json(['token' => $authToken]);
+            }
+        }
 
         $user = User::where(function ($query) use ($identity) {
             $query->where('email', $identity)->orWhere('phone', $identity);

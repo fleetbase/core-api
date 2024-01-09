@@ -23,8 +23,8 @@ class TwoFactorAuth
      * Save Two-Factor Authentication settings.
      *
      * @param \Illuminate\Http\Request $request
-     * @return \Illuminate\Http\JsonResponse
      * @throws \Exception
+     * @return array
      */
     public static function saveSettings($request)
     {
@@ -34,38 +34,55 @@ class TwoFactorAuth
         }
         Setting::configure('2fa', $twoFaSettings);
 
-        return response()->json([
+        return [
             'status'  => 'ok',
             'message' => '2Fa settings successfully saved.',
-        ]);
+        ];
     }
 
     /**
      * Get Two-Factor Authentication settings.
      *
-     * @return \Illuminate\Http\JsonResponse
+     * @return array
      */
     public static function getSettings()
     {
         $twoFaSettings = Setting::lookup('2fa', ['enabled' => false, 'method' => 'authenticator_app']);
 
-        return response()->json($twoFaSettings);
+        return $twoFaSettings;
     }
 
     /**
      * Verify Two-Factor Authentication code.
      *
      * @param \Fleetbase\Http\Requests\TwoFaValidationRequest $request
-     * @return \Illuminate\Http\JsonResponse
+     * @throws \Exception
+     * @return array
      */
-    public static function validateSession(TwoFaValidationRequest $request)
+    public static function validateSession(TwoFaValidationRequest $request): string
     {
         if (!self::isEnabled()) {
-            return response()->error('Two Factor Authentication is not enabled.', 400);
+            throw new \Exception('Two Factor Authentication is not enabled.');
         }
 
         $token = $request->input('token');
         $identity = $request->input('identity');
+        $clientToken = $request->input('clientToken');
+
+        // IF ALREADY AN ACTIVE CLIENT TOKEN SESSION CHECK FOR VERIFICATION CODE SENT AND JUST RETURN CLIENT TOKEN
+        if ($clientToken) {
+            $clientTokenDecoded = base64_decode($clientToken);
+            $clientTokenParts = explode('|', $clientTokenDecoded);
+            $verificationCodeId = $clientTokenParts[1];
+
+            if ($verificationCodeId) {
+                $verificationCode = VerificationCode::where('uuid', $verificationCodeId)->exists();
+
+                if ($verificationCode) {
+                    return $clientToken;
+                }
+            }
+        }
 
         $user = User::where(function ($query) use ($identity) {
             $query->where('email', $identity)->orWhere('phone', $identity);
@@ -74,32 +91,30 @@ class TwoFactorAuth
         if ($user) {
             $twoFaSessionKey = 'two_fa_session:' . $user->uuid . ':' . $token;
 
-            // create token creating info about the session
-            $expireAfter = Carbon::now()->addSeconds(61);
-            $clientSessionToken = base64_encode($expireAfter . '|' . Str::random());
-
             if (Cache::has($twoFaSessionKey)) {
-                // send two factor code
-                static::sendVerificationCode($user, $expireAfter);
-                return response()->json(['status' => 'ok', 'client_token' => $clientSessionToken]);
+                // create token creating info about the session and send verification code
+                $expireAfter = Carbon::now()->addSeconds(61);
+                $verificationCode = static::sendVerificationCode($user, $expireAfter);
+                $clientSessionToken = base64_encode($expireAfter . '|' . $verificationCode->uuid . '|' . Str::random());
+
+                return $clientSessionToken;
             }
         }
 
-        return response()->json([
-            'errors' => ['Two factor authentication session is invalid']
-        ], 400);
+        throw new \Exception('Two factor authentication session is invalid');
     }
 
     /**
      * Send Two-Factor Authentication verification code.
      *
      * @param \Fleetbase\Models\User $user
+     * @param \Carbon\Carbon|null $expireAfter
      * @throws \Exception
      */
-    public static function sendVerificationCode(User $user, ?CarbonDateTime $expireAfter): void
+    public static function sendVerificationCode(User $user, ?CarbonDateTime $expireAfter): VerificationCode
     {
         $twoFaSettings = Setting::lookup('2fa');
-        $method = data_get($twoFaSettings, 'method');
+        $method = data_get($twoFaSettings, 'method', 'email');
 
         // if no expiration provided default to 1 min
         if (!$expireAfter) {
@@ -113,7 +128,7 @@ class TwoFactorAuth
             }
 
             // create verification code
-            VerificationCode::generateSmsVerificationFor($user, '2fa', null, [], $expireAfter);
+            return VerificationCode::generateSmsVerificationFor($user, '2fa', null, [], $expireAfter);
         }
 
         if ($method === 'email') {
@@ -123,7 +138,7 @@ class TwoFactorAuth
             }
 
             // create verification code
-            VerificationCode::generateEmailVerificationFor($user, '2fa', null, [], $expireAfter);
+            return VerificationCode::generateEmailVerificationFor($user, '2fa', null, [], $expireAfter);
         }
     }
 
@@ -174,7 +189,8 @@ class TwoFactorAuth
     /**
      * Start the Two-Factor Authentication process and return the session key.
      *
-     * @return string
+     * @param string $identity
+     * @return string|null
      */
     public static function start(string $identity): ?string
     {
@@ -212,9 +228,64 @@ class TwoFactorAuth
      * Verify the Two-Factor Authentication code received via SMS.
      *
      * @param \Illuminate\Http\Request $request
-     * @return \Illuminate\Http\JsonResponse
+     * @throws \Exception
+     * @return array
      */
-    public static function verifyCode(Request $request)
+    public static function verifyCode(Request $request): ?string
+    {
+        $token = $request->input('token');
+        $identity = $request->input('identity');
+        $clientToken = $request->input('clientToken');
+
+        $user = User::where(function ($query) use ($identity) {
+            $query->where('email', $identity)->orWhere('phone', $identity);
+        })->first();
+
+        if (!$user) {
+            throw new \Exception('No user found using the provided identity');
+        }
+
+        $twoFaSessionKey = 'two_fa_session:' . $user->uuid . ':' . $token;
+
+        if (Cache::has($twoFaSessionKey)) {
+            $userInputCode = $request->input('verificationCode');
+
+            if ($clientToken) {
+                $clientTokenDecoded = base64_decode($clientToken);
+                $clientTokenParts = explode('|', $clientTokenDecoded);
+                $verificationCodeId = $clientTokenParts[1];
+
+                if ($verificationCodeId) {
+                    $verificationCode = VerificationCode::where('uuid', $verificationCodeId)->first();
+
+                    if ($verificationCode) {
+                        $verificationCodeMatches = $verificationCode->code === $userInputCode;
+
+                        if ($verificationCodeMatches) {
+                            Cache::forget($twoFaSessionKey);
+
+                            // authenticate the user
+                            $ip       = $request->ip();
+                            $token = $user->createToken($ip);
+
+                            return $token->plainTextToken;
+                        }
+                    }
+                }
+            }
+        }
+
+        throw new \Exception('Invalid verification code');
+    }
+
+    /**
+     * Resend Two-Factor Authentication verification code.
+     *
+     * @param \Illuminate\Http\Request $request
+     * @return array
+     * @throws \Exception
+     */
+    public static function resendCode(Request $request)
     {
         $token = $request->input('token');
         $identity = $request->input('identity');
@@ -224,34 +295,24 @@ class TwoFactorAuth
         })->first();
 
         if (!$user) {
-            return response()->json([
-                'errors' => ['No user found using the provided identity']
-            ], 400);
+            throw new \Exception('No user found using the provided identity');
         }
 
         $twoFaSessionKey = 'two_fa_session:' . $user->uuid . ':' . $token;
 
         if (Cache::has($twoFaSessionKey)) {
-            $verificationCode = $request->input('verificationCode');
+            Cache::forget($twoFaSessionKey);
 
-            $verifyCode = VerificationCode::where('code', $verificationCode)
-                ->where('subject_uuid', $user->uuid)
-                ->where('status', 'active')
-                ->where('expires_at', '>', now())
-                ->first();
+            $expireAfter = Carbon::now()->addSeconds(61);
+            $newVerificationCode = static::sendVerificationCode($user, $expireAfter);
+            $newClientSessionToken = base64_encode($expireAfter . '|' . $newVerificationCode->uuid . '|' . Str::random());
 
-            if ($verifyCode) {
-                Cache::forget($twoFaSessionKey);
-
-                // authenticate the user
-                $ip       = $request->ip();
-                $token = $user->createToken($ip);
-
-                return response()->json(['auth_token' => $token->plainTextToken]);
-            }
+            return [
+                'status'      => 'ok',
+                'message'     => 'Verification code resent successfully.',
+                'newClientSessionToken' => $newClientSessionToken,
+            ];
         }
-        return response()->json([
-            'errors' => ['Invalid verification code']
-        ], 400);
+        throw new \Exception('Two factor authentication session is invalid');
     }
 }
