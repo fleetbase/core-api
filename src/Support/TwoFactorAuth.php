@@ -236,6 +236,8 @@ class TwoFactorAuth
         $token = $request->input('token');
         $identity = $request->input('identity');
         $clientToken = $request->input('clientToken');
+        $newClientSessionToken = $request->input('newClientSessionToken');
+        $verificationCode = $request->input('verificationCode');
 
         $user = User::where(function ($query) use ($identity) {
             $query->where('email', $identity)->orWhere('phone', $identity);
@@ -266,6 +268,27 @@ class TwoFactorAuth
 
                             // authenticate the user
                             $ip       = $request->ip();
+                            $token = $user->createToken($ip);
+
+                            return $token->plainTextToken;
+                        }
+                    }
+                }
+            } elseif ($newClientSessionToken) {
+                $newClientSessionTokenDecoded = base64_decode($newClientSessionToken);
+                $newClientSessionTokenParts = explode('|', $newClientSessionTokenDecoded);
+                $newVerificationCodeId = $newClientSessionTokenParts[1];
+
+                if ($newVerificationCodeId) {
+                    $newVerificationCode = VerificationCode::where('uuid', $newVerificationCodeId)->first();
+
+                    if ($newVerificationCode) {
+                        $newVerificationCodeMatches = $newVerificationCode->code === $userInputCode;
+
+                        if ($newVerificationCodeMatches) {
+                            Cache::forget($twoFaSessionKey);
+
+                            $ip     = $request->ip();
                             $token = $user->createToken($ip);
 
                             return $token->plainTextToken;
