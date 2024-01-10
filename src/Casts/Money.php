@@ -28,6 +28,7 @@ class Money implements CastsAttributes
      */
     public function set($model, $key, $value, $attributes)
     {
+        // $currency = data_get($attributes, 'currency');
         return Utils::numbersOnly($value);
     }
 }

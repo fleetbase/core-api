@@ -639,7 +639,11 @@ class Utils
      */
     public static function numbersOnly($string)
     {
-        return intval(preg_replace('/[^0-9]/', '', $string));
+        // Remove everything except numbers and decimal points
+        $number = preg_replace('/[^0-9.]/', '', $string);
+
+        // Convert to float and then to integer to handle decimals
+        return intval(floatval($number) * 100);
     }
 
     /**

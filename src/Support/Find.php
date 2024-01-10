@@ -119,6 +119,7 @@ class Find
         } else {
             $internal = Http::isInternalRequest();
 
+            $baseNamespace = $filterNs;
             if ($internal) {
                 $baseNamespace = $filterNs . 'Internal\\';
             }
