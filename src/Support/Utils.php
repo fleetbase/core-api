@@ -633,17 +633,15 @@ class Utils
     /**
      * Converts the param to an integer with numbers only.
      *
-     * @param string|mixed $string
-     *
+     * @param string|float|integer|mixed $string
      * @return int
      */
-    public static function numbersOnly($string)
+    public static function numbersOnly($value)
     {
-        // Remove everything except numbers and decimal points
-        $number = preg_replace('/[^0-9.]/', '', $string);
+        $string = strval($value);
+        $string = preg_replace('/[^0-9]/', '', $string);
 
-        // Convert to float and then to integer to handle decimals
-        return intval(floatval($number) * 100);
+        return intval($string);
     }
 
     /**
