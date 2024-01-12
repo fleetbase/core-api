@@ -3,12 +3,11 @@
 namespace Fleetbase\Mail;
 
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Queue\SerializesModels;
 
-class TestEmail extends Mailable implements ShouldQueue
+class TestEmail extends Mailable
 {
     use Queueable;
     use SerializesModels;
