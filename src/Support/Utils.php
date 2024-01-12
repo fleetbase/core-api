@@ -633,7 +633,6 @@ class Utils
     /**
      * Converts the param to an integer with numbers only.
      *
-     * @param string|float|integer|mixed $string
      * @return int
      */
     public static function numbersOnly($value)
