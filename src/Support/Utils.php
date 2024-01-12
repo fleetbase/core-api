@@ -633,13 +633,14 @@ class Utils
     /**
      * Converts the param to an integer with numbers only.
      *
-     * @param string|mixed $string
-     *
      * @return int
      */
-    public static function numbersOnly($string)
+    public static function numbersOnly($value)
     {
-        return intval(preg_replace('/[^0-9]/', '', $string));
+        $string = strval($value);
+        $string = preg_replace('/[^0-9]/', '', $string);
+
+        return intval($string);
     }
 
     /**

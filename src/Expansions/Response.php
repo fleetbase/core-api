@@ -46,4 +46,34 @@ class Response implements Expansion
             );
         };
     }
+
+    /**
+     * Formats a error response for the consumable API.
+     *
+     * @return Closure
+     */
+    public function apiError()
+    {
+        /*
+         * Returns an error response.
+         *
+         * @param array $params
+         * @param mixed $default
+         * @return mixed
+         */
+        return function ($error, int $statusCode = 400, ?array $data = []) {
+            if ($error instanceof MessageBag) {
+                $error = $error->all();
+            }
+
+            /* @var \Illuminate\Support\Facades\Response $this */
+            return static::json(
+                [
+                    'error' => $error,
+                    ...$data,
+                ],
+                $statusCode
+            );
+        };
+    }
 }

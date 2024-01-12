@@ -4,6 +4,7 @@ namespace Fleetbase\Casts;
 
 use Fleetbase\Support\Utils;
 use Illuminate\Contracts\Database\Eloquent\CastsAttributes;
+use Illuminate\Support\Str;
 
 class Money implements CastsAttributes
 {
@@ -28,6 +29,10 @@ class Money implements CastsAttributes
      */
     public function set($model, $key, $value, $attributes)
     {
+        if (is_float($value) || Str::contains($value, '.')) {
+            $value = number_format($value, 2, '.', '');
+        }
+
         return Utils::numbersOnly($value);
     }
 }

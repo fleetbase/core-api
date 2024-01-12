@@ -4,13 +4,12 @@ namespace Fleetbase\Mail;
 
 use Fleetbase\Models\VerificationCode;
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\HtmlString;
 
-class VerifyEmail extends Mailable implements ShouldQueue
+class VerifyEmail extends Mailable
 {
     use Queueable;
     use SerializesModels;

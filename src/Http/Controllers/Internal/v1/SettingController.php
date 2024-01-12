@@ -411,7 +411,6 @@ class SettingController extends Controller
             $responseMessage = $e->getMessage();
             $status          = 'error';
         } catch (\Throwable $e) {
-            dd($e);
             $responseMessage = $e->getMessage();
             $status          = 'error';
         }
