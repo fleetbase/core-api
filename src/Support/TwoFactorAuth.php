@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Class TwoFactorAuth
@@ -233,73 +234,93 @@ class TwoFactorAuth
      */
     public static function verifyCode(Request $request): ?string
     {
-        $token = $request->input('token');
-        $identity = $request->input('identity');
-        $clientToken = $request->input('clientToken');
-        $newClientSessionToken = $request->input('newClientSessionToken');
-        $verificationCode = $request->input('verificationCode');
+        try {
+            $token = $request->input('token');
+            $identity = $request->input('identity');
+            $clientToken = $request->input('clientToken');
+            $newClientSessionToken = $request->input('newClientSessionToken');
+            $verificationCode = $request->input('verificationCode');
 
-        $user = User::where(function ($query) use ($identity) {
-            $query->where('email', $identity)->orWhere('phone', $identity);
-        })->first();
+            $user = User::where(function ($query) use ($identity) {
+                $query->where('email', $identity)->orWhere('phone', $identity);
+            })->first();
 
-        if (!$user) {
-            throw new \Exception('No user found using the provided identity');
-        }
+            if (!$user) {
+                throw new \Exception('No user found using the provided identity');
+            }
 
-        $twoFaSessionKey = 'two_fa_session:' . $user->uuid . ':' . $token;
+            $twoFaSessionKey = 'two_fa_session:' . $user->uuid . ':' . $token;
 
-        if (Cache::has($twoFaSessionKey)) {
-            $userInputCode = $request->input('verificationCode');
+            if (Cache::has($twoFaSessionKey)) {
+                $userInputCode = $request->input('verificationCode');
 
-            if ($clientToken) {
-                $clientTokenDecoded = base64_decode($clientToken);
-                $clientTokenParts = explode('|', $clientTokenDecoded);
-                $verificationCodeId = $clientTokenParts[1];
+                if ($clientToken) {
+                    $clientTokenDecoded = base64_decode($clientToken);
+                    $clientTokenParts = explode('|', $clientTokenDecoded);
+                    $verificationCodeId = $clientTokenParts[1];
 
-                if ($verificationCodeId) {
-                    $verificationCode = VerificationCode::where('uuid', $verificationCodeId)->first();
+                    dd($verificationCodeId);
 
-                    if ($verificationCode) {
-                        $verificationCodeMatches = $verificationCode->code === $userInputCode;
+                    if ($verificationCodeId) {
+                        $verificationCode = VerificationCode::where('uuid', $verificationCodeId)->first();
 
-                        if ($verificationCodeMatches) {
-                            Cache::forget($twoFaSessionKey);
+                        if ($verificationCode) {
+                            if ($verificationCode->expires_at < now()) {
+                                throw new \Exception('Verification code has expired. Please request a new one.');
+                            }
 
-                            // authenticate the user
-                            $ip       = $request->ip();
-                            $token = $user->createToken($ip);
+                            $verificationCodeMatches = $verificationCode->code === $userInputCode;
 
-                            return $token->plainTextToken;
+                            if ($verificationCodeMatches) {
+                                Cache::forget($twoFaSessionKey);
+
+                                // authenticate the user
+                                $ip     = $request->ip();
+                                $token = $user->createToken($ip);
+
+                                return $token->plainTextToken;
+                            } else {
+                                throw new \Exception('Verification code does not match. User entered: ' . $userInputCode . ', Expected: ' . $verificationCode->code);
+                            }
                         }
                     }
-                }
-            } elseif ($newClientSessionToken) {
-                $newClientSessionTokenDecoded = base64_decode($newClientSessionToken);
-                $newClientSessionTokenParts = explode('|', $newClientSessionTokenDecoded);
-                $newVerificationCodeId = $newClientSessionTokenParts[1];
+                } elseif ($newClientSessionToken) {
+                    $newClientSessionTokenDecoded = base64_decode($newClientSessionToken);
+                    $newClientSessionTokenParts = explode('|', $newClientSessionTokenDecoded);
+                    $newVerificationCodeId = $newClientSessionTokenParts[1];
 
-                if ($newVerificationCodeId) {
-                    $newVerificationCode = VerificationCode::where('uuid', $newVerificationCodeId)->first();
+                    if ($newVerificationCodeId) {
+                        $newVerificationCode = VerificationCode::where('uuid', $newVerificationCodeId)->first();
 
-                    if ($newVerificationCode) {
-                        $newVerificationCodeMatches = $newVerificationCode->code === $userInputCode;
+                        if ($newVerificationCode->expires_at < now()) {
+                            throw new \Exception('Verification code has expired. Please request a new one.');
+                        }
 
-                        if ($newVerificationCodeMatches) {
-                            Cache::forget($twoFaSessionKey);
+                        if ($newVerificationCode) {
+                            $newVerificationCodeMatches = $newVerificationCode->code === $userInputCode;
 
-                            $ip     = $request->ip();
-                            $token = $user->createToken($ip);
+                            if ($newVerificationCodeMatches) {
+                                Cache::forget($twoFaSessionKey);
 
-                            return $token->plainTextToken;
+                                $ip     = $request->ip();
+                                $token = $user->createToken($ip);
+
+                                return $token->plainTextToken;
+                            } else {
+                                throw new \Exception('Verification code does not match. User entered: ' . $userInputCode . ', Expected: ' . $newVerificationCode->code);
+                            }
                         }
                     }
                 }
             }
-        }
 
-        throw new \Exception('Invalid verification code');
+            throw new \Exception('Invalid verification code');
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Error during verification: ' . $e->getMessage());
+            throw $e;
+        }
     }
+
 
     /**
      * Resend Two-Factor Authentication verification code.
@@ -334,6 +355,7 @@ class TwoFactorAuth
                 'status'      => 'ok',
                 'message'     => 'Verification code resent successfully.',
                 'newClientSessionToken' => $newClientSessionToken,
+                'generatedVerificationCode' => $newVerificationCode->code,
             ];
         }
         throw new \Exception('Two factor authentication session is invalid');
