@@ -633,13 +633,14 @@ class Utils
     /**
      * Converts the param to an integer with numbers only.
      *
-     * @param string|mixed $string
-     *
      * @return int
      */
-    public static function numbersOnly($string)
+    public static function numbersOnly($value)
     {
-        return intval(preg_replace('/[^0-9]/', '', $string));
+        $string = strval($value);
+        $string = preg_replace('/[^0-9]/', '', $string);
+
+        return intval($string);
     }
 
     /**
@@ -2158,10 +2159,11 @@ class Utils
      *
      * This function checks if the given URL starts with 'http://' or 'https://'.
      * If it does, it parses the URL and adds 'www.' to the host part if it's not already there.
-     * If the URL does not start with 'http://' or 'https://', it simply checks if 'www.' is 
+     * If the URL does not start with 'http://' or 'https://', it simply checks if 'www.' is
      * already present at the start of the URL. If not, it adds 'www.'.
      *
      * @param string $url The URL to which 'www.' should be added if it's not already present.
+     *
      * @return string The modified URL with 'www.' added if it was absent.
      *
      * Example usage:

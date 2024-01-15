@@ -76,7 +76,7 @@ class Company extends Model
         'owner_uuid',
         'logo_uuid',
         'backdrop_uuid',
-        'address_uuid',
+        'place_uuid',
         'website_url',
         'description',
         'options',

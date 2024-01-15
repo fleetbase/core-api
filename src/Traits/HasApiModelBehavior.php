@@ -127,7 +127,7 @@ trait HasApiModelBehavior
                 $limit = 999999999;
             }
 
-            return $builder->paginate($limit, $columns);
+            return $builder->fastPaginate($limit, $columns);
         }
 
         // get the results
@@ -630,7 +630,7 @@ trait HasApiModelBehavior
         $limit   = $request->integer('limit', 30);
         $builder =  $this->searchBuilder($request);
 
-        return $builder->paginate($limit);
+        return $builder->fastPaginate($limit);
     }
 
     /**

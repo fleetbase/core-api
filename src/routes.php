@@ -23,6 +23,24 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
 
         /*
         |--------------------------------------------------------------------------
+        | Public/Consumable Routes
+        |--------------------------------------------------------------------------
+        |
+        | Routes for users and public applications to consume.
+        */
+        $router->prefix('v1')
+            ->namespace('Api\v1')
+            ->group(function ($router) {
+                $router->group(
+                    ['prefix' => 'organizations'],
+                    function ($router) {
+                        $router->get('current', 'OrganizationController@getCurrent');
+                    }
+                );
+            });
+
+        /*
+        |--------------------------------------------------------------------------
         | Internal Routes
         |--------------------------------------------------------------------------
         |
