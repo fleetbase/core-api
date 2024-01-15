@@ -97,16 +97,18 @@ class Handler extends ExceptionHandler
                 return response()->error($exception->getMessage());
         }
 
-        // if exception has JSON response return it
-        if (isset($exception->response) && $exception->response instanceof \Illuminate\Http\Response) {
-            return $exception->response;
+        // Will respond with generic server error or exception error if exception intends to render non json response
+        // Will only return this block in production/live environments
+        if ($this->isRenderable($exception, $request) && !app()->environment(['development', 'local'])) {
+            if (method_exists($exception, 'getMessage') && is_string($exception->getMessage())) {
+                return response()->error($exception->getMessage());
+            }
+
+            return response()->error('Oops! A backend error has been reported, please try your request again to continue.', 400);
         }
 
-        if (app()->environment(['development', 'local'])) {
-            return parent::render($request, $exception);
-        }
-
-        return response()->error('Oops! A backend error has been reported, please try your request again to continue.', 400);
+        // Should render a JSON response
+        return parent::render($request, $exception);
     }
 
     /**
@@ -149,5 +151,17 @@ class Handler extends ExceptionHandler
         }
 
         return $output;
+    }
+
+    /**
+     * Check if the exception is renderable.
+     *
+     * @param \Exception $exception The exception to check.
+     * @param \Illuminate\Http\Request $request The request object associated with the exception.
+     * @return bool Returns true if the exception has a 'render' method, indicating it is renderable, otherwise false.
+     */
+    private function isRenderable(\Exception $exception, $request)
+    {
+        return method_exists($exception, 'render');
     }
 }
