@@ -137,8 +137,12 @@ class TwoFaController extends Controller
     public function resendCode(Request $request)
     {
         try {
-            $result = $this->twoFactorAuth->resendCode($request);
-            return response()->json($result);
+            $clientSessionToken = $this->twoFactorAuth->resendCode($request);
+            
+            return response()->json([
+                'status' => 'ok',
+                'clientToken' => $clientSessionToken,
+            ]);
         } catch (\Exception $e) {
             return response()->json([
                 'error' => $e->getMessage(),

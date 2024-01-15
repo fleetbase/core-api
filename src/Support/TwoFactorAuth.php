@@ -249,7 +249,6 @@ class TwoFactorAuth
 
             $twoFaSessionKey = 'two_fa_session:' . $user->uuid . ':' . $token;
 
-
             if (Cache::has($twoFaSessionKey)) {
                 $userInputCode = $request->input('verificationCode');
 
@@ -291,15 +290,15 @@ class TwoFactorAuth
         }
     }
 
-    public static function resendCode(Request $request)
+    public static function resendCode(Request $request): string
     {
         try {
             $identity = $request->input('identity');
-            $twoFaSession = self::start($identity);
+            // $twoFaSession = self::start($identity);
 
-            if ($twoFaSession === null) {
-                throw new \Exception('No user found using the provided identity');
-            }
+            // if ($twoFaSession === null) {
+            //     throw new \Exception('No user found using the provided identity');
+            // }
 
             $user = User::where(function ($query) use ($identity) {
                 $query->where('email', $identity)->orWhere('phone', $identity);
@@ -310,12 +309,10 @@ class TwoFactorAuth
             }
 
             $expireAfter = Carbon::now()->addSeconds(61);
-            static::sendVerificationCode($user, $expireAfter);
+            $verificationCode = static::sendVerificationCode($user, $expireAfter);
+            $clientSessionToken = base64_encode($expireAfter . '|' . $verificationCode->uuid . '|' . Str::random());
 
-            return [
-                'status'  => 'ok',
-                'message' => 'Verification code resent successfully.',
-            ];
+            return $clientSessionToken;
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::error('Error during resendCode: ' . $e->getMessage());
             throw $e;

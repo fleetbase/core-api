@@ -148,8 +148,8 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 $router->fleetbaseRoutes(
                                     'two-fa',
                                     function ($router, $controller) {
-                                        $router->post('save-settings', $controller('saveSettings'));
-                                        $router->get('get-settings', $controller('getSettings'));
+                                        $router->post('settings', $controller('saveSettings'));
+                                        $router->get('settings', $controller('getSettings'));
                                     }
                                 );
                                 $router->fleetbaseRoutes('api-events');
