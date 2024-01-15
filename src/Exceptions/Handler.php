@@ -14,8 +14,7 @@ class Handler extends ExceptionHandler
      *
      * @var array
      */
-    protected $dontReport = [
-    ];
+    protected $dontReport = [];
 
     /**
      * A list of the inputs that are never flashed for validation exceptions.
@@ -96,6 +95,11 @@ class Handler extends ExceptionHandler
 
             case 'IntegratedVendorException':
                 return response()->error($exception->getMessage());
+        }
+
+        // if exception has JSON response return it
+        if (isset($exception->response) && $exception->response instanceof \Illuminate\Http\Response) {
+            return $exception->response;
         }
 
         if (app()->environment(['development', 'local'])) {
