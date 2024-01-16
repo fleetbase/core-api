@@ -53,7 +53,7 @@ class UserForgotPassword extends Notification implements ShouldQueue
     public function toMail($notifiable)
     {
         return (new MailMessage())
-            ->subject('Your password reset link for Fleetbase')
+            ->subject('Your password reset link for ' . config('app.name'))
             ->greeting('Hello, ' . $notifiable->name)
             ->line('Looks like you (or someone phishy) has requested to reset your password. If you did not request a password reset link, ignore this email. If you have indeed forgot your password click the button below to reset your password using the code provided below.')
             ->line(new HtmlString('<br><p style="font-family: monospace;">Your password reset code: <strong>' . $this->verificationCode->code . '</strong></p>'))

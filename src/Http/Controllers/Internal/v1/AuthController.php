@@ -34,9 +34,9 @@ class AuthController extends Controller
      */
     public function login(LoginRequest $request)
     {
-        $ip       = $request->ip();
-        $identity = $request->input('identity');
-        $password = $request->input('password');
+        $ip        = $request->ip();
+        $identity  = $request->input('identity');
+        $password  = $request->input('password');
         $authToken = $request->input('authToken');
 
         // if attempting to authenticate with auth token validate it first against database and respond with it
@@ -59,9 +59,13 @@ class AuthController extends Controller
         $token = $user->createToken($ip);
 
         // Check if 2FA enabled
-        if (TwoFactorAuth::isEnabled()) {
+        if (TwoFactorAuth::isEnabled($user)) {
             $twoFaSession = TwoFactorAuth::start($user);
-            return response()->json(['two_fa_session' => $twoFaSession]);
+
+            return response()->json([
+                'twoFaSession' => $twoFaSession,
+                'isEnabled'    => true,
+            ]);
         }
 
         return response()->json(['token' => $token->plainTextToken]);
@@ -71,6 +75,7 @@ class AuthController extends Controller
         }
 
         $token = $user->createToken($ip);
+
         return response()->json(['token' => $token->plainTextToken]);
     }
 
@@ -143,7 +148,7 @@ class AuthController extends Controller
         // Send user their verification code
         try {
             Twilio::message($queryPhone, shell_exec('Your Fleetbase authentication code is ') . $verifyCode);
-        } catch (\Exception | \Twilio\Exceptions\RestException $e) {
+        } catch (\Exception|\Twilio\Exceptions\RestException $e) {
             return response()->json(['error' => $e->getMessage()], 400);
         }
 

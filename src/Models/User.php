@@ -576,4 +576,16 @@ class User extends Authenticatable
 
         return true;
     }
+
+    public function getIdentity(): ?string
+    {
+        $email = data_get($this, 'email');
+        $phone = data_get($this, 'phone');
+
+        if ($email) {
+            return $email;
+        }
+
+        return $phone;
+    }
 }

@@ -6,6 +6,9 @@ use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Http\Resources\Organization;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\Invite;
+use Fleetbase\Support\Auth;
+use Fleetbase\Support\TwoFactorAuth;
+use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
 class CompanyController extends FleetbaseController
@@ -38,5 +41,42 @@ class CompanyController extends FleetbaseController
         }
 
         return new Organization($company);
+    }
+
+    /**
+     * Get the current organization's two factor authentication settings.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function getTwoFactorSettings()
+    {
+        $company = Auth::getCompany();
+
+        if (!$company) {
+            return response()->error('No company session found', 401);
+        }
+
+        $twoFaSettings = TwoFactorAuth::getTwoFaSettingsForCompany($company);
+
+        return response()->json($twoFaSettings->value);
+    }
+
+    /**
+     * Save the current user's two factor authentication settings.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function saveTwoFactorSettings(Request $request)
+    {
+        $twoFaSettings = $request->array('twoFaSettings');
+        $company       = Auth::getCompany();
+
+        if (!$company) {
+            return response()->error('No company session found', 401);
+        }
+
+        $twoFaSettings = TwoFactorAuth::saveTwoFaSettingsForCompany($company, $twoFaSettings);
+
+        return response()->json($twoFaSettings->value);
     }
 }

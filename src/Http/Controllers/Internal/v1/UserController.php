@@ -17,6 +17,7 @@ use Fleetbase\Models\User;
 use Fleetbase\Notifications\UserAcceptedCompanyInvite;
 use Fleetbase\Notifications\UserInvited;
 use Fleetbase\Support\NotificationRegistry;
+use Fleetbase\Support\TwoFactorAuth;
 use Fleetbase\Support\Utils;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -51,6 +52,43 @@ class UserController extends FleetbaseController
                 'user' => $user,
             ]
         );
+    }
+
+    /**
+     * Get the current user's two factor authentication settings.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function getTwoFactorSettings(Request $request)
+    {
+        $user = $request->user();
+
+        if (!$user) {
+            return response()->error('No user session found', 401);
+        }
+
+        $twoFaSettings = TwoFactorAuth::getTwoFaSettingsForUser($user);
+
+        return response()->json($twoFaSettings->value);
+    }
+
+    /**
+     * Save the current user's two factor authentication settings.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function saveTwoFactorSettings(Request $request)
+    {
+        $twoFaSettings = $request->array('twoFaSettings');
+        $user          = $request->user();
+
+        if (!$user) {
+            return response()->error('No user session found', 401);
+        }
+
+        $twoFaSettings = TwoFactorAuth::saveTwoFaSettingsForUser($user, $twoFaSettings);
+
+        return response()->json($twoFaSettings->value);
     }
 
     /**

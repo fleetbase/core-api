@@ -4,149 +4,149 @@ namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Http\Controllers\Controller;
 use Fleetbase\Http\Requests\TwoFaValidationRequest;
-use Illuminate\Http\Request;
 use Fleetbase\Support\TwoFactorAuth;
+use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 /**
- * Class TwoFaController
- *
- * @package Fleetbase\Http\Controllers\Internal\v1
+ * Class TwoFaController.
  */
 class TwoFaController extends Controller
 {
     /**
-     * TwoFactorAuth instance.
+     * Save Two-Factor Authentication system wide settings.
      *
-     * @var \Fleetbase\Support\TwoFactorAuth
+     * @return \Illuminate\Http\Response
      */
-    protected $twoFactorAuth;
-
-    /**
-     * TwoFaController constructor.
-     *
-     * @param \Fleetbase\Support\TwoFactorAuth $twoFactorAuth
-     */
-    public function __construct(TwoFactorAuth $twoFactorAuth)
+    public function saveSystemConfig(Request $request)
     {
-        $this->twoFactorAuth = $twoFactorAuth;
+        $twoFaSettings = $request->array('twoFaSettings');
+        $settings      = TwoFactorAuth::configureTwoFaSettings($twoFaSettings);
+
+        return response()->json($settings->value);
     }
 
     /**
-     * Save Two-Factor Authentication settings.
+     * Get Two-Factor Authentication system wide settings.
      *
-     * @param \Illuminate\Http\Request $request
-     * @return \Illuminate\Http\JsonResponse
+     * @return \Illuminate\Http\Response
      */
-    public function saveSettings(Request $request)
+    public function getSystemConfig()
     {
-        try {
-            $result = $this->twoFactorAuth->saveSettings($request);
-            return response()->json($result);
-        } catch (\Exception $e) {
-            return response()->json([
-                'error' => $e->getMessage(),
-            ], 400);
-        }
-    }
+        $settings = TwoFactorAuth::getTwoFaConfiguration();
 
-    /**
-     * Get Two-Factor Authentication settings.
-     *
-     * @return \Illuminate\Http\JsonResponse
-     */
-    public function getSettings()
-    {
-        try {
-            $result = $this->twoFactorAuth->getSettings();
-            return response()->json($result);
-        } catch (\Exception $e) {
-            return response()->json([
-                'error' => $e->getMessage(),
-            ], 400);
-        }
-    }
-
-    /**
-     * Verify Two-Factor Authentication code.
-     *
-     * @param \Fleetbase\Http\Requests\TwoFaValidationRequest $request
-     * @return \Illuminate\Http\JsonResponse
-     */
-    public function validateSession(TwoFaValidationRequest $request)
-    {
-        try {
-            $clientSessionToken = $this->twoFactorAuth->validateSession($request);
-
-            return response()->json([
-                'status' => 'ok',
-                'clientToken' => $clientSessionToken,
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'error' => $e->getMessage(),
-            ], 400);
-        }
+        return response()->json($settings->value);
     }
 
     /**
      * Check Two-Factor Authentication status for a given user identity.
      *
-     * @param \Illuminate\Http\Request $request
-     * @return \Illuminate\Http\JsonResponse
+     * @return \Illuminate\Http\Response
      */
     public function checkTwoFactor(Request $request)
     {
-        try {
-            $result = $this->twoFactorAuth->checkTwoFactorStatus($request);
+        $identity       = $request->input('identity');
+        $twoFaSession   = TwoFactorAuth::createTwoFaSessionIfEnabled($identity);
+        $isTwoFaEnabled = $twoFaSession !== null;
 
-            return response()->json($result);
-        } catch (\Exception $e) {
+        return response()->json([
+            'twoFaSession'   => $twoFaSession,
+            'isTwoFaEnabled' => $isTwoFaEnabled,
+        ]);
+    }
+
+    /**
+     * Verify Two-Factor Authentication code.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function validateSession(TwoFaValidationRequest $request)
+    {
+        $token       = $request->input('token');
+        $identity    = $request->input('identity');
+        $clientToken = $request->input('clientToken');
+
+        try {
+            $validClientToken = TwoFactorAuth::getClientSessionTokenFromTwoFaSession($token, $identity, $clientToken);
+
             return response()->json([
-                'error' => $e->getMessage(),
-            ], 400);
+                'clientToken' => $validClientToken,
+                'expired'     => false,
+            ]);
+        } catch (\Exception $e) {
+            $errorMessage = $e->getMessage();
+
+            if (Str::contains($errorMessage, ['2FA Verification', 'expired'])) {
+                return response()->json([
+                    'expired' => true,
+                ]);
+            }
+
+            return response()->error($errorMessage);
         }
     }
 
     /**
      * Verify Two-Factor Authentication code.
      *
-     * @param \Illuminate\Http\Request $request
-     * @return \Illuminate\Http\JsonResponse
+     * @return \Illuminate\Http\Response
      */
     public function verifyCode(Request $request)
     {
+        $code        = $request->input('code');
+        $token       = $request->input('token');
+        $clientToken = $request->input('clientToken');
+
         try {
-            $authToken = $this->twoFactorAuth->verifyCode($request);
+            $authToken = TwoFactorAuth::verifyCode($code, $token, $clientToken);
 
             return response()->json([
-                'authToken' => $authToken
+                'authToken' => $authToken,
             ]);
         } catch (\Exception $e) {
-            return response()->json([
-                'error' => $e->getMessage(),
-            ], 400);
+            return response()->error($e->getMessage());
         }
     }
 
     /**
      * Resend Two-Factor Authentication verification code.
      *
-     * @param \Illuminate\Http\Request $request
-     * @return \Illuminate\Http\JsonResponse
+     * @return \Illuminate\Http\Response
      */
     public function resendCode(Request $request)
     {
+        $identity = $request->input('identity');
+        $token    = $request->input('token');
+
         try {
-            $clientSessionToken = $this->twoFactorAuth->resendCode($request);
-            
+            $clientToken = TwoFactorAuth::resendCode($identity, $token);
+
             return response()->json([
-                'status' => 'ok',
-                'clientToken' => $clientSessionToken,
+                'clientToken' => $clientToken,
             ]);
         } catch (\Exception $e) {
+            return response()->error($e->getMessage());
+        }
+    }
+
+    /**
+     * Invalidate the current two-factor session.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function invalidateSession(Request $request)
+    {
+        $identity = $request->input('identity');
+        $token    = $request->input('token');
+
+        try {
+            $ok = TwoFactorAuth::forgetTwoFaSession($token, $identity);
+
             return response()->json([
-                'error' => $e->getMessage(),
-            ], 400);
+                'ok' => $ok,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['ok' => false]);
         }
     }
 }

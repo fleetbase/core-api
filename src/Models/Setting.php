@@ -2,10 +2,11 @@
 
 namespace Fleetbase\Models;
 
+use Fleetbase\Casts\Json;
+use Fleetbase\Support\Utils;
 use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\Searchable;
-use Fleetbase\Casts\Json;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 
 class Setting extends EloquentModel
@@ -127,7 +128,7 @@ class Setting extends EloquentModel
      *
      * @param string $key
      */
-    public static function configureSystem($key, $value = null)
+    public static function configureSystem($key, $value = null): ?Setting
     {
         return static::configure('system.' . $key, $value);
     }
@@ -137,7 +138,7 @@ class Setting extends EloquentModel
      *
      * @param string $key
      */
-    public static function configure($key, $value = null)
+    public static function configure($key, $value = null): ?Setting
     {
         return static::updateOrCreate(
             ['key' => $key],
@@ -162,6 +163,16 @@ class Setting extends EloquentModel
         }
 
         return data_get($setting, 'value', $defaultValue);
+    }
+
+    /**
+     * Get a settting record by key.
+     *
+     * @return \Fleetbase\Models\Setting|null
+     */
+    public static function getByKey(string $key)
+    {
+        return static::where('key', $key)->first();
     }
 
     public static function getBranding()
@@ -195,5 +206,15 @@ class Setting extends EloquentModel
         $brandingSettings['default_theme'] = $defaultTheme ?? 'dark';
 
         return $brandingSettings;
+    }
+
+    public function getValue(string $key, $defaultValue = null)
+    {
+        return data_get($this->value, $key, $defaultValue);
+    }
+
+    public function getBoolean(string $key)
+    {
+        return Utils::castBoolean($this->getValue($key, false));
     }
 }

@@ -92,17 +92,18 @@ class VerificationCode extends Model
     }
 
     /** static method to generate code for email verification */
-    public static function generateEmailVerificationFor($subject, $for = 'email_verification', \Closure $messageCallback = null, $meta = [], $expireAfter = null)
+    public static function generateEmailVerificationFor($subject, $for = 'email_verification', \Closure $messageCallback = null, \Closure $linesCallback = null, $meta = [], $expireAfter = null)
     {
         $verifyCode             = static::generateFor($subject, $for, false);
         $verifyCode->expires_at = $expireAfter === null ? Carbon::now()->addHour() : $expireAfter;
         $verifyCode->meta       = $meta;
         $verifyCode->save();
 
-        $emailSubject = $messageCallback ? $messageCallback($verifyCode) : null;
+        $emailSubject = is_callable($messageCallback) ? $messageCallback($verifyCode) : null;
+        $emailLines   = is_callable($linesCallback) ? $linesCallback($verifyCode) : [];
 
         if (isset($subject->email)) {
-            Mail::to($subject)->send(new VerifyEmail($verifyCode, $emailSubject, $subject));
+            Mail::to($subject)->send(new VerifyEmail($verifyCode, $emailSubject, $emailLines, $subject));
         }
 
         return $verifyCode;
@@ -117,7 +118,7 @@ class VerificationCode extends Model
         $verifyCode->save();
 
         if ($subject->phone) {
-            Twilio::message($subject->phone, $messageCallback ? $messageCallback($verifyCode) : "Your Fleetbase verification code is {$verifyCode->code}");
+            Twilio::message($subject->phone, $messageCallback ? $messageCallback($verifyCode) : 'Your ' . config('app.name') . ' verification code is ' . $verifyCode->code);
         }
 
         return $verifyCode;

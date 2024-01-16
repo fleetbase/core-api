@@ -88,6 +88,12 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                             }
                         );
                         $router->group(
+                            ['prefix' => 'companies'],
+                            function ($router) {
+                                $router->get('find/{id}', 'CompanyController@findCompany');
+                            }
+                        );
+                        $router->group(
                             ['prefix' => 'settings'],
                             function ($router) {
                                 $router->get('branding', 'SettingController@getBrandingSettings');
@@ -97,9 +103,10 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                             ['prefix' => 'two-fa'],
                             function ($router) {
                                 $router->get('check', 'TwoFaController@checkTwoFactor');
-                                $router->post('validate-session', 'TwoFaController@validateSession');
-                                $router->post('verify-code', 'TwoFaController@verifyCode');
-                                $router->post('resend-code', 'TwoFaController@resendCode');
+                                $router->post('validate', 'TwoFaController@validateSession');
+                                $router->post('verify', 'TwoFaController@verifyCode');
+                                $router->post('resend', 'TwoFaController@resendCode');
+                                $router->post('invalidate', 'TwoFaController@invalidateSession');
                             }
                         );
                         $router->group(
@@ -148,8 +155,8 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 $router->fleetbaseRoutes(
                                     'two-fa',
                                     function ($router, $controller) {
-                                        $router->post('settings', $controller('saveSettings'));
-                                        $router->get('settings', $controller('getSettings'));
+                                        $router->post('config', $controller('saveSystemConfig'));
+                                        $router->get('config', $controller('getSystemConfig'));
                                     }
                                 );
                                 $router->fleetbaseRoutes('api-events');
@@ -162,7 +169,10 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     }
                                 );
                                 $router->fleetbaseRoutes('webhook-request-logs');
-                                $router->fleetbaseRoutes('companies');
+                                $router->fleetbaseRoutes('companies', function ($router, $controller) {
+                                    $router->post('two-fa', $controller('saveTwoFactorSettings'));
+                                    $router->get('two-fa', $controller('getTwoFactorSettings'));
+                                });
                                 $router->fleetbaseRoutes(
                                     'users',
                                     function ($router, $controller) {
@@ -174,6 +184,8 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                         $router->delete('bulk-delete', $controller('bulkDelete'));
                                         $router->post('resend-invite', $controller('resendInvitation'));
                                         $router->post('set-password', $controller('setCurrentUserPassword'));
+                                        $router->post('two-fa', $controller('saveTwoFactorSettings'));
+                                        $router->get('two-fa', $controller('getTwoFactorSettings'));
                                     }
                                 );
                                 $router->fleetbaseRoutes('user-devices');

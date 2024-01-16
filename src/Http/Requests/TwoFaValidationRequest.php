@@ -57,7 +57,7 @@ class TwoFaValidationRequest extends FleetbaseRequest
             'identity.exists'      => 'No user found by this email',
             'identity.email'       => 'Email used is invalid',
             'identity.phone'       => 'Phone Number used is invalid',
-            'token.required' => 'A two factor session token is required',
+            'token.required'       => 'A two factor session token is required',
         ];
     }
 }
