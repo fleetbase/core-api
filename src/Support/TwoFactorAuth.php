@@ -100,6 +100,16 @@ class TwoFactorAuth
         return static::saveTwoFaSettingsForSubject($company, $twoFaSettings);
     }
 
+
+    public static function enforceTwoFaForCompanyUsers(Company $company, array $twoFaSettings = []): Setting
+    {
+        $users = $company->users;
+
+        foreach ($users as $user) {
+            return static::saveTwoFaSettingsForSubject($user, $twoFaSettings);
+        }
+    }
+
     /**
      * Get Two-Factor Authentication settings for a specific subject (e.g., User, Company).
      *

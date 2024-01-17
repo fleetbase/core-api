@@ -170,7 +170,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 );
                                 $router->fleetbaseRoutes('webhook-request-logs');
                                 $router->fleetbaseRoutes('companies', function ($router, $controller) {
-                                    $router->post('two-fa', $controller('saveTwoFactorSettings'));
+                                    $router->post('enforce', $controller('enforceTwoFactorSettings'));
                                     $router->get('two-fa', $controller('getTwoFactorSettings'));
                                 });
                                 $router->fleetbaseRoutes(
@@ -184,6 +184,8 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                         $router->delete('bulk-delete', $controller('bulkDelete'));
                                         $router->post('resend-invite', $controller('resendInvitation'));
                                         $router->post('set-password', $controller('setCurrentUserPassword'));
+                                        $router->post('validate-password', $controller('validatePassword'));
+                                        $router->post('change-password', $controller('changeUserPassword'));
                                         $router->post('two-fa', $controller('saveTwoFactorSettings'));
                                         $router->get('two-fa', $controller('getTwoFactorSettings'));
                                     }

@@ -4,6 +4,7 @@ namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Http\Controllers\Controller;
 use Fleetbase\Http\Requests\TwoFaValidationRequest;
+use Fleetbase\Models\Company;
 use Fleetbase\Support\TwoFactorAuth;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;

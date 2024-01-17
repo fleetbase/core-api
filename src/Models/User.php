@@ -425,6 +425,11 @@ class User extends Authenticatable
         return $this;
     }
 
+    public function checkPassword(string $password): bool
+    {
+        return Hash::check($password, $this->password);
+    }
+
     /**
      * Deactivate this user.
      */
