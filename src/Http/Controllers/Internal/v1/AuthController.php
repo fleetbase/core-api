@@ -20,6 +20,7 @@ use Fleetbase\Support\Auth;
 use Fleetbase\Support\Utils;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Str;
 
@@ -32,20 +33,24 @@ class AuthController extends Controller
      */
     public function login(LoginRequest $request)
     {
-        $ip       = $request->ip();
         $email    = $request->input('email');
         $password = $request->input('password');
         $user     = User::where('email', $email)->first();
 
         if (!$user) {
-            return response()->error('No user found by this email.', 401);
+            return response()->error('No user found by this email.', 401, ['code' => 'no_user']);
         }
 
         if (Auth::isInvalidPassword($password, $user->password)) {
-            return response()->error('Authentication failed using password provided.', 401);
+            return response()->error('Authentication failed using password provided.', 401, ['code' => 'invalid_password']);
         }
 
-        $token = $user->createToken($ip);
+        if ($user->isNotVerified()) {
+            return response()->error('User is not verified.', 400, ['code' => 'not_verified']);
+        }
+
+        $user->updateLastLogin();
+        $token = $user->createToken($user->uuid);
 
         return response()->json(['token' => $token->plainTextToken]);
     }
@@ -58,11 +63,12 @@ class AuthController extends Controller
      */
     public function session(Request $request)
     {
-        if ($request->user() === null) {
+        $user = $request->user();
+        if (!$user) {
             return response()->error('Session has expired.', 401, ['restore' => false]);
         }
 
-        return response()->json(['token' => $request->bearerToken(), 'user' => $request->user()->uuid]);
+        return response()->json(['token' => $request->bearerToken(), 'user' => $user->uuid, 'verified' => $user->isVerified()]);
     }
 
     /**
@@ -119,7 +125,7 @@ class AuthController extends Controller
         // Send user their verification code
         try {
             Twilio::message($queryPhone, shell_exec('Your Fleetbase authentication code is ') . $verifyCode);
-        } catch (\Exception|\Twilio\Exceptions\RestException $e) {
+        } catch (\Exception | \Twilio\Exceptions\RestException $e) {
             return response()->json(['error' => $e->getMessage()], 400);
         }
 
@@ -188,6 +194,177 @@ class AuthController extends Controller
 
         // If unable to authenticate user, respond with error
         return response()->json('Authentication failed', 401);
+    }
+
+    /**
+     * Create resend verification code session
+     *
+     * @param \\Illuminate\Http\Request $request
+     *
+     * @return \Illuminate\Http\Response $response
+     */
+    public function createVerificationSession(Request $request)
+    {
+        $send = $request->boolean('send');
+        $email = $request->input('email');
+        $token = Str::random(40);
+        $verificationSessionToken = base64_encode($email . '|' . $token);
+
+        // Store in session
+        Cache::put($verificationSessionToken, $token, Carbon::now()->addMinutes(5));
+
+        // If opted to send verification token along with session
+        if ($send) {
+            // Get user
+            $user = User::where('email', $email)->first();
+
+            if ($user) {
+                // create verification code
+                VerificationCode::generateEmailVerificationFor($user);
+            } else {
+                return response()->error('No user found with provided email address.');
+            }
+        }
+
+        return response()->json([
+            'token' => $token,
+        ]);
+    }
+
+    /**
+     * Validates an email verification session
+     *
+     * @param \\Illuminate\Http\Request $request
+     *
+     * @return \Illuminate\Http\Response $response
+     */
+    public function validateVerificationSession(Request $request)
+    {
+        $email = $request->input('email');
+        $token = $request->input('token');
+        $verificationSessionToken = base64_encode($email . '|' . $token);
+
+        return response()->json([
+            'valid' => Cache::has($verificationSessionToken)
+        ]);
+    }
+
+    /**
+     * Send/Resend verification email.
+     *
+     * @param \\Illuminate\Http\Request $request
+     *
+     * @return \Illuminate\Http\Response $response
+     */
+    public function sendVerificationEmail(Request $request)
+    {
+        $email = $request->input('email');
+        $token = $request->input('token');
+        $verificationSessionToken = base64_encode($email . '|' . $token);
+
+        // Check in session
+        if (!Cache::has($verificationSessionToken)) {
+            return response()->error('Invalid verification session.');
+        }
+
+        // Get user
+        $user = User::where('email', $email)->first();
+
+        if ($user) {
+            // create verification code
+            VerificationCode::generateEmailVerificationFor($user);
+        } else {
+            return response()->error('No user found with provided email address.');
+        }
+
+        return response()->json([
+            'status' => 'success',
+        ]);
+    }
+
+    /**
+     * Verfiy and validate an email address with code.
+     *
+     * @param \\Illuminate\Http\Request $request
+     *
+     * @return \Illuminate\Http\Response $response
+     */
+    public function verifyEmail(Request $request)
+    {
+        $authenticate = $request->boolean('authenticate');
+        $token = $request->input('token');
+        $email = $request->input('email');
+        $code    = $request->input('code');
+        $verificationSessionToken = base64_encode($email . '|' . $token);
+
+        // Check in session
+        if (!Cache::has($verificationSessionToken)) {
+            return response()->error('Invalid verification session.');
+        }
+
+        // Check user
+        $user = User::where('email', $email)->first();
+        if (!$user) {
+            return response()->error('No user found with provided email.');
+        }
+
+        // If user is already verified
+        if ($user->isVerified()) {
+            return response()->error('User is already verified.');
+        }
+
+        // get verification code for session
+        $verifyCode = VerificationCode::where([
+            'subject_uuid' => $user->uuid,
+            'for'          => 'email_verification',
+            'code'         => $code,
+        ])->first();
+
+        // check if sms verification
+        if (!$verifyCode) {
+            $verifyCode = VerificationCode::where([
+                'subject_uuid' => $user->uuid,
+                'for'          => 'phone_verification',
+                'code'         => $code,
+            ])->first();
+        }
+
+        // no verification code found
+        if (!$verifyCode) {
+            return response()->error('Invalid verification code.');
+        }
+
+        // get verify time
+        $verifiedAt = Carbon::now();
+
+        // verify users email address or phone depending
+        if ($verifyCode->for === 'email_verification') {
+            $user->email_verified_at = $verifiedAt;
+        } elseif ($verifyCode->for === 'phone_verification') {
+            $user->phone_verified_at = $verifiedAt;
+        }
+
+        // Activate user
+        $user->status = 'active';
+        $user->save();
+
+        // if authenticate is set
+        if ($authenticate) {
+            $user->updateLastLogin();
+            $token = $user->createToken($user->uuid);
+
+            return response()->json([
+                'status'      => 'ok',
+                'verified_at' => $verifiedAt,
+                'token' => $token->plainTextToken
+            ]);
+        }
+
+        return response()->json([
+            'status'      => 'ok',
+            'verified_at' => $verifiedAt,
+            'token' => null
+        ]);
     }
 
     /**

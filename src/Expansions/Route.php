@@ -127,6 +127,10 @@ class Route implements Expansion
                     $router->post('logout', 'AuthController@logout');
                     $router->post('get-magic-reset-link', 'AuthController@createPasswordReset');
                     $router->post('reset-password', 'AuthController@resetPassword');
+                    $router->post('create-verification-session', 'AuthController@createVerificationSession');
+                    $router->post('validate-verification-session', 'AuthController@validateVerificationSession');
+                    $router->post('send-verification-email', 'AuthController@sendVerificationEmail');
+                    $router->post('verify-email', 'AuthController@verifyEmail');
 
                     if (is_callable($registerFn)) {
                         $registerFn($router);

@@ -38,10 +38,9 @@ class Response implements Expansion
 
             /* @var \Illuminate\Support\Facades\Response $this */
             return static::json(
-                [
+                array_merge([
                     'errors' => is_array($error) ? $error : [$error],
-                    ...$data,
-                ],
+                ], $data),
                 $statusCode
             );
         };
