@@ -7,7 +7,6 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\HtmlString;
 
 class VerifyEmail extends Mailable
 {
@@ -41,7 +40,7 @@ class VerifyEmail extends Mailable
             ->html((new MailMessage())
                     ->greeting($this->greeting)
                     ->line('Welcome to Fleetbase, use the code below to verify your email address and complete registration to Fleetbase.')
-                    ->line(new HtmlString('<br><p style="font-family: monospace;">Your verification code: <strong>' . $this->verifyCode . '</strong></p><br>'))
+                    ->line('Your verification code: ' . $this->verifyCode)
                     ->render()
             );
     }
