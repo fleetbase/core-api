@@ -8,7 +8,6 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
-use Illuminate\Support\HtmlString;
 
 class PasswordReset extends Notification implements ShouldQueue
 {
@@ -71,7 +70,7 @@ class PasswordReset extends Notification implements ShouldQueue
             ->subject('Your password reset link for Fleetbase')
             ->greeting('Hello, ' . $notifiable->name)
             ->line('Looks like you (or someone phishy) has requested to reset your password. If you did not request a password reset link, ignore this email. If you have indeed forgot your password click the button below to reset your password using the code provided below.')
-            ->line(new HtmlString('<br><p style="font-family: monospace;">Your password reset code: <strong>' . $this->verificationCode->code . '</strong></p>'))
+            ->line('Your password reset code: ' . $this->verificationCode->code)
             ->action('Reset Password', $this->url);
     }
 

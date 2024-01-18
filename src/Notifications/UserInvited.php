@@ -10,7 +10,6 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
-use Illuminate\Support\HtmlString;
 
 /**
  * Class UserInvited.
@@ -75,7 +74,7 @@ class UserInvited extends Notification implements ShouldQueue
             ->subject('You\'ve been invited to join ' . $this->company->name . ' on Fleetbase!')
             ->greeting('Hello, ' . $notifiable->name . '!')
             ->line($this->sender->name . ' has invited you to join their organization on Fleetbase. Click the button below to accept this invitation and enable access to ' . $this->company->name . ' on Fleetbase.')
-            ->line(new HtmlString('<br><p style="font-family: monospace;">Your invitiation code: <strong>' . $this->invite->code . '</strong></p>'))
+            ->line('Your invitiation code: ' . $this->invite->code)
             ->action('Accept Invitation', $this->url);
     }
 
