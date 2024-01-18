@@ -46,11 +46,11 @@ class OnboardController extends Controller
             'status' => 'active',
         ]);
 
-        // set the user type
-        $user->type = $isAdmin ? 'admin' : 'user';
-
         // set the user password
         $user->password = $request->input('password');
+
+        // set the user type
+        $user->setUserType($isAdmin ? 'admin' : 'user');
 
         // create company
         $company = new Company(['name' => $request->input('organization_name')]);
@@ -69,26 +69,20 @@ class OnboardController extends Controller
         // create verification code
         try {
             VerificationCode::generateEmailVerificationFor($user);
-        } catch (\Swift_TransportException $e) {
+        } catch (\Throwable $e) {
             // silence
-        } catch (\Aws\Exception\CredentialsException $e) {
-            // silence
-        } catch (\InvalidArgumentException $e) {
-            // slicence
-        } catch (\Exception $e) {
-            // slicence
         }
 
         // send account created event
         event(new AccountCreated($user, $company));
 
         // create auth token
-        $token = $user->createToken($request->ip());
+        $token = $user->createToken($user->uuid);
 
         return response()->json([
             'status'           => 'success',
             'session'          => $user->uuid,
-            'token'            => $token->plainTextToken,
+            'token'            => $isAdmin ? $token->plainTextToken : null,
             'skipVerification' => $isAdmin,
         ]);
     }
@@ -102,7 +96,7 @@ class OnboardController extends Controller
      */
     public function sendVerificationEmail(Request $request)
     {
-        $user  = $request->user() ?? User::where('uuid', session('user'))->first();
+        $user  = $request->user();
         $email = $request->input('email');
 
         if ($user) {
@@ -114,6 +108,8 @@ class OnboardController extends Controller
 
             // create verification code
             VerificationCode::generateEmailVerificationFor($user);
+        } else {
+            return response()->error('No user found with provided email address.');
         }
 
         return response()->json([
@@ -159,7 +155,7 @@ class OnboardController extends Controller
     public function verifyEmail(Request $request)
     {
         // users uuid as session
-        $session = $request->input('session') ?? session('user');
+        $session = $request->input('session', session('user'));
         $code    = $request->input('code');
 
         // make sure session is found
@@ -189,7 +185,15 @@ class OnboardController extends Controller
         }
 
         // get user
-        $user = $request->user() ?? User::where('uuid', $session)->first();
+        $user = $request->user();
+        if (!$user) {
+            $user = User::where('uuid', $session)->first();
+        }
+
+        // Handle no user
+        if (!$user) {
+            return response()->error('No user found using this email.');
+        }
 
         // get verify time
         $verifiedAt = Carbon::now();
@@ -200,13 +204,16 @@ class OnboardController extends Controller
         } elseif ($verifyCode->for === 'phone_verification') {
             $user->phone_verified_at = $verifiedAt;
         }
+        
 
         $user->status = 'active';
-        $user->save();
+        $user->updateLastLogin();
+        $token = $user->createToken($user->uuid);
 
         return response()->json([
-            'status'      => 'success',
+            'status'      => 'ok',
             'verified_at' => $verifiedAt,
+            'token' => $token->plainTextToken
         ]);
     }
 }
