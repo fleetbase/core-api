@@ -111,11 +111,15 @@ class OnboardController extends Controller
      */
     public function sendVerificationEmail(Request $request)
     {
-        $id        = $request->input('id');
+        $id        = $request->input('session');
+        $email        = $request->input('email');
         $decodedId = base64_decode($id);
 
         // Get user using id
         $user = User::where('uuid', $decodedId)->first();
+        if ($user->email !== $email) {
+            return response()->error('Email address provided does not match for this verification session.');
+        }
 
         if ($user) {
             // create verification code
@@ -138,11 +142,15 @@ class OnboardController extends Controller
      */
     public function sendVerificationSms(Request $request)
     {
-        $id        = $request->input('id');
+        $id        = $request->input('session');
+        $phone        = $request->input('phone');
         $decodedId = base64_decode($id);
 
         // Get user using id
         $user = User::where('uuid', $decodedId)->first();
+        if ($user->phone !== $phone) {
+            return response()->error('Phone number provided does not match for this verification session.');
+        }
 
         if ($user) {
             // create verification code
