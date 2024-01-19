@@ -96,7 +96,7 @@ class OnboardController extends Controller
 
         return response()->json([
             'status'           => 'success',
-            'session'          => $user->uuid,
+            'session'          => base64_encode($user->uuid),
             'token'            => $isAdmin ? $token->plainTextToken : null,
             'skipVerification' => $isAdmin,
         ]);
@@ -111,16 +111,13 @@ class OnboardController extends Controller
      */
     public function sendVerificationEmail(Request $request)
     {
-        $user  = $request->user();
-        $email = $request->input('email');
+        $id = $request->input('id');
+        $decodedId = base64_decode($id);
+
+        // Get user using id
+        $user = User::where('uuid', $decodedId)->first();
 
         if ($user) {
-            // check if email needs to be updated
-            if ($email && $email !== $user->email) {
-                $user->email = $email;
-                $user->save();
-            }
-
             // create verification code
             VerificationCode::generateEmailVerificationFor($user);
         } else {
@@ -128,7 +125,7 @@ class OnboardController extends Controller
         }
 
         return response()->json([
-            'status' => 'success',
+            'status' => 'ok',
         ]);
     }
 
@@ -141,22 +138,19 @@ class OnboardController extends Controller
      */
     public function sendVerificationSms(Request $request)
     {
-        $user  = $request->user() ?? User::where('uuid', session('user'))->first();
-        $phone = $request->input('phone');
+        $id = $request->input('id');
+        $decodedId = base64_decode($id);
+
+        // Get user using id
+        $user = User::where('uuid', $decodedId)->first();
 
         if ($user) {
-            // check if phone needs to be updated
-            if ($phone && $phone !== $user->phone) {
-                $user->phone = $phone;
-                $user->save();
-            }
-
             // create verification code
             VerificationCode::generateSmsVerificationFor($user);
         }
 
         return response()->json([
-            'status' => 'success',
+            'status' => 'ok',
         ]);
     }
 
@@ -170,8 +164,19 @@ class OnboardController extends Controller
     public function verifyEmail(Request $request)
     {
         // users uuid as session
-        $session = $request->input('session', session('user'));
+        $session = $request->input('session');
         $code    = $request->input('code');
+
+        // decode session
+        if (!Str::isUuid($session)) {
+            $session = base64_decode($session);
+        }
+
+        // if still not valid check session
+        if (!Str::isUuid($session)) {
+            $session = session('user');
+        }
+
 
         // make sure session is found
         if (!$session) {
