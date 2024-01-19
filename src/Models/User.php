@@ -104,7 +104,6 @@ class User extends Authenticatable
         'uuid',
         'public_id',
         '_key',
-        'company_uuid',
         'avatar_uuid',
         'username',
         'email',
@@ -127,7 +126,7 @@ class User extends Authenticatable
      *
      * @var array
      */
-    protected $guarded = ['password', 'type'];
+    protected $guarded = ['password', 'type', 'company_uuid'];
 
     /**
      * The attributes that should be hidden for arrays.
@@ -568,7 +567,6 @@ class User extends Authenticatable
             'protocol'     => 'email',
             'reason'       => 'join_company',
         ])->whereJsonContains('recipients', $this->email)->exists();
-
         if ($isAlreadyInvited) {
             return false;
         }

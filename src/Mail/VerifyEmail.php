@@ -5,6 +5,7 @@ namespace Fleetbase\Mail;
 use Fleetbase\Models\VerificationCode;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
+// use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Queue\SerializesModels;
 
@@ -40,6 +41,7 @@ class VerifyEmail extends Mailable
             ->html((new MailMessage())
                     ->greeting($this->greeting)
                     ->line('Welcome to Fleetbase, use the code below to verify your email address and complete registration to Fleetbase.')
+                    ->line('')
                     ->line('Your verification code: ' . $this->verifyCode)
                     ->render()
             );

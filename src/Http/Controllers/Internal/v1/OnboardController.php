@@ -11,6 +11,7 @@ use Fleetbase\Models\User;
 use Fleetbase\Models\VerificationCode;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 
 class OnboardController extends Controller
 {
@@ -38,11 +39,18 @@ class OnboardController extends Controller
         // if first user make admin
         $isAdmin = !User::exists();
 
+        // Get user properties
+        $name = $request->input('name');
+        $email = $request->input('email');
+        $phone = $request->input('phone');
+        $username = Str::slug($name . Str::random(3), '_');
+
         // create user account
         $user = User::create([
-            'name'   => $request->input('name'),
-            'email'  => $request->input('email'),
-            'phone'  => $request->input('phone'),
+            'name'   => $name,
+            'email'  => $email,
+            'phone'  => $phone,
+            'username' => $username,
             'status' => 'active',
         ]);
 
@@ -70,7 +78,14 @@ class OnboardController extends Controller
         try {
             VerificationCode::generateEmailVerificationFor($user);
         } catch (\Throwable $e) {
-            // silence
+            // If phone number is supplied send via SMS
+            if ($user->phone) {
+                try {
+                    VerificationCode::generateSmsVerificationFor($user);
+                } catch (\Throwable $e) {
+                    // silence
+                }
+            }
         }
 
         // send account created event
@@ -204,7 +219,6 @@ class OnboardController extends Controller
         } elseif ($verifyCode->for === 'phone_verification') {
             $user->phone_verified_at = $verifiedAt;
         }
-        
 
         $user->status = 'active';
         $user->updateLastLogin();

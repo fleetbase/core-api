@@ -16,37 +16,7 @@ class OnboardRequest extends FleetbaseRequest
     {
         return true;
     }
-
-    protected function failedValidation(Validator $validator)
-    {
-        $errors   = $validator->errors();
-        $response = [
-            'errors' => [$errors->first()],
-        ];
-        // if more than one error display the others
-        if ($errors->count() > 1) {
-            $response['errors'] = collect($errors->all())
-                ->values()
-                ->toArray();
-        }
-
-        return response()->json($response, 422);
-    }
-
-    /**
-     * Get custom attributes for validator errors.
-     *
-     * @return array
-     */
-    public function attributes()
-    {
-        return collect(array_keys($this->rules()))
-            ->mapWithKeys(function ($key) {
-                return [$key => str_replace(['.', '_'], ' ', $key)];
-            })
-            ->toArray();
-    }
-
+    
     /**
      * Get the validation rules that apply to the request.
      *

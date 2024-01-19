@@ -74,6 +74,7 @@ class CoreServiceProvider extends ServiceProvider
     {
         JsonResource::withoutWrapping();
 
+        $this->__hotfixCommonmarkDeprecation();
         $this->registerCommands();
         $this->registerObservers();
         $this->registerExpansionsFrom();
@@ -445,5 +446,39 @@ class CoreServiceProvider extends ServiceProvider
     private function findPackageNamespace($path = null): ?string
     {
         return Utils::findPackageNamespace($path);
+    }
+
+    /**
+     * Apply a hotfix for a deprecation issue in the league/commonmark package.
+     *
+     * The league/commonmark package triggers deprecation notices using the `trigger_deprecation` function,
+     * which interferes with the normal application flow. This hotfix introduces a custom implementation
+     * of `trigger_deprecation` that specifically skips triggering deprecations for the league/commonmark package.
+     * This allows the application to continue running without being affected by the league/commonmark deprecations.
+     *
+     * @return void
+     */
+    private function __hotfixCommonmarkDeprecation(): void
+    {
+        if (!function_exists('trigger_deprecation')) {
+            /**
+             * Custom implementation of trigger_deprecation.
+             *
+             * @param string $package The name of the Composer package
+             * @param string $version The version of the package
+             * @param string $message The message of the deprecation
+             * @param mixed  ...$args Values to insert in the message using printf() formatting
+             */
+            function trigger_deprecation(string $package, string $version, string $message, mixed ...$args): void
+            {
+                // Check if the package is "league/commonmark" and skip triggering the deprecation
+                if ($package === 'league/commonmark') {
+                    return;
+                }
+
+                // Otherwise, trigger the deprecation as usual
+                @trigger_error(($package || $version ? "Since $package $version: " : '') . ($args ? vsprintf($message, $args) : $message), \E_USER_DEPRECATED);
+            }
+        }
     }
 }

@@ -20,7 +20,6 @@ use Fleetbase\Support\Auth;
 use Fleetbase\Support\Utils;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Str;
 
@@ -210,8 +209,8 @@ class AuthController extends Controller
         $token = Str::random(40);
         $verificationSessionToken = base64_encode($email . '|' . $token);
 
-        // Store in session
-        Cache::put($verificationSessionToken, $token, Carbon::now()->addMinutes(5));
+        // Store in redis
+        Redis::set($token, $verificationSessionToken, Carbon::now()->addMinutes(5));
 
         // If opted to send verification token along with session
         if ($send) {
@@ -243,9 +242,10 @@ class AuthController extends Controller
         $email = $request->input('email');
         $token = $request->input('token');
         $verificationSessionToken = base64_encode($email . '|' . $token);
+        $isValid = Redis::get($token) === $verificationSessionToken;
 
         return response()->json([
-            'valid' => Cache::has($verificationSessionToken)
+            'valid' => $isValid
         ]);
     }
 
@@ -261,9 +261,10 @@ class AuthController extends Controller
         $email = $request->input('email');
         $token = $request->input('token');
         $verificationSessionToken = base64_encode($email . '|' . $token);
+        $isValid = Redis::get($token) === $verificationSessionToken;
 
         // Check in session
-        if (!Cache::has($verificationSessionToken)) {
+        if (!$isValid) {
             return response()->error('Invalid verification session.');
         }
 
@@ -296,9 +297,10 @@ class AuthController extends Controller
         $email = $request->input('email');
         $code    = $request->input('code');
         $verificationSessionToken = base64_encode($email . '|' . $token);
+        $isValid = Redis::get($token) === $verificationSessionToken;
 
         // Check in session
-        if (!Cache::has($verificationSessionToken)) {
+        if (!$isValid) {
             return response()->error('Invalid verification session.');
         }
 
