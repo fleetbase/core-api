@@ -157,6 +157,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     function ($router, $controller) {
                                         $router->post('config', $controller('saveSystemConfig'));
                                         $router->get('config', $controller('getSystemConfig'));
+                                        $router->get('enforce', $controller('shouldEnforce'));
                                     }
                                 );
                                 $router->fleetbaseRoutes('api-events');
@@ -170,8 +171,8 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 );
                                 $router->fleetbaseRoutes('webhook-request-logs');
                                 $router->fleetbaseRoutes('companies', function ($router, $controller) {
-                                    $router->post('enforce', $controller('enforceTwoFactorSettings'));
                                     $router->get('two-fa', $controller('getTwoFactorSettings'));
+                                    $router->post('two-fa', $controller('saveTwoFactorSettings'));
                                 });
                                 $router->fleetbaseRoutes(
                                     'users',

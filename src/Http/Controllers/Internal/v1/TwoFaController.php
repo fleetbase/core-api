@@ -22,6 +22,9 @@ class TwoFaController extends Controller
     public function saveSystemConfig(Request $request)
     {
         $twoFaSettings = $request->array('twoFaSettings');
+        if (isset($twoFaSettings['enabled']) && $twoFaSettings['enabled'] === false) {
+            $twoFaSettings['enforced'] = false;
+        }
         $settings      = TwoFactorAuth::configureTwoFaSettings($twoFaSettings);
 
         return response()->json($settings->value);
@@ -149,5 +152,15 @@ class TwoFaController extends Controller
         } catch (\Exception $e) {
             return response()->json(['ok' => false]);
         }
+    }
+
+    public function shouldEnforce(Request $request)
+    {
+        $user = $request->user();
+        $enforceTwoFa = TwoFactorAuth::shouldEnforce($user);
+
+        return response()->json([
+            'shouldEnforce' => $enforceTwoFa,
+        ]);
     }
 }

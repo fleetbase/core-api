@@ -12,6 +12,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Redis;
 
 /**
  * Class TwoFactorAuth.
@@ -46,7 +47,7 @@ class TwoFactorAuth
         $twoFaSettings = Setting::getByKey('system.2fa');
 
         if (!$twoFaSettings) {
-            $twoFaSettings = static::configureTwoFaSettings(['enabled' => false, 'method' => 'email']);
+            $twoFaSettings = static::configureTwoFaSettings(['enabled' => false, 'method' => 'email', 'enforced' => false]);
         }
 
         return $twoFaSettings;
@@ -98,16 +99,6 @@ class TwoFactorAuth
     public static function saveTwoFaSettingsForCompany(Company $company, array $twoFaSettings = []): Setting
     {
         return static::saveTwoFaSettingsForSubject($company, $twoFaSettings);
-    }
-
-
-    public static function enforceTwoFaForCompanyUsers(Company $company, array $twoFaSettings = []): Setting
-    {
-        $users = $company->users;
-
-        foreach ($users as $user) {
-            return static::saveTwoFaSettingsForSubject($user, $twoFaSettings);
-        }
     }
 
     /**
@@ -329,6 +320,41 @@ class TwoFactorAuth
         return $twoFaSettings->getBoolean('enabled');
     }
 
+    public static function shouldEnforce(User $user): bool
+    {
+        $systemEnforced = static::isSystemEnforced();
+        $companyEnforced = static::isCompanyEnforced($user->company);
+        $userEnabled = static::isEnabled($user);
+
+        return $userEnabled ? !$userEnabled : $systemEnforced || $companyEnforced;
+    }
+
+    /**
+     * Check if Two-Factor Authentication is enforced for company.
+     *
+     * @return bool true if Two-Factor Authentication is enforced, false otherwise
+     */
+    public static function isCompanyEnforced(Company $company): bool
+    {
+        $twoFaSettings = static::getTwoFaSettingsForCompany($company);
+
+        if ($twoFaSettings) {
+            return $twoFaSettings->getBoolean('enforced');
+        }
+        return false;
+    }
+
+    public static function isSystemEnforced(): bool
+    {
+        $twoFaSettings = static::getTwoFaConfiguration();
+
+        if (!$twoFaSettings) {
+            return false;
+        }
+
+        return $twoFaSettings->getBoolean('enforced');
+    }
+
     /**
      * Start a Two-Factor Authentication session.
      *
@@ -401,7 +427,7 @@ class TwoFactorAuth
                     $verificationCodeMatches = $verificationCode->code === $code;
                     if ($verificationCodeMatches) {
                         // Kill the two fa session
-                        Cache::forget($twoFaSessionKey);
+                        Redis::del($twoFaSessionKey);
 
                         // Authenticate the user
                         $token = $user->createToken($user->uuid);
@@ -472,7 +498,7 @@ class TwoFactorAuth
      */
     public static function isTwoFaSessionKeyValid(string $twoFaSessionKey, User $user): bool
     {
-        $exists = Cache::has($twoFaSessionKey);
+        $exists = Redis::exists($twoFaSessionKey);
 
         if ($exists) {
             $parts  = explode(':', $twoFaSessionKey);
@@ -505,7 +531,7 @@ class TwoFactorAuth
         // Get session key and destroy it
         $twoFaSessionKey = static::decryptSessionKey($token, $user);
 
-        return Cache::forget($twoFaSessionKey);
+        return Redis::del($twoFaSessionKey);
     }
 
     /**
@@ -523,7 +549,7 @@ class TwoFactorAuth
         $twoFaSessionKey = 'two_fa_session:' . $user->uuid . ':' . $token;
 
         if ($storeInCache) {
-            Cache::put($twoFaSessionKey, $user->uuid, Carbon::now()->addSeconds($expiresAfter));
+            Redis::set($twoFaSessionKey, $user->uuid, Carbon::now()->addSeconds($expiresAfter));
         }
 
         return $twoFaSessionKey;
