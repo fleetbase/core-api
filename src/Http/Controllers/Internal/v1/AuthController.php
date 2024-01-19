@@ -210,7 +210,8 @@ class AuthController extends Controller
         $verificationSessionToken = base64_encode($email . '|' . $token);
 
         // Store in redis
-        Redis::set($token, $verificationSessionToken, Carbon::now()->addMinutes(5));
+        $expirationTime = Carbon::now()->addMinutes(5)->timestamp;
+        Redis::set($token, $verificationSessionToken, 'EX', $expirationTime);
 
         // If opted to send verification token along with session
         if ($send) {
