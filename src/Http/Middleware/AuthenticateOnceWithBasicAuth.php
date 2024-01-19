@@ -34,9 +34,7 @@ class AuthenticateOnceWithBasicAuth
     /**
      * Authenticate the request using basic authentication.
      *
-     * @param \Illuminate\Http\Request $request
      * @param string|null $connection
-     * @return mixed
      */
     public function authenticatedWithBasic(Request $request, $connection = null)
     {
@@ -109,9 +107,6 @@ class AuthenticateOnceWithBasicAuth
 
     /**
      * Authenticate the request using Sanctum token.
-     *
-     * @param \Laravel\Sanctum\PersonalAccessToken $sanctumToken
-     * @return mixed
      */
     private function authenticateSanctumToken(PersonalAccessToken $sanctumToken)
     {
@@ -129,6 +124,7 @@ class AuthenticateOnceWithBasicAuth
             if ($apiCredential) {
                 // Set api credential session
                 Auth::setApiKey($apiCredential);
+
                 return true;
             }
         }
@@ -137,10 +133,7 @@ class AuthenticateOnceWithBasicAuth
     }
 
     /**
-     * Get an instance of the PersonalAccessToken if valid
-     *
-     * @param string $token
-     * @return \Laravel\Sanctum\PersonalAccessToken
+     * Get an instance of the PersonalAccessToken if valid.
      */
     private function getSanctumToken(string $token): ?PersonalAccessToken
     {

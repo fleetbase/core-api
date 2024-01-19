@@ -487,9 +487,6 @@ class User extends Authenticatable
 
     /**
      * Set the user type.
-     *
-     * @param string $type
-     * @return \Fleetbase\Models\User
      */
     public function setUserType(string $type): User
     {
@@ -591,7 +588,7 @@ class User extends Authenticatable
     /**
      * Check if the user is verified.
      *
-     * @return bool True if the user is verified (either email or phone), false otherwise.
+     * @return bool true if the user is verified (either email or phone), false otherwise
      */
     public function isVerified(): bool
     {
@@ -606,7 +603,7 @@ class User extends Authenticatable
     /**
      * Check if the user is NOT verified.
      *
-     * @return bool True if the user is NOT verified (either email or phone), false otherwise.
+     * @return bool true if the user is NOT verified (either email or phone), false otherwise
      */
     public function isNotVerified(): bool
     {

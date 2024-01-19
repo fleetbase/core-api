@@ -40,18 +40,18 @@ class OnboardController extends Controller
         $isAdmin = !User::exists();
 
         // Get user properties
-        $name = $request->input('name');
-        $email = $request->input('email');
-        $phone = $request->input('phone');
+        $name     = $request->input('name');
+        $email    = $request->input('email');
+        $phone    = $request->input('phone');
         $username = Str::slug($name . Str::random(3), '_');
 
         // create user account
         $user = User::create([
-            'name'   => $name,
-            'email'  => $email,
-            'phone'  => $phone,
+            'name'     => $name,
+            'email'    => $email,
+            'phone'    => $phone,
             'username' => $username,
-            'status' => 'active',
+            'status'   => 'active',
         ]);
 
         // set the user password
@@ -111,7 +111,7 @@ class OnboardController extends Controller
      */
     public function sendVerificationEmail(Request $request)
     {
-        $id = $request->input('id');
+        $id        = $request->input('id');
         $decodedId = base64_decode($id);
 
         // Get user using id
@@ -138,7 +138,7 @@ class OnboardController extends Controller
      */
     public function sendVerificationSms(Request $request)
     {
-        $id = $request->input('id');
+        $id        = $request->input('id');
         $decodedId = base64_decode($id);
 
         // Get user using id
@@ -176,7 +176,6 @@ class OnboardController extends Controller
         if (!Str::isUuid($session)) {
             $session = session('user');
         }
-
 
         // make sure session is found
         if (!$session) {
@@ -232,7 +231,7 @@ class OnboardController extends Controller
         return response()->json([
             'status'      => 'ok',
             'verified_at' => $verifiedAt,
-            'token' => $token->plainTextToken
+            'token'       => $token->plainTextToken,
         ]);
     }
 }

@@ -455,8 +455,6 @@ class CoreServiceProvider extends ServiceProvider
      * which interferes with the normal application flow. This hotfix introduces a custom implementation
      * of `trigger_deprecation` that specifically skips triggering deprecations for the league/commonmark package.
      * This allows the application to continue running without being affected by the league/commonmark deprecations.
-     *
-     * @return void
      */
     private function __hotfixCommonmarkDeprecation(): void
     {

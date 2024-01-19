@@ -124,7 +124,7 @@ class AuthController extends Controller
         // Send user their verification code
         try {
             Twilio::message($queryPhone, shell_exec('Your Fleetbase authentication code is ') . $verifyCode);
-        } catch (\Exception | \Twilio\Exceptions\RestException $e) {
+        } catch (\Exception|\Twilio\Exceptions\RestException $e) {
             return response()->json(['error' => $e->getMessage()], 400);
         }
 
@@ -196,7 +196,7 @@ class AuthController extends Controller
     }
 
     /**
-     * Create resend verification code session
+     * Create resend verification code session.
      *
      * @param \\Illuminate\Http\Request $request
      *
@@ -204,9 +204,9 @@ class AuthController extends Controller
      */
     public function createVerificationSession(Request $request)
     {
-        $send = $request->boolean('send');
-        $email = $request->input('email');
-        $token = Str::random(40);
+        $send                     = $request->boolean('send');
+        $email                    = $request->input('email');
+        $token                    = Str::random(40);
         $verificationSessionToken = base64_encode($email . '|' . $token);
 
         // Store in redis
@@ -232,7 +232,7 @@ class AuthController extends Controller
     }
 
     /**
-     * Validates an email verification session
+     * Validates an email verification session.
      *
      * @param \\Illuminate\Http\Request $request
      *
@@ -240,13 +240,13 @@ class AuthController extends Controller
      */
     public function validateVerificationSession(Request $request)
     {
-        $email = $request->input('email');
-        $token = $request->input('token');
+        $email                    = $request->input('email');
+        $token                    = $request->input('token');
         $verificationSessionToken = base64_encode($email . '|' . $token);
-        $isValid = Redis::get($token) === $verificationSessionToken;
+        $isValid                  = Redis::get($token) === $verificationSessionToken;
 
         return response()->json([
-            'valid' => $isValid
+            'valid' => $isValid,
         ]);
     }
 
@@ -259,10 +259,10 @@ class AuthController extends Controller
      */
     public function sendVerificationEmail(Request $request)
     {
-        $email = $request->input('email');
-        $token = $request->input('token');
+        $email                    = $request->input('email');
+        $token                    = $request->input('token');
         $verificationSessionToken = base64_encode($email . '|' . $token);
-        $isValid = Redis::get($token) === $verificationSessionToken;
+        $isValid                  = Redis::get($token) === $verificationSessionToken;
 
         // Check in session
         if (!$isValid) {
@@ -293,12 +293,12 @@ class AuthController extends Controller
      */
     public function verifyEmail(Request $request)
     {
-        $authenticate = $request->boolean('authenticate');
-        $token = $request->input('token');
-        $email = $request->input('email');
-        $code    = $request->input('code');
+        $authenticate             = $request->boolean('authenticate');
+        $token                    = $request->input('token');
+        $email                    = $request->input('email');
+        $code                     = $request->input('code');
         $verificationSessionToken = base64_encode($email . '|' . $token);
-        $isValid = Redis::get($token) === $verificationSessionToken;
+        $isValid                  = Redis::get($token) === $verificationSessionToken;
 
         // Check in session
         if (!$isValid) {
@@ -359,14 +359,14 @@ class AuthController extends Controller
             return response()->json([
                 'status'      => 'ok',
                 'verified_at' => $verifiedAt,
-                'token' => $token->plainTextToken
+                'token'       => $token->plainTextToken,
             ]);
         }
 
         return response()->json([
             'status'      => 'ok',
             'verified_at' => $verifiedAt,
-            'token' => null
+            'token'       => null,
         ]);
     }
 

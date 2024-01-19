@@ -2,7 +2,6 @@
 
 namespace Fleetbase\Http\Requests;
 
-use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Validation\Rule;
 
 class OnboardRequest extends FleetbaseRequest
@@ -16,7 +15,7 @@ class OnboardRequest extends FleetbaseRequest
     {
         return true;
     }
-    
+
     /**
      * Get the validation rules that apply to the request.
      *
