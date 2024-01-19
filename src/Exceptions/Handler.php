@@ -130,13 +130,13 @@ class Handler extends ExceptionHandler
     /**
      * Check if the given exception should be manually handled.
      *
-     * @param \Exception $exception The exception to check.
+     * @param \Exception $exception the exception to check
      *
-     * @return bool Returns true if the exception should be manually handled, false otherwise.
+     * @return bool returns true if the exception should be manually handled, false otherwise
      */
-    private function shouldManuallyHandleException(\Exception $exception): bool
+    private function shouldManuallyHandleException(\Throwable $exception): bool
     {
-        $type = Utils::classBasename($exception);
+        $type       = Utils::classBasename($exception);
         $exceptions = ['TokenMismatchException', 'ThrottleRequestsException', 'AuthenticationException', 'NotFoundHttpException'];
 
         return in_array($type, $exceptions);
@@ -145,11 +145,11 @@ class Handler extends ExceptionHandler
     /**
      * Manually handle the given exception and return an appropriate JSON response.
      *
-     * @param \Exception $exception The exception to handle.
+     * @param \Exception $exception the exception to handle
      *
-     * @return \Illuminate\Http\JsonResponse|null Returns a JSON response if the exception is handled, null otherwise.
+     * @return \Illuminate\Http\JsonResponse|null returns a JSON response if the exception is handled, null otherwise
      */
-    private function manuallyHandleException(\Exception $exception): ?\Illuminate\Http\JsonResponse
+    private function manuallyHandleException(\Throwable $exception): ?\Illuminate\Http\JsonResponse
     {
         $type = Utils::classBasename($exception);
 
