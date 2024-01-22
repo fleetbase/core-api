@@ -416,18 +416,6 @@ class UserController extends FleetbaseController
      */
     public function validatePassword(ValidatePasswordRequest $request)
     {
-        $user = $request->user();
-        $currentPassword = $request->input('current_password');
-        $confirmPassword = $request->input('confirm_password');
-
-        if (!$user || !$user->checkPassword($currentPassword)) {
-            return response()->error('Invalid current password', 422);
-        }
-
-        if ($currentPassword !== $confirmPassword) {
-            return response()->error('Password is not matching');
-        }
-
         return response()->json(['status' => 'ok']);
     }
 

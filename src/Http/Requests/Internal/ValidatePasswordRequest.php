@@ -3,6 +3,38 @@
 namespace Fleetbase\Http\Requests\Internal;
 
 use Fleetbase\Http\Requests\FleetbaseRequest;
+use Illuminate\Contracts\Validation\Rule;
+
+class ConfirmCurrentPassword implements Rule {
+    protected $user;
+
+    public function __construct($user)
+    {
+        $this->user = $user;
+    }
+
+    /**
+     * Determine if the validation rule passes.
+     *
+     * @param string $attribute
+     *
+     * @return bool
+     */
+    public function passes($attribute, $value)
+    {
+        return $this->user && $this->user->checkPassword($value);
+    }
+
+    /**
+     * Get the validation error message.
+     *
+     * @return string
+     */
+    public function message()
+    {
+        return 'The current password provided is invalid.';
+    }
+}
 
 class ValidatePasswordRequest extends FleetbaseRequest
 {
@@ -24,8 +56,8 @@ class ValidatePasswordRequest extends FleetbaseRequest
     public function rules()
     {
         return [
-            'current_password'      => 'required|string|min:6',
-            'confirm_password'      => 'required|string|min:6|same:current_password',
+            'password'      => ['required', 'string', 'min:4', 'confirmed', new ConfirmCurrentPassword($this->user())],
+            'password_confirmation'      => ['required', 'string'],
         ];
     }
 
@@ -37,9 +69,9 @@ class ValidatePasswordRequest extends FleetbaseRequest
     public function messages()
     {
         return [
-            'current_password.required' => 'The current password is required.',
-            'current_password.string'   => 'The current password must be a string.',
-            'current_password.min'      => 'The current password must be at least 8 characters.',
+            'password.required' => 'The current password is required.',
+            'password.string'   => 'The current password must be a string.',
+            'password.min'      => 'The current password must be at least 8 characters.',
         ];
     }
 }
