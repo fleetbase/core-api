@@ -423,6 +423,11 @@ class User extends Authenticatable
         return $this;
     }
 
+    public function checkPassword(string $password): bool
+    {
+        return Hash::check($password, $this->password);
+    }
+
     /**
      * Deactivate this user.
      */
@@ -585,6 +590,18 @@ class User extends Authenticatable
         return true;
     }
 
+    public function getIdentity(): ?string
+    {
+        $email = data_get($this, 'email');
+        $phone = data_get($this, 'phone');
+
+        if ($email) {
+            return $email;
+        }
+
+        return $phone;
+    }
+    
     /**
      * Check if the user is verified.
      *
