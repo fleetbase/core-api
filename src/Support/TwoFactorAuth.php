@@ -9,7 +9,6 @@ use Fleetbase\Models\VerificationCode;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Redis;
@@ -549,7 +548,8 @@ class TwoFactorAuth
         $twoFaSessionKey = 'two_fa_session:' . $user->uuid . ':' . $token;
 
         if ($storeInCache) {
-            Redis::set($twoFaSessionKey, $user->uuid, Carbon::now()->addSeconds($expiresAfter));
+            $expirationTime = Carbon::now()->addSeconds($expiresAfter)->timestamp;
+            Redis::set($twoFaSessionKey, $user->uuid, 'EX', $expirationTime);
         }
 
         return $twoFaSessionKey;
