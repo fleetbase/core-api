@@ -2,10 +2,8 @@
 
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
-use App\Models\User;
 use Fleetbase\Http\Controllers\Controller;
 use Fleetbase\Models\Setting;
-use Fleetbase\Support\TwoFactorAuth;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;

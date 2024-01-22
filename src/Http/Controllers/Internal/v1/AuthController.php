@@ -56,9 +56,6 @@ class AuthController extends Controller
             return response()->error('No user found by the provided identity.', 401, ['code' => 'no_user']);
         }
 
-        // Create token
-        $token = $user->createToken($user->uuid);
-
         // Check if 2FA enabled
         if (TwoFactorAuth::isEnabled($user)) {
             $twoFaSession = TwoFactorAuth::start($user);
@@ -68,6 +65,9 @@ class AuthController extends Controller
                 'isEnabled'    => true,
             ]);
         }
+
+        // Create token
+        $token = $user->createToken($user->uuid);
 
         return response()->json(['token' => $token->plainTextToken]);
 
