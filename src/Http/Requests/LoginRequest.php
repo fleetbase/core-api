@@ -40,7 +40,7 @@ class LoginRequest extends FleetbaseRequest
     public function rules()
     {
         return [
-            'email'    => 'required|email|exists:users,email',
+            'identity' => 'required|email|exists:users,email',
             'password' => 'required',
         ];
     }
@@ -53,9 +53,9 @@ class LoginRequest extends FleetbaseRequest
     public function messages()
     {
         return [
-            'email.required'    => 'A email is required',
-            'email.exists'      => 'No user found by this email',
-            'email.email'       => 'Email used is invalid',
+            'identity.required'    => 'A email is required',
+            'identity.exists'      => 'No user found by this email',
+            'identity.email'       => 'Email used is invalid',
             'password.required' => 'A password is required',
         ];
     }

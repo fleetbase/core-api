@@ -14,8 +14,7 @@ class Handler extends ExceptionHandler
      *
      * @var array
      */
-    protected $dontReport = [
-    ];
+    protected $dontReport = [];
 
     /**
      * A list of the inputs that are never flashed for validation exceptions.
@@ -79,30 +78,11 @@ class Handler extends ExceptionHandler
      */
     public function render($request, \Throwable $exception)
     {
-        $exceptionType = Utils::classBasename($exception);
-
-        switch ($exceptionType) {
-            case 'TokenMismatchException':
-                return response()->error('Invalid XSRF token sent with request.');
-
-            case 'ThrottleRequestsException':
-                return response()->error('Too many requests.');
-
-            case 'AuthenticationException':
-                return response()->error('Unauthenticated.');
-
-            case 'NotFoundHttpException':
-                return response()->error('There is nothing to see here.');
-
-            case 'IntegratedVendorException':
-                return response()->error($exception->getMessage());
+        if ($this->shouldManuallyHandleException($exception)) {
+            return $this->manuallyHandleException($exception);
         }
 
-        if (app()->environment(['development', 'local'])) {
-            return parent::render($request, $exception);
-        }
-
-        return response()->error('Oops! A backend error has been reported, please try your request again to continue.', 400);
+        return parent::render($request, $exception);
     }
 
     /**
@@ -145,5 +125,49 @@ class Handler extends ExceptionHandler
         }
 
         return $output;
+    }
+
+    /**
+     * Check if the given exception should be manually handled.
+     *
+     * @param \Exception $exception the exception to check
+     *
+     * @return bool returns true if the exception should be manually handled, false otherwise
+     */
+    private function shouldManuallyHandleException(\Throwable $exception): bool
+    {
+        $type       = Utils::classBasename($exception);
+        $exceptions = ['TokenMismatchException', 'ThrottleRequestsException', 'AuthenticationException', 'NotFoundHttpException'];
+
+        return in_array($type, $exceptions);
+    }
+
+    /**
+     * Manually handle the given exception and return an appropriate JSON response.
+     *
+     * @param \Exception $exception the exception to handle
+     *
+     * @return \Illuminate\Http\JsonResponse|null returns a JSON response if the exception is handled, null otherwise
+     */
+    private function manuallyHandleException(\Throwable $exception): ?\Illuminate\Http\JsonResponse
+    {
+        $type = Utils::classBasename($exception);
+
+        switch ($type) {
+            case 'TokenMismatchException':
+                return response()->error('Invalid XSRF token sent with request.');
+
+            case 'ThrottleRequestsException':
+                return response()->error('Too many requests.');
+
+            case 'AuthenticationException':
+                return response()->error('Unauthenticated.');
+
+            case 'NotFoundHttpException':
+                return response()->error('There is nothing to see here.');
+
+            default:
+                return response()->error($exception->getMessage());
+        }
     }
 }

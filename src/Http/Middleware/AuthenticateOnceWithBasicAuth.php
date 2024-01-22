@@ -7,6 +7,7 @@ use Fleetbase\Support\Auth;
 use Fleetbase\Support\Utils;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class AuthenticateOnceWithBasicAuth
 {
@@ -31,15 +32,21 @@ class AuthenticateOnceWithBasicAuth
     }
 
     /**
-     * Handle an incoming request.
+     * Authenticate the request using basic authentication.
+     *
+     * @param string|null $connection
      */
     public function authenticatedWithBasic(Request $request, $connection = null)
     {
         // get secret key
         $token = $request->bearerToken();
-
         if (!$token) {
             return response()->error('Oops! No api credentials found with this request', 401);
+        }
+
+        // Check if sanctum token
+        if ($sanctumToken = $this->getSanctumToken($token)) {
+            return $this->authenticateSanctumToken($sanctumToken);
         }
 
         // Check if secret key
@@ -96,5 +103,45 @@ class AuthenticateOnceWithBasicAuth
         Auth::setApiKey($apiCredential);
 
         return true;
+    }
+
+    /**
+     * Authenticate the request using Sanctum token.
+     */
+    private function authenticateSanctumToken(PersonalAccessToken $sanctumToken)
+    {
+        if ($sanctumToken && $sanctumToken->tokenable instanceof \Fleetbase\Models\User) {
+            // Make sure company is set
+            if (!Str::isUuid($sanctumToken->tokenable->company_uuid)) {
+                return response()->error('Oops! The api credentials provided were not valid', 401);
+            }
+
+            // Set user to session
+            Auth::setSession($sanctumToken->tokenable);
+
+            // Get API Credential for User
+            $apiCredential = ApiCredential::where('company_uuid', $sanctumToken->tokenable->company_uuid)->first();
+            if ($apiCredential) {
+                // Set api credential session
+                Auth::setApiKey($apiCredential);
+
+                return true;
+            }
+        }
+
+        return response()->error('Oops! The api credentials provided were not valid', 401);
+    }
+
+    /**
+     * Get an instance of the PersonalAccessToken if valid.
+     */
+    private function getSanctumToken(string $token): ?PersonalAccessToken
+    {
+        $sanctumToken = PersonalAccessToken::findToken($token);
+        if ($sanctumToken instanceof PersonalAccessToken) {
+            return $sanctumToken;
+        }
+
+        return null;
     }
 }

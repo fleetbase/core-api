@@ -30,7 +30,7 @@ class Money implements CastsAttributes
     public function set($model, $key, $value, $attributes)
     {
         if (is_float($value) || Str::contains($value, '.')) {
-            $value = number_format($value, 2, '.', '');
+            $value = number_format((float) $value, 2, '.', '');
         }
 
         return Utils::numbersOnly($value);

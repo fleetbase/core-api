@@ -104,7 +104,6 @@ class User extends Authenticatable
         'uuid',
         'public_id',
         '_key',
-        'company_uuid',
         'avatar_uuid',
         'username',
         'email',
@@ -118,7 +117,6 @@ class User extends Authenticatable
         'last_login',
         'email_verified_at',
         'phone_verified_at',
-        'type',
         'slug',
         'status',
     ];
@@ -128,7 +126,7 @@ class User extends Authenticatable
      *
      * @var array
      */
-    protected $guarded = ['password'];
+    protected $guarded = ['password', 'type', 'company_uuid'];
 
     /**
      * The attributes that should be hidden for arrays.
@@ -493,6 +491,17 @@ class User extends Authenticatable
     }
 
     /**
+     * Set the user type.
+     */
+    public function setUserType(string $type): User
+    {
+        $this->type = $type;
+        $this->save();
+
+        return $this;
+    }
+
+    /**
      * Accessor to get the types associated with the model instance.
      *
      * @return array an array of types associated with the model instance
@@ -560,7 +569,6 @@ class User extends Authenticatable
             'protocol'     => 'email',
             'reason'       => 'join_company',
         ])->whereJsonContains('recipients', $this->email)->exists();
-
         if ($isAlreadyInvited) {
             return false;
         }
@@ -592,5 +600,30 @@ class User extends Authenticatable
         }
 
         return $phone;
+    }
+    
+    /**
+     * Check if the user is verified.
+     *
+     * @return bool true if the user is verified (either email or phone), false otherwise
+     */
+    public function isVerified(): bool
+    {
+        // if admin bypass
+        if ($this->type === 'admin') {
+            return true;
+        }
+
+        return !empty($this->email_verified_at) || !empty($this->phone_verified_at);
+    }
+
+    /**
+     * Check if the user is NOT verified.
+     *
+     * @return bool true if the user is NOT verified (either email or phone), false otherwise
+     */
+    public function isNotVerified(): bool
+    {
+        return $this->isVerified() === false;
     }
 }
