@@ -4,6 +4,7 @@ namespace Fleetbase\Models;
 
 use Fleetbase\Casts\Json;
 use Fleetbase\Notifications\UserInvited;
+use Fleetbase\Support\Auth;
 use Fleetbase\Support\Utils;
 use Fleetbase\Traits\Expandable;
 use Fleetbase\Traits\Filterable;
@@ -423,6 +424,12 @@ class User extends Authenticatable
         return $this;
     }
 
+    /**
+     * Checks if password provided is the correct and current password for the user
+     *
+     * @param string $password
+     * @return boolean
+     */
     public function checkPassword(string $password): bool
     {
         return Hash::check($password, $this->password);

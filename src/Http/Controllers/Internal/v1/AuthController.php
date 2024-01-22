@@ -66,11 +66,6 @@ class AuthController extends Controller
             ]);
         }
 
-        // Create token
-        $token = $user->createToken($user->uuid);
-
-        return response()->json(['token' => $token->plainTextToken]);
-
         if (Auth::isInvalidPassword($password, $user->password)) {
             return response()->error('Authentication failed using password provided.', 401, ['code' => 'invalid_password']);
         }
@@ -79,6 +74,7 @@ class AuthController extends Controller
             return response()->error('User is not verified.', 400, ['code' => 'not_verified']);
         }
 
+        // Login
         $user->updateLastLogin();
         $token = $user->createToken($user->uuid);
 
