@@ -5,7 +5,8 @@ namespace Fleetbase\Http\Requests\Internal;
 use Fleetbase\Http\Requests\FleetbaseRequest;
 use Illuminate\Contracts\Validation\Rule;
 
-class ConfirmCurrentPassword implements Rule {
+class ConfirmCurrentPassword implements Rule
+{
     protected $user;
 
     public function __construct($user)
@@ -56,7 +57,7 @@ class ValidatePasswordRequest extends FleetbaseRequest
     public function rules()
     {
         return [
-            'password'      => ['required', 'string', 'min:4', 'confirmed', new ConfirmCurrentPassword($this->user())],
+            'password'                   => ['required', 'string', 'min:4', 'confirmed', new ConfirmCurrentPassword($this->user())],
             'password_confirmation'      => ['required', 'string'],
         ];
     }

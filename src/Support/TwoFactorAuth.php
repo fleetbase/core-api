@@ -9,9 +9,9 @@ use Fleetbase\Models\VerificationCode;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
-use Illuminate\Support\Facades\Redis;
 
 /**
  * Class TwoFactorAuth.
@@ -321,9 +321,9 @@ class TwoFactorAuth
 
     public static function shouldEnforce(User $user): bool
     {
-        $systemEnforced = static::isSystemEnforced();
+        $systemEnforced  = static::isSystemEnforced();
         $companyEnforced = static::isCompanyEnforced($user->company);
-        $userEnabled = static::isEnabled($user);
+        $userEnabled     = static::isEnabled($user);
 
         return $userEnabled ? !$userEnabled : $systemEnforced || $companyEnforced;
     }
@@ -340,6 +340,7 @@ class TwoFactorAuth
         if ($twoFaSettings) {
             return $twoFaSettings->getBoolean('enforced');
         }
+
         return false;
     }
 

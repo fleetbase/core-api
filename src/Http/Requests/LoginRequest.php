@@ -56,7 +56,7 @@ class LoginRequest extends FleetbaseRequest
             'identity.required'    => 'A email is required',
             'identity.exists'      => 'No user found by this email',
             'identity.email'       => 'Email used is invalid',
-            'password.required' => 'A password is required',
+            'password.required'    => 'A password is required',
         ];
     }
 }

@@ -189,6 +189,8 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                         $router->post('change-password', $controller('changeUserPassword'));
                                         $router->post('two-fa', $controller('saveTwoFactorSettings'));
                                         $router->get('two-fa', $controller('getTwoFactorSettings'));
+                                        $router->post('locale', $controller('setUserLocale'));
+                                        $router->get('locale', $controller('getUserLocale'));
                                     }
                                 );
                                 $router->fleetbaseRoutes('user-devices');

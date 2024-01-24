@@ -74,20 +74,6 @@ class OnboardController extends Controller
             'status'       => 'active',
         ]);
 
-        // create verification code
-        try {
-            VerificationCode::generateEmailVerificationFor($user);
-        } catch (\Throwable $e) {
-            // If phone number is supplied send via SMS
-            if ($user->phone) {
-                try {
-                    VerificationCode::generateSmsVerificationFor($user);
-                } catch (\Throwable $e) {
-                    // silence
-                }
-            }
-        }
-
         // send account created event
         event(new AccountCreated($user, $company));
 
@@ -111,9 +97,9 @@ class OnboardController extends Controller
      */
     public function sendVerificationEmail(Request $request)
     {
-        $id        = $request->input('session');
+        $id           = $request->input('session');
         $email        = $request->input('email');
-        $decodedId = base64_decode($id);
+        $decodedId    = base64_decode($id);
 
         // Get user using id
         $user = User::where('uuid', $decodedId)->first();
@@ -142,9 +128,9 @@ class OnboardController extends Controller
      */
     public function sendVerificationSms(Request $request)
     {
-        $id        = $request->input('session');
+        $id           = $request->input('session');
         $phone        = $request->input('phone');
-        $decodedId = base64_decode($id);
+        $decodedId    = base64_decode($id);
 
         // Get user using id
         $user = User::where('uuid', $decodedId)->first();

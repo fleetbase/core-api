@@ -61,18 +61,17 @@ class CompanyController extends FleetbaseController
         return response()->json($twoFaSettings->value);
     }
 
-
     /**
      * Save the two factor authentication settings for the current company.
      *
-     * @param \Illuminate\Http\Request $request The HTTP request.
+     * @param \Illuminate\Http\Request $request the HTTP request
      *
      * @return \Illuminate\Http\Response
      */
     public function saveTwoFactorSettings(Request $request)
     {
         $twoFaSettings = $request->array('twoFaSettings');
-        $company = Auth::getCompany();
+        $company       = Auth::getCompany();
 
         if (!$company) {
             return response()->error('No company session found', 401);

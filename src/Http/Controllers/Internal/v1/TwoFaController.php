@@ -4,7 +4,6 @@ namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Http\Controllers\Controller;
 use Fleetbase\Http\Requests\TwoFaValidationRequest;
-use Fleetbase\Models\Company;
 use Fleetbase\Support\TwoFactorAuth;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -156,7 +155,7 @@ class TwoFaController extends Controller
 
     public function shouldEnforce(Request $request)
     {
-        $user = $request->user();
+        $user         = $request->user();
         $enforceTwoFa = TwoFactorAuth::shouldEnforce($user);
 
         return response()->json([

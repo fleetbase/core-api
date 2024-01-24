@@ -40,6 +40,13 @@ class Country implements \JsonSerializable
     protected $emoji;
 
     /**
+     * The country languages.
+     *
+     * @var array
+     */
+    protected $languages;
+
+    /**
      * Country Data.
      *
      * @var array
@@ -63,11 +70,12 @@ class Country implements \JsonSerializable
             $data = static::all()->where('cca2', $code)->first();
         }
 
-        $this->name     = $data['name'] = Utils::or($data, ['name.common', 'name.official', 'name_long', 'name_en']);
-        $this->currency = $data['currency'] = Utils::or($data, ['currencies.0', 'currencies.0.name']);
-        $this->emoji    = $data['emoji'] = Utils::get($data, 'flag.emoji');
-        $this->code     = $code;
-        $this->data     = $data;
+        $this->name         = $data['name'] = Utils::or($data, ['name.common', 'name.official', 'name_long', 'name_en']);
+        $this->currency     = $data['currency'] = Utils::or($data, ['currencies.0', 'currencies.0.name']);
+        $this->emoji        = $data['emoji'] = Utils::get($data, 'flag.emoji');
+        $this->languages    = $data['languages'] = Utils::get($data, 'languages');
+        $this->code         = $code;
+        $this->data         = $data;
 
         foreach ($data as $key => $value) {
             $this->{$key} = $value;

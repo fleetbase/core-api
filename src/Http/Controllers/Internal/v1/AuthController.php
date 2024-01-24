@@ -445,7 +445,7 @@ class AuthController extends Controller
         $companyDetails = $request->input('company');
 
         $newUser = Auth::register($userDetails, $companyDetails);
-        $token = $newUser->createToken($newUser->uuid);
+        $token   = $newUser->createToken($newUser->uuid);
 
         return response()->json(['token' => $token->plainTextToken]);
     }
