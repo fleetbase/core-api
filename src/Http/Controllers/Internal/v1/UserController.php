@@ -10,13 +10,16 @@ use Fleetbase\Http\Requests\Internal\AcceptCompanyInvite;
 use Fleetbase\Http\Requests\Internal\InviteUserRequest;
 use Fleetbase\Http\Requests\Internal\ResendUserInvite;
 use Fleetbase\Http\Requests\Internal\UpdatePasswordRequest;
+use Fleetbase\Http\Requests\Internal\ValidatePasswordRequest;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\Invite;
+use Fleetbase\Models\Setting;
 use Fleetbase\Models\User;
 use Fleetbase\Notifications\UserAcceptedCompanyInvite;
 use Fleetbase\Notifications\UserInvited;
 use Fleetbase\Support\NotificationRegistry;
+use Fleetbase\Support\TwoFactorAuth;
 use Fleetbase\Support\Utils;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -51,6 +54,43 @@ class UserController extends FleetbaseController
                 'user' => $user,
             ]
         );
+    }
+
+    /**
+     * Get the current user's two factor authentication settings.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function getTwoFactorSettings(Request $request)
+    {
+        $user = $request->user();
+
+        if (!$user) {
+            return response()->error('No user session found', 401);
+        }
+
+        $twoFaSettings = TwoFactorAuth::getTwoFaSettingsForUser($user);
+
+        return response()->json($twoFaSettings->value);
+    }
+
+    /**
+     * Save the current user's two factor authentication settings.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function saveTwoFactorSettings(Request $request)
+    {
+        $twoFaSettings = $request->array('twoFaSettings');
+        $user          = $request->user();
+
+        if (!$user) {
+            return response()->error('No user session found', 401);
+        }
+
+        $twoFaSettings = TwoFactorAuth::saveTwoFaSettingsForUser($user, $twoFaSettings);
+
+        return response()->json($twoFaSettings->value);
     }
 
     /**
@@ -366,5 +406,68 @@ class UserController extends FleetbaseController
         $json['driver'] = $user->driver;
 
         return response()->json(['user' => $user]);
+    }
+
+    /**
+     * Validate the user's current password.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function validatePassword(ValidatePasswordRequest $request)
+    {
+        return response()->json(['status' => 'ok']);
+    }
+
+    /**
+     * Change the user's password.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function changeUserPassword(UpdatePasswordRequest $request)
+    {
+        $user               = $request->user();
+        $newPassword        = $request->input('password');
+        $newConfirmPassword = $request->input('password_confirmation');
+
+        if ($newPassword !== $newConfirmPassword) {
+            return response()->error('Password is not matching');
+        }
+
+        $user->changePassword($newPassword);
+
+        return response()->json(['status' => 'ok']);
+    }
+
+    /**
+     * Save the user selected locale.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function setUserLocale(Request $request)
+    {
+        $locale           = $request->input('locale', 'en-us');
+        $user             = $request->user();
+        $localeSettingKey = 'user.' . $user->uuid . '.locale';
+
+        // Persist to database
+        Setting::configure($localeSettingKey, $locale);
+
+        return response()->json(['status' => 'ok']);
+    }
+
+    /**
+     * Get the user selected locale.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function getUserLocale(Request $request)
+    {
+        $user             = $request->user();
+        $localeSettingKey = 'user.' . $user->uuid . '.locale';
+
+        // Get from database
+        $locale = Setting::lookup($localeSettingKey, 'en-us');
+
+        return response()->json(['status' => 'ok', 'locale' => $locale]);
     }
 }
