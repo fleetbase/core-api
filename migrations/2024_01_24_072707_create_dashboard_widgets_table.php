@@ -17,7 +17,8 @@ class CreateDashboardWidgetsTable extends Migration
             $table->unsignedBigInteger('dashboard_id');
             $table->timestamp('created_at')->nullable()->index();
             $table->timestamp('updated_at')->nullable();
-
+            $table->softDeletes();
+            
             // Define foreign key relationship
             $table->foreign('dashboard_id')->references('id')->on('dashboards')->onDelete('cascade');
         });
