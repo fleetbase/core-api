@@ -28,6 +28,12 @@ class DashboardWidget extends Model
         'options',
         'dashboard_uuid',
     ];
+
+    protected $casts = [
+        'grid_options' => Json::class,
+        'options' => Json::class,
+    ];
+
     /**
      * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
      */
@@ -36,14 +42,5 @@ class DashboardWidget extends Model
         return $this->belongsTo(Dashboard::class);
     }
 
-    public function getPluralName()
-    {
-        // Your implementation here
-    }
-
-    public function getSingularName()
-    {
-        // Your implementation here
-    }
 }
 

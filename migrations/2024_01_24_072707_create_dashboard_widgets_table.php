@@ -10,17 +10,14 @@ class CreateDashboardWidgetsTable extends Migration
         Schema::create('dashboard_widgets', function (Blueprint $table) {
             $table->id();
             $table->string('uuid', 191)->nullable()->index();
+            $table->uuid('dashboard_uuid')->nullable()->index();
             $table->string('name');
             $table->string('component');
             $table->json('grid_options');
             $table->json('options');
-            $table->unsignedBigInteger('dashboard_id');
             $table->timestamp('created_at')->nullable()->index();
             $table->timestamp('updated_at')->nullable();
             $table->softDeletes();
-            
-            // Define foreign key relationship
-            $table->foreign('dashboard_id')->references('id')->on('dashboards')->onDelete('cascade');
         });
     }
 

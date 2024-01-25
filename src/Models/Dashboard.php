@@ -25,5 +25,13 @@ class Dashboard extends Model
     protected $fillable = [
         'name',
     ];
+    
+    /**
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
+     */
+    public function widgets()
+    {
+        return $this->belongsToMany(Dashboard_Widget::class, 'dashboard_widgets');
+    }
 }
 
