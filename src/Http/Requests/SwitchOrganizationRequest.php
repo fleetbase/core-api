@@ -2,8 +2,7 @@
 
 namespace Fleetbase\Http\Requests;
 
-use Fleetbase\Support\Utils;
-use Illuminate\Support\Str;
+use Fleetbase\Support\Http;
 
 class SwitchOrganizationRequest extends FleetbaseRequest
 {
@@ -14,7 +13,7 @@ class SwitchOrganizationRequest extends FleetbaseRequest
      */
     public function authorize()
     {
-        return true;
+        return $this->session()->exists('user');
     }
 
     /**
@@ -25,16 +24,7 @@ class SwitchOrganizationRequest extends FleetbaseRequest
     public function rules()
     {
         return [
-            'next' => ['required', $this->isApiRequest() ? 'exists:companies,public_id' : 'exists:companies,uuid'],
+            'next' => ['required', Http::isPublicRequest() ? 'exists:companies,public_id' : 'exists:companies,uuid'],
         ];
-    }
-
-    public function isApiRequest()
-    {
-        $routeNamespace        = Utils::get($this->route(), 'action.namespace');
-        $isFleetOpsApiRequest  = $routeNamespace === 'Fleetbase\Http\Controllers\Api\v1';
-        $isNavigatorApiRequest = Str::startsWith($this->route()->uri, 'navigator/v1');
-
-        return $isFleetOpsApiRequest || $isNavigatorApiRequest;
     }
 }
