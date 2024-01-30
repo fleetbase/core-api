@@ -258,7 +258,10 @@ class TwoFactorAuth
             }
 
             // create verification code
-            return VerificationCode::generateSmsVerificationFor($user, '2fa', $messageCallback, [], $expiresAfter);
+            return VerificationCode::generateSmsVerificationFor($user, '2fa', [
+                'messageCallback' => $messageCallback,
+                'expiresAfter' => $expiresAfter
+            ]);
         }
 
         if ($method === 'email') {
@@ -267,15 +270,14 @@ class TwoFactorAuth
                 throw new \Exception('No email to send 2FA code to.');
             }
 
-            // 2FA Message Lines
-            $linesCallback = function ($verificationCode) {
-                return [
-                    new HtmlString('<p style="font-family: monospace;">Your two-factor authentication code is: <strong>' . $verificationCode->code . '</strong></p>'),
-                ];
-            };
-
             // create verification code
-            return VerificationCode::generateEmailVerificationFor($user, '2fa', $messageCallback, $linesCallback, [], $expiresAfter);
+            return VerificationCode::generateEmailVerificationFor($user, '2fa', [
+                'subject' => $messageCallback,
+                'content' => function ($verificationCode) {
+                    return '<p style="font-family: monospace;">Your two-factor authentication code is: <strong>' . $verificationCode->code . '</strong></p>';
+                },
+                'expiresAfter' => $expiresAfter
+            ]);
         }
 
         throw new \Exception('Invalid 2FA method selected in settings.');

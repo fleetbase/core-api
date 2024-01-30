@@ -7,6 +7,7 @@ use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\Searchable;
 use Spatie\Activitylog\Traits\LogsActivity;
+use Spatie\Activitylog\LogOptions;
 
 class WebhookEndpoint extends Model
 {
@@ -80,6 +81,24 @@ class WebhookEndpoint extends Model
      * @var string
      */
     protected static $logName = 'webhook_endpoint';
+
+    /**
+     * Get the activity log options for the model.
+     *
+     * @return \Spatie\Activitylog\LogOptions
+     */
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly([
+                'url',
+                'mode',
+                'version',
+                'description',
+                'events'
+            ])
+            ->logOnlyDirty();
+    }
 
     /**
      * @return \Illuminate\Database\Eloquent\Relations\BelongsTo

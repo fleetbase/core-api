@@ -9,7 +9,6 @@ use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasUuid;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
-use Vinkla\Hashids\Facades\Hashids;
 
 class Invite extends Model
 {
@@ -98,7 +97,8 @@ class Invite extends Model
         parent::boot();
         static::creating(function ($model) {
             // generate uri
-            $uri = lcfirst(Hashids::encode(time(), rand(), rand()));
+            $sqids = new \Sqids\Sqids();
+            $uri = lcfirst($sqids->encode([time(), rand(), rand()]));
             $uri = substr($uri, 0, 12);
 
             $model->uri = $uri;

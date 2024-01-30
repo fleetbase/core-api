@@ -14,9 +14,9 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Mimey\MimeTypes;
 use Spatie\Activitylog\Traits\LogsActivity;
+use Spatie\Activitylog\LogOptions;
 use Spatie\Sluggable\HasSlug;
 use Spatie\Sluggable\SlugOptions;
-use Vinkla\Hashids\Facades\Hashids;
 
 class File extends Model
 {
@@ -107,6 +107,23 @@ class File extends Model
         return SlugOptions::create()
             ->generateSlugsFrom('original_filename')
             ->saveSlugsTo('slug');
+    }
+
+    /**
+     * Get the activity log options for the model.
+     *
+     * @return \Spatie\Activitylog\LogOptions
+     */
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly([
+                'subject_uuid',
+                'bucket',
+                'disk',
+                'path'
+            ])
+            ->logOnlyDirty();
     }
 
     /**
@@ -303,8 +320,9 @@ class File extends Model
         if ($request->hasFile('file')) {
             $extension = strtolower($file->getClientOriginalExtension());
             $extension = Str::startsWith($extension, '.') ? $extension : '.' . $extension;
+            $sqids = new \Sqids\Sqids();
 
-            return Hashids::encode(strlen($file->hashName()), time()) . $extension;
+            return $sqids->encode([strlen($file->hashName()), time()]) . $extension;
         }
 
         return static::randomFileName($extension);

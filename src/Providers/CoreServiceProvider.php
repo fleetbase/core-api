@@ -76,12 +76,16 @@ class CoreServiceProvider extends ServiceProvider
 
         $this->__hotfixCommonmarkDeprecation();
         $this->registerCommands();
+        $this->scheduleCommands(function ($schedule) {
+            $schedule->command('cache:prune-stale-tags')->hourly();
+        });
         $this->registerObservers();
         $this->registerExpansionsFrom();
         $this->registerMiddleware();
         $this->registerNotifications();
         $this->loadRoutesFrom(__DIR__ . '/../routes.php');
         $this->loadMigrationsFrom(__DIR__ . '/../../migrations');
+        $this->loadViewsFrom(__DIR__ . '/../../views', 'fleetbase');
         $this->mergeConfigFrom(__DIR__ . '/../../config/database.connections.php', 'database.connections');
         $this->mergeConfigFrom(__DIR__ . '/../../config/database.redis.php', 'database.redis');
         $this->mergeConfigFrom(__DIR__ . '/../../config/broadcasting.connections.php', 'broadcasting.connections');
