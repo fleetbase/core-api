@@ -12,6 +12,7 @@ class CreateDashboardsTable extends Migration
             $table->string('uuid')->nullable()->index();
             $table->string('owner_uuid')->nullable()->index();
             $table->string('name');
+            $table->boolean('is_default')->default(false);
             $table->softDeletes();
             $table->timestamp('created_at')->nullable()->index();
             $table->timestamp('updated_at')->nullable();

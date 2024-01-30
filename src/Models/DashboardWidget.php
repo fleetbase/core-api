@@ -33,14 +33,5 @@ class DashboardWidget extends Model
         'grid_options' => Json::class,
         'options' => Json::class,
     ];
-
-    /**
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
-     */
-    public function dashboard()
-    {
-        return $this->belongsTo(Dashboard::class);
-    }
-
 }
 

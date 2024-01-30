@@ -8,6 +8,7 @@ use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\Searchable;
 use Illuminate\Support\Facades\Session;
+use Fleetbase\Models\DashboardWidget;
 
 class Dashboard extends Model
 {
@@ -28,16 +29,16 @@ class Dashboard extends Model
         'owner_uuid'
     ];
     
-    //  protected $with = ['widgets'];
+    protected $with = ['widgets'];
     
     protected static function boot()
     {
         parent::boot();
 
         static::creating(function ($dashboard) {
-            // Ensure session('user') is set before trying to access it
             $userId = Session::has('user') ? Session::get('user') : null;
             
+            // Set the owner UUID for the dashboard during creation
             $dashboard->owner_uuid = $userId;
         });
     }
@@ -47,9 +48,7 @@ class Dashboard extends Model
      */
     public function widgets()
     {
-        return $this->belongsToMany(DashboardWidget::class, 'dashboard_widgets as dw1', 'dashboard_uuid', 'uuid')
-            ->withPivot('position', 'size')
-            ->orderBy('dw1.position', 'asc');
+        return $this->hasMany(DashboardWidget::class);
     }
 
 }

@@ -17,8 +17,8 @@ return new class extends Migration
             $table->foreign('dashboard_uuid')
                   ->references('uuid') 
                   ->on('dashboards')
-                  ->onUpdate('NO ACTION')
-                  ->onDelete('NO ACTION');
+                  ->onUpdate('CASCADE')
+                  ->onDelete('CASCADE');
         });
     }
 
