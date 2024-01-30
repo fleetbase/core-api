@@ -186,7 +186,9 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     $router->delete('bulk-delete', $controller('bulkDelete'));
                                     $router->post('save-settings', $controller('saveSettings'));
                                 });
-                                $router->fleetbaseRoutes('dashboards');
+                                $router->fleetbaseRoutes('dashboards', function ($router, $controller) {
+                                    $router->post('switch', $controller('switchDashboard'));
+                                });
                                 $router->fleetbaseRoutes('dashboard-widgets');
                             }
                         );
