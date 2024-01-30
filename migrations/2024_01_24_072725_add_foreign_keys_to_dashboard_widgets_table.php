@@ -14,7 +14,11 @@ return new class extends Migration
     public function up()
     {
         Schema::table('dashboard_widgets', function (Blueprint $table) {
-            $table->foreign(['dashboard_uuid'])->references(['uuid'])->on('dashboards')->onUpdate('NO ACTION')->onDelete('NO ACTION');
+            $table->foreign('dashboard_uuid')
+                  ->references('uuid') 
+                  ->on('dashboards')
+                  ->onUpdate('NO ACTION')
+                  ->onDelete('NO ACTION');
         });
     }
 
@@ -26,7 +30,7 @@ return new class extends Migration
     public function down()
     {
         Schema::table('dashboard_widgets', function (Blueprint $table) {
-            $table->dropForeign('dashboard_widgets_dashboard_uuid_foreign');
+            $table->dropForeign(['dashboard_uuid']);
         });
     }
 };

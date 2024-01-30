@@ -28,6 +28,8 @@ class Dashboard extends Model
         'owner_uuid'
     ];
     
+    //  protected $with = ['widgets'];
+    
     protected static function boot()
     {
         parent::boot();
@@ -45,7 +47,10 @@ class Dashboard extends Model
      */
     public function widgets()
     {
-        return $this->belongsToMany(Dashboard_Widget::class, 'dashboard_widgets');
+        return $this->belongsToMany(DashboardWidget::class, 'dashboard_widgets as dw1', 'dashboard_uuid', 'uuid')
+            ->withPivot('position', 'size')
+            ->orderBy('dw1.position', 'asc');
     }
+
 }
 
