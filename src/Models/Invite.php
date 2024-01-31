@@ -98,8 +98,8 @@ class Invite extends Model
         static::creating(function ($model) {
             // generate uri
             $sqids = new \Sqids\Sqids();
-            $uri = lcfirst($sqids->encode([time(), rand(), rand()]));
-            $uri = substr($uri, 0, 12);
+            $uri   = lcfirst($sqids->encode([time(), rand(), rand()]));
+            $uri   = substr($uri, 0, 12);
 
             $model->uri = $uri;
 

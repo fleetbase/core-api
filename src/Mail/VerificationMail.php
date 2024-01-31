@@ -3,12 +3,12 @@
 namespace Fleetbase\Mail;
 
 use Fleetbase\Models\VerificationCode;
-use Illuminate\Mail\Mailable;
-use Illuminate\Mail\Mailables\Envelope;
-use Illuminate\Mail\Mailables\Content;
-use Illuminate\Queue\SerializesModels;
-// use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Bus\Queueable;
+use Illuminate\Mail\Mailable;
+use Illuminate\Mail\Mailables\Content;
+use Illuminate\Mail\Mailables\Envelope;
+// use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Queue\SerializesModels;
 
 class VerificationMail extends Mailable
 {
@@ -17,15 +17,11 @@ class VerificationMail extends Mailable
 
     /**
      * The verification code to email.
-     *
-     * @var \Fleetbase\Models\VerificationCode
      */
     private VerificationCode $verificationCode;
 
     /**
      * Custom content to render if supplied.
-     *
-     * @var string|null
      */
     private ?string $content;
 
@@ -34,16 +30,14 @@ class VerificationMail extends Mailable
      *
      * @return void
      */
-    public function __construct(VerificationCode $verificationCode, ?string $content = null)
+    public function __construct(VerificationCode $verificationCode, string $content = null)
     {
         $this->verificationCode = $verificationCode;
-        $this->content = $content;
+        $this->content          = $content;
     }
 
     /**
      * Get the message content definition.
-     * 
-     * @return \Illuminate\Mail\Mailables\Envelope
      */
     public function envelope(): Envelope
     {
@@ -54,19 +48,17 @@ class VerificationMail extends Mailable
 
     /**
      * Get the message content definition.
-     * 
-     * @return \Illuminate\Mail\Mailables\Content
      */
     public function content(): Content
     {
         return new Content(
-            html: 'fleetbase::mail.verification',
+            markdown: 'fleetbase::mail.verification',
             with: [
-                'appName' => config('app.name'),
+                'appName'     => config('app.name'),
                 'currentHour' => now()->hour,
-                'user' => $this->verificationCode->subject,
-                'code' => $this->verificationCode->code,
-                'content' => $this->content
+                'user'        => $this->verificationCode->subject,
+                'code'        => $this->verificationCode->code,
+                'content'     => $this->content,
             ]
         );
     }

@@ -8,6 +8,7 @@ use Fleetbase\Support\Utils;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -86,6 +87,7 @@ class CoreServiceProvider extends ServiceProvider
         $this->loadRoutesFrom(__DIR__ . '/../routes.php');
         $this->loadMigrationsFrom(__DIR__ . '/../../migrations');
         $this->loadViewsFrom(__DIR__ . '/../../views', 'fleetbase');
+        $this->registerCustomBladeComponents();
         $this->mergeConfigFrom(__DIR__ . '/../../config/database.connections.php', 'database.connections');
         $this->mergeConfigFrom(__DIR__ . '/../../config/database.redis.php', 'database.redis');
         $this->mergeConfigFrom(__DIR__ . '/../../config/broadcasting.connections.php', 'broadcasting.connections');
@@ -101,6 +103,16 @@ class CoreServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__ . '/../../config/laravel-mysql-s3-backup.php', 'laravel-mysql-s3-backup');
         $this->mergeConfigFromSettings();
         $this->addServerIpAsAllowedOrigin();
+    }
+
+    /**
+     * Registers Fleetbase provided blade components.
+     *
+     * @return void
+     */
+    public function registerCustomBladeComponents()
+    {
+        Blade::component('fleetbase::layout.mail', 'mail-layout');
     }
 
     /**

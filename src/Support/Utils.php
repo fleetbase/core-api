@@ -32,7 +32,7 @@ class Utils
      *
      * @param string $subdomain
      */
-    public static function consoleUrl(string $path, ?array $queryParams = [], $subdomain = null): string
+    public static function consoleUrl(string $path = '', ?array $queryParams = [], $subdomain = null): string
     {
         // prepare segment variables
         $isLocalDevelopment = app()->environment(['local', 'development']);
@@ -1228,8 +1228,8 @@ class Utils
     public static function generatePublicId(string $type): string
     {
         $sqids = new \Sqids\Sqids();
-        $id = lcfirst($sqids->encode([time(), rand(), rand()]));
-        $id = substr($id, 0, 7);
+        $id    = lcfirst($sqids->encode([time(), rand(), rand()]));
+        $id    = substr($id, 0, 7);
 
         return $type . '_' . $id;
     }
@@ -2177,7 +2177,7 @@ class Utils
             // Handle the case where $url is null
             return null;
         }
-        
+
         // Check if the URL already starts with 'http://' or 'https://'
         if (strpos($url, 'http://') !== 0 && strpos($url, 'https://') !== 0) {
             // Check if the URL starts with 'www.'

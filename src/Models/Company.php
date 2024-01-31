@@ -112,8 +112,8 @@ class Company extends Model
      * @var array
      */
     protected $casts = [
-        'options' => Json::class,
-        'trial_ends_at' => 'datetime'
+        'options'       => Json::class,
+        'trial_ends_at' => 'datetime',
     ];
 
     /**

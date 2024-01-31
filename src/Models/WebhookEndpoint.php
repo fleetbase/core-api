@@ -6,8 +6,8 @@ use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\Searchable;
-use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 class WebhookEndpoint extends Model
 {
@@ -62,42 +62,11 @@ class WebhookEndpoint extends Model
     protected $hidden = ['apiCredential'];
 
     /**
-     * Properties which activity needs to be logged.
-     *
-     * @var array
-     */
-    protected static $logAttributes = '*';
-
-    /**
-     * Do not log empty changed.
-     *
-     * @var bool
-     */
-    protected static $submitEmptyLogs = false;
-
-    /**
-     * The name of the subject to log.
-     *
-     * @var string
-     */
-    protected static $logName = 'webhook_endpoint';
-
-    /**
      * Get the activity log options for the model.
-     *
-     * @return \Spatie\Activitylog\LogOptions
      */
     public function getActivitylogOptions(): LogOptions
     {
-        return LogOptions::defaults()
-            ->logOnly([
-                'url',
-                'mode',
-                'version',
-                'description',
-                'events'
-            ])
-            ->logOnlyDirty();
+        return LogOptions::defaults()->logOnly(['*'])->logOnlyDirty();
     }
 
     /**

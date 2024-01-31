@@ -26,5 +26,9 @@ return [
     'connection' => [
         'db' => env('DB_CONNECTION', 'mysql'),
         'sandbox' => env('SANDBOX_DB_CONNECTION', 'sandbox')
+    ],
+    'branding' => [
+        'logo_url' => 'https://flb-assets.s3.ap-southeast-1.amazonaws.com/static/fleetbase-logo.png',
+        'icon_url' => 'https://flb-assets.s3.ap-southeast-1.amazonaws.com/static/fleetbase-icon.png'
     ]
 ];

@@ -31,7 +31,7 @@ trait HasPublicId
      */
     public static function getPublicId()
     {
-        $sqids = new \Sqids\Sqids();
+        $sqids  = new \Sqids\Sqids();
         $hashid = lcfirst($sqids->encode([time(), rand(), rand()]));
         $hashid = substr($hashid, 0, 7);
 

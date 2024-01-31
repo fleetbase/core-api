@@ -94,7 +94,7 @@ class VerificationCode extends Model
     /** static method to generate code for email verification */
     public static function generateEmailVerificationFor($subject, $for = 'email_verification', array $options = [])
     {
-        $expireAfter = data_get($options, 'expireAfter');
+        $expireAfter                  = data_get($options, 'expireAfter');
         $verificationCode             = static::generateFor($subject, $for, false);
         $verificationCode->expires_at = $expireAfter === null ? Carbon::now()->addHour() : $expireAfter;
         $verificationCode->meta       = data_get($options, 'meta', []);
@@ -133,14 +133,14 @@ class VerificationCode extends Model
     /** static method to generate code for phone verification */
     public static function generateSmsVerificationFor($subject, $for = 'phone_verification', array $options = [], \Closure $messageCallback = null, $meta = [], $expireAfter = null)
     {
-        $expireAfter = data_get($options, 'expireAfter');
+        $expireAfter                  = data_get($options, 'expireAfter');
         $verificationCode             = static::generateFor($subject, $for, false);
         $verificationCode->expires_at = $expireAfter === null ? Carbon::now()->addHour() : $expireAfter;
         $verificationCode->meta       = data_get($options, 'meta', []);
         $verificationCode->save();
 
         // Get message
-        $message = 'Your ' . config('app.name') . ' verification code is ' . $verificationCode->code;
+        $message         = 'Your ' . config('app.name') . ' verification code is ' . $verificationCode->code;
         $messageCallback = data_get($options, 'messageCallback');
         if (is_callable($messageCallback)) {
             $message = $messageCallback($verificationCode);

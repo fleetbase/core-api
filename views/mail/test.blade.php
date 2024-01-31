@@ -9,12 +9,5 @@
 @endif
 </h2>
 
-@if($content)
-{!! $content !!}
-@else
-Welcome to {{ $appName }}, use the code below to verify your email address and complete registration to {{ $appName }}.
-<br>
-Your verification code: `{{ $code }}`
-<br>
-@endif
+🎉 This is a test email from Fleetbase to confirm that your mail configuration works.
 </x-mail-layout>
