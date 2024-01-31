@@ -17,6 +17,7 @@ return new class extends Migration
             $table->increments('id');
             $table->uuid('uuid')->nullable()->index();
             $table->string('public_id')->nullable()->unique();
+            $table->foreignUuid('company_uuid')->references('uuid')->on('companies')->onUpdate('CASCADE')->onDelete('CASCADE');
             $table->foreignUuid('author_uuid')->references('uuid')->on('users')->onUpdate('CASCADE')->onDelete('CASCADE');
             // $table->foreignUuid('parent_comment_uuid')->nullable()->references('uuid')->on('comments')->onUpdate('CASCADE')->onDelete('CASCADE');
             $table->uuid('subject_uuid');
@@ -29,7 +30,7 @@ return new class extends Migration
         });
 
         Schema::table('comments', function (Blueprint $table) {
-            $table->foreignUuid('parent_comment_uuid')->after('author_uuid')->references('uuid')->on('comments')->onUpdate('CASCADE')->onDelete('CASCADE');
+            $table->foreignUuid('parent_comment_uuid')->nullable()->after('author_uuid')->references('uuid')->on('comments')->onUpdate('CASCADE')->onDelete('CASCADE');
         });
     }
 

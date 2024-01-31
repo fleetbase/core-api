@@ -6,15 +6,11 @@ use Fleetbase\Casts\Json;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasUuid;
-use Fleetbase\Traits\SendsWebhooks;
-use Fleetbase\Traits\TracksApiCredential;
 
 class Comment extends Model
 {
     use HasUuid;
     use HasPublicId;
-    use TracksApiCredential;
-    use SendsWebhooks;
     use HasApiModelBehavior;
 
     /**
@@ -50,7 +46,7 @@ class Comment extends Model
      *
      * @var array
      */
-    protected $with = ['replies'];
+    protected $with = ['author', 'replies'];
 
     /**
      * The attributes that are mass assignable.
@@ -64,7 +60,7 @@ class Comment extends Model
      *
      * @var array
      */
-    protected $guarded = ['subject_uuid', 'subject_type', 'author_uuid', 'parent_comment_uuid'];
+    protected $guarded = ['company_uuid', 'subject_uuid', 'subject_type', 'author_uuid', 'parent_comment_uuid'];
 
     /**
      * The attributes that should be cast to native types.
@@ -82,6 +78,14 @@ class Comment extends Model
     public function subject()
     {
         return $this->morphTo(__FUNCTION__, 'subject_type', 'subject_uuid');
+    }
+
+    /**
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     */
+    public function company()
+    {
+        return $this->belongsTo(Company::class);
     }
 
     /**
@@ -117,6 +121,20 @@ class Comment extends Model
     public static function publish(array $attributes): Comment
     {
         static::unguard();
+
+        // If replies or parent is set somehow unset it
+        unset($attributes['replies'], $attributes['parent']);
+
+        // set author if unset
+        if (empty($attributes['author_uuid'])) {
+            $attributes['author_uuid'] = session('user');
+        }
+
+        // set company if unset
+        if (empty($attributes['company_uuid'])) {
+            $attributes['company_uuid'] = session('company');
+        }
+
         $comment = static::create($attributes);
         static::reguard();
 
