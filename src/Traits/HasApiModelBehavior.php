@@ -176,7 +176,14 @@ trait HasApiModelBehavior
             }
         }
 
-        $record = static::create($input);
+        // Check if the Model has a custom creation method defined
+        if (property_exists($this, 'creationMethod') && method_exists($this, $this->creationMethod)) {
+            // Call the custom creation method
+            $record = $this->{$this->creationMethod}($input);
+        } else {
+            // Default creation method
+            $record = static::create($input);
+        }
 
         if (isset($options['return_object']) && $options['return_object'] === true) {
             return $record;
