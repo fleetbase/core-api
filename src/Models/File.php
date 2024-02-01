@@ -3,6 +3,7 @@
 namespace Fleetbase\Models;
 
 use Fleetbase\Casts\Json;
+use Fleetbase\Casts\PolymorphicType;
 use Fleetbase\Support\Utils;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasPublicId;
@@ -76,6 +77,7 @@ class File extends Model
      */
     protected $casts = [
         'meta' => Json::class,
+        'subject_type' => PolymorphicType::class,
     ];
 
     /**
@@ -226,7 +228,7 @@ class File extends Model
     /**
      * Create a new file from uploaded file.
      *
-     * @return \Fleetbase\Models\File
+     * @return File
      */
     public static function createFromUpload(UploadedFile $file, $path, $type = null, $size = null, $disk = null, $bucket = null)
     {

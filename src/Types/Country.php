@@ -205,7 +205,7 @@ class Country implements \JsonSerializable
     /**
      * Filter currencies by providing a callback.
      *
-     * @return \Illuminate\Support\Collection
+     * @return Collection
      */
     public static function filter(callable $callback = null)
     {
@@ -215,7 +215,7 @@ class Country implements \JsonSerializable
     /**
      * Search all countries by keyword.
      *
-     * @return \Illuminate\Support\Collection
+     * @return Collection
      */
     public static function search(string $query)
     {

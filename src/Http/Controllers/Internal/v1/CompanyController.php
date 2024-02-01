@@ -64,7 +64,7 @@ class CompanyController extends FleetbaseController
     /**
      * Save the two factor authentication settings for the current company.
      *
-     * @param \Illuminate\Http\Request $request the HTTP request
+     * @param Request $request the HTTP request
      *
      * @return \Illuminate\Http\Response
      */
