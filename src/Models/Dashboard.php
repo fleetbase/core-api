@@ -36,10 +36,17 @@ class Dashboard extends Model
         parent::boot();
 
         static::creating(function ($dashboard) {
+            $isDefaultDashboard = $dashboard->owner_uuid === 'system';
+
+            if ($isDefaultDashboard) {
+                return;
+            }
+
             $userId = Session::has('user') ? Session::get('user') : null;
             
             // Set the owner UUID for the dashboard during creation
             $dashboard->owner_uuid = $userId;
+            $dashboard->is_default = true;
         });
     }
 
