@@ -6,6 +6,14 @@ class DashboardFilter extends Filter
 {
     public function queryForInternal()
     {
-        $this->builder->where('owner_uuid', $this->session->get('user'));
+        $userUuid = $this->session->get('user');
+
+        $this->builder->where('owner_uuid', $userUuid);
+
+        $userDashboards = $this->builder->get();
+
+        if ($userDashboards->isEmpty()) {
+            $this->builder->orWhere('owner_uuid', 'system');
+        }
     }
 }
