@@ -402,6 +402,24 @@ class User extends Authenticatable
     }
 
     /**
+     * Get the company relationship from the user.
+     * 
+     * @return \Fleetbase\Models\Company
+     */
+    public function getCompany(): ?Company
+    {
+        // Get company relationship
+        $company = $this->load(['company'])->company;
+
+        // Attempt to find company using `uuid`
+        if (empty($company) && Str::isUuid($this->getAttribute('company_uuid'))) {
+            $company = Company::where('uuid', $this->company_uuid)->first();
+        }
+
+        return $company;
+    }
+
+    /**
      * Updates the users last login.
      */
     public function updateLastLogin(): User
@@ -460,7 +478,7 @@ class User extends Authenticatable
      */
     public static function isSearchable()
     {
-        return class_uses_recursive(\Fleetbase\Traits\Searchable::class) || (property_exists(new static(), 'searchable') && static::$searchable);
+        return class_uses_recursive(Searchable::class) || (property_exists(new static(), 'searchable') && static::$searchable);
     }
 
     /**

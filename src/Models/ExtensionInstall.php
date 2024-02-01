@@ -68,7 +68,7 @@ class ExtensionInstall extends Model
     }
 
     /**
-     * @return \Fleetbase\Models\Extension
+     * @return Extension
      */
     public function asExtension()
     {

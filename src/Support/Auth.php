@@ -74,7 +74,7 @@ class Auth extends Authentication
     /**
      * Set session variables for api credentials being used.
      *
-     * @param \Fleetbase\Models\ApiCredential $apiCredential
+     * @param ApiCredential $apiCredential
      *
      * @return bool
      */
@@ -108,8 +108,8 @@ class Auth extends Authentication
      * Checks the request header for sandbox headers if to set and switch to the sandbox database,
      * or uses the `ApiCredential` provided to set sandbox session.
      *
-     * @param \Illuminate\Http\Request        $request
-     * @param \Fleetbase\Models\ApiCredential $apiCredential
+     * @param \Illuminate\Http\Request $request
+     * @param ApiCredential            $apiCredential
      *
      * @return bool
      */

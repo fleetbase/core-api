@@ -13,7 +13,7 @@ class JoinOrganizationRequest extends FormRequest
      */
     public function authorize()
     {
-        return true;
+        return $this->session()->exists('user');
     }
 
     /**
