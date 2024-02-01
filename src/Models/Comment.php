@@ -3,6 +3,7 @@
 namespace Fleetbase\Models;
 
 use Fleetbase\Casts\Json;
+use Fleetbase\Casts\PolymorphicType;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasUuid;
@@ -29,7 +30,7 @@ class Comment extends Model
 
     /**
      * The custom creation method to use.
-     * 
+     *
      * @var string
      */
     protected $creationMethod = 'publish';
@@ -53,7 +54,7 @@ class Comment extends Model
      *
      * @var array
      */
-    protected $fillable = ['content', 'tags', 'meta'];
+    protected $fillable = ['content', 'tags', 'meta', 'created_at', 'updated_at'];
 
     /**
      * The attributes that are guarded.
@@ -69,7 +70,8 @@ class Comment extends Model
      */
     protected $casts = [
         'meta'             => Json::class,
-        'tags'          => Json::class
+        'tags'             => Json::class,
+        'subject_type' => PolymorphicType::class,
     ];
 
     /**
@@ -109,14 +111,11 @@ class Comment extends Model
      */
     public function replies()
     {
-        return $this->hasMany(Comment::class, 'parent_comment_uuid')->without(['parent']);
+        return $this->hasMany(Comment::class, 'parent_comment_uuid')->latest()->without(['parent']);
     }
 
     /**
      * Publish a new comment.
-     *
-     * @param array $attributes
-     * @return \Fleetbase\Models\Comment
      */
     public static function publish(array $attributes): Comment
     {
@@ -134,6 +133,11 @@ class Comment extends Model
         if (empty($attributes['company_uuid'])) {
             $attributes['company_uuid'] = session('company');
         }
+
+        // set timestamps manually 
+        // not sure why this is needed but no time
+        $attributes['created_at'] = now();
+        $attributes['updated_at'] = now();
 
         $comment = static::create($attributes);
         static::reguard();

@@ -460,7 +460,7 @@ class User extends Authenticatable
      */
     public static function isSearchable()
     {
-        return class_uses_recursive(\Fleetbase\Traits\Searchable::class) || (property_exists(new static(), 'searchable') && static::$searchable);
+        return class_uses_recursive(Searchable::class) || (property_exists(new static(), 'searchable') && static::$searchable);
     }
 
     /**

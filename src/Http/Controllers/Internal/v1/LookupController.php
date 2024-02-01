@@ -166,7 +166,7 @@ class LookupController extends Controller
     /**
      * Pull the Fleetbase.io blog RSS feed.
      *
-     * @param \Illuminate\Http\Request
+     * @param Request
      *
      * @return \Illuminate\Http\Response
      */

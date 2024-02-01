@@ -82,7 +82,7 @@ class Category extends Model
     ];
 
     /**
-     * @var \Spatie\Sluggable\SlugOptions
+     * @var SlugOptions
      */
     public function getSlugOptions(): SlugOptions
     {

@@ -71,7 +71,7 @@ class SettingController extends Controller
     /**
      * Creates a file and uploads it to the users default disks.
      *
-     * @param \Illuminate\Http\Request $request the incoming HTTP request containing the authenticated user
+     * @param Request $request the incoming HTTP request containing the authenticated user
      *
      * @return \Illuminate\Http\JsonResponse returns a JSON response with a success message and HTTP status 200
      */
@@ -152,7 +152,7 @@ class SettingController extends Controller
      * test email to the user's email address. It returns a JSON response indicating whether
      * the email was sent successfully.
      *
-     * @param \Illuminate\Http\Request $request the incoming HTTP request containing the authenticated user
+     * @param Request $request the incoming HTTP request containing the authenticated user
      *
      * @return \Illuminate\Http\JsonResponse returns a JSON response with a success message and HTTP status 200
      */
@@ -239,7 +239,7 @@ class SettingController extends Controller
     /**
      * Sends a test message to the queue .
      *
-     * @param \Illuminate\Http\Request $request the incoming HTTP request containing the authenticated user
+     * @param Request $request the incoming HTTP request containing the authenticated user
      *
      * @return \Illuminate\Http\JsonResponse returns a JSON response with a success message and HTTP status 200
      */
@@ -465,7 +465,7 @@ class SettingController extends Controller
     /**
      * Sends a test SMS message using Twilio.
      *
-     * @param \Illuminate\Http\Request $request the incoming HTTP request containing the authenticated user
+     * @param Request $request the incoming HTTP request containing the authenticated user
      *
      * @return \Illuminate\Http\JsonResponse returns a JSON response with a success message and HTTP status 200
      */
@@ -508,7 +508,7 @@ class SettingController extends Controller
     /**
      * Sends a test exception to Sentry.
      *
-     * @param \Illuminate\Http\Request $request the incoming HTTP request containing the authenticated user
+     * @param Request $request the incoming HTTP request containing the authenticated user
      *
      * @return \Illuminate\Http\JsonResponse returns a JSON response with a success message and HTTP status 200
      */
@@ -566,7 +566,7 @@ class SettingController extends Controller
     /**
      * Test SocketCluster Configuration.
      *
-     * @param \Illuminate\Http\Request $request the incoming HTTP request containing the authenticated user
+     * @param Request $request the incoming HTTP request containing the authenticated user
      *
      * @return \Illuminate\Http\JsonResponse returns a JSON response with a success message and HTTP status 200
      */

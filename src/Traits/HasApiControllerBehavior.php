@@ -20,7 +20,7 @@ trait HasApiControllerBehavior
     /**
      * The target eloquent data model.
      *
-     * @var \Illuminate\Database\Eloquent\Model
+     * @var Model
      */
     public $model;
 
@@ -62,7 +62,7 @@ trait HasApiControllerBehavior
     /**
      * The current request.
      *
-     * @var \Illuminate\Http\Request
+     * @var Request
      */
     public $request;
 
@@ -103,7 +103,7 @@ trait HasApiControllerBehavior
     /**
      * Set the model instance to use.
      *
-     * @param \Illuminate\Database\Eloquent\Model $model - The Model Instance
+     * @param Model $model - The Model Instance
      */
     public function setApiModel(Model $model = null, string $namespace = '\\Fleetbase')
     {
@@ -180,7 +180,7 @@ trait HasApiControllerBehavior
      *
      * @return void
      *
-     * @throws \Fleetbase\Exceptions\FleetbaseRequestValidationException
+     * @throws FleetbaseRequestValidationException
      */
     public function validateRequest(Request $request)
     {
