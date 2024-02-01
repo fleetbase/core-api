@@ -23,4 +23,8 @@ class CommentFilter extends Filter
             });
         }
     }
+
+    public function withoutParent() {
+        $this->builder->whereNull('parent_comment_uuid');
+    }
 }
