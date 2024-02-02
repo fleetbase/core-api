@@ -37,9 +37,9 @@ class DashboardController extends FleetbaseController
         if ($selectedDashboard) {
             $selectedDashboard->is_default = true;
             $selectedDashboard->save();
-            return response()->json($selectedDashboard, Response::HTTP_OK);
-        } else {
-            return response()->json(['error' => 'Dashboard not found.'], 404);
-        }
+            return response()->json($selectedDashboard);
+        } 
+
+        return response()->error('Dashboard not found.', 404);
     }
 }

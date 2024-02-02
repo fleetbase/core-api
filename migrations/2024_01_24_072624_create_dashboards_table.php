@@ -9,13 +9,12 @@ class CreateDashboardsTable extends Migration
     {
         Schema::create('dashboards', function (Blueprint $table) {
             $table->id();
-            $table->string('uuid')->nullable()->index();
-            $table->string('owner_uuid')->nullable()->index();
+            $table->uuid('uuid')->nullable()->index();
+            $table->uuid('owner_uuid')->nullable()->index();
             $table->string('name');
             $table->boolean('is_default')->default(false);
             $table->softDeletes();
-            $table->timestamp('created_at')->nullable()->index();
-            $table->timestamp('updated_at')->nullable();
+            $table->timestamps();
         });
     }
 
