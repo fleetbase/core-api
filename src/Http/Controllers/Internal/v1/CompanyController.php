@@ -5,7 +5,9 @@ namespace Fleetbase\Http\Controllers\Internal\v1;
 use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Http\Resources\Organization;
 use Fleetbase\Models\Company;
+use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\Invite;
+use Fleetbase\Models\User;
 use Fleetbase\Support\Auth;
 use Fleetbase\Support\TwoFactorAuth;
 use Illuminate\Http\Request;
@@ -82,5 +84,18 @@ class CompanyController extends FleetbaseController
         TwoFactorAuth::saveTwoFaSettingsForCompany($company, $twoFaSettings);
 
         return response()->json(['message' => 'Two-Factor Authentication saved successfully']);
+    }
+
+    public function getAllUsersOfCompany(Request $request, $companyUuid)
+    {
+        info('company_uuid', ['company_uuid' => $companyUuid]);
+        $companyUsers = CompanyUser::where('company_uuid', $companyUuid)->get();
+        $users = [];
+
+        foreach ($companyUsers as $companyUser) {
+            $users[] = $companyUser->user;
+        }
+
+        return response()->json($users);
     }
 }
