@@ -19,7 +19,7 @@ abstract class Filter
     /**
      * The request instance.
      *
-     * @var \Illuminate\Http\Request
+     * @var Request
      */
     protected $request;
 
@@ -33,7 +33,7 @@ abstract class Filter
     /**
      * The builder instance.
      *
-     * @var \Illuminate\Database\Eloquent\Builder
+     * @var Builder
      */
     protected $builder;
 

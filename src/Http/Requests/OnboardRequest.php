@@ -2,7 +2,6 @@
 
 namespace Fleetbase\Http\Requests;
 
-use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Validation\Rule;
 
 class OnboardRequest extends FleetbaseRequest
@@ -17,36 +16,6 @@ class OnboardRequest extends FleetbaseRequest
         return true;
     }
 
-    protected function failedValidation(Validator $validator)
-    {
-        $errors   = $validator->errors();
-        $response = [
-            'errors' => [$errors->first()],
-        ];
-        // if more than one error display the others
-        if ($errors->count() > 1) {
-            $response['errors'] = collect($errors->all())
-                ->values()
-                ->toArray();
-        }
-
-        return response()->json($response, 422);
-    }
-
-    /**
-     * Get custom attributes for validator errors.
-     *
-     * @return array
-     */
-    public function attributes()
-    {
-        return collect(array_keys($this->rules()))
-            ->mapWithKeys(function ($key) {
-                return [$key => str_replace(['.', '_'], ' ', $key)];
-            })
-            ->toArray();
-    }
-
     /**
      * Get the validation rules that apply to the request.
      *
@@ -55,12 +24,12 @@ class OnboardRequest extends FleetbaseRequest
     public function rules()
     {
         return [
-            'name'                  => 'required',
-            'email'                 => ['required', 'email', Rule::unique('users')->whereNull('deleted_at')],
-            'phone'                 => ['nullable', Rule::unique('users')->whereNull('deleted_at')],
-            'password'              => 'required|confirmed',
-            'password_confirmation' => 'required',
-            'organization_name'     => 'required',
+            'name'                  => ['required'],
+            'email'                 => ['required', 'email', Rule::unique('users', 'email')->whereNull('deleted_at')],
+            'phone'                 => ['nullable', Rule::unique('users', 'phone')->whereNull('deleted_at')],
+            'password'              => ['required', 'confirmed', 'min:4'],
+            'password_confirmation' => ['required'],
+            'organization_name'     => ['required'],
         ];
     }
 

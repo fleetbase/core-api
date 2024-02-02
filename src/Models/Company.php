@@ -3,6 +3,7 @@
 namespace Fleetbase\Models;
 
 use Fleetbase\Casts\Json;
+use Fleetbase\FleetOps\Models\Driver;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasOptionsAttributes;
 use Fleetbase\Traits\HasPublicId;
@@ -218,7 +219,7 @@ class Company extends Model
      *
      * @method setOwner
      *
-     * @return \Fleetbase\Models\Company
+     * @return Company
      */
     public function setOwner(User $user)
     {
@@ -232,7 +233,7 @@ class Company extends Model
      *
      * @method setStatus
      *
-     * @return \Fleetbase\Models\Company
+     * @return Company
      */
     public function setStatus($status = 'active')
     {
@@ -302,7 +303,7 @@ class Company extends Model
     /**
      * Uses the current session to get the current company model instance.
      *
-     * @return \Fleetbase\Models\Company|null
+     * @return Company|null
      */
     public static function currentSession()
     {

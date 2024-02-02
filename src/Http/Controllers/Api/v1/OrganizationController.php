@@ -8,6 +8,7 @@ use Fleetbase\Models\ApiCredential;
 use Fleetbase\Models\Company;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class OrganizationController extends Controller
 {
@@ -15,6 +16,7 @@ class OrganizationController extends Controller
     {
         $token       = $request->bearerToken();
         $isSecretKey = Str::startsWith($token, '$');
+        $companyId = null;
 
         // Depending on API key format set the connection to find credential on
         $connection = Str::startsWith($token, 'flb_test_') ? 'sandbox' : 'mysql';
@@ -33,6 +35,18 @@ class OrganizationController extends Controller
 
         // Get the api credential model record
         $apiCredential = $findApKey->first();
+        if ($apiCredential) {
+            $companyId = $apiCredential->company_uuid;
+        }
+
+        // If no api credential found then try for personal access token then get company from the tokenable
+        if (!$apiCredential) {
+            $apiCredential = PersonalAccessToken::findToken($token);
+
+            if ($apiCredential->tokenable) {
+                $companyId = $apiCredential->tokenable->company_uuid;
+            }
+        }
 
         // Handle no api credential found
         if (!$apiCredential) {
@@ -40,8 +54,7 @@ class OrganizationController extends Controller
         }
 
         // Get the organization owning the API key
-        $organization = Company::where('uuid', $apiCredential->company_uuid)->first();
-
+        $organization = Company::where('uuid', $companyId)->first();
         return new Organization($organization);
     }
 }

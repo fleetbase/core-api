@@ -4,7 +4,7 @@ namespace Fleetbase\Http\Requests;
 
 use Illuminate\Contracts\Validation\Validator;
 
-class LoginRequest extends FleetbaseRequest
+class TwoFaValidationRequest extends FleetbaseRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -40,8 +40,8 @@ class LoginRequest extends FleetbaseRequest
     public function rules()
     {
         return [
+            'token'    => 'required',
             'identity' => 'required|email|exists:users,email',
-            'password' => 'required',
         ];
     }
 
@@ -53,10 +53,11 @@ class LoginRequest extends FleetbaseRequest
     public function messages()
     {
         return [
-            'identity.required'    => 'A email is required',
+            'identity.required'    => 'Email or phone number is required',
             'identity.exists'      => 'No user found by this email',
             'identity.email'       => 'Email used is invalid',
-            'password.required'    => 'A password is required',
+            'identity.phone'       => 'Phone Number used is invalid',
+            'token.required'       => 'A two factor session token is required',
         ];
     }
 }

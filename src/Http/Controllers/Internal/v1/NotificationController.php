@@ -23,7 +23,7 @@ class NotificationController extends FleetbaseController
     /**
      * Receives an array of ID's for notifications which should be marked as read.
      *
-     * @param \Illuminate\Http\Request $request the HTTP request object
+     * @param Request $request the HTTP request object
      *
      * @return \Illuminate\Http\Response the HTTP response
      */
@@ -91,7 +91,7 @@ class NotificationController extends FleetbaseController
     /**
      * Deletes all notifications for the authenticated user.
      *
-     * @param \Illuminate\Http\Request $request the HTTP request object
+     * @param Request $request the HTTP request object
      *
      * @return \Illuminate\Http\Response the HTTP response
      */

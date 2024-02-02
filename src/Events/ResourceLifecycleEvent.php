@@ -238,7 +238,7 @@ class ResourceLifecycleEvent implements ShouldBroadcastNow
      *
      * @param \Fleetbase\Model\Model $model
      *
-     * @return \Illuminate\Http\Resources\Json\JsonResource
+     * @return JsonResource
      */
     public function getModelResource($model, string $namespace = null, int $version = null)
     {

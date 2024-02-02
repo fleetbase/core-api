@@ -88,9 +88,25 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                             }
                         );
                         $router->group(
+                            ['prefix' => 'companies'],
+                            function ($router) {
+                                $router->get('find/{id}', 'CompanyController@findCompany');
+                            }
+                        );
+                        $router->group(
                             ['prefix' => 'settings'],
                             function ($router) {
                                 $router->get('branding', 'SettingController@getBrandingSettings');
+                            }
+                        );
+                        $router->group(
+                            ['prefix' => 'two-fa'],
+                            function ($router) {
+                                $router->get('check', 'TwoFaController@checkTwoFactor');
+                                $router->post('validate', 'TwoFaController@validateSession');
+                                $router->post('verify', 'TwoFaController@verifyCode');
+                                $router->post('resend', 'TwoFaController@resendCode');
+                                $router->post('invalidate', 'TwoFaController@invalidateSession');
                             }
                         );
                         $router->group(
@@ -137,6 +153,14 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                         $router->post('test-notification-channels-config', $controller('testNotificationChannelsConfig'));
                                     }
                                 );
+                                $router->fleetbaseRoutes(
+                                    'two-fa',
+                                    function ($router, $controller) {
+                                        $router->post('config', $controller('saveSystemConfig'));
+                                        $router->get('config', $controller('getSystemConfig'));
+                                        $router->get('enforce', $controller('shouldEnforce'));
+                                    }
+                                );
                                 $router->fleetbaseRoutes('api-events');
                                 $router->fleetbaseRoutes('api-request-logs');
                                 $router->fleetbaseRoutes(
@@ -147,7 +171,10 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     }
                                 );
                                 $router->fleetbaseRoutes('webhook-request-logs');
-                                $router->fleetbaseRoutes('companies');
+                                $router->fleetbaseRoutes('companies', function ($router, $controller) {
+                                    $router->get('two-fa', $controller('getTwoFactorSettings'));
+                                    $router->post('two-fa', $controller('saveTwoFactorSettings'));
+                                });
                                 $router->fleetbaseRoutes(
                                     'users',
                                     function ($router, $controller) {
@@ -159,6 +186,12 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                         $router->delete('bulk-delete', $controller('bulkDelete'));
                                         $router->post('resend-invite', $controller('resendInvitation'));
                                         $router->post('set-password', $controller('setCurrentUserPassword'));
+                                        $router->post('validate-password', $controller('validatePassword'));
+                                        $router->post('change-password', $controller('changeUserPassword'));
+                                        $router->post('two-fa', $controller('saveTwoFactorSettings'));
+                                        $router->get('two-fa', $controller('getTwoFactorSettings'));
+                                        $router->post('locale', $controller('setUserLocale'));
+                                        $router->get('locale', $controller('getUserLocale'));
                                     }
                                 );
                                 $router->fleetbaseRoutes('user-devices');
@@ -168,6 +201,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 $router->fleetbaseRoutes('permissions');
                                 $router->fleetbaseRoutes('extensions');
                                 $router->fleetbaseRoutes('categories');
+                                $router->fleetbaseRoutes('comments');
                                 $router->fleetbaseRoutes(
                                     'files',
                                     function ($router, $controller) {

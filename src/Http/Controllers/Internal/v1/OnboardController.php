@@ -11,6 +11,7 @@ use Fleetbase\Models\User;
 use Fleetbase\Models\VerificationCode;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 
 class OnboardController extends Controller
 {
@@ -38,19 +39,26 @@ class OnboardController extends Controller
         // if first user make admin
         $isAdmin = !User::exists();
 
+        // Get user properties
+        $name     = $request->input('name');
+        $email    = $request->input('email');
+        $phone    = $request->input('phone');
+        $username = Str::slug($name . Str::random(3), '_');
+
         // create user account
         $user = User::create([
-            'name'   => $request->input('name'),
-            'email'  => $request->input('email'),
-            'phone'  => $request->input('phone'),
-            'status' => 'active',
+            'name'     => $name,
+            'email'    => $email,
+            'phone'    => $phone,
+            'username' => $username,
+            'status'   => 'active',
         ]);
-
-        // set the user type
-        $user->type = $isAdmin ? 'admin' : 'user';
 
         // set the user password
         $user->password = $request->input('password');
+
+        // set the user type
+        $user->setUserType($isAdmin ? 'admin' : 'user');
 
         // create company
         $company = new Company(['name' => $request->input('organization_name')]);
@@ -66,29 +74,16 @@ class OnboardController extends Controller
             'status'       => 'active',
         ]);
 
-        // create verification code
-        try {
-            VerificationCode::generateEmailVerificationFor($user);
-        } catch (\Swift_TransportException $e) {
-            // silence
-        } catch (\Aws\Exception\CredentialsException $e) {
-            // silence
-        } catch (\InvalidArgumentException $e) {
-            // slicence
-        } catch (\Exception $e) {
-            // slicence
-        }
-
         // send account created event
         event(new AccountCreated($user, $company));
 
         // create auth token
-        $token = $user->createToken($request->ip());
+        $token = $user->createToken($user->uuid);
 
         return response()->json([
             'status'           => 'success',
-            'session'          => $user->uuid,
-            'token'            => $token->plainTextToken,
+            'session'          => base64_encode($user->uuid),
+            'token'            => $isAdmin ? $token->plainTextToken : null,
             'skipVerification' => $isAdmin,
         ]);
     }
@@ -102,22 +97,25 @@ class OnboardController extends Controller
      */
     public function sendVerificationEmail(Request $request)
     {
-        $user  = $request->user() ?? User::where('uuid', session('user'))->first();
-        $email = $request->input('email');
+        $id           = $request->input('session');
+        $email        = $request->input('email');
+        $decodedId    = base64_decode($id);
+
+        // Get user using id
+        $user = User::where('uuid', $decodedId)->first();
+        if ($user->email !== $email) {
+            return response()->error('Email address provided does not match for this verification session.');
+        }
 
         if ($user) {
-            // check if email needs to be updated
-            if ($email && $email !== $user->email) {
-                $user->email = $email;
-                $user->save();
-            }
-
             // create verification code
             VerificationCode::generateEmailVerificationFor($user);
+        } else {
+            return response()->error('No user found with provided email address.');
         }
 
         return response()->json([
-            'status' => 'success',
+            'status' => 'ok',
         ]);
     }
 
@@ -130,22 +128,23 @@ class OnboardController extends Controller
      */
     public function sendVerificationSms(Request $request)
     {
-        $user  = $request->user() ?? User::where('uuid', session('user'))->first();
-        $phone = $request->input('phone');
+        $id           = $request->input('session');
+        $phone        = $request->input('phone');
+        $decodedId    = base64_decode($id);
+
+        // Get user using id
+        $user = User::where('uuid', $decodedId)->first();
+        if ($user->phone !== $phone) {
+            return response()->error('Phone number provided does not match for this verification session.');
+        }
 
         if ($user) {
-            // check if phone needs to be updated
-            if ($phone && $phone !== $user->phone) {
-                $user->phone = $phone;
-                $user->save();
-            }
-
             // create verification code
             VerificationCode::generateSmsVerificationFor($user);
         }
 
         return response()->json([
-            'status' => 'success',
+            'status' => 'ok',
         ]);
     }
 
@@ -159,8 +158,18 @@ class OnboardController extends Controller
     public function verifyEmail(Request $request)
     {
         // users uuid as session
-        $session = $request->input('session') ?? session('user');
+        $session = $request->input('session');
         $code    = $request->input('code');
+
+        // decode session
+        if (!Str::isUuid($session)) {
+            $session = base64_decode($session);
+        }
+
+        // if still not valid check session
+        if (!Str::isUuid($session)) {
+            $session = session('user');
+        }
 
         // make sure session is found
         if (!$session) {
@@ -189,7 +198,15 @@ class OnboardController extends Controller
         }
 
         // get user
-        $user = $request->user() ?? User::where('uuid', $session)->first();
+        $user = $request->user();
+        if (!$user) {
+            $user = User::where('uuid', $session)->first();
+        }
+
+        // Handle no user
+        if (!$user) {
+            return response()->error('No user found using this email.');
+        }
 
         // get verify time
         $verifiedAt = Carbon::now();
@@ -202,11 +219,13 @@ class OnboardController extends Controller
         }
 
         $user->status = 'active';
-        $user->save();
+        $user->updateLastLogin();
+        $token = $user->createToken($user->uuid);
 
         return response()->json([
-            'status'      => 'success',
+            'status'      => 'ok',
             'verified_at' => $verifiedAt,
+            'token'       => $token->plainTextToken,
         ]);
     }
 }

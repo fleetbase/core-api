@@ -236,7 +236,7 @@ class Extension extends Model
     /**
      * @method install
      *
-     * @return \Fleetbase\Models\ExtensionInstall
+     * @return ExtensionInstall
      */
     public function install()
     {

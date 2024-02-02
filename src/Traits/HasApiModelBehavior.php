@@ -95,8 +95,8 @@ trait HasApiModelBehavior
     /**
      * Retrieves all records based on request data passed in.
      *
-     * @param \Illuminate\Http\Request $request       the HTTP request containing the input data
-     * @param \Closure|null            $queryCallback optional callback to modify data with Request and QueryBuilder instance
+     * @param Request       $request       the HTTP request containing the input data
+     * @param \Closure|null $queryCallback optional callback to modify data with Request and QueryBuilder instance
      *
      * @return \Illuminate\Database\Eloquent\Collection|\Illuminate\Contracts\Pagination\LengthAwarePaginator
      */
@@ -142,8 +142,8 @@ trait HasApiModelBehavior
      *
      * @see queryFromRequest()
      *
-     * @param \Illuminate\Http\Request $request       the HTTP request containing the input data
-     * @param \Closure|null            $queryCallback optional callback to modify data with Request and QueryBuilder instance
+     * @param Request       $request       the HTTP request containing the input data
+     * @param \Closure|null $queryCallback optional callback to modify data with Request and QueryBuilder instance
      *
      * @return \Illuminate\Database\Eloquent\Collection|\Illuminate\Contracts\Pagination\LengthAwarePaginator
      *
@@ -157,10 +157,10 @@ trait HasApiModelBehavior
     /**
      * Create a new record in the database based on the input data in the given request.
      *
-     * @param \Illuminate\Http\Request $request  the HTTP request containing the input data
-     * @param callable|null            $onBefore an optional callback function to execute before creating the record
-     * @param callable|null            $onAfter  an optional callback function to execute after creating the record
-     * @param array                    $options  an optional array of additional options
+     * @param Request       $request  the HTTP request containing the input data
+     * @param callable|null $onBefore an optional callback function to execute before creating the record
+     * @param callable|null $onAfter  an optional callback function to execute after creating the record
+     * @param array         $options  an optional array of additional options
      *
      * @return mixed the newly created record, or a JSON response if the callbacks return one
      */
@@ -176,7 +176,14 @@ trait HasApiModelBehavior
             }
         }
 
-        $record = static::create($input);
+        // Check if the Model has a custom creation method defined
+        if (property_exists($this, 'creationMethod') && method_exists($this, $this->creationMethod)) {
+            // Call the custom creation method
+            $record = $this->{$this->creationMethod}($input);
+        } else {
+            // Default creation method
+            $record = static::create($input);
+        }
 
         if (isset($options['return_object']) && $options['return_object'] === true) {
             return $record;
@@ -201,11 +208,11 @@ trait HasApiModelBehavior
     /**
      * Update an existing record in the database based on the input data in the given request.
      *
-     * @param \Illuminate\Http\Request $request  the HTTP request containing the input data
-     * @param mixed                    $id       the ID of the record to update
-     * @param callable|null            $onBefore an optional callback function to execute before updating the record
-     * @param callable|null            $onAfter  an optional callback function to execute after updating the record
-     * @param array                    $options  an optional array of additional options
+     * @param Request       $request  the HTTP request containing the input data
+     * @param mixed         $id       the ID of the record to update
+     * @param callable|null $onBefore an optional callback function to execute before updating the record
+     * @param callable|null $onAfter  an optional callback function to execute after updating the record
+     * @param array         $options  an optional array of additional options
      *
      * @return mixed the updated record, or a JSON response if the callbacks return one
      *
@@ -570,8 +577,8 @@ trait HasApiModelBehavior
     /**
      * Retrieves a record based on primary key id.
      *
-     * @param string                   $id      - The ID
-     * @param \Illuminate\Http\Request $request - HTTP Request
+     * @param string  $id      - The ID
+     * @param Request $request - HTTP Request
      *
      * @return \Illuminate\Database\Eloquent\Model|null
      */
@@ -762,7 +769,7 @@ trait HasApiModelBehavior
     /**
      * Checks if the custom column filter should be prioritized.
      *
-     * @param \Illuminate\Http\Request              $request The request object containing filter parameters
+     * @param Request                               $request The request object containing filter parameters
      * @param \Illuminate\Database\Eloquent\Builder $builder The search query builder
      * @param string                                $column  The column name
      *
@@ -968,12 +975,13 @@ trait HasApiModelBehavior
     {
         $isNotTimestamp          = !in_array($key, ['created_at', 'updated_at', 'deleted_at']);
         $isNotFillable           = !$this->isFillable($key);
+        $isNotGuarded            = !$this->isGuarded($key);
         $isNotRelation           = !$this->isRelation($key) && !$this->isRelation(Str::camel($key));
         $isNotFilterParam        = !$this->isFilterParam($key);
         $isNotAppenededAttribute = !in_array($key, $this->appends ?? []);
         $isNotIdParam            = !in_array($key, ['id', 'uuid', 'public_id']);
 
-        return $isNotTimestamp && $isNotFillable && $isNotRelation && $isNotFilterParam && $isNotAppenededAttribute && $isNotIdParam;
+        return $isNotTimestamp && $isNotFillable && $isNotGuarded && $isNotRelation && $isNotFilterParam && $isNotAppenededAttribute && $isNotIdParam;
     }
 
     /**

@@ -104,7 +104,6 @@ class User extends Authenticatable
         'uuid',
         'public_id',
         '_key',
-        'company_uuid',
         'avatar_uuid',
         'username',
         'email',
@@ -118,7 +117,6 @@ class User extends Authenticatable
         'last_login',
         'email_verified_at',
         'phone_verified_at',
-        'type',
         'slug',
         'status',
     ];
@@ -128,7 +126,7 @@ class User extends Authenticatable
      *
      * @var array
      */
-    protected $guarded = ['password'];
+    protected $guarded = ['password', 'type', 'company_uuid'];
 
     /**
      * The attributes that should be hidden for arrays.
@@ -404,6 +402,24 @@ class User extends Authenticatable
     }
 
     /**
+     * Get the company relationship from the user.
+     * 
+     * @return \Fleetbase\Models\Company
+     */
+    public function getCompany(): ?Company
+    {
+        // Get company relationship
+        $company = $this->load(['company'])->company;
+
+        // Attempt to find company using `uuid`
+        if (empty($company) && Str::isUuid($this->getAttribute('company_uuid'))) {
+            $company = Company::where('uuid', $this->company_uuid)->first();
+        }
+
+        return $company;
+    }
+
+    /**
      * Updates the users last login.
      */
     public function updateLastLogin(): User
@@ -423,6 +439,14 @@ class User extends Authenticatable
         $this->save();
 
         return $this;
+    }
+
+    /**
+     * Checks if password provided is the correct and current password for the user.
+     */
+    public function checkPassword(string $password): bool
+    {
+        return Hash::check($password, $this->password);
     }
 
     /**
@@ -454,7 +478,7 @@ class User extends Authenticatable
      */
     public static function isSearchable()
     {
-        return class_uses_recursive(\Fleetbase\Traits\Searchable::class) || (property_exists(new static(), 'searchable') && static::$searchable);
+        return class_uses_recursive(Searchable::class) || (property_exists(new static(), 'searchable') && static::$searchable);
     }
 
     /**
@@ -485,6 +509,17 @@ class User extends Authenticatable
     public function receivesBroadcastNotificationsOn()
     {
         return 'user.' . $this->uuid;
+    }
+
+    /**
+     * Set the user type.
+     */
+    public function setUserType(string $type): User
+    {
+        $this->type = $type;
+        $this->save();
+
+        return $this;
     }
 
     /**
@@ -555,7 +590,6 @@ class User extends Authenticatable
             'protocol'     => 'email',
             'reason'       => 'join_company',
         ])->whereJsonContains('recipients', $this->email)->exists();
-
         if ($isAlreadyInvited) {
             return false;
         }
@@ -575,5 +609,42 @@ class User extends Authenticatable
         $this->notify(new UserInvited($invitation));
 
         return true;
+    }
+
+    public function getIdentity(): ?string
+    {
+        $email = data_get($this, 'email');
+        $phone = data_get($this, 'phone');
+
+        if ($email) {
+            return $email;
+        }
+
+        return $phone;
+    }
+
+    /**
+     * Check if the user is verified.
+     *
+     * @return bool true if the user is verified (either email or phone), false otherwise
+     */
+    public function isVerified(): bool
+    {
+        // if admin bypass
+        if ($this->type === 'admin') {
+            return true;
+        }
+
+        return !empty($this->email_verified_at) || !empty($this->phone_verified_at);
+    }
+
+    /**
+     * Check if the user is NOT verified.
+     *
+     * @return bool true if the user is NOT verified (either email or phone), false otherwise
+     */
+    public function isNotVerified(): bool
+    {
+        return $this->isVerified() === false;
     }
 }

@@ -19,7 +19,7 @@ class SendResourceLifecycleWebhook implements ShouldQueue
     /**
      * Handle the event.
      *
-     * @param \Fleetbase\Events\ResourceLifecycleEvent $event
+     * @param ResourceLifecycleEvent $event
      *
      * @return void
      */
