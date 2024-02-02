@@ -15,6 +15,5 @@ class FleetbaseSeeder extends Seeder
     {
         $this->call(ExtensionSeeder::class);
         $this->call(PermissionSeeder::class);
-        $this->call(DashboardSeeder::class);
     }
 }
