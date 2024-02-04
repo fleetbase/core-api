@@ -71,7 +71,7 @@ class Comment extends Model
     protected $casts = [
         'meta'             => Json::class,
         'tags'             => Json::class,
-        'subject_type' => PolymorphicType::class,
+        'subject_type'     => PolymorphicType::class,
     ];
 
     /**
@@ -134,7 +134,7 @@ class Comment extends Model
             $attributes['company_uuid'] = session('company');
         }
 
-        // set timestamps manually 
+        // set timestamps manually
         // not sure why this is needed but no time
         $attributes['created_at'] = now();
         $attributes['updated_at'] = now();

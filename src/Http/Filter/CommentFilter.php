@@ -12,7 +12,8 @@ class CommentFilter extends Filter
         $this->builder->where('company_uuid', $this->session->get('company'));
     }
 
-    public function parent(string $id) {
+    public function parent(string $id)
+    {
         if (Str::isUuid($id)) {
             $this->builder->where('parent_comment_uuid', $id);
         }
@@ -24,7 +25,8 @@ class CommentFilter extends Filter
         }
     }
 
-    public function withoutParent() {
+    public function withoutParent()
+    {
         $this->builder->whereNull('parent_comment_uuid');
     }
 }
