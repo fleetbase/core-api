@@ -10,9 +10,16 @@ class AdminRequest extends FleetbaseRequest
      *
      * @return bool
      */
+
     public function authorize()
     {
-        return $this->user()->isAdmin();
+        $user = $this->user();
+
+        if(!$user === null) {
+            return false;
+        }
+
+        return $user->isAdmin();
     }
 
     /**

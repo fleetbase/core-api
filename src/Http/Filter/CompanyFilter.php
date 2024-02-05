@@ -2,6 +2,8 @@
 
 namespace Fleetbase\Http\Filter;
 
+use Fleetbase\Http\Filter\Filter;
+
 class CompanyFilter extends Filter
 {
     public function queryForInternal()
@@ -18,5 +20,15 @@ class CompanyFilter extends Filter
                     );
             }
         );
+    }
+
+    public function name(?string $name)
+    {
+        $this->builder->searchWhere('name', $name);
+    }
+
+    public function country(?string $country)
+    {
+        $this->builder->searchWhere('country', $country);
     }
 }
