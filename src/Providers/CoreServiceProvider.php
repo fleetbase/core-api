@@ -97,7 +97,7 @@ class CoreServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__ . '/../../config/twilio.php', 'twilio');
         $this->mergeConfigFrom(__DIR__ . '/../../config/webhook-server.php', 'webhook-server');
         $this->mergeConfigFrom(__DIR__ . '/../../config/permission.php', 'permission');
-        $this->mergeConfigFrom(__DIR__ . '/../../config/activitylog.php', 'activitylog');
+        $this->mergeConfigFrom(__DIR__ . '/../../config/activitylog.php', 'flb:activitylog');
         $this->mergeConfigFrom(__DIR__ . '/../../config/excel.php', 'excel');
         $this->mergeConfigFrom(__DIR__ . '/../../config/sentry.php', 'sentry');
         $this->mergeConfigFrom(__DIR__ . '/../../config/laravel-mysql-s3-backup.php', 'laravel-mysql-s3-backup');
