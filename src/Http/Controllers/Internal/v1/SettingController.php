@@ -3,6 +3,7 @@
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Http\Controllers\Controller;
+use Fleetbase\Http\Requests\AdminRequest;
 use Fleetbase\Models\File;
 use Fleetbase\Models\Setting;
 use Fleetbase\Notifications\TestPushNotification;
@@ -18,7 +19,7 @@ class SettingController extends Controller
      *
      * @return void
      */
-    public function adminOverview()
+    public function adminOverview(AdminRequest $request)
     {
         $metrics                        = [];
         $metrics['total_users']         = \Fleetbase\Models\User::all()->count();
@@ -33,7 +34,7 @@ class SettingController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse
      */
-    public function getFilesystemConfig()
+    public function getFilesystemConfig(AdminRequest $request)
     {
         $driver = config('filesystems.default');
         $disks  = array_keys(config('filesystems.disks', []));
@@ -102,7 +103,7 @@ class SettingController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse
      */
-    public function getMailConfig()
+    public function getMailConfig(AdminRequest $request)
     {
         $mailer     = config('mail.default');
         $from       = config('mail.from');
@@ -195,7 +196,7 @@ class SettingController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse
      */
-    public function getQueueConfig()
+    public function getQueueConfig(AdminRequest $request)
     {
         $driver      = config('queue.default');
         $connections = array_keys(config('queue.connections', []));
@@ -276,7 +277,7 @@ class SettingController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse
      */
-    public function getServicesConfig()
+    public function getServicesConfig(AdminRequest $request)
     {
         /** aws service */
         $awsKey    = config('services.aws.key', env('AWS_ACCESS_KEY_ID'));
@@ -339,7 +340,7 @@ class SettingController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse
      */
-    public function getNotificationChannelsConfig()
+    public function getNotificationChannelsConfig(AdminRequest $request)
     {
         // get apn config
         $apn = config('broadcasting.connections.apn');
