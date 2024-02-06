@@ -67,6 +67,36 @@ class CoreServiceProvider extends ServiceProvider
     ];
 
     /**
+     * Register any application services.
+     *
+     * Within the register method, you should only bind things into the
+     * service container. You should never attempt to register any event
+     * listeners, routes, or any other piece of functionality within the
+     * register method.
+     *
+     * More information on this can be found in the Laravel documentation:
+     * https://laravel.com/docs/8.x/providers
+     *
+     * @return void
+     */
+    public function register()
+    {
+        $this->mergeConfigFrom(__DIR__ . '/../../config/database.connections.php', 'database.connections');
+        $this->mergeConfigFrom(__DIR__ . '/../../config/database.redis.php', 'database.redis');
+        $this->mergeConfigFrom(__DIR__ . '/../../config/broadcasting.connections.php', 'broadcasting.connections');
+        $this->mergeConfigFrom(__DIR__ . '/../../config/fleetbase.php', 'fleetbase');
+        $this->mergeConfigFrom(__DIR__ . '/../../config/auth.php', 'auth');
+        $this->mergeConfigFrom(__DIR__ . '/../../config/sanctum.php', 'sanctum');
+        $this->mergeConfigFrom(__DIR__ . '/../../config/twilio.php', 'twilio');
+        $this->mergeConfigFrom(__DIR__ . '/../../config/webhook-server.php', 'webhook-server');
+        $this->mergeConfigFrom(__DIR__ . '/../../config/permission.php', 'permission');
+        $this->mergeConfigFrom(__DIR__ . '/../../config/activitylog.php', 'activitylog');
+        $this->mergeConfigFrom(__DIR__ . '/../../config/excel.php', 'excel');
+        $this->mergeConfigFrom(__DIR__ . '/../../config/sentry.php', 'sentry');
+        $this->mergeConfigFrom(__DIR__ . '/../../config/laravel-mysql-s3-backup.php', 'laravel-mysql-s3-backup');
+    }
+
+    /**
      * Bootstrap any package services.
      *
      * @return void
@@ -88,19 +118,6 @@ class CoreServiceProvider extends ServiceProvider
         $this->loadMigrationsFrom(__DIR__ . '/../../migrations');
         $this->loadViewsFrom(__DIR__ . '/../../views', 'fleetbase');
         $this->registerCustomBladeComponents();
-        $this->mergeConfigFrom(__DIR__ . '/../../config/database.connections.php', 'database.connections');
-        $this->mergeConfigFrom(__DIR__ . '/../../config/database.redis.php', 'database.redis');
-        $this->mergeConfigFrom(__DIR__ . '/../../config/broadcasting.connections.php', 'broadcasting.connections');
-        $this->mergeConfigFrom(__DIR__ . '/../../config/fleetbase.php', 'fleetbase');
-        $this->mergeConfigFrom(__DIR__ . '/../../config/auth.php', 'auth');
-        $this->mergeConfigFrom(__DIR__ . '/../../config/sanctum.php', 'sanctum');
-        $this->mergeConfigFrom(__DIR__ . '/../../config/twilio.php', 'twilio');
-        $this->mergeConfigFrom(__DIR__ . '/../../config/webhook-server.php', 'webhook-server');
-        $this->mergeConfigFrom(__DIR__ . '/../../config/permission.php', 'permission');
-        $this->mergeConfigFrom(__DIR__ . '/../../config/activitylog.php', 'flb:activitylog');
-        $this->mergeConfigFrom(__DIR__ . '/../../config/excel.php', 'excel');
-        $this->mergeConfigFrom(__DIR__ . '/../../config/sentry.php', 'sentry');
-        $this->mergeConfigFrom(__DIR__ . '/../../config/laravel-mysql-s3-backup.php', 'laravel-mysql-s3-backup');
         $this->mergeConfigFromSettings();
         $this->addServerIpAsAllowedOrigin();
     }
