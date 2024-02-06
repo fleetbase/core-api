@@ -19,7 +19,7 @@
     ],
     "require": {
         "php": "^8.0",
-        "fleetbase/laravel-mysql-spatial": "^1.0.1",
+        "fleetbase/laravel-mysql-spatial": "^1.0.2",
         "illuminate/broadcasting": "^9.0|^10.0",
         "illuminate/contracts": "^9.0|^10.0",
         "illuminate/database": "^9.0|^10.0",
