@@ -147,7 +147,7 @@ class FileController extends FleetbaseController
     /**
      * Handle file uploads.
      *
-     * @param \Fleetbase\Http\Requests\Internal\UploadFileRequest $request
+     * @param UploadFileRequest $request
      *
      * @return \Illuminate\Http\Response
      */

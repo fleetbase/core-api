@@ -589,7 +589,7 @@ class Utils
      * @param string|array $table
      * @param array        $where
      *
-     * @return \Fleetbase\Models\Model
+     * @return Model
      */
     public static function findModel($table, $where = [])
     {

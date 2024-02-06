@@ -54,10 +54,10 @@ class TwoFactorAuth
     /**
      * Save Two-Factor Authentication settings for a specific subject (e.g., User, Company).
      *
-     * @param \Illuminate\Database\Eloquent\Model $subject       the subject model for which to save the settings
-     * @param array                               $twoFaSettings an array containing Two-Factor Authentication settings
+     * @param Model $subject       the subject model for which to save the settings
+     * @param array $twoFaSettings an array containing Two-Factor Authentication settings
      *
-     * @return \Fleetbase\Models\Setting the saved Two-Factor Authentication settings
+     * @return Setting the saved Two-Factor Authentication settings
      *
      * @throws \Exception if the subject is not an instance of Model
      */
@@ -76,10 +76,10 @@ class TwoFactorAuth
     /**
      * Save Two-Factor Authentication settings for a user.
      *
-     * @param \Fleetbase\Models\User $user          the user for which to save the settings
-     * @param array                  $twoFaSettings an array containing Two-Factor Authentication settings
+     * @param User  $user          the user for which to save the settings
+     * @param array $twoFaSettings an array containing Two-Factor Authentication settings
      *
-     * @return \Fleetbase\Models\Setting the saved Two-Factor Authentication settings
+     * @return Setting the saved Two-Factor Authentication settings
      */
     public static function saveTwoFaSettingsForUser(User $user, array $twoFaSettings = []): Setting
     {
@@ -89,10 +89,10 @@ class TwoFactorAuth
     /**
      * Save Two-Factor Authentication settings for a company.
      *
-     * @param \Fleetbase\Models\Company $company       the company for which to save the settings
-     * @param array                     $twoFaSettings an array containing Two-Factor Authentication settings
+     * @param Company $company       the company for which to save the settings
+     * @param array   $twoFaSettings an array containing Two-Factor Authentication settings
      *
-     * @return \Fleetbase\Models\Setting the saved Two-Factor Authentication settings
+     * @return Setting the saved Two-Factor Authentication settings
      */
     public static function saveTwoFaSettingsForCompany(Company $company, array $twoFaSettings = []): Setting
     {
@@ -102,9 +102,9 @@ class TwoFactorAuth
     /**
      * Get Two-Factor Authentication settings for a specific subject (e.g., User, Company).
      *
-     * @param \Illuminate\Database\Eloquent\Model $subject the subject model for which to retrieve the settings
+     * @param Model $subject the subject model for which to retrieve the settings
      *
-     * @return \Fleetbase\Models\Setting the Two-Factor Authentication settings for the subject
+     * @return Setting the Two-Factor Authentication settings for the subject
      *
      * @throws \Exception if the subject is not an instance of Model
      */
@@ -130,9 +130,9 @@ class TwoFactorAuth
     /**
      * Get Two-Factor Authentication settings for a user.
      *
-     * @param \Fleetbase\Models\User $user the user for which to retrieve the settings
+     * @param User $user the user for which to retrieve the settings
      *
-     * @return \Fleetbase\Models\Setting the Two-Factor Authentication settings for the user
+     * @return Setting the Two-Factor Authentication settings for the user
      */
     public static function getTwoFaSettingsForUser(User $user): Setting
     {
@@ -142,9 +142,9 @@ class TwoFactorAuth
     /**
      * Get Two-Factor Authentication settings for a company.
      *
-     * @param \Fleetbase\Models\Company $company the company for which to retrieve the settings
+     * @param Company $company the company for which to retrieve the settings
      *
-     * @return \Fleetbase\Models\Setting the Two-Factor Authentication settings for the company
+     * @return Setting the Two-Factor Authentication settings for the company
      */
     public static function getTwoFaSettingsForCompany(Company $company): Setting
     {
@@ -264,8 +264,8 @@ class TwoFactorAuth
     /**
      * Send a Two-Factor Authentication verification code to the user.
      *
-     * @param \Fleetbase\Models\User $user         the user to send the verification code to
-     * @param int                    $expiresAfter the expiration time for the verification code in seconds
+     * @param User $user         the user to send the verification code to
+     * @param int  $expiresAfter the expiration time for the verification code in seconds
      *
      * @return VerificationCode the generated verification code
      *
@@ -508,8 +508,8 @@ class TwoFactorAuth
     /**
      * Create a client session token for a verification code.
      *
-     * @param \Fleetbase\Models\VerificationCode $verificationCode the verification code
-     * @param int                                $expiresAfter     the expiration time for the client session token in seconds
+     * @param VerificationCode $verificationCode the verification code
+     * @param int              $expiresAfter     the expiration time for the client session token in seconds
      *
      * @return string the client session token
      */
@@ -524,8 +524,8 @@ class TwoFactorAuth
     /**
      * Check if a Two-Factor Authentication session key is valid.
      *
-     * @param string                 $twoFaSessionKey the Two-Factor Authentication session key
-     * @param \Fleetbase\Models\User $user            the user the session key was created for
+     * @param string $twoFaSessionKey the Two-Factor Authentication session key
+     * @param User   $user            the user the session key was created for
      *
      * @return bool true if the session key is valid, false otherwise
      */
@@ -570,10 +570,10 @@ class TwoFactorAuth
     /**
      * Create a Two-Factor Authentication session key.
      *
-     * @param \Fleetbase\Models\User $user         the user for whom the session key is created
-     * @param string                 $token        the Two-Factor Authentication token
-     * @param bool                   $storeInCache whether to store the key in the cache
-     * @param int                    $expiresAfter the expiration time for the session key in seconds
+     * @param User   $user         the user for whom the session key is created
+     * @param string $token        the Two-Factor Authentication token
+     * @param bool   $storeInCache whether to store the key in the cache
+     * @param int    $expiresAfter the expiration time for the session key in seconds
      *
      * @return string the Two-Factor Authentication session key
      */

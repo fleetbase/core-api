@@ -79,7 +79,7 @@ class UserCreated extends Notification implements ShouldQueue
     /**
      * Get the mail representation of the notification.
      *
-     * @return \Illuminate\Notifications\Messages\MailMessage
+     * @return MailMessage
      */
     public function toMail($notifiable)
     {
@@ -94,7 +94,7 @@ class UserCreated extends Notification implements ShouldQueue
     /**
      * Get the broadcastable representation of the notification.
      *
-     * @return \Illuminate\Notifications\Messages\BroadcastMessage
+     * @return BroadcastMessage
      */
     public function toBroadcast($notifiable)
     {

@@ -119,7 +119,7 @@ class LogApiRequest implements ShouldQueue
     /**
      * Array of response headers.
      *
-     * @param \Illuminate\Http\Response $response
+     * @param Response $response
      *
      * @return array
      */
@@ -131,7 +131,7 @@ class LogApiRequest implements ShouldQueue
     /**
      * Array of response headers.
      *
-     * @param \Illuminate\Http\Response $response
+     * @param Response $response
      *
      * @return array
      */

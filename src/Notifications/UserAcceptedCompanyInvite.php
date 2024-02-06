@@ -47,8 +47,8 @@ class UserAcceptedCompanyInvite extends Notification implements ShouldQueue
     /**
      * Create a new notification instance.
      *
-     * @param \Fleetbase\Models\Company $company the company model instance
-     * @param \Fleetbase\Models\User    $user    the user model instance
+     * @param Company $company the company model instance
+     * @param User    $user    the user model instance
      */
     public function __construct(Company $company, User $user)
     {
@@ -73,7 +73,7 @@ class UserAcceptedCompanyInvite extends Notification implements ShouldQueue
      *
      * @param mixed $notifiable the notifiable entity
      *
-     * @return \Illuminate\Notifications\Messages\MailMessage
+     * @return MailMessage
      */
     public function toMail($notifiable)
     {

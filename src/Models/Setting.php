@@ -168,7 +168,7 @@ class Setting extends EloquentModel
     /**
      * Get a settting record by key.
      *
-     * @return \Fleetbase\Models\Setting|null
+     * @return Setting|null
      */
     public static function getByKey(string $key)
     {
