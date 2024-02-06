@@ -3,7 +3,6 @@
 namespace Fleetbase\Traits;
 
 use Fleetbase\Support\Utils;
-use Vinkla\Hashids\Facades\Hashids;
 
 trait HasPublicId
 {
@@ -32,7 +31,8 @@ trait HasPublicId
      */
     public static function getPublicId()
     {
-        $hashid = lcfirst(Hashids::encode(time(), rand(), rand()));
+        $sqids  = new \Sqids\Sqids();
+        $hashid = lcfirst($sqids->encode([time(), rand(), rand()]));
         $hashid = substr($hashid, 0, 7);
 
         return $hashid;

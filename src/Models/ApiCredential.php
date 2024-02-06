@@ -12,9 +12,9 @@ use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\Searchable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
+use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Permission\Traits\HasPermissions;
-use Vinkla\Hashids\Facades\Hashids;
 
 class ApiCredential extends Model
 {
@@ -75,30 +75,19 @@ class ApiCredential extends Model
     protected $hidden = [];
 
     /**
-     * Properties which activity needs to be logged.
-     *
-     * @var array
-     */
-    protected static $logAttributes = '*';
-
-    /**
-     * Do not log empty changed.
-     *
-     * @var bool
-     */
-    protected static $submitEmptyLogs = false;
-
-    /**
-     * The name of the subject to log.
-     *
-     * @var string
-     */
-    protected static $logName = 'api_credential';
-
-    /**
      * Tables that should be skipped when rolling api credential or initializing `_key`.
+     *
+     * @todo Refactor so that tables can be added from extensions
      */
     public static array $skipTables = ['vehicles_data', 'permissions', 'roles', 'role_has_permissions', 'model_has_permissions', 'model_has_roles', 'model_has_policies'];
+
+    /**
+     * Get the activity log options for the model.
+     */
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()->logOnly(['*'])->logOnlyDirty();
+    }
 
     /**
      * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
@@ -174,8 +163,9 @@ class ApiCredential extends Model
      */
     public static function generateKeys($encode, $testKey = false)
     {
-        $key  = Hashids::encode($encode);
-        $hash = Hash::make($key);
+        $sqids = new \Sqids\Sqids();
+        $key   = $sqids->encode([$encode]);
+        $hash  = Hash::make($key);
 
         return [
             'key'    => ($testKey ? 'flb_test_' : 'flb_live_') . $key,

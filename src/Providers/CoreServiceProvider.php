@@ -8,6 +8,7 @@ use Fleetbase\Support\Utils;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -66,22 +67,20 @@ class CoreServiceProvider extends ServiceProvider
     ];
 
     /**
-     * Bootstrap any package services.
+     * Register any application services.
+     *
+     * Within the register method, you should only bind things into the
+     * service container. You should never attempt to register any event
+     * listeners, routes, or any other piece of functionality within the
+     * register method.
+     *
+     * More information on this can be found in the Laravel documentation:
+     * https://laravel.com/docs/8.x/providers
      *
      * @return void
      */
-    public function boot()
+    public function register()
     {
-        JsonResource::withoutWrapping();
-
-        $this->__hotfixCommonmarkDeprecation();
-        $this->registerCommands();
-        $this->registerObservers();
-        $this->registerExpansionsFrom();
-        $this->registerMiddleware();
-        $this->registerNotifications();
-        $this->loadRoutesFrom(__DIR__ . '/../routes.php');
-        $this->loadMigrationsFrom(__DIR__ . '/../../migrations');
         $this->mergeConfigFrom(__DIR__ . '/../../config/database.connections.php', 'database.connections');
         $this->mergeConfigFrom(__DIR__ . '/../../config/database.redis.php', 'database.redis');
         $this->mergeConfigFrom(__DIR__ . '/../../config/broadcasting.connections.php', 'broadcasting.connections');
@@ -95,8 +94,42 @@ class CoreServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__ . '/../../config/excel.php', 'excel');
         $this->mergeConfigFrom(__DIR__ . '/../../config/sentry.php', 'sentry');
         $this->mergeConfigFrom(__DIR__ . '/../../config/laravel-mysql-s3-backup.php', 'laravel-mysql-s3-backup');
+    }
+
+    /**
+     * Bootstrap any package services.
+     *
+     * @return void
+     */
+    public function boot()
+    {
+        JsonResource::withoutWrapping();
+
+        $this->__hotfixCommonmarkDeprecation();
+        $this->registerCommands();
+        $this->scheduleCommands(function ($schedule) {
+            $schedule->command('cache:prune-stale-tags')->hourly();
+        });
+        $this->registerObservers();
+        $this->registerExpansionsFrom();
+        $this->registerMiddleware();
+        $this->registerNotifications();
+        $this->loadRoutesFrom(__DIR__ . '/../routes.php');
+        $this->loadMigrationsFrom(__DIR__ . '/../../migrations');
+        $this->loadViewsFrom(__DIR__ . '/../../views', 'fleetbase');
+        $this->registerCustomBladeComponents();
         $this->mergeConfigFromSettings();
         $this->addServerIpAsAllowedOrigin();
+    }
+
+    /**
+     * Registers Fleetbase provided blade components.
+     *
+     * @return void
+     */
+    public function registerCustomBladeComponents()
+    {
+        Blade::component('fleetbase::layout.mail', 'mail-layout');
     }
 
     /**

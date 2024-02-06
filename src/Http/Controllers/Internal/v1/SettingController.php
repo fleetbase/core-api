@@ -175,14 +175,15 @@ class SettingController extends Controller
         config(['mail.default' => $mailer, 'mail.from' => $from, 'mail.mailers.smtp' => array_merge(['transport' => 'smtp'], $smtp)]);
 
         try {
-            Mail::to($user)->send(new \Fleetbase\Mail\TestEmail());
+            Mail::send(new \Fleetbase\Mail\TestMail($user));
         } catch (\Aws\Ses\Exception\SesException $e) {
             $message = $e->getMessage();
             $status  = 'error';
         } catch (\Swift_TransportException $e) {
             $message = $e->getMessage();
             $status  = 'error';
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
+            dd($e);
             $message = $e->getMessage();
             $status  = 'error';
         }
