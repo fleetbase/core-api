@@ -396,8 +396,6 @@ class User extends Authenticatable
 
     /**
      * Get the company relationship from the user.
-     * 
-     * @return \Fleetbase\Models\Company
      */
     public function getCompany(): ?Company
     {

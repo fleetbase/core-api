@@ -76,7 +76,7 @@ class File extends Model
      * @var array
      */
     protected $casts = [
-        'meta' => Json::class,
+        'meta'         => Json::class,
         'subject_type' => PolymorphicType::class,
     ];
 
