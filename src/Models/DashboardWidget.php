@@ -14,6 +14,7 @@ class DashboardWidget extends Model
     use HasApiModelBehavior;
     use Searchable;
     use Filterable;
+
     /**
      * The database table used by the model.
      *
@@ -21,6 +22,11 @@ class DashboardWidget extends Model
      */
     protected $table = 'dashboard_widgets';
 
+    /**
+    * The attributes that are mass assignable.
+    *
+    * @var array
+    */
     protected $fillable = [
         'name',
         'component',
@@ -29,9 +35,13 @@ class DashboardWidget extends Model
         'dashboard_uuid',
     ];
 
+    /**
+     * The attributes that should be cast to native types.
+     *
+     * @var array
+     */
     protected $casts = [
         'grid_options' => Json::class,
         'options' => Json::class,
     ];
 }
-

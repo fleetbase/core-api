@@ -3,9 +3,7 @@
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Http\Controllers\FleetbaseController;
-
 use Illuminate\Http\Request;
-use Illuminate\Http\Response;
 use Fleetbase\Models\Dashboard;
 
 class DashboardController extends FleetbaseController
