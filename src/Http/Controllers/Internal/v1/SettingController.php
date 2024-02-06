@@ -3,6 +3,7 @@
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Http\Controllers\Controller;
+use Fleetbase\Http\Requests\AdminRequest;
 use Fleetbase\Models\File;
 use Fleetbase\Models\Setting;
 use Fleetbase\Notifications\TestPushNotification;
@@ -18,7 +19,7 @@ class SettingController extends Controller
      *
      * @return void
      */
-    public function adminOverview()
+    public function adminOverview(AdminRequest $request)
     {
         $metrics                        = [];
         $metrics['total_users']         = \Fleetbase\Models\User::all()->count();
@@ -33,7 +34,7 @@ class SettingController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse
      */
-    public function getFilesystemConfig()
+    public function getFilesystemConfig(AdminRequest $request)
     {
         $driver = config('filesystems.default');
         $disks  = array_keys(config('filesystems.disks', []));
@@ -57,7 +58,7 @@ class SettingController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse
      */
-    public function saveFilesystemConfig(Request $request)
+    public function saveFilesystemConfig(AdminRequest $request)
     {
         $driver = $request->input('driver', 'local');
         $s3     = $request->input('s3', config('filesystems.disks.s3'));
@@ -75,7 +76,7 @@ class SettingController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse returns a JSON response with a success message and HTTP status 200
      */
-    public function testFilesystemConfig(Request $request)
+    public function testFilesystemConfig(AdminRequest $request)
     {
         $disk    = $request->input('disk', config('filesystems.default'));
         $message = 'Filesystem configuration is successful, test file uploaded.';
@@ -102,7 +103,7 @@ class SettingController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse
      */
-    public function getMailConfig()
+    public function getMailConfig(AdminRequest $request)
     {
         $mailer     = config('mail.default');
         $from       = config('mail.from');
@@ -132,7 +133,7 @@ class SettingController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse
      */
-    public function saveMailConfig(Request $request)
+    public function saveMailConfig(AdminRequest $request)
     {
         $mailer = $request->input('mailer', 'smtp');
         $from   = $request->input('from', []);
@@ -156,7 +157,7 @@ class SettingController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse returns a JSON response with a success message and HTTP status 200
      */
-    public function testMailConfig(Request $request)
+    public function testMailConfig(AdminRequest $request)
     {
         $mailer = $request->input('mailer', 'smtp');
         $from   = $request->input(
@@ -196,7 +197,7 @@ class SettingController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse
      */
-    public function getQueueConfig()
+    public function getQueueConfig(AdminRequest $request)
     {
         $driver      = config('queue.default');
         $connections = array_keys(config('queue.connections', []));
@@ -224,7 +225,7 @@ class SettingController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse
      */
-    public function saveQueueConfig(Request $request)
+    public function saveQueueConfig(AdminRequest $request)
     {
         $driver     = $request->input('driver', 'sync');
         $sqs        = $request->input('sqs', config('queue.connections.sqs'));
@@ -244,7 +245,7 @@ class SettingController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse returns a JSON response with a success message and HTTP status 200
      */
-    public function testQueueConfig(Request $request)
+    public function testQueueConfig(AdminRequest $request)
     {
         $queue   = $request->input('queue', config('queue.connections.sqs.queue'));
         $message = 'Queue configuration is successful, message sent to queue.';
@@ -277,7 +278,7 @@ class SettingController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse
      */
-    public function getServicesConfig()
+    public function getServicesConfig(AdminRequest $request)
     {
         /** aws service */
         $awsKey    = config('services.aws.key', env('AWS_ACCESS_KEY_ID'));
@@ -318,7 +319,7 @@ class SettingController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse
      */
-    public function saveServicesConfig(Request $request)
+    public function saveServicesConfig(AdminRequest $request)
     {
         $aws        = $request->input('aws', config('services.aws'));
         $ipinfo     = $request->input('ipinfo', config('services.ipinfo'));
@@ -340,7 +341,7 @@ class SettingController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse
      */
-    public function getNotificationChannelsConfig()
+    public function getNotificationChannelsConfig(AdminRequest $request)
     {
         // get apn config
         $apn = config('broadcasting.connections.apn');
@@ -359,7 +360,7 @@ class SettingController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse
      */
-    public function saveNotificationChannelsConfig(Request $request)
+    public function saveNotificationChannelsConfig(AdminRequest $request)
     {
         $apn = $request->array('apn', config('broadcasting.connections.apn'));
 
@@ -381,7 +382,7 @@ class SettingController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse
      */
-    public function testNotificationChannelsConfig(Request $request)
+    public function testNotificationChannelsConfig(AdminRequest $request)
     {
         $title    = $request->input('title', 'Hello World from Fleetbase 🚀');
         $message  = $request->input('message', 'This is a test push notification!');
@@ -436,7 +437,7 @@ class SettingController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse
      */
-    public function saveBrandingSettings(Request $request)
+    public function saveBrandingSettings(AdminRequest $request)
     {
         $iconUuid     = $request->input('brand.icon_uuid');
         $logoUuid     = $request->input('brand.logo_uuid');
@@ -470,7 +471,7 @@ class SettingController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse returns a JSON response with a success message and HTTP status 200
      */
-    public function testTwilioConfig(Request $request)
+    public function testTwilioConfig(AdminRequest $request)
     {
         $sid   = $request->input('sid');
         $token = $request->input('token');
@@ -513,7 +514,7 @@ class SettingController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse returns a JSON response with a success message and HTTP status 200
      */
-    public function testSentryConfig(Request $request)
+    public function testSentryConfig(AdminRequest $request)
     {
         $dsn = $request->input('dsn');
 
@@ -571,7 +572,7 @@ class SettingController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse returns a JSON response with a success message and HTTP status 200
      */
-    public function testSocketcluster(Request $request)
+    public function testSocketcluster(AdminRequest $request)
     {
         // Get the channel to publish to
         $channel  = $request->input('channel', 'test');

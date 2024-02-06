@@ -484,7 +484,6 @@ class AuthController extends Controller
         $verificationCode = VerificationCode::where('code', $request->input('code'))->with(['subject'])->first();
         $link             = $request->input('link');
         $password         = $request->input('password');
-
         // If link isn't valid
         if ($verificationCode->uuid !== $link) {
             return response()->error('Invalid password reset request!');
