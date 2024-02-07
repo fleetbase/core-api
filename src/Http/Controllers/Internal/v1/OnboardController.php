@@ -9,6 +9,7 @@ use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\User;
 use Fleetbase\Models\VerificationCode;
+use Fleetbase\Support\Http;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
@@ -40,19 +41,26 @@ class OnboardController extends Controller
         $isAdmin = !User::exists();
 
         // Get user properties
-        $name     = $request->input('name');
-        $email    = $request->input('email');
-        $phone    = $request->input('phone');
-        $username = Str::slug($name . Str::random(3), '_');
+        $name        = $request->input('name');
+        $email       = $request->input('email');
+        $phone       = $request->input('phone');
+        $timezone    = $request->input('timezone', date_default_timezone_get());
+        $username    = Str::slug($name . '_' . Str::random(4), '_');
+
+        // Prepare user attributes
+        $attributes = $this->_applyUserInfo([
+            'name'       => $name,
+            'email'      => $email,
+            'phone'      => $phone,
+            'username'   => $username,
+            'ip_address' => $request->ip(),
+            'timezone'   => $timezone,
+            'status'     => 'active',
+            'last_login' => $isAdmin ? now() : null,
+        ], $request);
 
         // create user account
-        $user = User::create([
-            'name'     => $name,
-            'email'    => $email,
-            'phone'    => $phone,
-            'username' => $username,
-            'status'   => 'active',
-        ]);
+        $user = User::create($attributes);
 
         // set the user password
         $user->password = $request->input('password');
@@ -86,6 +94,35 @@ class OnboardController extends Controller
             'token'            => $isAdmin ? $token->plainTextToken : null,
             'skipVerification' => $isAdmin,
         ]);
+    }
+
+    private function _applyUserInfo($attributes, $request)
+    {
+        // Lookup user default details
+        try {
+            $info = Http::lookupIp($request);
+        } catch (\Exception $e) {
+        }
+
+        if ($info) {
+            $attributes['country']    = data_get($info, 'country_code');
+            $attributes['ip_address'] = data_get($info, 'ip', $request->ip());
+            $tzInfo                   = data_get($info, 'time_zone.name');
+            if ($tzInfo) {
+                $attributes['timezone'] = $tzInfo;
+            }
+            $attributes['meta'] = [
+                'areacode'   => data_get($info, 'calling_code'),
+                'currency'   => data_get($info, 'currency.code'),
+                'language'   => data_get($info, 'languages.0'),
+                'country'    => data_get($info, 'country_name'),
+                'contintent' => data_get($info, 'continent_name'),
+                'latitude'   => data_get($info, 'latitude'),
+                'longitude'  => data_get($info, 'longitude'),
+            ];
+        }
+
+        return $attributes;
     }
 
     /**

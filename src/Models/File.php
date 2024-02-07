@@ -14,10 +14,10 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Mimey\MimeTypes;
+use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Sluggable\HasSlug;
 use Spatie\Sluggable\SlugOptions;
-use Vinkla\Hashids\Facades\Hashids;
 
 class File extends Model
 {
@@ -76,30 +76,9 @@ class File extends Model
      * @var array
      */
     protected $casts = [
-        'meta' => Json::class,
+        'meta'         => Json::class,
         'subject_type' => PolymorphicType::class,
     ];
-
-    /**
-     * Properties which activity needs to be logged.
-     *
-     * @var array
-     */
-    protected static $logAttributes = '*';
-
-    /**
-     * Do not log empty changed.
-     *
-     * @var bool
-     */
-    protected static $submitEmptyLogs = false;
-
-    /**
-     * The name of the subject to log.
-     *
-     * @var string
-     */
-    protected static $logName = 'file';
 
     /**
      * Get the options for generating the slug.
@@ -109,6 +88,14 @@ class File extends Model
         return SlugOptions::create()
             ->generateSlugsFrom('original_filename')
             ->saveSlugsTo('slug');
+    }
+
+    /**
+     * Get the activity log options for the model.
+     */
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()->logOnly(['subject_uuid', 'bucket', 'disk', 'path'])->logOnlyDirty();
     }
 
     /**
@@ -305,8 +292,9 @@ class File extends Model
         if ($request->hasFile('file')) {
             $extension = strtolower($file->getClientOriginalExtension());
             $extension = Str::startsWith($extension, '.') ? $extension : '.' . $extension;
+            $sqids     = new \Sqids\Sqids();
 
-            return Hashids::encode(strlen($file->hashName()), time()) . $extension;
+            return $sqids->encode([strlen($file->hashName()), time()]) . $extension;
         }
 
         return static::randomFileName($extension);

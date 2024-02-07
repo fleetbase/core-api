@@ -4,7 +4,7 @@ namespace Fleetbase\Models;
 
 use Aloha\Twilio\Support\Laravel\Facade as Twilio;
 use Fleetbase\Casts\Json;
-use Fleetbase\Mail\VerifyEmail;
+use Fleetbase\Mail\VerificationMail;
 use Fleetbase\Traits\Expirable;
 use Fleetbase\Traits\HasMetaAttributes;
 use Fleetbase\Traits\HasSubject;
@@ -92,35 +92,64 @@ class VerificationCode extends Model
     }
 
     /** static method to generate code for email verification */
-    public static function generateEmailVerificationFor($subject, $for = 'email_verification', \Closure $messageCallback = null, \Closure $linesCallback = null, $meta = [], $expireAfter = null)
+    public static function generateEmailVerificationFor($subject, $for = 'email_verification', array $options = [])
     {
-        $verifyCode             = static::generateFor($subject, $for, false);
-        $verifyCode->expires_at = $expireAfter === null ? Carbon::now()->addHour() : $expireAfter;
-        $verifyCode->meta       = $meta;
-        $verifyCode->save();
-
-        $emailSubject = is_callable($messageCallback) ? $messageCallback($verifyCode) : null;
-        $emailLines   = is_callable($linesCallback) ? $linesCallback($verifyCode) : [];
+        $expireAfter                  = data_get($options, 'expireAfter');
+        $verificationCode             = static::generateFor($subject, $for, false);
+        $verificationCode->expires_at = $expireAfter === null ? Carbon::now()->addHour() : $expireAfter;
+        $verificationCode->meta       = data_get($options, 'meta', []);
+        $verificationCode->save();
 
         if (isset($subject->email)) {
-            Mail::to($subject)->send(new VerifyEmail($verifyCode, $emailSubject, $emailLines, $subject));
+            // See if subject option passed is callable
+            $mailableSubject = data_get($options, 'subject');
+            if (is_callable($mailableSubject)) {
+                $options['subject'] = $mailableSubject($verificationCode);
+            }
+
+            // See if content passed
+            $content = data_get($options, 'content');
+            if (is_callable($content)) {
+                $content = $content($verificationCode);
+            }
+
+            // Initialize the mailable definition
+            $mail = new VerificationMail($verificationCode, $content);
+
+            // Apply any additional Mail facade parameters
+            $mailer = Mail::to($subject);
+            foreach ($options as $key => $value) {
+                if (method_exists($mailer, $key)) {
+                    $mailer->$key($value);
+                }
+            }
+
+            $mailer->send($mail);
         }
 
-        return $verifyCode;
+        return $verificationCode;
     }
 
     /** static method to generate code for phone verification */
-    public static function generateSmsVerificationFor($subject, $for = 'phone_verification', \Closure $messageCallback = null, $meta = [], $expireAfter = null)
+    public static function generateSmsVerificationFor($subject, $for = 'phone_verification', array $options = [], \Closure $messageCallback = null, $meta = [], $expireAfter = null)
     {
-        $verifyCode             = static::generateFor($subject, $for, false);
-        $verifyCode->expires_at = $expireAfter === null ? Carbon::now()->addHour() : $expireAfter;
-        $verifyCode->meta       = $meta;
-        $verifyCode->save();
+        $expireAfter                  = data_get($options, 'expireAfter');
+        $verificationCode             = static::generateFor($subject, $for, false);
+        $verificationCode->expires_at = $expireAfter === null ? Carbon::now()->addHour() : $expireAfter;
+        $verificationCode->meta       = data_get($options, 'meta', []);
+        $verificationCode->save();
 
-        if ($subject->phone) {
-            Twilio::message($subject->phone, $messageCallback ? $messageCallback($verifyCode) : 'Your ' . config('app.name') . ' verification code is ' . $verifyCode->code);
+        // Get message
+        $message         = 'Your ' . config('app.name') . ' verification code is ' . $verificationCode->code;
+        $messageCallback = data_get($options, 'messageCallback');
+        if (is_callable($messageCallback)) {
+            $message = $messageCallback($verificationCode);
         }
 
-        return $verifyCode;
+        if ($subject->phone) {
+            Twilio::message($subject->phone, $message);
+        }
+
+        return $verificationCode;
     }
 }

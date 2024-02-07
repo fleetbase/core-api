@@ -21,6 +21,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\HasApiTokens;
+use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\CausesActivity;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Permission\Traits\HasRoles;
@@ -161,34 +162,6 @@ class User extends Authenticatable
     ];
 
     /**
-     * Properties which activity needs to be logged.
-     *
-     * @var array
-     */
-    protected static $logAttributes = ['name', 'email', 'timezone', 'country', 'phone', 'status'];
-
-    /**
-     * Do not log empty changed.
-     *
-     * @var bool
-     */
-    protected static $submitEmptyLogs = false;
-
-    /**
-     * We only want to log changed attributes.
-     *
-     * @var bool
-     */
-    protected static $logOnlyDirty = true;
-
-    /**
-     * The name of the subject to log.
-     *
-     * @var string
-     */
-    protected static $logName = 'user';
-
-    /**
      * Get the options for generating the slug.
      */
     public function getSlugOptions(): SlugOptions
@@ -196,6 +169,26 @@ class User extends Authenticatable
         return SlugOptions::create()
             ->generateSlugsFrom('name')
             ->saveSlugsTo('slug');
+    }
+
+    /**
+     * Get the activity log options for the model.
+     */
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly([
+                'name',
+                'username',
+                'email',
+                'phone',
+                'date_of_birth',
+                'timezone',
+                'country',
+                'avatar_uuid',
+            ])
+            ->logOnlyDirty()
+            ->dontLogIfAttributesChangedOnly(['last_login']);
     }
 
     /**
@@ -403,8 +396,6 @@ class User extends Authenticatable
 
     /**
      * Get the company relationship from the user.
-     * 
-     * @return \Fleetbase\Models\Company
      */
     public function getCompany(): ?Company
     {

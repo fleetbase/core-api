@@ -3,8 +3,11 @@
 namespace Fleetbase\Expansions;
 
 use Fleetbase\Build\Expansion;
+use Fleetbase\Support\Http;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 
 class Builder implements Expansion
 {
@@ -90,6 +93,96 @@ class Builder implements Expansion
 
             $underlyingQuery->wheres            = $wheres;
             $underlyingQuery->bindings['where'] = $bindings;
+
+            return $this;
+        };
+    }
+
+    /**
+     * Extends the Eloquent query builder to apply sorting based on the request parameters.
+     * It supports various formats of sorting parameters:
+     * - 'latest' and 'oldest' for sorting by creation date.
+     * - 'distance' for a custom sort by distance (requires orderByDistance method on the model).
+     * - Standard sorting with a single column or multiple columns, with optional descending order prefix '-'.
+     * - Column sorting with a specific direction using ':' (e.g., 'column:asc').
+     *
+     * Usage:
+     * Call this method on your Eloquent builder instance and pass the request object.
+     * The method reads the 'sort' parameter from the request and applies the corresponding sortings.
+     * Example:
+     *   YourModel::query()->applySortFromRequest()->get();
+     *
+     * @return \Illuminate\Database\Eloquent\Builder the builder instance with applied sorting
+     *
+     * @example
+     * // URL: /your-route?sort=latest,-price
+     * // This will apply the 'latest' sort and then sort by 'price' in descending order.
+     *
+     * @throws \Exception if the sorting column is not valid
+     */
+    public function applySortFromRequest()
+    {
+        return function ($request) {
+            /** @var \Illuminate\Database\Eloquent\Builder $this */
+            $sorts = $request->or(['sort', 'nestedSort'], '-created_at');
+            $sorts = $sorts ? explode(',', $sorts) : null;
+
+            if (!$sorts) {
+                return $this;
+            }
+
+            // get the current model
+            $model = $this->getModel();
+
+            foreach ($sorts as $sort) {
+                if (Schema::hasColumn($model->table, $model->getCreatedAtColumn())) {
+                    if (strtolower($sort) == 'latest') {
+                        $this->latest();
+                        continue;
+                    }
+
+                    if (strtolower($sort) == 'oldest') {
+                        $this->oldest();
+                        continue;
+                    }
+                }
+
+                if (strtolower($sort) == 'distance') {
+                    $this->orderByDistance();
+                    continue;
+                }
+
+                if (is_array($sort) || Str::contains($sort, ',')) {
+                    $columns = !is_array($sort) ? explode(',', $sort) : $sort;
+
+                    foreach ($columns as $column) {
+                        if (Str::startsWith($column, '-')) {
+                            $direction = Str::startsWith($column, '-') ? 'desc' : 'asc';
+                            $param     = Str::startsWith($column, '-') ? substr($column, 1) : $column;
+
+                            $this->orderBy($column, $direction);
+                            continue;
+                        }
+
+                        $sd = explode(':', $column);
+                        if ($sd && count($sd) > 0) {
+                            count($sd) == 2
+                                ? $this->orderBy(trim($sd[0]), trim($sd[1]))
+                                : $this->orderBy(trim($sd[0]), 'asc');
+                        }
+                    }
+                }
+
+                if (Str::startsWith($sort, '-')) {
+                    list($param, $direction) = Http::useSort($request);
+
+                    $this->orderBy($param, $direction);
+                    continue;
+                }
+
+                list($param, $direction) = Http::useSort($request);
+                $this->orderBy($param, $direction);
+            }
 
             return $this;
         };

@@ -95,7 +95,7 @@ class CallWebhookJob implements ShouldQueue
             }
 
             if (!$lastAttempt) {
-                /** @var \Fleetbase\Webhook\BackoffStrategy\BackoffStrategy $backoffStrategy */
+                /** @var BackoffStrategy\BackoffStrategy $backoffStrategy */
                 $backoffStrategy = app($this->backoffStrategyClass);
 
                 $waitInSeconds = $backoffStrategy->waitInSecondsAfterAttempt($this->attempts());

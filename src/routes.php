@@ -173,6 +173,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 $router->fleetbaseRoutes('companies', function ($router, $controller) {
                                     $router->get('two-fa', $controller('getTwoFactorSettings'));
                                     $router->post('two-fa', $controller('saveTwoFactorSettings'));
+                                    $router->get('{id}/users', $controller('users'));
                                 });
                                 $router->fleetbaseRoutes(
                                     'users',
@@ -219,6 +220,11 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     $router->delete('bulk-delete', $controller('bulkDelete'));
                                     $router->post('save-settings', $controller('saveSettings'));
                                 });
+                                $router->fleetbaseRoutes('dashboards', function ($router, $controller) {
+                                    $router->post('switch', $controller('switchDashboard'));
+                                    $router->post('reset-default', $controller('resetDefaultDashboard'));
+                                });
+                                $router->fleetbaseRoutes('dashboard-widgets');
                             }
                         );
                     }

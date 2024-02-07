@@ -112,15 +112,9 @@ class Company extends Model
      * @var array
      */
     protected $casts = [
-        'options' => Json::class,
+        'options'       => Json::class,
+        'trial_ends_at' => 'datetime',
     ];
-
-    /**
-     * The attributes that should be cast to dates.
-     *
-     * @var array
-     */
-    protected $dates = ['trial_ends_at'];
 
     /**
      * Properties which activity needs to be logged.

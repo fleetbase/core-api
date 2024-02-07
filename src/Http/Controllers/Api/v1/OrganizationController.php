@@ -16,7 +16,7 @@ class OrganizationController extends Controller
     {
         $token       = $request->bearerToken();
         $isSecretKey = Str::startsWith($token, '$');
-        $companyId = null;
+        $companyId   = null;
 
         // Depending on API key format set the connection to find credential on
         $connection = Str::startsWith($token, 'flb_test_') ? 'sandbox' : 'mysql';
@@ -55,6 +55,7 @@ class OrganizationController extends Controller
 
         // Get the organization owning the API key
         $organization = Company::where('uuid', $companyId)->first();
+
         return new Organization($organization);
     }
 }

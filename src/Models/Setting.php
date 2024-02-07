@@ -177,7 +177,12 @@ class Setting extends EloquentModel
 
     public static function getBranding()
     {
-        $brandingSettings = ['id' => 1, 'uuid' => 1, 'icon_url' => null, 'logo_url' => null];
+        $brandingSettings = [
+            'id'       => 1,
+            'uuid'     => 1,
+            'icon_url' => config('fleetbase.branding.icon_url'),
+            'logo_url' => config('fleetbase.branding.logo_url'),
+        ];
         $iconUuid         = static::where('key', 'branding.icon_uuid')->value('value');
         $logoUuid         = static::where('key', 'branding.logo_uuid')->value('value');
         $defaultTheme     = static::where('key', 'branding.default_theme')->value('value');
@@ -206,6 +211,36 @@ class Setting extends EloquentModel
         $brandingSettings['default_theme'] = $defaultTheme ?? 'dark';
 
         return $brandingSettings;
+    }
+
+    public static function getBrandingLogoUrl()
+    {
+        $logoUuid         = static::where('key', 'branding.logo_uuid')->value('value');
+
+        if (\Illuminate\Support\Str::isUuid($logoUuid)) {
+            $logo = File::where('uuid', $logoUuid)->first();
+
+            if ($logo && $logo instanceof File) {
+                return $logo->url;
+            }
+        }
+
+        return config('fleetbase.branding.logo_url');
+    }
+
+    public static function getBrandingIconUrl()
+    {
+        $iconUuid         = static::where('key', 'branding.icon_uuid')->value('value');
+
+        if (\Illuminate\Support\Str::isUuid($iconUuid)) {
+            $icon = File::where('uuid', $iconUuid)->first();
+
+            if ($icon && $icon instanceof File) {
+                return $icon->url;
+            }
+        }
+
+        return config('fleetbase.branding.icon_url');
     }
 
     public function getValue(string $key, $defaultValue = null)

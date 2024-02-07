@@ -10,7 +10,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Redis;
-use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
 
 /**
@@ -221,10 +220,44 @@ class TwoFactorAuth
      */
     public static function validateSessionToken(string $token, string $identity, string $clientToken = null): bool
     {
-        try {
-            return is_string(static::getClientSessionTokenFromTwoFaSession($token, $identity, $clientToken));
-        } catch (\Exception $e) {
+        // Get user from identity
+        $user = static::getUserFromIdentity($identity);
+        if (!$user) {
             return false;
+        }
+
+        // Check if enabled 2FA
+        if (!self::isEnabled($user)) {
+            return false;
+        }
+
+        // If a client session token is provided validate by fetching the verification code
+        // If a verification code exists then we just return the current valid client session
+        if ($clientToken) {
+            $verificationCode = static::getVerificationCodeFromClientToken($clientToken);
+
+            // If verification code has expired throw exception
+            if ($verificationCode && $verificationCode->hasExpired()) {
+                static::forgetTwoFaSession($token, $identity);
+
+                return false;
+            }
+
+            if ($verificationCode) {
+                return $clientToken;
+            } else {
+                static::forgetTwoFaSession($token, $identity);
+
+                return false;
+            }
+        }
+
+        // Decrypt two fa session token
+        $twoFaSessionKey = static::decryptSessionKey($token, $user->uuid);
+
+        // Validate session key that it is valid and exists
+        if (static::isTwoFaSessionKeyValid($twoFaSessionKey, $user)) {
+            return true;
         }
 
         return false;
@@ -258,7 +291,10 @@ class TwoFactorAuth
             }
 
             // create verification code
-            return VerificationCode::generateSmsVerificationFor($user, '2fa', $messageCallback, [], $expiresAfter);
+            return VerificationCode::generateSmsVerificationFor($user, '2fa', [
+                'messageCallback' => $messageCallback,
+                'expiresAfter'    => $expiresAfter,
+            ]);
         }
 
         if ($method === 'email') {
@@ -267,15 +303,14 @@ class TwoFactorAuth
                 throw new \Exception('No email to send 2FA code to.');
             }
 
-            // 2FA Message Lines
-            $linesCallback = function ($verificationCode) {
-                return [
-                    new HtmlString('<p style="font-family: monospace;">Your two-factor authentication code is: <strong>' . $verificationCode->code . '</strong></p>'),
-                ];
-            };
-
             // create verification code
-            return VerificationCode::generateEmailVerificationFor($user, '2fa', $messageCallback, $linesCallback, [], $expiresAfter);
+            return VerificationCode::generateEmailVerificationFor($user, '2fa', [
+                'subject' => $messageCallback,
+                'content' => function ($verificationCode) {
+                    return 'Your two-factor authentication code is: ' . $verificationCode->code;
+                },
+                'expiresAfter' => $expiresAfter,
+            ]);
         }
 
         throw new \Exception('Invalid 2FA method selected in settings.');

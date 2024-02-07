@@ -196,7 +196,7 @@ class Request implements Expansion
          */
         return function () {
             /** @var \Illuminate\Http\Request $this */
-            $searchQueryParam = $this->or(['query', 'searchQuery']);
+            $searchQueryParam = $this->or(['query', 'searchQuery', 'nestedQuery']);
 
             if (is_string($searchQueryParam)) {
                 return urldecode(strtolower($searchQueryParam));
@@ -222,17 +222,21 @@ class Request implements Expansion
                 'coords',
                 'boundary',
                 'page',
+                'nestedPage',
                 'offset',
                 'limit',
+                'nestedLimit',
                 'perPage',
                 'per_page',
                 'singleRecord',
                 'single',
                 'query',
                 'searchQuery',
+                'nestedQuery',
                 'columns',
                 'distinct',
                 'sort',
+                'nestedSort',
                 'before',
                 'after',
                 'on',
