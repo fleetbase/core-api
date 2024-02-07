@@ -99,28 +99,27 @@ class Builder implements Expansion
     }
 
     /**
- * Extends the Eloquent query builder to apply sorting based on the request parameters.
- * It supports various formats of sorting parameters:
- * - 'latest' and 'oldest' for sorting by creation date.
- * - 'distance' for a custom sort by distance (requires orderByDistance method on the model).
- * - Standard sorting with a single column or multiple columns, with optional descending order prefix '-'.
- * - Column sorting with a specific direction using ':' (e.g., 'column:asc').
- *
- * Usage:
- * Call this method on your Eloquent builder instance and pass the request object.
- * The method reads the 'sort' parameter from the request and applies the corresponding sortings.
- * Example:
- *   YourModel::query()->applySortFromRequest()->get();
- *
- * @param \Illuminate\Http\Request $request The HTTP request object containing the sort parameters.
- * @return \Illuminate\Database\Eloquent\Builder The builder instance with applied sorting.
- *
- * @example
- * // URL: /your-route?sort=latest,-price
- * // This will apply the 'latest' sort and then sort by 'price' in descending order.
- *
- * @throws \Exception If the sorting column is not valid.
- */
+     * Extends the Eloquent query builder to apply sorting based on the request parameters.
+     * It supports various formats of sorting parameters:
+     * - 'latest' and 'oldest' for sorting by creation date.
+     * - 'distance' for a custom sort by distance (requires orderByDistance method on the model).
+     * - Standard sorting with a single column or multiple columns, with optional descending order prefix '-'.
+     * - Column sorting with a specific direction using ':' (e.g., 'column:asc').
+     *
+     * Usage:
+     * Call this method on your Eloquent builder instance and pass the request object.
+     * The method reads the 'sort' parameter from the request and applies the corresponding sortings.
+     * Example:
+     *   YourModel::query()->applySortFromRequest()->get();
+     *
+     * @return \Illuminate\Database\Eloquent\Builder the builder instance with applied sorting
+     *
+     * @example
+     * // URL: /your-route?sort=latest,-price
+     * // This will apply the 'latest' sort and then sort by 'price' in descending order.
+     *
+     * @throws \Exception if the sorting column is not valid
+     */
     public function applySortFromRequest()
     {
         return function ($request) {

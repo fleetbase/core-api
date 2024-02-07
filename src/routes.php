@@ -112,7 +112,6 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                         $router->group(
                             ['middleware' => ['fleetbase.protected']],
                             function ($router) {
-                                
                                 $router->fleetbaseRoutes(
                                     'api-credentials',
                                     function ($router, $controller) {

@@ -2,7 +2,6 @@
 
 namespace Fleetbase\Http\Requests;
 
-
 class AdminRequest extends FleetbaseRequest
 {
     /**
@@ -10,12 +9,11 @@ class AdminRequest extends FleetbaseRequest
      *
      * @return bool
      */
-
     public function authorize()
     {
         $user = $this->user();
 
-        if(!$user === null) {
+        if (!$user === null) {
             return false;
         }
 

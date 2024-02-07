@@ -2,8 +2,6 @@
 
 namespace Fleetbase\Http\Filter;
 
-use Fleetbase\Http\Filter\Filter;
-
 class CompanyFilter extends Filter
 {
     public function queryForInternal()

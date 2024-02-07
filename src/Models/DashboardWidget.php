@@ -23,16 +23,16 @@ class DashboardWidget extends Model
     protected $table = 'dashboard_widgets';
 
     /**
-    * The attributes that are mass assignable.
-    *
-    * @var array
-    */
+     * The attributes that are mass assignable.
+     *
+     * @var array
+     */
     protected $fillable = [
         'dashboard_uuid',
         'name',
         'component',
         'grid_options',
-        'options'
+        'options',
     ];
 
     /**
@@ -42,6 +42,6 @@ class DashboardWidget extends Model
      */
     protected $casts = [
         'grid_options' => Json::class,
-        'options' => Json::class,
+        'options'      => Json::class,
     ];
 }

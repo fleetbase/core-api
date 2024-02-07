@@ -6,7 +6,6 @@ use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\Searchable;
-use Fleetbase\Models\DashboardWidget;
 
 class Dashboard extends Model
 {
@@ -23,21 +22,21 @@ class Dashboard extends Model
     protected $table = 'dashboards';
 
     /**
-    * The attributes that are mass assignable.
-    *
-    * @var array
-    */
+     * The attributes that are mass assignable.
+     *
+     * @var array
+     */
     protected $fillable = [
         'user_uuid',
         'company_uuid',
-        'name'
+        'name',
     ];
 
     /**
-    * The relationships that will always be appended.
-    *
-    * @var array
-    */
+     * The relationships that will always be appended.
+     *
+     * @var array
+     */
     protected $with = ['widgets'];
 
     /**
@@ -47,5 +46,4 @@ class Dashboard extends Model
     {
         return $this->hasMany(DashboardWidget::class);
     }
-
 }

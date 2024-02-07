@@ -3,8 +3,8 @@
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Http\Controllers\FleetbaseController;
-use Illuminate\Http\Request;
 use Fleetbase\Models\Dashboard;
+use Illuminate\Http\Request;
 
 class DashboardController extends FleetbaseController
 {
@@ -16,11 +16,10 @@ class DashboardController extends FleetbaseController
     public $resource = 'dashboard';
 
     /**
-    * Switch the default dashboard.
-    *
-    * @param \Illuminate\Http\Request $request
-    * @return \Illuminate\Http\Response
-    */
+     * Switch the default dashboard.
+     *
+     * @return \Illuminate\Http\Response
+     */
     public function switchDashboard(Request $request)
     {
         $dashboardId = $request->input('dashboard_uuid');
@@ -34,6 +33,7 @@ class DashboardController extends FleetbaseController
         if ($selectedDashboard) {
             $selectedDashboard->is_default = true;
             $selectedDashboard->save();
+
             return response()->json(['dashboard' => $selectedDashboard]);
         }
 
@@ -43,7 +43,6 @@ class DashboardController extends FleetbaseController
     /**
      * Resets all the dashboards default status.
      *
-     * @param \Illuminate\Http\Request $request
      * @return \Illuminate\Http\Response
      */
     public function resetDefaultDashboard()

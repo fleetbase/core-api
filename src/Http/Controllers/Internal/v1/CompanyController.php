@@ -90,14 +90,13 @@ class CompanyController extends FleetbaseController
      * Get all users for a company.
      *
      * @param string $id The company id
-     * @param \Illuminate\Http\Request $request
      *
      * @return \Illuminate\Http\Response
      */
     public function users(string $id, Request $request)
     {
         $searchQuery = $request->searchQuery();
-        $limit = $request->input(['limit', 'nestedLimit'], 20);
+        $limit       = $request->input(['limit', 'nestedLimit'], 20);
         // $page = $request->or(['page', 'nestedPage'], 1);
         $paginate = $request->boolean('paginate');
 
@@ -131,14 +130,14 @@ class CompanyController extends FleetbaseController
 
             return response()->json([
                 'users' => $users->getCollection(),
-                'meta' => [
+                'meta'  => [
                     'current_page' => $users->currentPage(),
-                    'from' => $users->firstItem(),
-                    'last_page' => $users->lastPage(),
-                    'path' => $users->path(),
-                    'per_page' => $users->perPage(),
-                    'to' => $users->lastItem(),
-                    'total' => $users->total(),
+                    'from'         => $users->firstItem(),
+                    'last_page'    => $users->lastPage(),
+                    'path'         => $users->path(),
+                    'per_page'     => $users->perPage(),
+                    'to'           => $users->lastItem(),
+                    'total'        => $users->total(),
                 ],
             ]);
         }

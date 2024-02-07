@@ -6,9 +6,9 @@ use Fleetbase\Models\User;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
+use Illuminate\Mail\Mailables\Address;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
-use Illuminate\Mail\Mailables\Address;
 use Illuminate\Queue\SerializesModels;
 
 class TestMail extends Mailable implements ShouldQueue
@@ -18,22 +18,16 @@ class TestMail extends Mailable implements ShouldQueue
 
     /**
      * The test mail subject.
-     *
-     * @var string
      */
     public string $mailSubject = '🎉 Your Fleetbase Mail Configuration Works!';
 
     /**
      * The user the email is to.
-     *
-     * @var User
      */
     public User $user;
 
     /**
      * Creates an instance of the TestMail.
-     *
-     * @param User $user
      */
     public function __construct(User $user)
     {
@@ -59,8 +53,8 @@ class TestMail extends Mailable implements ShouldQueue
         return new Content(
             markdown: 'fleetbase::mail.test',
             with: [
-                'user' => $this->user,
-                'currentHour' => now()->hour
+                'user'        => $this->user,
+                'currentHour' => now()->hour,
             ]
         );
     }

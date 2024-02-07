@@ -239,6 +239,7 @@ class TwoFactorAuth
             // If verification code has expired throw exception
             if ($verificationCode && $verificationCode->hasExpired()) {
                 static::forgetTwoFaSession($token, $identity);
+
                 return false;
             }
 
@@ -246,6 +247,7 @@ class TwoFactorAuth
                 return $clientToken;
             } else {
                 static::forgetTwoFaSession($token, $identity);
+
                 return false;
             }
         }

@@ -178,10 +178,10 @@ class Setting extends EloquentModel
     public static function getBranding()
     {
         $brandingSettings = [
-            'id' => 1, 
-            'uuid' => 1, 
-            'icon_url' => config('fleetbase.branding.icon_url'), 
-            'logo_url' => config('fleetbase.branding.logo_url')
+            'id'       => 1,
+            'uuid'     => 1,
+            'icon_url' => config('fleetbase.branding.icon_url'),
+            'logo_url' => config('fleetbase.branding.logo_url'),
         ];
         $iconUuid         = static::where('key', 'branding.icon_uuid')->value('value');
         $logoUuid         = static::where('key', 'branding.logo_uuid')->value('value');

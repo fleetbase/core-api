@@ -56,7 +56,7 @@ class OnboardController extends Controller
             'ip_address' => $request->ip(),
             'timezone'   => $timezone,
             'status'     => 'active',
-            'last_login' => $isAdmin ? now() : null
+            'last_login' => $isAdmin ? now() : null,
         ], $request);
 
         // create user account
