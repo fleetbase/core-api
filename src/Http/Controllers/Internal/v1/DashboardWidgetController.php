@@ -11,5 +11,5 @@ class DashboardWidgetController extends FleetbaseController
      *
      * @var string
      */
-    public $resource = 'dashboard-widget';
+    public $resource = 'dashboard_widget';
 }

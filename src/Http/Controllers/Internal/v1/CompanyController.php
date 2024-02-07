@@ -86,16 +86,70 @@ class CompanyController extends FleetbaseController
         return response()->json(['message' => 'Two-Factor Authentication saved successfully']);
     }
 
-    public function getAllUsersOfCompany(Request $request, $companyUuid)
+    /**
+     * Get all users for a company.
+     *
+     * @param string $id The company id
+     * @param \Illuminate\Http\Request $request
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function users(string $id, Request $request)
     {
-        info('company_uuid', ['company_uuid' => $companyUuid]);
-        $companyUsers = CompanyUser::where('company_uuid', $companyUuid)->get();
-        $users = [];
+        $searchQuery = $request->searchQuery();
+        $limit = $request->input(['limit', 'nestedLimit'], 20);
+        // $page = $request->or(['page', 'nestedPage'], 1);
+        $paginate = $request->boolean('paginate');
 
-        foreach ($companyUsers as $companyUser) {
-            $users[] = $companyUser->user;
+        // Start user query
+        $usersQuery = CompanyUser::whereHas('company', function ($query) use ($id) {
+            $query->where('public_id', $id);
+            $query->orWhere('uuid', $id);
+        })->with(['user']);
+
+        // Search query
+        if ($searchQuery) {
+            $usersQuery->whereHas('user', function ($query) use ($searchQuery) {
+                $query->search($searchQuery);
+            });
         }
 
-        return response()->json($users);
+        // Sort query
+        $usersQuery->applySortFromRequest($request);
+
+        // paginate results
+        if ($paginate) {
+            $users = $usersQuery->fastPaginate($limit);
+
+            // fix results
+            $transformedItems = $users->getCollection()->map(function ($companyUser) {
+                return $companyUser->user;
+            });
+
+            // replace in pagination
+            $users->setCollection($transformedItems);
+
+            return response()->json([
+                'users' => $users->getCollection(),
+                'meta' => [
+                    'current_page' => $users->currentPage(),
+                    'from' => $users->firstItem(),
+                    'last_page' => $users->lastPage(),
+                    'path' => $users->path(),
+                    'per_page' => $users->perPage(),
+                    'to' => $users->lastItem(),
+                    'total' => $users->total(),
+                ],
+            ]);
+        }
+
+        // get users
+        $users = $usersQuery->get();
+        // fix results
+        $users = $users->map(function ($companyUser) {
+            return $companyUser->user;
+        });
+
+        return response()->json(['users' => $users]);
     }
 }

@@ -24,7 +24,7 @@ class CustomField extends Model
      *
      * @var array
      */
-    protected $fillable = ['subject_uuid', 'subject_type', 'name', 'label', 'type', 'options', 'required', 'default_value', 'validation_rules', 'meta', 'description', 'help_text', 'order'];
+    protected $fillable = ['subject_uuid', 'subject_type', 'name', 'label', 'type', 'component', 'options', 'required', 'default_value', 'validation_rules', 'meta', 'description', 'help_text', 'order'];
 
     /**
      * The attributes that are guarded.

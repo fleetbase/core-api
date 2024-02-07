@@ -28,11 +28,11 @@ class DashboardWidget extends Model
     * @var array
     */
     protected $fillable = [
+        'dashboard_uuid',
         'name',
         'component',
         'grid_options',
-        'options',
-        'dashboard_uuid',
+        'options'
     ];
 
     /**

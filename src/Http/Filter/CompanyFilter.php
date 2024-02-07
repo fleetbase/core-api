@@ -22,6 +22,11 @@ class CompanyFilter extends Filter
         );
     }
 
+    public function query(?string $searchQuery)
+    {
+        $this->builder->searchWhere('name', $searchQuery);
+    }
+
     public function name(?string $name)
     {
         $this->builder->searchWhere('name', $name);

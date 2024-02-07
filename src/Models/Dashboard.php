@@ -28,8 +28,9 @@ class Dashboard extends Model
     * @var array
     */
     protected $fillable = [
-        'name',
-        'owner_uuid'
+        'user_uuid',
+        'company_uuid',
+        'name'
     ];
 
     /**

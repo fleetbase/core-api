@@ -15,29 +15,41 @@ class DashboardController extends FleetbaseController
      */
     public $resource = 'dashboard';
 
-     /**
-     * Switch the default dashboard.
-     *
-     * @param \Illuminate\Http\Request $request
-     * @return \Illuminate\Http\Response
-     */
+    /**
+    * Switch the default dashboard.
+    *
+    * @param \Illuminate\Http\Request $request
+    * @return \Illuminate\Http\Response
+    */
     public function switchDashboard(Request $request)
     {
-        $ownerId = session('user');
         $dashboardId = $request->input('dashboard_uuid');
 
-        Dashboard::where('owner_uuid', $ownerId)->update(['is_default' => false]);
+        Dashboard::where('user_uuid', session('user'))->update(['is_default' => false]);
 
-        $selectedDashboard = Dashboard::where('owner_uuid', $ownerId)
+        $selectedDashboard = Dashboard::where('user_uuid', session('user'))
             ->where('uuid', $dashboardId)
             ->first();
 
         if ($selectedDashboard) {
             $selectedDashboard->is_default = true;
             $selectedDashboard->save();
-            return response()->json($selectedDashboard);
-        } 
+            return response()->json(['dashboard' => $selectedDashboard]);
+        }
 
         return response()->error('Dashboard not found.', 404);
+    }
+
+    /**
+     * Resets all the dashboards default status.
+     *
+     * @param \Illuminate\Http\Request $request
+     * @return \Illuminate\Http\Response
+     */
+    public function resetDefaultDashboard()
+    {
+        Dashboard::where('user_uuid', session('user'))->update(['is_default' => false]);
+
+        return response()->json(['status' => 'ok']);
     }
 }

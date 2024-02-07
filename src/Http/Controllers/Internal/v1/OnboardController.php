@@ -45,7 +45,7 @@ class OnboardController extends Controller
         $email       = $request->input('email');
         $phone       = $request->input('phone');
         $timezone    = $request->input('timezone', date_default_timezone_get());
-        $username    = Str::slug($name . Str::random(3), '_');
+        $username    = Str::slug($name . '_' . Str::random(4), '_');
 
         // Prepare user attributes
         $attributes = $this->_applyUserInfo([
@@ -56,6 +56,7 @@ class OnboardController extends Controller
             'ip_address' => $request->ip(),
             'timezone'   => $timezone,
             'status'     => 'active',
+            'last_login' => $isAdmin ? now() : null
         ], $request);
 
         // create user account

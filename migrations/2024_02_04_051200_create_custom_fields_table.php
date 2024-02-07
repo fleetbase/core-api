@@ -14,14 +14,15 @@ return new class extends Migration
     public function up()
     {
         Schema::create('custom_fields', function (Blueprint $table) {
-            $table->id();
-            $table->uuid('uuid')->primary();
-            $table->uuid('company_uuid');
+            $table->increments('id');
+            $table->uuid('uuid')->index();
+            $table->foreignUuid('company_uuid')->nullable()->index()->references('uuid')->on('companies');
             $table->uuid('subject_uuid');
             $table->string('subject_type');
             $table->string('name');
             $table->string('label');
             $table->string('type');
+            $table->string('component')->nullable();
             $table->json('options')->nullable();
             $table->boolean('required')->default(false);
             $table->text('default_value')->nullable();
