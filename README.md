@@ -10,7 +10,7 @@
 ------
 This package provides the base framework and API resources required by Fleetbase API.
 
-> **Requires [PHP 7.3.0+](https://php.net/releases/)**
+> **Requires [PHP 8.0+](https://php.net/releases/)**
 
 ⚡️ Install the Fleetbase Core API [Composer](https://getcomposer.org):
 
