@@ -780,6 +780,10 @@ trait HasApiModelBehavior
         $resourceFilter     = Resolve::httpFilterForModel($this, $request);
         $camlizedColumnName = Str::camel($column);
 
+        if (empty($resourceFilter)) {
+            return false;
+        }
+
         return method_exists($resourceFilter, $camlizedColumnName) || method_exists($resourceFilter, $column);
     }
 
