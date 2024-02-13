@@ -164,7 +164,7 @@ class ApiCredential extends Model
     public static function generateKeys($encode, $testKey = false)
     {
         $sqids = new \Sqids\Sqids();
-        $key   = $sqids->encode([$encode]);
+        $key   = $sqids->encode($encode);
         $hash  = Hash::make($key);
 
         return [
