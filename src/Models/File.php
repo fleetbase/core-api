@@ -142,7 +142,7 @@ class File extends Model
         /** @var $filesystem \Illuminate\Support\Facades\Storage */
         $filesystem = $this->getFilesystem();
 
-        if ($disk === 's3') {
+        if ($disk === 's3' || $disk === 'gcs') {
             $url = $filesystem->temporaryUrl($this->path, now()->addMinutes(30));
         } else {
             $url = $filesystem->url($this->path);
