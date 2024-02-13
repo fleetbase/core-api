@@ -8,7 +8,7 @@ trait Expandable
 {
     protected static array $added = [];
 
-    public static function expand($name, \Closure $closure = null)
+    public static function expand($name, ?\Closure $closure = null)
     {
         if ((is_object($name) || class_exists($name)) && $closure === null) {
             return static::expandFromClass($name);

@@ -131,7 +131,7 @@ class VerificationCode extends Model
     }
 
     /** static method to generate code for phone verification */
-    public static function generateSmsVerificationFor($subject, $for = 'phone_verification', array $options = [], \Closure $messageCallback = null, $meta = [], $expireAfter = null)
+    public static function generateSmsVerificationFor($subject, $for = 'phone_verification', array $options = [])
     {
         $expireAfter                  = data_get($options, 'expireAfter');
         $verificationCode             = static::generateFor($subject, $for, false);

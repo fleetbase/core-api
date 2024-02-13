@@ -24,7 +24,7 @@ class PendingResourceRegistration implements Expansion
 
     public function extend()
     {
-        return function (\Closure $callback = null) {
+        return function (?\Closure $callback = null) {
             /** @var \Illuminate\Routing\PendingResourceRegistration $this */
             if ($this->router instanceof Router && is_callable($callback)) {
                 $callback($this->router);

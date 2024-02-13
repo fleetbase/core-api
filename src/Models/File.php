@@ -121,7 +121,7 @@ class File extends Model
      *
      * @return \Illuminate\Contracts\Filesystem\Filesystem the filesystem instance
      */
-    public function getFilesystem(string $disk = null): \Illuminate\Contracts\Filesystem\Filesystem
+    public function getFilesystem(?string $disk = null): \Illuminate\Contracts\Filesystem\Filesystem
     {
         $disk = $disk ?? $this->getDisk();
 

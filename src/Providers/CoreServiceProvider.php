@@ -458,7 +458,7 @@ class CoreServiceProvider extends ServiceProvider
      *     $schedule->command('your-package:command')->daily();
      * });
      */
-    public function scheduleCommands(callable $callback = null): void
+    public function scheduleCommands(?callable $callback = null): void
     {
         $this->app->booted(function () use ($callback) {
             $schedule = $this->app->make(Schedule::class);

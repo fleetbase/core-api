@@ -8,7 +8,7 @@ use Illuminate\Support\Str;
 
 class Http extends HttpClient
 {
-    public static function isInternalRequest(Request $request = null): bool
+    public static function isInternalRequest(?Request $request = null): bool
     {
         $request = $request ?? request();
         $route   = $request->route();
@@ -23,7 +23,7 @@ class Http extends HttpClient
         return Str::contains($namespace, 'Internal') || Str::contains($route->uri(), '/int/');
     }
 
-    public static function isPublicRequest(Request $request = null): bool
+    public static function isPublicRequest(?Request $request = null): bool
     {
         return !static::isInternalRequest($request);
     }
@@ -135,7 +135,7 @@ class Http extends HttpClient
         return $response->json();
     }
 
-    public static function action(string $verb = null)
+    public static function action(?string $verb = null)
     {
         $verb   = $verb ?? $_SERVER['REQUEST_METHOD'];
         $action = Str::lower($verb);
