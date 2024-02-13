@@ -562,7 +562,7 @@ class User extends Authenticatable
      *
      * @return bool returns true if the invitation is successfully sent, false otherwise
      */
-    public function sendInviteFromCompany(Company $company = null): bool
+    public function sendInviteFromCompany(?Company $company = null): bool
     {
         if ($company === null) {
             $this->load(['company']);

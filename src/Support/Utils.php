@@ -1122,7 +1122,7 @@ class Utils
      *
      * @return stdClass
      */
-    public static function lookupIp(string $ip = null)
+    public static function lookupIp(?string $ip = null)
     {
         if ($ip === null) {
             $ip = request()->ip();
@@ -1497,7 +1497,7 @@ class Utils
      *
      * @return \Fleetbase\Models\File|null
      */
-    public static function urlToStorefrontFile($url, $type = 'source', Model $owner = null)
+    public static function urlToStorefrontFile($url, $type = 'source', ?Model $owner = null)
     {
         if (!is_string($url)) {
             return null;
