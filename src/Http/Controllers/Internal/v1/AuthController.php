@@ -13,6 +13,7 @@ use Fleetbase\Http\Requests\SwitchOrganizationRequest;
 use Fleetbase\Http\Resources\Organization;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
+use Fleetbase\Models\Invite;
 use Fleetbase\Models\User;
 use Fleetbase\Models\VerificationCode;
 use Fleetbase\Notifications\UserForgotPassword;
@@ -564,10 +565,15 @@ class AuthController extends Controller
         $company = Company::where('public_id', $request->input('next'))->first();
         $user    = $request->user();
 
+        // Make sure user has been invited to join organizations
+        $isAlreadyInvited = Invite::isAlreadySentToJoinCompany($user, $company);
+        if (!$isAlreadyInvited) {
+            return response()->error('User has not been invited to join this organization.');
+        }
+
+        // Make sure user isn't already a member of this organization
         if ($company->uuid === $user->company_uuid) {
-            return response()->json([
-                'errors' => ['User is already on this organizations session'],
-            ]);
+            return response()->error('User is already a member of this organization.');
         }
 
         $company->addUser($user);
