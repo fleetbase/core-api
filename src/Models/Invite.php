@@ -141,4 +141,19 @@ class Invite extends Model
     {
         $this->attributes['expires_at'] = $expiry ? Carbon::parse($expiry) : Carbon::now()->addHour();
     }
+
+    public static function isAlreadySentToJoinCompany(User $user, Company $company): bool
+    {
+        return static::isAlreadySent($company, $user->email, 'join_company');
+    }
+
+    public static function isAlreadySent(Company $company, string $email, string $reason, string $protocol = 'email'): bool
+    {
+        return static::where([
+            'company_uuid' => $company->uuid,
+            'subject_uuid' => $company->uuid,
+            'protocol'     => $protocol,
+            'reason'       => $reason,
+        ])->whereJsonContains('recipients', $email)->exists();
+    }
 }

@@ -164,7 +164,7 @@ trait HasPolicies
      *
      * @param string|int|array|\Fleebase\Contracts\Policy|\Illuminate\Support\Collection $policies
      */
-    public function hasPolicy($policies, ?string $guard = null): bool
+    public function hasPolicy($policies, string $guard = null): bool
     {
         if (is_string($policies) && false !== strpos($policies, '|')) {
             $policies = $this->_convertPipeToArray($policies);
@@ -216,7 +216,7 @@ trait HasPolicies
      *
      * @param string|array|\Fleebase\Contracts\Policy|\Illuminate\Support\Collection $policies
      */
-    public function hasAllPolicies($policies, ?string $guard = null): bool
+    public function hasAllPolicies($policies, string $guard = null): bool
     {
         if (is_string($policies) && false !== strpos($policies, '|')) {
             $policies = $this->_convertPipeToArray($policies);

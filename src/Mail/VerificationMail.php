@@ -30,7 +30,7 @@ class VerificationMail extends Mailable
      *
      * @return void
      */
-    public function __construct(VerificationCode $verificationCode, ?string $content = null)
+    public function __construct(VerificationCode $verificationCode, string $content = null)
     {
         $this->verificationCode = $verificationCode;
         $this->content          = $content;

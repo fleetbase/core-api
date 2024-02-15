@@ -32,20 +32,20 @@ class WebhookCall
         $config = config('webhook-server');
 
         return (new static())
-            ->useJob($config['webhook_job'])
+            ->useJob(data_get($config, 'webhook_job', CallWebhookJob::class))
             ->uuid(Str::uuid())
-            ->onQueue($config['queue'])
-            ->onConnection($config['connection'] ?? null)
-            ->useHttpVerb($config['http_verb'])
-            ->maximumTries($config['tries'])
-            ->useBackoffStrategy($config['backoff_strategy'])
-            ->timeoutInSeconds($config['timeout_in_seconds'])
-            ->signUsing($config['signer'])
-            ->withHeaders($config['headers'])
-            ->withTags($config['tags'])
-            ->verifySsl($config['verify_ssl'])
-            ->throwExceptionOnFailure($config['throw_exception_on_failure'])
-            ->useProxy($config['proxy']);
+            ->onQueue(data_get($config, 'queue', 'default'))
+            ->onConnection(data_get($config, 'connection'))
+            ->useHttpVerb(data_get($config, 'http_verb', 'post'))
+            ->maximumTries(data_get($config, 'tries', 3))
+            ->useBackoffStrategy(data_get($config, 'backoff_strategy', \Fleetbase\Webhook\BackoffStrategy\ExponentialBackoffStrategy::class))
+            ->timeoutInSeconds(data_get($config, 'timeout_in_seconds'))
+            ->signUsing(data_get($config, 'signer', \Fleetbase\Webhook\Signer\DefaultSigner::class))
+            ->withHeaders(data_get($config, 'headers', ['Content-Type' => 'application/json']))
+            ->withTags(data_get($config, 'tags', []))
+            ->verifySsl(data_get($config, 'verify_ssl', false))
+            ->throwExceptionOnFailure(data_get($config, 'throw_exception_on_failure', false))
+            ->useProxy(data_get($config, 'proxy'));
     }
 
     public function __construct()
@@ -181,7 +181,7 @@ class WebhookCall
         return $this;
     }
 
-    public function useProxy(array|string|null $proxy = null): self
+    public function useProxy(array|string $proxy = null): self
     {
         $this->callWebhookJob->proxy = $proxy;
 

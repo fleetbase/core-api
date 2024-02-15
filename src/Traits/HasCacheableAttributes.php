@@ -18,7 +18,7 @@ trait HasCacheableAttributes
     /**
      * Retrieve items from cache for model attributes or get from model if not in cache.
      */
-    public static function attributeFromCache(Model $target, string $key, $default = null, ?int $ttl = null)
+    public static function attributeFromCache(Model $target, string $key, $default = null, int $ttl = null)
     {
         $cacheKey = $target->getCacheKey($key);
         $cacheTag = $target->getCacheTag();

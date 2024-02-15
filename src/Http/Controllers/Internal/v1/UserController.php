@@ -3,6 +3,7 @@
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Events\UserRemovedFromCompany;
+use Fleetbase\Exceptions\FleetbaseRequestValidationException;
 use Fleetbase\Exports\UserExport;
 use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Http\Requests\ExportRequest;
@@ -18,6 +19,7 @@ use Fleetbase\Models\Setting;
 use Fleetbase\Models\User;
 use Fleetbase\Notifications\UserAcceptedCompanyInvite;
 use Fleetbase\Notifications\UserInvited;
+use Fleetbase\Support\Auth;
 use Fleetbase\Support\NotificationRegistry;
 use Fleetbase\Support\TwoFactorAuth;
 use Fleetbase\Support\Utils;
@@ -35,6 +37,50 @@ class UserController extends FleetbaseController
      * @var string
      */
     public $resource = 'user';
+
+    /**
+     * Creates a record with request payload.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function createRecord(Request $request)
+    {
+        // @todo Add user creation validation
+        try {
+            $record = $this->model->createRecordFromRequest($request, function (&$request, &$input) {
+                // Get user properties
+                $name        = $request->input('user.name');
+                $timezone    = $request->or(['timezone', 'user.timezone'], date_default_timezone_get());
+                $username    = Str::slug($name . '_' . Str::random(4), '_');
+
+                // Prepare user attributes
+                $input = User::applyUserInfoFromRequest($request, array_merge($input, [
+                    'company_uuid' => session('company'),
+                    'name'         => $name,
+                    'username'     => $username,
+                    'ip_address'   => $request->ip(),
+                    'timezone'     => $timezone,
+                ]));
+            }, function (&$request, &$user) {
+                // Make sure to assign to current company
+                $company = Auth::getCompany();
+
+                // Set user type
+                $user->setUserType('user');
+
+                // Assign to user
+                $user->assignCompany($company);
+            });
+
+            return ['user' => new $this->resource($record)];
+        } catch (\Exception $e) {
+            return response()->error($e->getMessage());
+        } catch (\Illuminate\Database\QueryException $e) {
+            return response()->error($e->getMessage());
+        } catch (FleetbaseRequestValidationException $e) {
+            return response()->error($e->getErrors());
+        }
+    }
 
     /**
      * Responds with the currently authenticated user.

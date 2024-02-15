@@ -48,7 +48,7 @@ class OnboardController extends Controller
         $username    = Str::slug($name . '_' . Str::random(4), '_');
 
         // Prepare user attributes
-        $attributes = $this->_applyUserInfo([
+        $attributes = User::applyUserInfoFromRequest($request, [
             'name'       => $name,
             'email'      => $email,
             'phone'      => $phone,
@@ -57,7 +57,7 @@ class OnboardController extends Controller
             'timezone'   => $timezone,
             'status'     => 'active',
             'last_login' => $isAdmin ? now() : null,
-        ], $request);
+        ]);
 
         // create user account
         $user = User::create($attributes);

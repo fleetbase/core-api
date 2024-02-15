@@ -2,7 +2,6 @@
 
 namespace Fleetbase\Observers;
 
-use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\User;
 use Fleetbase\Notifications\UserCreated;
@@ -17,20 +16,26 @@ class UserObserver
      */
     public function created(User $user)
     {
-        // load user company
-        $user->load(['company.owner']);
+        // Make sure we have company
+        $company = $user->getCompany();
 
-        // create company user record
-        if ($user->company_uuid) {
-            CompanyUser::create(['company_uuid' => $user->company_uuid, 'user_uuid' => $user->uuid, 'status' => $user->status]);
+        // If no company delete user and throw exception
+        if (!$company) {
+            $user->deleteQuietly();
+            throw new \Exception('Unable to assign user to company.');
+        }
+
+        if (CompanyUser::where(['company_uuid' => $company->uuid, 'user_uuid' => $user->uuid])->doesntExist()) {
+            CompanyUser::create(['company_uuid' => $company->uuid, 'user_uuid' => $user->uuid, 'status' => $user->status]);
         }
 
         // invite user to join company
-        $user->sendInviteFromCompany();
+        $user->sendInviteFromCompany($company);
 
         // Notify the company owner a user has been created
-        // $user->company->owner->notify(new UserCreated($user, $user->company));
-        NotificationRegistry::notify(UserCreated::class, $user, $user->company);
+        if ($company) {
+            NotificationRegistry::notify(UserCreated::class, $user, $company);
+        }
     }
 
     /**

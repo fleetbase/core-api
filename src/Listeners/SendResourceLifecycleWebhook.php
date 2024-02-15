@@ -12,7 +12,6 @@ use Fleetbase\Webhook\WebhookCall;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Log;
 
 class SendResourceLifecycleWebhook implements ShouldQueue
 {
@@ -28,11 +27,10 @@ class SendResourceLifecycleWebhook implements ShouldQueue
         $this->setSessionFromEvent($event);
 
         // get session variables or fallback to event value
-        $companyId = session()->get('company', $event->companySession);
-        // $userId = session()->get('user', $event->userSession);
+        $companyId       = session()->get('company', $event->companySession);
         $apiCredentialId = session()->get('api_credential', $event->apiCredential);
-        $apiKey          = session()->get('api_key', $event->apiKey);
-        $apiSecret       = session()->get('api_secret', $event->apiSecret);
+        $apiKey          = session()->get('api_key', $event->apiKey ?? 'console');
+        $apiSecret       = session()->get('api_secret', $event->apiSecret ?? 'internal');
         $apiEnvironment  = session()->get('api_environment', $event->apiEnvironment);
         $isSandbox       = session()->get('is_sandbox', $event->isSandbox);
 
@@ -48,8 +46,6 @@ class SendResourceLifecycleWebhook implements ShouldQueue
                 'description'         => $this->getHumanReadableEventDescription($event),
             ]);
         } catch (QueryException $e) {
-            // Log::error('Failed to create ApiEvent! ' . $e->getMessage());
-            // failed to log api event
             return;
         }
 
@@ -68,13 +64,9 @@ class SendResourceLifecycleWebhook implements ShouldQueue
             $q->orWhere('api_credential_uuid', $apiCredentialId);
         })->get();
 
-        // Log::info('[webhooks] ' . print_r($webhooks, true));
-        // send webhook for event
+        // Send Webhook for event
         foreach ($webhooks as $webhook) {
-            Log::info('[webhooks] #event ' . print_r($apiEvent->event, true));
-            Log::info('[webhooks] #events ' . print_r(implode(', ', $webhook->events), true));
-
-            // only send webhook if webhook requires this event
+            // Only Send Webhook if webhook requires this event
             if (!empty($webhook->events) && is_array($webhook->events) && !in_array($apiEvent->event, $webhook->events)) {
                 continue;
             }
@@ -83,7 +75,7 @@ class SendResourceLifecycleWebhook implements ShouldQueue
             $connection    = $isSandbox ? 'sandbox' : 'mysql';
 
             try {
-                // send webhook for the event
+                // Send Webhook for the event
                 WebhookCall::create()
                     ->meta([
                         'is_sandbox'          => $isSandbox,

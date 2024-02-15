@@ -1,17 +1,10 @@
 <?php
 
-$sqs_events_queue = env('SQS_EVENTS_QUEUE', 'events');
-
-if ($queueUrl = getenv('QUEUE_URL_EVENTS')) {
-    $url = parse_url($queueUrl);
-    $sqs_events_queue = basename($url['path']);
-}
-
 return [
     /*
      *  The default queue that should be used to send webhook requests.
      */
-    'queue' => $sqs_events_queue,
+    'queue' => 'default',
 
     /*
      * The default http verb to use.
@@ -62,7 +55,12 @@ return [
      * By default we will verify that the ssl certificate of the destination
      * of the webhook is valid.
      */
-    'verify_ssl' => 0,
+    'verify_ssl' => false,
+
+    /*
+     * When set to true, an exception will be thrown when the last attempt fails
+     */
+    'throw_exception_on_failure' => false,
 
     /*
      * When using Laravel Horizon you can specify tags that should be used on the

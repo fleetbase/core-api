@@ -7,7 +7,6 @@ use Fleetbase\Support\Resolve;
 use Fleetbase\Support\Utils;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
-// use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -85,8 +84,8 @@ class ResourceLifecycleEvent implements ShouldBroadcastNow
         $this->requestMethod       = request()->method();
         $this->eventId             = uniqid('event_');
         $this->apiVersion          = config('api.version');
-        $this->apiCredential       = session('api_credential');
-        $this->apiSecret           = session('api_secret');
+        $this->apiCredential       = session('api_credential', 'console');
+        $this->apiSecret           = session('api_secret', 'internal');
         $this->apiKey              = session('api_key');
         $this->apiEnvironment      = session('api_environment', 'live');
         $this->isSandbox           = session('is_sandbox', false);
@@ -240,7 +239,7 @@ class ResourceLifecycleEvent implements ShouldBroadcastNow
      *
      * @return JsonResource
      */
-    public function getModelResource($model, ?string $namespace = null, ?int $version = null)
+    public function getModelResource($model, string $namespace = null, int $version = null)
     {
         return Resolve::httpResourceForModel($model, $namespace, $version);
     }
