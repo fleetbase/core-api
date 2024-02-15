@@ -2,8 +2,8 @@
 
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
-use Fleetbase\Exceptions\FleetbaseRequestValidationException;
 use Fleetbase\Events\UserRemovedFromCompany;
+use Fleetbase\Exceptions\FleetbaseRequestValidationException;
 use Fleetbase\Exports\UserExport;
 use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Http\Requests\ExportRequest;
@@ -56,10 +56,10 @@ class UserController extends FleetbaseController
                 // Prepare user attributes
                 $input = User::applyUserInfoFromRequest($request, array_merge($input, [
                     'company_uuid' => session('company'),
-                    'name'       => $name,
-                    'username'   => $username,
-                    'ip_address' => $request->ip(),
-                    'timezone'   => $timezone,
+                    'name'         => $name,
+                    'username'     => $username,
+                    'ip_address'   => $request->ip(),
+                    'timezone'     => $timezone,
                 ]));
             }, function (&$request, &$user) {
                 // Make sure to assign to current company

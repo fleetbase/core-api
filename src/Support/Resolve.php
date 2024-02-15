@@ -8,7 +8,7 @@ use ReflectionClass;
 
 class Resolve
 {
-    public static function httpResourceForModel($model, ?string $namespace = null, ?int $version = 1)
+    public static function httpResourceForModel($model, string $namespace = null, ?int $version = 1)
     {
         if (is_string($model) && class_exists($model)) {
             $model = static::instance($model);
@@ -23,7 +23,7 @@ class Resolve
         return new $resourceNamespace($model);
     }
 
-    public static function httpRequestForModel($model, ?string $namespace = null, ?int $version = 1)
+    public static function httpRequestForModel($model, string $namespace = null, ?int $version = 1)
     {
         if (is_string($model) && class_exists($model)) {
             $model = static::instance($model);

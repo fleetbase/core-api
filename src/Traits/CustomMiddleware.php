@@ -36,7 +36,7 @@ trait CustomMiddleware
      *
      * @param \Illuminate\Http\Request $request
      */
-    protected function inExceptArray($request, ?array $exceptions = null): bool
+    protected function inExceptArray($request, array $exceptions = null): bool
     {
         $exceptions = $exceptions ?? $this->except;
 

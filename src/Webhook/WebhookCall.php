@@ -48,7 +48,9 @@ class WebhookCall
             ->useProxy(data_get($config, 'proxy'));
     }
 
-    public function __construct() {}
+    public function __construct()
+    {
+    }
 
     public function url(string $url): self
     {
@@ -179,7 +181,7 @@ class WebhookCall
         return $this;
     }
 
-    public function useProxy(array|string|null $proxy = null): self
+    public function useProxy(array|string $proxy = null): self
     {
         $this->callWebhookJob->proxy = $proxy;
 

@@ -18,7 +18,7 @@ abstract class FleetbaseController extends BaseController
 
     public string $namespace = '\\Fleetbase';
 
-    public function __construct(?Model $model = null, ?string $resource = null)
+    public function __construct(Model $model = null, string $resource = null)
     {
         $this->setApiModel($model, $this->namespace);
         $this->setApiResource($resource, $this->namespace);
