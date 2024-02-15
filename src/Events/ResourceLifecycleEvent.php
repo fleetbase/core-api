@@ -85,8 +85,8 @@ class ResourceLifecycleEvent implements ShouldBroadcastNow
         $this->requestMethod       = request()->method();
         $this->eventId             = uniqid('event_');
         $this->apiVersion          = config('api.version');
-        $this->apiCredential       = session('api_credential');
-        $this->apiSecret           = session('api_secret');
+        $this->apiCredential       = session('api_credential', 'console');
+        $this->apiSecret           = session('api_secret', 'internal');
         $this->apiKey              = session('api_key');
         $this->apiEnvironment      = session('api_environment', 'live');
         $this->isSandbox           = session('is_sandbox', false);

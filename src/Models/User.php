@@ -104,6 +104,7 @@ class User extends Authenticatable
     protected $fillable = [
         'uuid',
         'public_id',
+        'company_uuid',
         '_key',
         'avatar_uuid',
         'username',
@@ -127,7 +128,7 @@ class User extends Authenticatable
      *
      * @var array
      */
-    protected $guarded = ['password', 'type', 'company_uuid'];
+    protected $guarded = ['password', 'type'];
 
     /**
      * The attributes that should be hidden for arrays.
@@ -207,6 +208,12 @@ class User extends Authenticatable
     public function assignCompany(Company $company)
     {
         $this->company_uuid = $company->uuid;
+
+        // Create company user record
+        if (CompanyUser::where(['company_uuid' => $company->uuid, 'user_uuid' => $this->uuid])->doesntExist()) {
+            CompanyUser::create(['company_uuid' => $company->uuid, 'user_uuid' => $this->uuid, 'status' => $this->status]);
+        }
+
         $this->save();
     }
 
@@ -637,5 +644,51 @@ class User extends Authenticatable
     public function isNotVerified(): bool
     {
         return $this->isVerified() === false;
+    }
+
+    public static function applyUserInfoFromRequest($request, array $attributes = []): array
+    {
+        // Lookup user default details
+        try {
+            $info = \Fleetbase\Support\Http::lookupIp($request);
+        } catch (\Exception $e) {
+        }
+
+        if ($info) {
+            $attributes['country']    = data_get($info, 'country_code');
+            $attributes['ip_address'] = data_get($info, 'ip', $request->ip());
+            $tzInfo                   = data_get($info, 'time_zone.name', $request->input('timezone'));
+            if ($tzInfo) {
+                $attributes['timezone'] = $tzInfo;
+            }
+            $attributes['meta'] = [
+                'areacode'   => data_get($info, 'calling_code'),
+                'currency'   => data_get($info, 'currency.code'),
+                'language'   => data_get($info, 'languages.0'),
+                'country'    => data_get($info, 'country_name'),
+                'contintent' => data_get($info, 'continent_name'),
+                'latitude'   => data_get($info, 'latitude'),
+                'longitude'  => data_get($info, 'longitude'),
+            ];
+        }
+
+        return $attributes;
+    }
+
+    public function setUserInfoFromRequest($request, bool $save = false): User
+    {
+        $userInfoAttributes = static::getUserInfoFromRequest($request);
+
+        foreach ($userInfoAttributes as $key => $value) {
+            if ($this->isFillable($key)) {
+                $this->setAttribute($key, $value);
+            }
+        }
+
+        if ($save) {
+            $this->save();
+        }
+
+        return $this;
     }
 }

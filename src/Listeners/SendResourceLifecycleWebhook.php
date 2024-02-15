@@ -12,7 +12,7 @@ use Fleetbase\Webhook\WebhookCall;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Log;
+// use Illuminate\Support\Facades\Log;
 
 class SendResourceLifecycleWebhook implements ShouldQueue
 {
@@ -71,8 +71,8 @@ class SendResourceLifecycleWebhook implements ShouldQueue
         // Log::info('[webhooks] ' . print_r($webhooks, true));
         // send webhook for event
         foreach ($webhooks as $webhook) {
-            Log::info('[webhooks] #event ' . print_r($apiEvent->event, true));
-            Log::info('[webhooks] #events ' . print_r(implode(', ', $webhook->events), true));
+            // Log::info('[webhooks] #event ' . print_r($apiEvent->event, true));
+            // Log::info('[webhooks] #events ' . print_r(implode(', ', $webhook->events), true));
 
             // only send webhook if webhook requires this event
             if (!empty($webhook->events) && is_array($webhook->events) && !in_array($apiEvent->event, $webhook->events)) {
