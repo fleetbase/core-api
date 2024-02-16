@@ -17,7 +17,6 @@ use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\Invite;
 use Fleetbase\Models\Setting;
 use Fleetbase\Models\User;
-use Fleetbase\Notifications\UserCreated;
 use Fleetbase\Notifications\UserAcceptedCompanyInvite;
 use Fleetbase\Notifications\UserInvited;
 use Fleetbase\Support\Auth;

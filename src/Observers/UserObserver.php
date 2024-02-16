@@ -4,6 +4,7 @@ namespace Fleetbase\Observers;
 
 use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\User;
+
 class UserObserver
 {
     /**
