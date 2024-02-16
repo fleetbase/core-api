@@ -216,11 +216,14 @@ class User extends Authenticatable
             CompanyUser::create(['company_uuid' => $company->uuid, 'user_uuid' => $this->uuid, 'status' => $this->status]);
         }
 
-        // Invite user to join company
-        $this->sendInviteFromCompany($company);
+        // Determine if user should receive invite to join company
+        if ($user->isNotAdmin()) {
+            // Invite user to join company
+            $this->sendInviteFromCompany($company);
 
-        // Notify the company owner a user has been created
-        NotificationRegistry::notify(UserCreated::class, $this, $company);
+            // Notify the company owner a user has been created
+            NotificationRegistry::notify(UserCreated::class, $this, $company);
+        }
 
         $this->save();
     }

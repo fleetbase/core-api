@@ -12,8 +12,7 @@ class AdminRequest extends FleetbaseRequest
     public function authorize()
     {
         $user = $this->user();
-
-        if (!$user === null) {
+        if (!$user) {
             return false;
         }
 
