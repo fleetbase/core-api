@@ -3,7 +3,9 @@
 namespace Fleetbase\Models;
 
 use Fleetbase\Casts\Json;
+use Fleetbase\Notifications\UserCreated;
 use Fleetbase\Notifications\UserInvited;
+use Fleetbase\Support\NotificationRegistry;
 use Fleetbase\Support\Utils;
 use Fleetbase\Traits\Expandable;
 use Fleetbase\Traits\Filterable;
@@ -213,6 +215,12 @@ class User extends Authenticatable
         if (CompanyUser::where(['company_uuid' => $company->uuid, 'user_uuid' => $this->uuid])->doesntExist()) {
             CompanyUser::create(['company_uuid' => $company->uuid, 'user_uuid' => $this->uuid, 'status' => $this->status]);
         }
+
+        // Invite user to join company
+        $this->sendInviteFromCompany($company);
+
+        // Notify the company owner a user has been created
+        NotificationRegistry::notify(UserCreated::class, $this, $company);
 
         $this->save();
     }
@@ -582,12 +590,7 @@ class User extends Authenticatable
         }
 
         // make sure user isn't already invited
-        $isAlreadyInvited = Invite::where([
-            'company_uuid' => $company->uuid,
-            'subject_uuid' => $company->uuid,
-            'protocol'     => 'email',
-            'reason'       => 'join_company',
-        ])->whereJsonContains('recipients', $this->email)->exists();
+        $isAlreadyInvited = Invite::isAlreadySentToJoinCompany($this, $company);
         if ($isAlreadyInvited) {
             return false;
         }
