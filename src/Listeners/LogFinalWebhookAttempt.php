@@ -49,7 +49,7 @@ class LogFinalWebhookAttempt
         ];
 
         // Set api credential uuid
-        if ($apiCredentialUuid && Str::isUuuid($apiCredentialUuid)) {
+        if ($apiCredentialUuid && Str::isUuid($apiCredentialUuid)) {
             $data['api_credential_uuid'] = $apiCredentialUuid;
         }
 
