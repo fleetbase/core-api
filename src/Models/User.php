@@ -217,7 +217,7 @@ class User extends Authenticatable
         }
 
         // Determine if user should receive invite to join company
-        if ($user->isNotAdmin()) {
+        if ($this->isNotAdmin()) {
             // Invite user to join company
             $this->sendInviteFromCompany($company);
 
