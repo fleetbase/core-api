@@ -6,6 +6,13 @@ class CompanyFilter extends Filter
 {
     public function queryForInternal()
     {
+        // If admin query then do not filter
+        $isAdminQuery = $this->request->input('view') === 'admin' && $this->request->user()->isAdmin();
+        if ($isAdminQuery) {
+            return;
+        }
+
+        // Otherwise filter so that user only see's their own companies
         $this->builder->where(
             function ($query) {
                 $query

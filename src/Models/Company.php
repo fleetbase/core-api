@@ -164,6 +164,14 @@ class Company extends Model
     }
 
     /**
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
+     */
+    public function companyUsers()
+    {
+        return $this->hasManyThrough(User::class, CompanyUser::class, 'company_uuid', 'uuid', 'uuid', 'user_uuid');
+    }
+
+    /**
      * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
      */
     public function logo()

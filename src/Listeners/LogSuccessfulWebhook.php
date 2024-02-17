@@ -4,6 +4,7 @@ namespace Fleetbase\Listeners;
 
 use Fleetbase\Models\WebhookRequestLog;
 use Fleetbase\Webhook\Events\WebhookCallSucceededEvent;
+use Illuminate\Support\Str;
 
 class LogSuccessfulWebhook
 {
@@ -23,11 +24,13 @@ class LogSuccessfulWebhook
         /** @var string $connection The db connection the webhook was called on */
         $connection = (bool) data_get($event, 'meta.is_sandbox') ? 'sandbox' : 'mysql';
 
-        // Log webhook callback event
-        WebhookRequestLog::on($connection)->create([
+        // Get API credential
+        $apiCredentialUuid = data_get($event, 'meta.api_credential_uuid');
+
+        // Prepare insert array
+        $data = [
             '_key'                => data_get($event, 'meta.api_key'),
             'company_uuid'        => data_get($event, 'meta.company_uuid'),
-            'api_credential_uuid' => data_get($event, 'meta.api_credential_uuid'),
             'webhook_uuid'        => data_get($event, 'meta.webhook_uuid'),
             'api_event_uuid'      => data_get($event, 'meta.api_event_uuid'),
             'method'              => $event->httpVerb,
@@ -41,6 +44,14 @@ class LogSuccessfulWebhook
             'headers'             => $event->headers,
             'meta'                => $event->meta,
             'sent_at'             => data_get($event, 'meta.sent_at'),
-        ]);
+        ];
+
+        // Set api credential uuid
+        if ($apiCredentialUuid && Str::isUuid($apiCredentialUuid)) {
+            $data['api_credential_uuid'] = $apiCredentialUuid;
+        }
+
+        // Log webhook callback event
+        WebhookRequestLog::on($connection)->create($data);
     }
 }
