@@ -207,7 +207,7 @@ class User extends Authenticatable
     /**
      * Set the company for this user.
      */
-    public function assignCompany(Company $company)
+    public function assignCompany(Company $company): User
     {
         $this->company_uuid = $company->uuid;
 
@@ -217,7 +217,7 @@ class User extends Authenticatable
         }
 
         // Determine if user should receive invite to join company
-        if ($this->isNotAdmin()) {
+        if ($this->isNotAdmin() && !$this->isCompanyOwner($comapny)) {
             // Invite user to join company
             $this->sendInviteFromCompany($company);
 
@@ -226,19 +226,34 @@ class User extends Authenticatable
         }
 
         $this->save();
+
+        return $this;
+    }
+
+    /**
+     * Checks if user is the owner of the company.
+     */
+    public function isCompanyOwner(Company $company): bool
+    {
+        return $this->uuid === $company->owner_uuid;
     }
 
     /**
      * Set the company for this user.
      */
-    public function assignCompanyFromId(?string $id)
+    public function assignCompanyFromId(?string $id): User
     {
-        if (!Str::isUuid($id)) {
-            return;
+        if (!Str::isUuid($id) || !Utils::isPublicId($id)) {
+            return $this;
         }
 
-        $this->company_uuid = $id;
-        $this->save();
+        // Get company record
+        $company = Company::where('uuid', $id)->orWhere('public_id', $id)->first();
+        if ($comapny) {
+            return $this->assignCompany($comapny);
+        }
+
+        return $this;
     }
 
     /**
