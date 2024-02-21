@@ -1441,16 +1441,15 @@ class Utils
     {
         $resourceMap = [
             'store'    => 'storefront:store',
-            'product'  => 'storefront:store',
-            'order'    => 'order',
-            'customer' => 'contact',
-            'contact'  => 'contact',
+            'product'  => 'storefront:product',
+            'order'    => 'fleet-ops:order',
+            'customer' => 'fleet-ops:contact',
+            'contact'  => 'fleet-ops:contact',
         ];
 
         list($type) = explode('_', $publicId);
 
         $modelNamespace = static::getMutationType($resourceMap[$type]);
-
         if ($modelNamespace) {
             return app($modelNamespace)->where('public_id', $publicId)->first();
         }
