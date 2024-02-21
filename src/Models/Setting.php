@@ -107,10 +107,17 @@ class Setting extends EloquentModel
 
             // Query the database for the main setting
             $setting = static::where('key', $queryKey)->first();
-
             if ($setting) {
                 // Get the sub value from the setting value
                 return data_get($setting->value, $subKey);
+            }
+
+            // If not able to query from a value object find using full key
+            if (!$setting) {
+                $setting = static::where('key', $settingKey)->first();
+                if ($setting) {
+                    return $setting->value;
+                }
             }
         } else {
             $setting = static::where('key', $settingKey)->first();

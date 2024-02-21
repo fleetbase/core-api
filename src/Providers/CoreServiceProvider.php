@@ -88,6 +88,8 @@ class CoreServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__ . '/../../config/auth.php', 'auth');
         $this->mergeConfigFrom(__DIR__ . '/../../config/sanctum.php', 'sanctum');
         $this->mergeConfigFrom(__DIR__ . '/../../config/twilio.php', 'twilio');
+        $this->mergeConfigFrom(__DIR__ . '/../../config/twilio-notification-channel.php', 'twilio-notification-channel');
+        $this->mergeConfigFrom(__DIR__ . '/../../config/firebase.php', 'firebase');
         $this->mergeConfigFrom(__DIR__ . '/../../config/webhook-server.php', 'webhook-server');
         $this->mergeConfigFrom(__DIR__ . '/../../config/permission.php', 'permission');
         $this->mergeConfigFrom(__DIR__ . '/../../config/activitylog.php', 'activitylog');
@@ -167,6 +169,7 @@ class CoreServiceProvider extends ServiceProvider
             'services.google_maps' => ['api_key' => 'GOOGLE_MAPS_API_KEY', 'locale' => 'GOOGLE_MAPS_LOCALE'],
             'services.twilio'      => ['sid' => 'TWILIO_SID', 'token' => 'TWILIO_TOKEN', 'from' => 'TWILIO_FROM'],
             'services.sentry'      => ['dsn' => 'SENTRY_DSN'],
+            'firebase.app'         => ['credentials' => 'FIREBASE_CREDENTIALS'],
         ];
 
         $settings = [
@@ -201,6 +204,7 @@ class CoreServiceProvider extends ServiceProvider
             ['settingsKey' => 'services.ipinfo', 'configKey' => 'fleetbase.services.ipinfo'],
             ['settingsKey' => 'services.sentry.dsn', 'configKey' => 'sentry.dsn'],
             ['settingsKey' => 'broadcasting.apn', 'configKey' => 'broadcasting.connections.apn'],
+            ['settingsKey' => 'firebase.app', 'configKey' => 'firebase.projects.app'],
         ];
 
         $priorityEnvs = [
@@ -234,7 +238,6 @@ class CoreServiceProvider extends ServiceProvider
             }
 
             $value = Setting::system($settingsKey);
-
             if ($value) {
                 // some settings should set env variables to be accessed throughout entire application
                 if (in_array($settingsKey, array_keys($putsenv))) {

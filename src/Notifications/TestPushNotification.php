@@ -9,11 +9,7 @@ use NotificationChannels\Apn\ApnChannel;
 use NotificationChannels\Apn\ApnMessage;
 use NotificationChannels\Fcm\FcmChannel;
 use NotificationChannels\Fcm\FcmMessage;
-use NotificationChannels\Fcm\Resources\AndroidConfig;
-use NotificationChannels\Fcm\Resources\AndroidFcmOptions;
-use NotificationChannels\Fcm\Resources\AndroidNotification;
-use NotificationChannels\Fcm\Resources\ApnsConfig;
-use NotificationChannels\Fcm\Resources\ApnsFcmOptions;
+use NotificationChannels\Fcm\Resources\Notification as FcmNotification;
 
 /**
  * Class TestPushNotification.
@@ -74,23 +70,26 @@ class TestPushNotification extends Notification
      */
     public function toFcm($notifiable)
     {
-        $notification = \NotificationChannels\Fcm\Resources\Notification::create()
-            ->setTitle($this->title)
-            ->setBody($this->message);
-
-        $message = FcmMessage::create()
-            ->setData($this->data)
-            ->setNotification($notification)
-            ->setAndroid(
-                AndroidConfig::create()
-                    ->setFcmOptions(AndroidFcmOptions::create()->setAnalyticsLabel('analytics'))
-                    ->setNotification(AndroidNotification::create()->setColor('#4391EA'))
-            )->setApns(
-                ApnsConfig::create()
-                    ->setFcmOptions(ApnsFcmOptions::create()->setAnalyticsLabel('analytics_ios'))
-            );
-
-        return $message;
+        return (new FcmMessage(notification: new FcmNotification(
+            title: $this->title,
+            body: $this->message,
+        )))
+        ->data($this->data)
+        ->custom([
+            'android' => [
+                'notification' => [
+                    'color' => '#4391EA',
+                ],
+                'fcm_options' => [
+                    'analytics_label' => 'analytics',
+                ],
+            ],
+            'apns' => [
+                'fcm_options' => [
+                    'analytics_label' => 'analytics',
+                ],
+            ],
+        ]);
     }
 
     /**

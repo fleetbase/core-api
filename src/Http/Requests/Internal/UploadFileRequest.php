@@ -43,6 +43,7 @@ class UploadFileRequest extends FleetbaseRequest
                     'text/csv',
                     'text/tab-separated-values',
                     'text/plain',
+                    'text/javascript',
                     'application/x-pkcs12',
                     'application/pkcs-12',
                     'application/x-pem-file',
@@ -51,6 +52,7 @@ class UploadFileRequest extends FleetbaseRequest
                     'application/pkix-cert',
                     'application/x-x509-ca-cert',
                     'application/octet-stream',
+                    'application/json',
                 ]),
             ],
         ];
