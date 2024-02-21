@@ -43,8 +43,6 @@ class Controller extends BaseController
      */
     public function test()
     {
-        dd(config('firebase.projects.app'), config('broadcasting.connections.apn'));
-
         return response()->json(['status' => 'ok']);
     }
 }
