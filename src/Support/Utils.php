@@ -1440,8 +1440,8 @@ class Utils
     public static function resolveSubject(string $publicId)
     {
         $resourceMap = [
-            'store'    => 'store:storefront',
-            'product'  => 'store:storefront',
+            'store'    => 'storefront:store',
+            'product'  => 'storefront:store',
             'order'    => 'order',
             'customer' => 'contact',
             'contact'  => 'contact',
