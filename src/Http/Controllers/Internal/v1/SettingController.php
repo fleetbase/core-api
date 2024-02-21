@@ -350,8 +350,16 @@ class SettingController extends Controller
             $apn['private_key_file'] = File::where('uuid', $apn['private_key_file_id'])->first();
         }
 
+        // get firebase config
+        $firebase = config('firebase.projects.app');
+
+        if (is_array($firebase) && isset($firebase['credentials_file_id'])) {
+            $firebase['credentials_file'] = File::where('uuid', $firebase['credentials_file_id'])->first();
+        }
+
         return response()->json([
-            'apn' => $apn,
+            'apn'      => $apn,
+            'firebase' => $firebase,
         ]);
     }
 
@@ -362,17 +370,23 @@ class SettingController extends Controller
      */
     public function saveNotificationChannelsConfig(AdminRequest $request)
     {
-        $apn = $request->array('apn', config('broadcasting.connections.apn'));
+        $apn      = $request->array('apn', config('broadcasting.connections.apn'));
+        $firebase = $request->array('firebase', config('firebase.projects.app'));
 
         if (is_array($apn) && isset($apn['private_key_content'])) {
             $apn['private_key_content'] = str_replace('\\n', "\n", trim($apn['private_key_content']));
         }
 
-        if (is_array($apn) && isset($apn['private_key_path']) && is_string($apn['private_key_path'])) {
-            $apn['private_key_path'] = storage_path('app/' . $apn['private_key_path']);
+        if (is_array($apn) && isset($apn['_private_key_path']) && is_string($apn['_private_key_path'])) {
+            $apn['private_key_path'] = storage_path('app/' . $apn['_private_key_path']);
+        }
+
+        if (is_array($firebase) && isset($firebase['credentials_file_path']) && is_string($firebase['credentials_file_path'])) {
+            $firebase['credentials'] = storage_path('app/' . $firebase['credentials_file_path']);
         }
 
         Setting::configure('system.broadcasting.apn', array_merge(config('broadcasting.connections.apn', []), $apn));
+        Setting::configure('system.firebase.app', array_merge(config('firebase.projects.app', []), $firebase));
 
         return response()->json(['status' => 'OK']);
     }
@@ -384,14 +398,18 @@ class SettingController extends Controller
      */
     public function testNotificationChannelsConfig(AdminRequest $request)
     {
-        $title    = $request->input('title', 'Hello World from Fleetbase 🚀');
-        $message  = $request->input('message', 'This is a test push notification!');
-        $apnToken = $request->input('apnToken');
-        $fcmToken = $request->input('fcmToken');
-        $apn      = $request->array('apn', config('broadcasting.connections.apn'));
+        $title         = $request->input('title', 'Hello World from Fleetbase 🚀');
+        $message       = $request->input('message', 'This is a test push notification!');
+        $apnToken      = $request->input('apnToken');
+        $fcmToken      = $request->input('fcmToken');
+        $apn           = $request->array('apn', config('broadcasting.connections.apn'));
+        $firebase      = $request->array('firebase', config('firebase.projects.app'));
 
         // temporarily set apn config here
         config(['broadcasting.connections.apn' => $apn]);
+
+        // temporarily set apn config here
+        config(['firebase.projects.app' => $firebase]);
 
         // trigger test notification
         $notifiable = (new AnonymousNotifiable());
@@ -409,9 +427,6 @@ class SettingController extends Controller
 
         try {
             $notifiable->notify(new TestPushNotification($title, $message));
-        } catch (\NotificationChannels\Fcm\Exceptions\CouldNotSendNotification $e) {
-            $responseMessage = $e->getMessage();
-            $status          = 'error';
         } catch (\Throwable $e) {
             $responseMessage = $e->getMessage();
             $status          = 'error';

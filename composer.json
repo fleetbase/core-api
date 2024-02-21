@@ -1,6 +1,6 @@
 {
     "name": "fleetbase/core-api",
-    "version": "1.4.5",
+    "version": "1.4.7",
     "description": "Core Framework and Resources for Fleetbase API",
     "keywords": [
         "fleetbase",
@@ -44,7 +44,10 @@
         "spatie/laravel-responsecache": "^7.4",
         "spatie/laravel-sluggable": "^3.5",
         "sqids/sqids": "^0.4.1",
-        "xantios/mimey": "^2.2.0"
+        "xantios/mimey": "^2.2.0",
+        "laravel-notification-channels/apn": "^5.0",
+        "laravel-notification-channels/fcm": "^4.1",
+        "laravel-notification-channels/twilio": "^3.3"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.34.1",
