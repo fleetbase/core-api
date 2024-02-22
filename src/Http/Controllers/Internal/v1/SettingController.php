@@ -11,6 +11,8 @@ use Fleetbase\Support\Utils;
 use Illuminate\Http\Request;
 use Illuminate\Notifications\AnonymousNotifiable;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class SettingController extends Controller
 {
@@ -86,7 +88,7 @@ class SettingController extends Controller
         config(['filesystem.default' => $disk]);
 
         try {
-            \Illuminate\Support\Facades\Storage::disk($disk)->put('testfile.txt', 'Hello World');
+            Storage::disk($disk)->put('testfile.txt', 'Hello World');
         } catch (\Aws\S3\Exception\S3Exception $e) {
             $message = $e->getMessage();
             $status  = 'error';
@@ -373,22 +375,57 @@ class SettingController extends Controller
         $apn      = $request->array('apn', config('broadcasting.connections.apn'));
         $firebase = $request->array('firebase', config('firebase.projects.app'));
 
-        if (is_array($apn) && isset($apn['private_key_content'])) {
-            $apn['private_key_content'] = str_replace('\\n', "\n", trim($apn['private_key_content']));
-        }
+        // Get the APN key file and it's contents and store to config
+        $apn = static::_setupApnConfigUsingFileId($apn);
 
-        if (is_array($apn) && isset($apn['_private_key_path']) && is_string($apn['_private_key_path'])) {
-            $apn['private_key_path'] = storage_path('app/' . $apn['_private_key_path']);
-        }
-
-        if (is_array($firebase) && isset($firebase['credentials_file_path']) && is_string($firebase['credentials_file_path'])) {
-            $firebase['credentials'] = storage_path('app/' . $firebase['credentials_file_path']);
-        }
+        // Get credentials config array from file contents
+        $firebase = static::_setupFcmConfigUsingFileId($firebase);
 
         Setting::configure('system.broadcasting.apn', array_merge(config('broadcasting.connections.apn', []), $apn));
         Setting::configure('system.firebase.app', array_merge(config('firebase.projects.app', []), $firebase));
 
         return response()->json(['status' => 'OK']);
+    }
+
+    private static function _setupApnConfigUsingFileId(array $apn = []): array
+    {
+        // Get the APN key file and it's contents and store to config
+        if (is_array($apn) && isset($apn['private_key_file_id']) && Str::isUuid($apn['private_key_file_id'])) {
+            $apnKeyFile = File::where('uuid', $apn['private_key_file_id'])->first();
+            if ($apnKeyFile) {
+                $apnKeyFileContents = Storage::disk('local')->get($apnKeyFile->path);
+                if ($apnKeyFileContents) {
+                    $apn['private_key_content'] = str_replace('\\n', "\n", trim($apnKeyFileContents));
+                }
+            }
+        }
+
+        // Always set apn `private_key_path` and `private_key_file`
+        unset($apn['private_key_path'], $apn['private_key_file']);
+
+        return $apn;
+    }
+
+    private static function _setupFcmConfigUsingFileId(array $firebase = []): array
+    {
+        if (is_array($firebase) && isset($firebase['credentials_file_id']) && Str::isUuid($firebase['credentials_file_id'])) {
+            $firebaseCredentialsFile = File::where('uuid', $firebase['credentials_file_id'])->first();
+            if ($firebaseCredentialsFile) {
+                $firebaseCredentialsContent = Storage::disk('local')->get($firebaseCredentialsFile->path);
+                if ($firebaseCredentialsContent) {
+                    $firebaseCredentialsContentArray = json_decode($firebaseCredentialsContent, true);
+                    if (is_array($firebaseCredentialsContentArray)) {
+                        $firebaseCredentialsContentArray['private_key'] =  str_replace('\\n', "\n", trim($firebaseCredentialsContentArray['private_key']));
+                    }
+                    $firebase['credentials'] = $firebaseCredentialsContentArray;
+                }
+            }
+        }
+
+        // Always set apn `credentials_file`
+        unset($firebase['credentials_file']);
+
+        return $firebase;
     }
 
     /**
@@ -404,6 +441,12 @@ class SettingController extends Controller
         $fcmToken      = $request->input('fcmToken');
         $apn           = $request->array('apn', config('broadcasting.connections.apn'));
         $firebase      = $request->array('firebase', config('firebase.projects.app'));
+
+        // Get the APN key file and it's contents and store to config
+        $apn = static::_setupApnConfigUsingFileId($apn);
+
+        // Get credentials config array from file contents
+        $firebase = static::_setupFcmConfigUsingFileId($firebase);
 
         // temporarily set apn config here
         config(['broadcasting.connections.apn' => $apn]);

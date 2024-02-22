@@ -217,7 +217,7 @@ class User extends Authenticatable
         }
 
         // Determine if user should receive invite to join company
-        if ($this->isNotAdmin() && !$this->isCompanyOwner($comapny)) {
+        if ($this->isNotAdmin() && !$this->isCompanyOwner($company)) {
             // Invite user to join company
             $this->sendInviteFromCompany($company);
 
@@ -249,8 +249,8 @@ class User extends Authenticatable
 
         // Get company record
         $company = Company::where('uuid', $id)->orWhere('public_id', $id)->first();
-        if ($comapny) {
-            return $this->assignCompany($comapny);
+        if ($company) {
+            return $this->assignCompany($company);
         }
 
         return $this;
