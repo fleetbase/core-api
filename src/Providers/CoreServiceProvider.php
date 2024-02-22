@@ -168,7 +168,6 @@ class CoreServiceProvider extends ServiceProvider
             'services.google_maps' => ['api_key' => 'GOOGLE_MAPS_API_KEY', 'locale' => 'GOOGLE_MAPS_LOCALE'],
             'services.twilio'      => ['sid' => 'TWILIO_SID', 'token' => 'TWILIO_TOKEN', 'from' => 'TWILIO_FROM'],
             'services.sentry'      => ['dsn' => 'SENTRY_DSN'],
-            'firebase.app'         => ['credentials' => 'FIREBASE_CREDENTIALS'],
         ];
 
         $settings = [
@@ -251,7 +250,7 @@ class CoreServiceProvider extends ServiceProvider
 
                         $envValue         = data_get($value, $configEnvKey);
                         $doesntHaveEnvSet = empty(env($envKey));
-                        $hasValue         = !empty($envValue);
+                        $hasValue         = !empty($envValue) && !is_array($envValue);
 
                         // only set if env variable is not set already
                         if ($doesntHaveEnvSet && $hasValue) {
