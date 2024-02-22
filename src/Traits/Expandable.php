@@ -82,7 +82,12 @@ trait Expandable
         if (static::isExpansion($method)) {
             $closure = static::getExpansionClosure($method);
 
-            return $closure->call($this, ...$parameters);
+            // Ensure $closure is not static
+            if (!($closure instanceof \Closure)) {
+                throw new \RuntimeException('Invalid closure provided for expansion method `. $method .`');
+            }
+
+            return call_user_func($closure, ...$parameters);
         }
 
         if (static::isModel()) {
