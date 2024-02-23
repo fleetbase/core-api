@@ -36,7 +36,7 @@ class Route implements Expansion
          * @param Closure $callback Can be use to define additional routes
          * @return PendingResourceRegistration
          */
-        return function (string $name, $controller = null, $options = [], \Closure $callback = null) {
+        return function (string $name, $controller = null, $options = [], ?\Closure $callback = null) {
             if (is_callable($controller) && $callback === null) {
                 $callback   = $controller;
                 $controller = null;
@@ -66,7 +66,7 @@ class Route implements Expansion
 
     public function fleetbaseRoutes()
     {
-        return function (string $name, callable $registerFn = null, $options = [], $controller = null) {
+        return function (string $name, ?callable $registerFn = null, $options = [], $controller = null) {
             if (is_callable($controller) && $registerFn === null) {
                 $registerFn = $controller;
                 $controller = null;
@@ -115,7 +115,7 @@ class Route implements Expansion
 
     public function fleetbaseAuthRoutes()
     {
-        return function (callable $registerFn = null, callable $registerProtectedFn = null) {
+        return function (?callable $registerFn = null, ?callable $registerProtectedFn = null) {
             /*
              * @var \Illuminate\Routing\Router $this
              */

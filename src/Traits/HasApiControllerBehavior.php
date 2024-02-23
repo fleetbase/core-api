@@ -73,7 +73,7 @@ trait HasApiControllerBehavior
      *
      * @return string the action to perform based on the HTTP verb
      */
-    private function actionFromHttpVerb(string $verb = null)
+    private function actionFromHttpVerb(?string $verb = null)
     {
         $verb   = $verb ?? $_SERVER['REQUEST_METHOD'];
         $action = Str::lower($verb);
@@ -105,7 +105,7 @@ trait HasApiControllerBehavior
      *
      * @param Model $model - The Model Instance
      */
-    public function setApiModel(Model $model = null, string $namespace = '\\Fleetbase')
+    public function setApiModel(?Model $model = null, string $namespace = '\\Fleetbase')
     {
         $this->modelClassName        = $modelName = Utils::getModelClassName($model ?? $this->resource, $namespace);
         $this->model                 = $model = Resolve::instance($modelName);
@@ -146,7 +146,7 @@ trait HasApiControllerBehavior
      *
      * @return \Fleetbase\Http\Resources\FleetbaseResource
      */
-    public function getApiResourceForModel(Model $model, string $namespace = null)
+    public function getApiResourceForModel(Model $model, ?string $namespace = null)
     {
         $resource = $this->resource;
 
@@ -164,7 +164,7 @@ trait HasApiControllerBehavior
      *
      * @return \Fleetbase\Http\Requests\FleetbaseRequest
      */
-    public function getApiRequestForModel(Model $model, string $namespace = null)
+    public function getApiRequestForModel(Model $model, ?string $namespace = null)
     {
         $request = $this->request;
 

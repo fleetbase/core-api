@@ -372,8 +372,8 @@ class SettingController extends Controller
      */
     public function saveNotificationChannelsConfig(AdminRequest $request)
     {
-        $apn      = $request->array('apn', config('broadcasting.connections.apn'));
-        $firebase = $request->array('firebase', config('firebase.projects.app'));
+        $apn         = $request->array('apn', config('broadcasting.connections.apn'));
+        $firebase    = $request->array('firebase', config('firebase.projects.app'));
 
         // Get the APN key file and it's contents and store to config
         $apn = static::_setupApnConfigUsingFileId($apn);
@@ -393,7 +393,7 @@ class SettingController extends Controller
         if (is_array($apn) && isset($apn['private_key_file_id']) && Str::isUuid($apn['private_key_file_id'])) {
             $apnKeyFile = File::where('uuid', $apn['private_key_file_id'])->first();
             if ($apnKeyFile) {
-                $apnKeyFileContents = Storage::disk('local')->get($apnKeyFile->path);
+                $apnKeyFileContents = Storage::disk($apnKeyFile->disk)->get($apnKeyFile->path);
                 if ($apnKeyFileContents) {
                     $apn['private_key_content'] = str_replace('\\n', "\n", trim($apnKeyFileContents));
                 }
@@ -411,7 +411,7 @@ class SettingController extends Controller
         if (is_array($firebase) && isset($firebase['credentials_file_id']) && Str::isUuid($firebase['credentials_file_id'])) {
             $firebaseCredentialsFile = File::where('uuid', $firebase['credentials_file_id'])->first();
             if ($firebaseCredentialsFile) {
-                $firebaseCredentialsContent = Storage::disk('local')->get($firebaseCredentialsFile->path);
+                $firebaseCredentialsContent = Storage::disk($firebaseCredentialsFile->disk)->get($firebaseCredentialsFile->path);
                 if ($firebaseCredentialsContent) {
                     $firebaseCredentialsContentArray = json_decode($firebaseCredentialsContent, true);
                     if (is_array($firebaseCredentialsContentArray)) {
