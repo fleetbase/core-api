@@ -7,7 +7,7 @@ use Illuminate\Support\Str;
 
 class Find
 {
-    public static function httpResourceForModel(Model $model, string $namespace = null, ?int $version = 1)
+    public static function httpResourceForModel(Model $model, ?string $namespace = null, ?int $version = 1)
     {
         $resourceNamespace = null;
         $defaultResourceNS = '\\Fleetbase\\Http\\Resources\\';
@@ -50,7 +50,7 @@ class Find
         return $resourceNamespace;
     }
 
-    public static function httpRequestForModel(Model $model, string $namespace = null, ?int $version = 1)
+    public static function httpRequestForModel(Model $model, ?string $namespace = null, ?int $version = 1)
     {
         $requestNamespace = null;
         $defaultRequestNS = '\\Fleetbase\\Http\\Requests\\';
@@ -97,7 +97,7 @@ class Find
         return $requestNamespace;
     }
 
-    public static function httpFilterForModel(Model $model, string $namespace = null, ?int $version = 1)
+    public static function httpFilterForModel(Model $model, ?string $namespace = null, ?int $version = 1)
     {
         $namespaceSegments = explode('Models', get_class($model));
         $baseNS            = '\\' . rtrim($namespaceSegments[0], '\\');
