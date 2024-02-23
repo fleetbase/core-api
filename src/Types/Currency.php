@@ -1108,7 +1108,7 @@ class Currency implements \JsonSerializable
      *
      * @return \Fleetbase\Support\Currency
      */
-    public static function first(callable $callback = null)
+    public static function first(?callable $callback = null)
     {
         return static::all()->first($callback);
     }
@@ -1118,7 +1118,7 @@ class Currency implements \JsonSerializable
      *
      * @return \Illuminate\Support\Collection
      */
-    public static function filter(callable $callback = null)
+    public static function filter(?callable $callback = null)
     {
         return static::all()->filter($callback)->values();
     }

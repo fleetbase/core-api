@@ -239,7 +239,7 @@ class ResourceLifecycleEvent implements ShouldBroadcastNow
      *
      * @return JsonResource
      */
-    public function getModelResource($model, string $namespace = null, int $version = null)
+    public function getModelResource($model, ?string $namespace = null, ?int $version = null)
     {
         return Resolve::httpResourceForModel($model, $namespace, $version);
     }

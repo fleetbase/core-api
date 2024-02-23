@@ -372,8 +372,8 @@ class SettingController extends Controller
      */
     public function saveNotificationChannelsConfig(AdminRequest $request)
     {
-        $apn      = $request->array('apn', config('broadcasting.connections.apn'));
-        $firebase = $request->array('firebase', config('firebase.projects.app'));
+        $apn         = $request->array('apn', config('broadcasting.connections.apn'));
+        $firebase    = $request->array('firebase', config('firebase.projects.app'));
 
         // Get the APN key file and it's contents and store to config
         $apn = static::_setupApnConfigUsingFileId($apn);
@@ -385,47 +385,6 @@ class SettingController extends Controller
         Setting::configure('system.firebase.app', array_merge(config('firebase.projects.app', []), $firebase));
 
         return response()->json(['status' => 'OK']);
-    }
-
-    private static function _setupApnConfigUsingFileId(array $apn = []): array
-    {
-        // Get the APN key file and it's contents and store to config
-        if (is_array($apn) && isset($apn['private_key_file_id']) && Str::isUuid($apn['private_key_file_id'])) {
-            $apnKeyFile = File::where('uuid', $apn['private_key_file_id'])->first();
-            if ($apnKeyFile) {
-                $apnKeyFileContents = Storage::disk('local')->get($apnKeyFile->path);
-                if ($apnKeyFileContents) {
-                    $apn['private_key_content'] = str_replace('\\n', "\n", trim($apnKeyFileContents));
-                }
-            }
-        }
-
-        // Always set apn `private_key_path` and `private_key_file`
-        unset($apn['private_key_path'], $apn['private_key_file']);
-
-        return $apn;
-    }
-
-    private static function _setupFcmConfigUsingFileId(array $firebase = []): array
-    {
-        if (is_array($firebase) && isset($firebase['credentials_file_id']) && Str::isUuid($firebase['credentials_file_id'])) {
-            $firebaseCredentialsFile = File::where('uuid', $firebase['credentials_file_id'])->first();
-            if ($firebaseCredentialsFile) {
-                $firebaseCredentialsContent = Storage::disk('local')->get($firebaseCredentialsFile->path);
-                if ($firebaseCredentialsContent) {
-                    $firebaseCredentialsContentArray = json_decode($firebaseCredentialsContent, true);
-                    if (is_array($firebaseCredentialsContentArray)) {
-                        $firebaseCredentialsContentArray['private_key'] =  str_replace('\\n', "\n", trim($firebaseCredentialsContentArray['private_key']));
-                    }
-                    $firebase['credentials'] = $firebaseCredentialsContentArray;
-                }
-            }
-        }
-
-        // Always set apn `credentials_file`
-        unset($firebase['credentials_file']);
-
-        return $firebase;
     }
 
     /**
@@ -476,6 +435,79 @@ class SettingController extends Controller
         }
 
         return response()->json(['status' => $status, 'message' => $responseMessage]);
+    }
+
+    /**
+     * Sets up the Apple Push Notification (APN) configuration using a specified file ID.
+     *
+     * This function retrieves the APN key file based on the provided file ID, extracts its contents,
+     * and stores them in the configuration array. The function expects an array with at least the
+     * 'private_key_file_id' element, which should be a valid UUID. The function modifies the
+     * input array by setting the 'private_key_content' and unsetting 'private_key_path' and
+     * 'private_key_file'.
+     *
+     * @param array $apn an associative array containing the APN configuration,
+     *                   specifically the 'private_key_file_id'
+     *
+     * @return array the modified APN configuration array with 'private_key_content' set
+     *
+     * @throws Exception if file retrieval or processing fails
+     */
+    private static function _setupApnConfigUsingFileId(array $apn = []): array
+    {
+        // Get the APN key file and it's contents and store to config
+        if (is_array($apn) && isset($apn['private_key_file_id']) && Str::isUuid($apn['private_key_file_id'])) {
+            $apnKeyFile = File::where('uuid', $apn['private_key_file_id'])->first();
+            if ($apnKeyFile) {
+                $apnKeyFileContents = Storage::disk($apnKeyFile->disk)->get($apnKeyFile->path);
+                if ($apnKeyFileContents) {
+                    $apn['private_key_content'] = str_replace('\\n', "\n", trim($apnKeyFileContents));
+                }
+            }
+        }
+
+        // Always set apn `private_key_path` and `private_key_file`
+        unset($apn['private_key_path'], $apn['private_key_file']);
+
+        return $apn;
+    }
+
+    /**
+     * Sets up Firebase Cloud Messaging (FCM) configuration using a specified file ID.
+     *
+     * This function retrieves the FCM credentials file based on the provided file ID, extracts
+     * its contents, and decodes it into an array. It expects an array with at least the
+     * 'credentials_file_id' element, which should be a valid UUID. The function modifies the
+     * input array by setting the 'credentials' element with the extracted and processed credentials
+     * content and unsetting 'credentials_file'.
+     *
+     * @param array $firebase an associative array containing the Firebase configuration,
+     *                        specifically the 'credentials_file_id'
+     *
+     * @return array the modified Firebase configuration array with 'credentials' set
+     *
+     * @throws Exception if file retrieval or processing fails
+     */
+    private static function _setupFcmConfigUsingFileId(array $firebase = []): array
+    {
+        if (is_array($firebase) && isset($firebase['credentials_file_id']) && Str::isUuid($firebase['credentials_file_id'])) {
+            $firebaseCredentialsFile = File::where('uuid', $firebase['credentials_file_id'])->first();
+            if ($firebaseCredentialsFile) {
+                $firebaseCredentialsContent = Storage::disk($firebaseCredentialsFile->disk)->get($firebaseCredentialsFile->path);
+                if ($firebaseCredentialsContent) {
+                    $firebaseCredentialsContentArray = json_decode($firebaseCredentialsContent, true);
+                    if (is_array($firebaseCredentialsContentArray)) {
+                        $firebaseCredentialsContentArray['private_key'] =  str_replace('\\n', "\n", trim($firebaseCredentialsContentArray['private_key']));
+                    }
+                    $firebase['credentials'] = $firebaseCredentialsContentArray;
+                }
+            }
+        }
+
+        // Always set apn `credentials_file`
+        unset($firebase['credentials_file']);
+
+        return $firebase;
     }
 
     /**

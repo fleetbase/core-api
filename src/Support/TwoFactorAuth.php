@@ -162,7 +162,7 @@ class TwoFactorAuth
      *
      * @throws \Exception if Two-Factor Authentication is not enabled or the session is invalid
      */
-    public static function getClientSessionTokenFromTwoFaSession(string $token, string $identity, string $clientToken = null): string
+    public static function getClientSessionTokenFromTwoFaSession(string $token, string $identity, ?string $clientToken = null): string
     {
         // Get user from identity
         $user = static::getUserFromIdentity($identity);
@@ -218,7 +218,7 @@ class TwoFactorAuth
      *
      * @return bool true if the session token is valid, false otherwise
      */
-    public static function validateSessionToken(string $token, string $identity, string $clientToken = null): bool
+    public static function validateSessionToken(string $token, string $identity, ?string $clientToken = null): bool
     {
         // Get user from identity
         $user = static::getUserFromIdentity($identity);
@@ -612,7 +612,7 @@ class TwoFactorAuth
      *
      * @return \Fleetbase\Models\User|null the user, or null if not found
      */
-    private static function getUserFromVerificationCode(VerificationCode $verificationCode = null): ?User
+    private static function getUserFromVerificationCode(?VerificationCode $verificationCode = null): ?User
     {
         if ($verificationCode instanceof VerificationCode) {
             $subject = $verificationCode->subject;

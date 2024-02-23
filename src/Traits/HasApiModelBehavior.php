@@ -100,7 +100,7 @@ trait HasApiModelBehavior
      *
      * @return \Illuminate\Database\Eloquent\Collection|\Illuminate\Contracts\Pagination\LengthAwarePaginator
      */
-    public function queryFromRequest(Request $request, \Closure $queryCallback = null)
+    public function queryFromRequest(Request $request, ?\Closure $queryCallback = null)
     {
         $limit   = $request->integer('limit', 30);
         $columns = $request->input('columns', ['*']);
@@ -149,7 +149,7 @@ trait HasApiModelBehavior
      *
      * @static
      */
-    public static function queryWithRequest(Request $request, \Closure $queryCallback = null)
+    public static function queryWithRequest(Request $request, ?\Closure $queryCallback = null)
     {
         return (new static())->queryFromRequest($request, $queryCallback);
     }
@@ -164,7 +164,7 @@ trait HasApiModelBehavior
      *
      * @return mixed the newly created record, or a JSON response if the callbacks return one
      */
-    public function createRecordFromRequest($request, callable $onBefore = null, callable $onAfter = null, array $options = [])
+    public function createRecordFromRequest($request, ?callable $onBefore = null, ?callable $onAfter = null, array $options = [])
     {
         $input = $this->getApiPayloadFromRequest($request);
         $input = $this->fillSessionAttributes($input);
@@ -219,7 +219,7 @@ trait HasApiModelBehavior
      * @throws \Symfony\Component\HttpKernel\Exception\NotFoundHttpException if the record with the given ID is not found
      * @throws \Exception                                                    if the input contains an invalid parameter that is not fillable
      */
-    public function updateRecordFromRequest(Request $request, $id, callable $onBefore = null, callable $onAfter = null, array $options = [])
+    public function updateRecordFromRequest(Request $request, $id, ?callable $onBefore = null, ?callable $onAfter = null, array $options = [])
     {
         $record = $this->where(function ($q) use ($id) {
             $publicIdColumn = $this->getQualifiedPublicId();
@@ -1000,7 +1000,7 @@ trait HasApiModelBehavior
      *
      * @throws \Illuminate\Database\Eloquent\ModelNotFoundException
      */
-    public static function findRecordOrFail($id, $with = [], $columns = ['*'], \Closure $queryCallback = null)
+    public static function findRecordOrFail($id, $with = [], $columns = ['*'], ?\Closure $queryCallback = null)
     {
         if (is_null($columns) || empty($columns)) {
             $columns = ['*'];
