@@ -44,6 +44,10 @@ trait Expandable
     public static function expandFromClass($class): void
     {
         $methods = (new \ReflectionClass($class))->getMethods(\ReflectionMethod::IS_PUBLIC | \ReflectionMethod::IS_PROTECTED);
+        $target  = null;
+        if (method_exists($class, 'target')) {
+            $target = app($class::target());
+        }
 
         foreach ($methods as $method) {
             $method->setAccessible(true);
@@ -52,7 +56,8 @@ trait Expandable
                 continue;
             }
 
-            static::expand($method->getName(), $method->invoke($class));
+            $closure = $method->invoke($target);
+            static::expand($method->getName(), $closure);
         }
     }
 
@@ -87,7 +92,14 @@ trait Expandable
                 throw new \RuntimeException('Invalid closure provided for expansion method `. $method .`');
             }
 
-            return call_user_func($closure, ...$parameters);
+            // Handle static closures
+            $reflection      = new \ReflectionFunction($closure);
+            $isStaticClosure = $reflection->isStatic();
+            if ($isStaticClosure) {
+                return call_user_func($closure, ...$parameters);
+            }
+
+            return $closure->call($this, ...$parameters);
         }
 
         if (static::isModel()) {
