@@ -320,7 +320,7 @@ class CoreServiceProvider extends ServiceProvider
                 $namespace = Arr::first(
                     $namespaces,
                     function ($ns) use ($className) {
-                        return Utils::classExists($namespacedClass);
+                        return Utils::classExists($ns . $className);
                     }
                 );
 
@@ -332,7 +332,7 @@ class CoreServiceProvider extends ServiceProvider
             $class  = $namespace . $className;
             $target = $class::target();
 
-            if (Utils::classExists($target)) {
+            if (!Utils::classExists($target)) {
                 continue;
             }
 
