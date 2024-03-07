@@ -1,6 +1,6 @@
 {
     "name": "fleetbase/core-api",
-    "version": "1.4.10",
+    "version": "1.4.11",
     "description": "Core Framework and Resources for Fleetbase API",
     "keywords": [
         "fleetbase",
@@ -19,7 +19,12 @@
     ],
     "require": {
         "php": "^8.0",
+        "aloha/twilio": "^5.0",
+        "aws/aws-sdk-php-laravel": "^3.7",
         "fleetbase/laravel-mysql-spatial": "^1.0.2",
+        "giggsey/libphonenumber-for-php": "^8.13",
+        "guzzlehttp/guzzle": "^7.4",
+        "hammerstone/fast-paginate": "^1.0",
         "illuminate/broadcasting": "^9.0|^10.0",
         "illuminate/contracts": "^9.0|^10.0",
         "illuminate/database": "^9.0|^10.0",
@@ -27,12 +32,11 @@
         "illuminate/notifications": "^9.0|^10.0",
         "illuminate/routing": "^9.0|^10.0",
         "illuminate/support": "^9.0|^10.0",
-        "aloha/twilio": "^5.0",
-        "aws/aws-sdk-php-laravel": "^3.7",
-        "giggsey/libphonenumber-for-php": "^8.13",
-        "guzzlehttp/guzzle": "^7.4",
-        "hammerstone/fast-paginate": "^1.0",
+        "inkrot/php-compress-json": "^0.1.1",
         "jdorn/sql-formatter": "^1.2",
+        "laravel-notification-channels/apn": "^5.0",
+        "laravel-notification-channels/fcm": "^4.1",
+        "laravel-notification-channels/twilio": "^3.3",
         "laravel/sanctum": "^3.2",
         "maatwebsite/excel": "^3.1",
         "phpoffice/phpspreadsheet": "^1.28",
@@ -44,10 +48,7 @@
         "spatie/laravel-responsecache": "^7.4",
         "spatie/laravel-sluggable": "^3.5",
         "sqids/sqids": "^0.4.1",
-        "xantios/mimey": "^2.2.0",
-        "laravel-notification-channels/apn": "^5.0",
-        "laravel-notification-channels/fcm": "^4.1",
-        "laravel-notification-channels/twilio": "^3.3"
+        "xantios/mimey": "^2.2.0"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.34.1",

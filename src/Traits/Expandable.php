@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Traits;
 
+use Fleetbase\Support\Utils;
 use Illuminate\Support\Facades\DB;
 
 trait Expandable
@@ -10,7 +11,7 @@ trait Expandable
 
     public static function expand($name, ?\Closure $closure = null)
     {
-        if ((is_object($name) || class_exists($name)) && $closure === null) {
+        if ((is_object($name) || Utils::classExists($name)) && $closure === null) {
             return static::expandFromClass($name);
         }
 

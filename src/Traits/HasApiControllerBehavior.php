@@ -184,7 +184,7 @@ trait HasApiControllerBehavior
      */
     public function validateRequest(Request $request)
     {
-        if (class_exists($this->request)) {
+        if (Utils::classExists($this->request)) {
             $formRequest = new $this->request($request->all());
             $validator   = Validator::make($request->all(), $formRequest->rules(), $formRequest->messages());
 

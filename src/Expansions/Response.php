@@ -4,6 +4,7 @@ namespace Fleetbase\Expansions;
 
 use Fleetbase\Build\Expansion;
 use Illuminate\Support\MessageBag;
+use CompressJson\Core\Compressor;
 
 class Response implements Expansion
 {
@@ -73,6 +74,34 @@ class Response implements Expansion
                 ],
                 $statusCode
             );
+        };
+    }
+
+    /**
+     * Creates a compressed json response using json compression library.
+     *
+     * @return Closure
+     */
+    public function compressedJson()
+    {
+        return function ($data = [], $status = 200, array $headers = [], int $options = 0) {
+            /**
+             * Context.
+             *
+             * @var \Illuminate\Support\Facades\Response $this
+             */
+            // Serialize data to JSON
+            $jsonData = json_encode($data, $options);
+
+            // Compress JSON data
+            $compressedData = Compressor::create()->compress($jsonData)->toArray();
+
+            // Set headers for compressed response
+            $headers = array_merge([
+                'X-Compressed-Json' => '1'
+            ], $headers);
+
+            return $this->json($compressedData, $status, $headers, $options);
         };
     }
 }

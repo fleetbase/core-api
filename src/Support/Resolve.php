@@ -10,7 +10,7 @@ class Resolve
 {
     public static function httpResourceForModel($model, ?string $namespace = null, ?int $version = 1)
     {
-        if (is_string($model) && class_exists($model)) {
+        if (Utils::classExists($model)) {
             $model = static::instance($model);
         }
 
@@ -25,7 +25,7 @@ class Resolve
 
     public static function httpRequestForModel($model, ?string $namespace = null, ?int $version = 1)
     {
-        if (is_string($model) && class_exists($model)) {
+        if (Utils::classExists($model)) {
             $model = static::instance($model);
         }
 
@@ -57,7 +57,7 @@ class Resolve
 
         $instance = null;
 
-        if (class_exists($type)) {
+        if (Utils::classExists($type)) {
             $instance = static::instance($type);
 
             if ($instance instanceof Model) {
@@ -66,7 +66,7 @@ class Resolve
         }
 
         if ($instance) {
-            if (class_exists($resourceClass)) {
+            if (Utils::classExists($resourceClass)) {
                 $resource = new $resourceClass($instance);
             } else {
                 $resource = Find::httpResourceForModel($instance);

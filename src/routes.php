@@ -202,6 +202,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 $router->fleetbaseRoutes('extensions');
                                 $router->fleetbaseRoutes('categories');
                                 $router->fleetbaseRoutes('comments');
+                                $router->fleetbaseRoutes('custom-fields');
                                 $router->fleetbaseRoutes(
                                     'files',
                                     function ($router, $controller) {
