@@ -24,7 +24,7 @@ class CustomField extends Model
      *
      * @var array
      */
-    protected $fillable = ['category_uuid', 'subject_uuid', 'subject_type', 'name', 'label', 'type', 'component', 'options', 'required', 'default_value', 'validation_rules', 'meta', 'description', 'help_text', 'order'];
+    protected $fillable = ['category_uuid', 'subject_uuid', 'subject_type', 'name', 'label', 'type', 'component', 'options', 'required', 'editable', 'default_value', 'validation_rules', 'meta', 'description', 'help_text', 'order'];
 
     /**
      * The attributes that are guarded.
@@ -44,6 +44,7 @@ class CustomField extends Model
         'validation_rules'             => Json::class,
         'subject_type'                 => PolymorphicType::class,
         'required'                     => 'boolean',
+        'editable'                     => 'boolean',
     ];
 
     /**

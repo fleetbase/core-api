@@ -2,9 +2,9 @@
 
 namespace Fleetbase\Expansions;
 
+use CompressJson\Core\Compressor;
 use Fleetbase\Build\Expansion;
 use Illuminate\Support\MessageBag;
-use CompressJson\Core\Compressor;
 
 class Response implements Expansion
 {
@@ -98,7 +98,7 @@ class Response implements Expansion
 
             // Set headers for compressed response
             $headers = array_merge([
-                'X-Compressed-Json' => '1'
+                'X-Compressed-Json' => '1',
             ], $headers);
 
             return $this->json($compressedData, $status, $headers, $options);

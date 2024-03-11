@@ -3,7 +3,6 @@
 namespace Fleetbase\Support;
 
 use Fleetbase\Models\Setting;
-use Fleetbase\Support\Utils;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 

@@ -2240,9 +2240,10 @@ class Utils
      * This function first ensures that the provided variable is a valid, non-empty string
      * before checking if the class exists.
      *
-     * @param mixed $class The class name to check. It should ideally be a string.
-     * @param bool $autoload Whether or not to call __autoload by default.
-     * @return bool Returns true if the class exists, false otherwise or if the input is not a valid string.
+     * @param mixed $class    The class name to check. It should ideally be a string.
+     * @param bool  $autoload whether or not to call __autoload by default
+     *
+     * @return bool returns true if the class exists, false otherwise or if the input is not a valid string
      */
     public static function classExists($class, bool $autoload = true): bool
     {

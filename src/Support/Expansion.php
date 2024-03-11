@@ -3,7 +3,6 @@
 namespace Fleetbase\Support;
 
 use Fleetbase\Build\Expansion as ExpansionInterface;
-use Fleetbase\Support\Utils;
 
 class Expansion
 {

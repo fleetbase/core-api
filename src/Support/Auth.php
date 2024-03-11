@@ -4,9 +4,11 @@ namespace Fleetbase\Support;
 
 use Fleetbase\Models\ApiCredential;
 use Fleetbase\Models\Company;
+use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\User;
 use Illuminate\Support\Facades\Auth as Authentication;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 class Auth extends Authentication
 {
@@ -160,5 +162,36 @@ class Auth extends Authentication
     public static function isInvalidPassword(string $pw1, string $pw2): bool
     {
         return !static::checkPassword($pw1, $pw2);
+    }
+
+    /**
+     * Retrieves the associated company session for the given user.
+     *
+     * This method attempts to fetch a company based on the UUID stored in the user's company_uuid property.
+     * If no company is found or the UUID is invalid, it falls back to the user's first associated company.
+     *
+     * @param User $user the user for whom to retrieve the company session
+     *
+     * @return Company|null the Company object if found, or null if not
+     */
+    public static function getCompanySessionForUser(User $user): ?Company
+    {
+        if (Str::isUuid($user->company_uuid)) {
+            $company = Company::where('uuid', $user->company_uuid)->first();
+            if ($company) {
+                return $company;
+            }
+        }
+
+        // fallback to get user's first company
+        $userCompany = CompanyUser::where('user_uuid', $user->uuid)->first();
+        if ($userCompany) {
+            $company = Company::where('uuid', $userCompany->company_uuid)->first();
+            if ($company) {
+                return $company;
+            }
+        }
+
+        return null;
     }
 }
