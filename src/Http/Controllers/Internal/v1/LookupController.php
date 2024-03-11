@@ -87,7 +87,7 @@ class LookupController extends Controller
             return response()->error($e->getMessage());
         }
 
-        return response()->json($info);
+        return response()->compressedJson($info);
     }
 
     /**
@@ -109,7 +109,7 @@ class LookupController extends Controller
             }
         );
 
-        return response()->json($currencies);
+        return response()->compressedJson($currencies);
     }
 
     /**
@@ -141,7 +141,7 @@ class LookupController extends Controller
             );
         }
 
-        return response()->json($countries);
+        return response()->compressedJson($countries);
     }
 
     /**

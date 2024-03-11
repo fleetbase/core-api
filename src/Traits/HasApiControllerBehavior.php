@@ -67,6 +67,13 @@ trait HasApiControllerBehavior
     public $request;
 
     /**
+     * Determine if the JSON should be compressed.
+     *
+     * @var Request
+     */
+    public $compressJson = false;
+
+    /**
      * Determines the action to perform based on the HTTP verb.
      *
      * @param string|null $verb The HTTP verb to check. Defaults to the request method if not provided.
