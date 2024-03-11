@@ -29,18 +29,18 @@ class Find
 
             // if internal request but no internal resource has been declared
             // fallback to the public resource
-            if (!class_exists($resourceNamespace)) {
+            if (!Utils::classExists($resourceNamespace)) {
                 $resourceNamespace = str_replace('Internal\\', '', $resourceNamespace);
             }
 
             // if no versioned base resource fallback to base namespace for resource
-            if (!class_exists($resourceNamespace)) {
+            if (!Utils::classExists($resourceNamespace)) {
                 $resourceNamespace = str_replace("v{$version}\\", '', $resourceNamespace);
             }
         }
 
         try {
-            if (!class_exists($resourceNamespace)) {
+            if (!Utils::classExists($resourceNamespace)) {
                 throw new \Exception('Missing resource');
             }
         } catch (\Error|\Exception $e) {
@@ -65,7 +65,7 @@ class Find
             $requestNamespace = $requestNS . '\\' . Str::studly(ucfirst(Http::action()) . ucfirst($modelName) . 'Request');
         }
 
-        if (!class_exists($requestNamespace)) {
+        if (!Utils::classExists($requestNamespace)) {
             $internal = Http::isInternalRequest();
 
             if ($internal) {
@@ -76,18 +76,18 @@ class Find
 
             // if internal request but no internal resource has been declared
             // fallback to the public resource
-            if (!class_exists($requestNamespace)) {
+            if (!Utils::classExists($requestNamespace)) {
                 $requestNamespace = str_replace('Internal\\', '', $requestNamespace);
             }
 
             // if no versioned base resource fallback to base namespace for resource
-            if (!class_exists($requestNamespace)) {
+            if (!Utils::classExists($requestNamespace)) {
                 $requestNamespace = str_replace("v{$version}\\", '', $requestNamespace);
             }
         }
 
         try {
-            if (!class_exists($requestNamespace)) {
+            if (!Utils::classExists($requestNamespace)) {
                 throw new \Exception('Missing resource');
             }
         } catch (\Error|\Exception $e) {
@@ -114,7 +114,7 @@ class Find
             $filterNamespace = $filterNs . Str::studly(ucfirst($modelName) . 'Filter');
         }
 
-        if (class_exists($filterNamespace)) {
+        if (Utils::classExists($filterNamespace)) {
             return $filterNamespace;
         } else {
             $internal = Http::isInternalRequest();
@@ -128,17 +128,17 @@ class Find
 
             // if internal request but no internal resource has been declared
             // fallback to the public resource
-            if (!class_exists($filterNamespace)) {
+            if (!Utils::classExists($filterNamespace)) {
                 $filterNamespace = str_replace('Internal\\', '', $filterNamespace);
             }
 
             // if no versioned base resource fallback to base namespace for resource
-            if (!class_exists($filterNamespace)) {
+            if (!Utils::classExists($filterNamespace)) {
                 $filterNamespace = str_replace("v{$version}\\", '', $filterNamespace);
             }
         }
 
-        if (class_exists($filterNamespace)) {
+        if (Utils::classExists($filterNamespace)) {
             return $filterNamespace;
         }
 

@@ -4,8 +4,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration
-{
+return new class() extends Migration {
     /**
      * Run the migrations.
      *
@@ -15,7 +14,7 @@ return new class extends Migration
     {
         Schema::table('dashboard_widgets', function (Blueprint $table) {
             $table->foreign('dashboard_uuid')
-                  ->references('uuid') 
+                  ->references('uuid')
                   ->on('dashboards')
                   ->onUpdate('CASCADE')
                   ->onDelete('CASCADE');

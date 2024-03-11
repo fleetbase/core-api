@@ -93,7 +93,7 @@ class NotificationRegistry
      */
     private static function getNotificationClassProperty(string $notificationClass, string $property, $defaultValue = null)
     {
-        if (!class_exists($notificationClass) || !property_exists($notificationClass, $property)) {
+        if (!Utils::classExists($notificationClass) || !property_exists($notificationClass, $property)) {
             return $defaultValue;
         }
 
@@ -112,7 +112,7 @@ class NotificationRegistry
     private static function getNotificationClassParameters(string $notificationClass): array
     {
         // Make sure class exists
-        if (!class_exists($notificationClass)) {
+        if (!Utils::classExists($notificationClass)) {
             return [];
         }
 
@@ -224,7 +224,7 @@ class NotificationRegistry
     public static function notify($notificationClass, ...$params): void
     {
         // if the class doesn't exist return false
-        if (!class_exists($notificationClass)) {
+        if (!Utils::classExists($notificationClass)) {
             return;
         }
 
@@ -282,7 +282,7 @@ class NotificationRegistry
     public static function notifyUsingDefinitionName($notificationClass, $notificationName, ...$params): void
     {
         // if the class doesn't exist return false
-        if (!class_exists($notificationClass)) {
+        if (!Utils::classExists($notificationClass)) {
             return;
         }
 

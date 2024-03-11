@@ -13,11 +13,11 @@ class Expansion
 
     public static function isExpandable($target)
     {
-        return class_exists($target) && in_array('Fleetbase\\Traits\\Expandable', class_uses($target));
+        return Utils::classExists($target) && in_array('Fleetbase\\Traits\\Expandable', class_uses($target));
     }
 
     public static function isMacroable($target)
     {
-        return class_exists($target) && in_array('Illuminate\Support\Traits\Macroable', class_uses($target));
+        return Utils::classExists($target) && in_array('Illuminate\Support\Traits\Macroable', class_uses($target));
     }
 }

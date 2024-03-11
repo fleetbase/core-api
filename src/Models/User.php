@@ -195,6 +195,24 @@ class User extends Authenticatable
     }
 
     /**
+     * Bootstraps the model and its events.
+     *
+     * This method overrides the default Eloquent model boot method
+     * to add a custom 'creating' event listener. This listener is used
+     * to set default values when a new model instance is being created.
+     *
+     * @return void
+     */
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::creating(function ($model) {
+            $model->username = $model->username ? $model->username : static::generateUsername($model->name);
+        });
+    }
+
+    /**
      * The company this user belongs to.
      *
      * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
@@ -202,6 +220,48 @@ class User extends Authenticatable
     public function company()
     {
         return $this->belongsTo(Company::class);
+    }
+
+    /**
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     */
+    public function avatar()
+    {
+        return $this->belongsTo(File::class);
+    }
+
+    /**
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     */
+    public function devices()
+    {
+        return $this->hasMany(UserDevice::class);
+    }
+
+    /**
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     */
+    public function companies()
+    {
+        return $this->hasMany(CompanyUser::class, 'user_uuid');
+    }
+
+    /**
+     * Generates a unique username based on the provided name.
+     *
+     * This method creates a username by taking the given name, appending
+     * a random 4-character string, and then converting the combination
+     * into a slug format. The name and the random string are separated
+     * by an underscore. The slugification ensures the username is URL-friendly
+     * (lowercase, with spaces and special characters turned into underscores).
+     *
+     * @param string $name the base name to be used for generating the username
+     *
+     * @return string the generated username in slug format with a random 4-character string
+     */
+    public static function generateUsername(string $name): string
+    {
+        return Str::slug($name . '_' . Str::random(4), '_');
     }
 
     /**
@@ -254,30 +314,6 @@ class User extends Authenticatable
         }
 
         return $this;
-    }
-
-    /**
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
-     */
-    public function avatar()
-    {
-        return $this->belongsTo(File::class);
-    }
-
-    /**
-     * @return \Illuminate\Database\Eloquent\Relations\HasMany
-     */
-    public function devices()
-    {
-        return $this->hasMany(UserDevice::class);
-    }
-
-    /**
-     * @return \Illuminate\Database\Eloquent\Relations\HasMany
-     */
-    public function companies()
-    {
-        return $this->hasMany(CompanyUser::class, 'user_uuid');
     }
 
     /**

@@ -1876,7 +1876,7 @@ class Utils
 
         foreach ($packages as $packageName => $package) {
             // Derive the seeds directory path
-            $seedsDirectory = base_path('vendor/' . $packageName . '/seeds');
+            $seedsDirectory = base_path('vendor/' . $packageName . '/server/seeders');
 
             // Check if the seeds directory exists
             if (!is_dir($seedsDirectory)) {
@@ -1922,7 +1922,12 @@ class Utils
 
         foreach ($packages as $packageName => $package) {
             // Derive the seeds directory path
-            $seedsDirectory = base_path('vendor/' . $packageName . '/seeds');
+            $seedsDirectory = base_path('vendor/' . $packageName . '/server/seeders');
+
+            // Try without /server/ segment
+            if (!is_dir($seedsDirectory)) {
+                $seedsDirectory = base_path('vendor/' . $packageName . '/seeders');
+            }
 
             // Check if the seeds directory exists
             if (!is_dir($seedsDirectory)) {
@@ -1933,8 +1938,7 @@ class Utils
             $files = glob($seedsDirectory . '/*.php');
 
             // Find the namespace that corresponds to the seeds directory
-            $namespace = static::getNamespaceFromAutoload($package['autoload']['psr-4'], 'seeds');
-
+            $namespace = static::getNamespaceFromAutoload($package['autoload']['psr-4'], 'seeders');
             foreach ($files as $file) {
                 // Get the base name of the file, and remove the .php extension to get the class name
                 $className = basename($file, '.php');
@@ -1990,9 +1994,13 @@ class Utils
         $directories = [];
 
         foreach ($packages as $packageName => $package) {
-            $migrationDirectory = base_path('vendor/' . $packageName . '/migrations/');
+            $migrationDirectory = base_path('vendor/' . $packageName . '/server/migrations/');
+            if (is_dir($migrationDirectory)) {
+                $directories[] = $migrationDirectory;
+            }
 
-            if (file_exists($migrationDirectory)) {
+            $migrationDirectory = base_path('vendor/' . $packageName . '//migrations/');
+            if (is_dir($migrationDirectory)) {
                 $directories[] = $migrationDirectory;
             }
         }
@@ -2023,7 +2031,10 @@ class Utils
                 continue;
             }
 
-            $migrationDirectory = base_path('vendor/' . $packageName . '/migrations/');
+            $migrationDirectory = base_path('vendor/' . $packageName . '/server/migrations/');
+            if (!is_dir($migrationDirectory)) {
+                $migrationDirectory = base_path('vendor/' . $packageName . '//migrations/');
+            }
             break;
         }
 
@@ -2057,30 +2068,41 @@ class Utils
         }
 
         foreach ($packages as $packageName => $package) {
-            $srcDirectory = base_path('vendor/' . $packageName . '/src/');
+            $srcDirectory = base_path('vendor/' . $packageName . '/server/src/');
+            if (!is_dir($srcDirectory)) {
+                $srcDirectory = base_path('vendor/' . $packageName . '//src/');
+            }
+
+            if (!is_dir($srcDirectory)) {
+                continue;
+            }
 
             if (!isset($package['autoload']['psr-4'])) {
                 continue;
             }
 
             foreach ($package['autoload']['psr-4'] as $namespace => $directory) {
+                if (Str::contains($namespace, ['Seeders', 'Seed'])) {
+                    continue;
+                }
                 $directoryPath = $srcDirectory . 'Auth/Schemas';
 
                 // try path with namespace
-                if (!file_exists($directoryPath)) {
+                if (!is_dir($directoryPath)) {
                     $directoryPath = $srcDirectory . str_replace('\\', '/', $namespace) . 'Auth/Schemas';
                 }
 
-                if (!file_exists($directoryPath)) {
+                if (!is_dir($directoryPath)) {
                     continue;
                 }
 
                 $directoryIterator = new \DirectoryIterator($directoryPath);
-
                 foreach ($directoryIterator as $file) {
                     if ($file->isFile() && $file->getExtension() == 'php') {
                         $className           = $namespace . 'Auth\\Schemas\\' . $file->getBasename('.php');
-                        $authSchemaClasses[] = $className;
+                        if (static::classExists($className)) {
+                            $authSchemaClasses[] = $className;
+                        }
                     }
                 }
             }
@@ -2233,5 +2255,24 @@ class Utils
         }
 
         return null;
+    }
+
+    /**
+     * Checks if a class exists in a safer way than the built-in class_exists function.
+     * This function first ensures that the provided variable is a valid, non-empty string
+     * before checking if the class exists.
+     *
+     * @param mixed $class    The class name to check. It should ideally be a string.
+     * @param bool  $autoload whether or not to call __autoload by default
+     *
+     * @return bool returns true if the class exists, false otherwise or if the input is not a valid string
+     */
+    public static function classExists($class, bool $autoload = true): bool
+    {
+        if (is_string($class) && strlen($class)) {
+            return class_exists($class, $autoload);
+        }
+
+        return false;
     }
 }

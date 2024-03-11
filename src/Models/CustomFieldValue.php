@@ -2,12 +2,12 @@
 
 namespace Fleetbase\Models;
 
-use Fleetbase\Casts\Json;
+use Fleetbase\Casts\CustomValue;
 use Fleetbase\Casts\PolymorphicType;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasUuid;
 
-class CustomField extends Model
+class CustomFieldValue extends Model
 {
     use HasUuid;
     use HasApiModelBehavior;
@@ -17,14 +17,14 @@ class CustomField extends Model
      *
      * @var string
      */
-    protected $table = 'custom_fields';
+    protected $table = 'custom_field_values';
 
     /**
      * The attributes that are mass assignable.
      *
      * @var array
      */
-    protected $fillable = ['category_uuid', 'subject_uuid', 'subject_type', 'name', 'label', 'type', 'component', 'options', 'required', 'editable', 'default_value', 'validation_rules', 'meta', 'description', 'help_text', 'order'];
+    protected $fillable = ['company_uuid', 'custom_field_uuid', 'subject_uuid', 'subject_type', 'value', 'value_type'];
 
     /**
      * The attributes that are guarded.
@@ -39,12 +39,8 @@ class CustomField extends Model
      * @var array
      */
     protected $casts = [
-        'options'                      => Json::class,
-        'meta'                         => Json::class,
-        'validation_rules'             => Json::class,
-        'subject_type'                 => PolymorphicType::class,
-        'required'                     => 'boolean',
-        'editable'                     => 'boolean',
+        'value'                      => CustomValue::class,
+        'subject_type'               => PolymorphicType::class,
     ];
 
     /**
@@ -66,8 +62,17 @@ class CustomField extends Model
     /**
      * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
      */
-    public function category()
+    public function customField()
     {
-        return $this->belongsTo(Category::class);
+        return $this->belongsTo(CustomField::class);
+    }
+
+    public function getCustomFieldLabelAttribute(): ?string
+    {
+        if ($this->customField) {
+            return $this->customField->label;
+        }
+
+        return null;
     }
 }
