@@ -60,7 +60,7 @@
     "autoload": {
         "psr-4": {
             "Fleetbase\\": "src/",
-            "Fleetbase\\Seeds\\": "seeds/"
+            "Fleetbase\\Seeders\\": "seeders/"
         }
     },
     "autoload-dev": {

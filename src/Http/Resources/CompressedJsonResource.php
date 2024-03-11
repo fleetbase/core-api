@@ -10,6 +10,7 @@ class CompressedJsonResource extends JsonResource
     public function toResponse($request)
     {
         $data = $this->resolve($request);
+
         return Response::compressedJson($data);
     }
 }

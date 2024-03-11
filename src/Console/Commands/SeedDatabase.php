@@ -35,7 +35,7 @@ class SeedDatabase extends Command
             Artisan::call(
                 'db:seed',
                 [
-                    '--class' => 'Fleetbase\\Seeds\\' . $class,
+                    '--class' => 'Fleetbase\\Seeders\\' . $class,
                 ]
             );
             $this->info('Fleetbase ' . $class . ' Seeder was run Successfully!');
@@ -43,13 +43,12 @@ class SeedDatabase extends Command
             Artisan::call(
                 'db:seed',
                 [
-                    '--class' => 'Fleetbase\\Seeds\\FleetbaseSeeder',
+                    '--class' => 'Fleetbase\\Seeders\\FleetbaseSeeder',
                 ]
             );
 
             // seed for extensions
             $extensionSeeders = Utils::getSeedersFromExtensions();
-
             foreach ($extensionSeeders as $seeder) {
                 // Manually include the seeder file
                 require_once $seeder['path'];
