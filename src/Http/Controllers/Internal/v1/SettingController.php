@@ -32,9 +32,12 @@ class SettingController extends Controller
     }
 
     /**
-     * Loads and sends the filesystem configuration.
+     * Retrieves the current filesystem configuration including details about configured storage drivers.
+     * It specifically fetches configurations for AWS S3 and Google Cloud Storage (GCS).
      *
-     * @return \Illuminate\Http\JsonResponse
+     * @param AdminRequest $request the incoming request
+     *
+     * @return \Illuminate\Http\JsonResponse JSON response containing the filesystem configuration details
      */
     public function getFilesystemConfig(AdminRequest $request)
     {
@@ -73,9 +76,12 @@ class SettingController extends Controller
     }
 
     /**
-     * Saves filesystem configuration.
+     * Saves the updated filesystem configuration based on the incoming request.
+     * It handles the settings for various filesystem drivers like local, AWS S3, and GCS.
      *
-     * @return \Illuminate\Http\JsonResponse
+     * @param AdminRequest $request the incoming request containing filesystem configuration data
+     *
+     * @return \Illuminate\Http\JsonResponse JSON response indicating the success status of the operation
      */
     public function saveFilesystemConfig(AdminRequest $request)
     {
@@ -90,13 +96,20 @@ class SettingController extends Controller
         return response()->json(['status' => 'OK']);
     }
 
+    /**
+     * Extracts the Google Cloud Storage (GCS) configuration from the incoming request.
+     * Updates the GCS configuration based on the provided bucket information and credentials file ID.
+     *
+     * @param Request $request the incoming request with GCS configuration details
+     *
+     * @return array the updated GCS configuration array
+     */
     private static function _getGcsConfigWithIcomingRequest(Request $request): array
     {
         $gcsBucket                  = $request->input('gcsBucket');
         $gcsCredentialsFileId       = $request->input('gcsCredentialsFileId');
         $gcsConfig                  = config('filesystems.disks.gcs');
         $gcsConfig['bucket']        = $gcsBucket;
-        $gcsConfig['key_file_path'] = env('GOOGLE_APPLICATION_CREDENTIALS', env('GOOGLE_CLOUD_KEY_FILE'));
         if ($gcsCredentialsFileId) {
             $gcsCredentialsContent = static::_setupGcsConfigUsingFileId($gcsCredentialsFileId);
             if (is_array($gcsCredentialsContent)) {
@@ -114,6 +127,14 @@ class SettingController extends Controller
         return $gcsConfig;
     }
 
+    /**
+     * Sets up the Google Cloud Storage (GCS) configuration using a given file ID.
+     * Retrieves the credentials file for GCS and decodes its contents to use in the GCS configuration.
+     *
+     * @param string $fileId the UUID of the file containing GCS credentials
+     *
+     * @return array an array containing the parsed content of the GCS credentials file
+     */
     private static function _setupGcsConfigUsingFileId(string $fileId): array
     {
         if (!Str::isUuid($fileId)) {
