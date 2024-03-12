@@ -303,7 +303,7 @@ class User extends Authenticatable
      */
     public function assignCompanyFromId(?string $id): User
     {
-        if (!Str::isUuid($id) || !Utils::isPublicId($id)) {
+        if (!Str::isUuid($id) && !Utils::isPublicId($id)) {
             return $this;
         }
 
