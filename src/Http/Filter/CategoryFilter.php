@@ -18,7 +18,7 @@ class CategoryFilter extends Filter
         }
     }
 
-    public function parent(?string $id)
+    public function parentCategory(?string $id)
     {
         if (Str::isUuid($id)) {
             $this->builder->where('parent_uuid', $id);
