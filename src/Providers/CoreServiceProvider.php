@@ -172,6 +172,7 @@ class CoreServiceProvider extends ServiceProvider
         $settings = [
             ['settingsKey' => 'filesystem.driver', 'configKey' => 'filesystems.default'],
             ['settingsKey' => 'filesystem.s3', 'configKey' => 'filesystems.disks.s3'],
+            ['settingsKey' => 'filesystem.gcs', 'configKey' => 'filesystems.disks.gcs'],
             ['settingsKey' => 'mail.mailer', 'configKey' => 'mail.default'],
             ['settingsKey' => 'mail.from', 'configKey' => 'mail.from'],
             ['settingsKey' => 'mail.smtp', 'configKey' => 'mail.mailers.smtp'],

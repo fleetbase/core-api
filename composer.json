@@ -44,6 +44,7 @@
         "pragmarx/countries": "^0.8.2",
         "sentry/sentry-laravel": "*",
         "spatie/laravel-activitylog": "^4.7",
+        "spatie/laravel-google-cloud-storage": "^2.2",
         "spatie/laravel-permission": "^6.3",
         "spatie/laravel-responsecache": "^7.4",
         "spatie/laravel-sluggable": "^3.5",

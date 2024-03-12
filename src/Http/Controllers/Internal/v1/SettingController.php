@@ -46,12 +46,29 @@ class SettingController extends Controller
         $s3Url      = config('filesystems.disks.s3.url');
         $s3Endpoint = config('filesystems.disks.s3.endpoint');
 
+        // Get GCS bucket
+        $gcsBucket   = config('filesystems.disks.gcs.bucket');
+
+        // Get GCS configurations
+        $isGoogleCloudStorageEnvConfigued = (!empty(env('GOOGLE_CLOUD_STORAGE_BUCKET')) && !empty(env('GOOGLE_CLOUD_PROJECT_ID'))) || !empty(env('GOOGLE_APPLICATION_CREDENTIALS')) || !empty(env('GOOGLE_CLOUD_KEY_FILE'));
+
+        // Get the GCS configuration file if any
+        $gcsCredentialsFileId = config('filesystems.disks.gcs.key_file_id');
+        $gcsCredentialsFile   = null;
+        if (Str::isUuid($gcsCredentialsFileId)) {
+            $gcsCredentialsFile = File::where('uuid', $gcsCredentialsFileId)->first();
+        }
+
         return response()->json([
-            'driver'     => $driver,
-            'disks'      => $disks,
-            's3Bucket'   => $s3Bucket,
-            's3Url'      => $s3Url,
-            's3Endpoint' => $s3Endpoint,
+            'driver'                           => $driver,
+            'disks'                            => $disks,
+            's3Bucket'                         => $s3Bucket,
+            's3Url'                            => $s3Url,
+            's3Endpoint'                       => $s3Endpoint,
+            'gcsBucket'                        => $gcsBucket,
+            'isGoogleCloudStorageEnvConfigued' => $isGoogleCloudStorageEnvConfigued,
+            'gcsCredentialsFileId'             => $gcsCredentialsFileId,
+            'gcsCredentialsFile'               => $gcsCredentialsFile,
         ]);
     }
 
@@ -64,11 +81,57 @@ class SettingController extends Controller
     {
         $driver = $request->input('driver', 'local');
         $s3     = $request->input('s3', config('filesystems.disks.s3'));
+        $gcs    = static::_getGcsConfigWithIcomingRequest($request);
 
         Setting::configure('system.filesystem.driver', $driver);
+        Setting::configure('system.filesystem.gcs', $gcs);
         Setting::configure('system.filesystem.s3', array_merge(config('filesystems.disks.s3', []), $s3));
 
         return response()->json(['status' => 'OK']);
+    }
+
+    private static function _getGcsConfigWithIcomingRequest(Request $request): array
+    {
+        $gcsBucket                  = $request->input('gcsBucket');
+        $gcsCredentialsFileId       = $request->input('gcsCredentialsFileId');
+        $gcsConfig                  = config('filesystems.disks.gcs');
+        $gcsConfig['bucket']        = $gcsBucket;
+        $gcsConfig['key_file_path'] = env('GOOGLE_APPLICATION_CREDENTIALS', env('GOOGLE_CLOUD_KEY_FILE'));
+        if ($gcsCredentialsFileId) {
+            $gcsCredentialsContent = static::_setupGcsConfigUsingFileId($gcsCredentialsFileId);
+            if (is_array($gcsCredentialsContent)) {
+                $gcsConfig['key_file']    = $gcsCredentialsContent;
+                $gcsConfig['key_file_id'] = $gcsCredentialsFileId;
+                if (isset($gcsCredentialsContent['project_id'])) {
+                    $gcsConfig['project_id'] = $gcsCredentialsContent['project_id'];
+                }
+            }
+        } else {
+            unset($gcsConfig['key_file_id']);
+            $gcsConfig['key_file'] = [];
+        }
+
+        return $gcsConfig;
+    }
+
+    private static function _setupGcsConfigUsingFileId(string $fileId): array
+    {
+        if (!Str::isUuid($fileId)) {
+            return [];
+        }
+
+        // Get the "GOOGLE_APPLICATION_CREDENTIALS" file
+        $gcsCredentialsFile = File::where('uuid', $fileId)->first();
+        if ($gcsCredentialsFile) {
+            $gcsCredentialsFileContents = Storage::disk($gcsCredentialsFile->disk)->get($gcsCredentialsFile->path);
+            if (is_string($gcsCredentialsFileContents)) {
+                $gcsCredentialsFileContents = json_decode($gcsCredentialsFileContents, true);
+
+                return $gcsCredentialsFileContents;
+            }
+        }
+
+        return [];
     }
 
     /**
@@ -80,24 +143,30 @@ class SettingController extends Controller
      */
     public function testFilesystemConfig(AdminRequest $request)
     {
-        $disk    = $request->input('disk', config('filesystems.default'));
-        $message = 'Filesystem configuration is successful, test file uploaded.';
-        $status  = 'success';
+        $disk     = $request->input('disk', config('filesystems.default'));
+        $message  = 'Filesystem configuration is successful, test file uploaded.';
+        $status   = 'success';
+        $uploaded = false;
 
         // set config values from input
-        config(['filesystem.default' => $disk]);
-
+        config(['filesystems.default' => $disk]);
         try {
-            Storage::disk($disk)->put('testfile.txt', 'Hello World');
+            $uploaded = Storage::disk($disk)->put('testfile.txt', 'Hello World');
         } catch (\Aws\S3\Exception\S3Exception $e) {
             $message = $e->getMessage();
             $status  = 'error';
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             $message = $e->getMessage();
             $status  = 'error';
         }
 
-        return response()->json(['status' => $status, 'message' => $message]);
+        // sometimes there is no error but file is not uploaded
+        if (!$uploaded) {
+            $status  = 'error';
+            $message = 'Configuration is working, but test file upload failed for uknown reasons.';
+        }
+
+        return response()->json(['status' => $status, 'message' => $message, 'uploaded' => $uploaded]);
     }
 
     /**
