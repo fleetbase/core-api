@@ -115,12 +115,18 @@ class FileController extends FleetbaseController
 
         // Set the full file path
         $fullPath = $path . '/' . $fileName;
+        $uploaded = false;
 
         // Upload file to path
         try {
-            Storage::disk($disk)->put($fullPath, base64_decode($data));
+            $uploaded = Storage::disk($disk)->put($fullPath, base64_decode($data));
         } catch (\Throwable $e) {
             return response()->error($e->getMessage());
+        }
+
+        // If file upload failed
+        if ($uploaded === false) {
+            return response()->error('File upload failed.');
         }
 
         // Create file record for upload
