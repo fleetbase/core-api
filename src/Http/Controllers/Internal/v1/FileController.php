@@ -47,15 +47,21 @@ class FileController extends FleetbaseController
                     'disk' => $disk,
                 ]
             );
-        } catch (\Aws\S3\Exception\S3Exception $e) {
-            return response()->error($e->getMessage());
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             return response()->error($e->getMessage());
         }
 
+        // If file upload failed
+        if ($path === false) {
+            return response()->error('File upload failed.');
+        }
+
         // Create a file record
-        // @var \Fleetbase\Models\File $file
-        $file = File::createFromUpload($request->file, $path, $type, $size, $disk, $bucket);
+        try {
+            $file = File::createFromUpload($request->file, $path, $type, $size, $disk, $bucket);
+        } catch (\Throwable $e) {
+            return response()->error($e->getMessage());
+        }
 
         // Set the subject if specified
         if ($request->has(['subject_uuid', 'subject_type'])) {
@@ -109,32 +115,40 @@ class FileController extends FleetbaseController
 
         // Set the full file path
         $fullPath = $path . '/' . $fileName;
+        $uploaded = false;
 
         // Upload file to path
         try {
-            Storage::disk($disk)->put($fullPath, base64_decode($data));
-        } catch (\Aws\S3\Exception\S3Exception $e) {
-            return response()->error($e->getMessage());
-        } catch (\Exception $e) {
+            $uploaded = Storage::disk($disk)->put($fullPath, base64_decode($data));
+        } catch (\Throwable $e) {
             return response()->error($e->getMessage());
         }
 
+        // If file upload failed
+        if ($uploaded === false) {
+            return response()->error('File upload failed.');
+        }
+
         // Create file record for upload
-        $file = File::create([
-            'company_uuid'      => session('company'),
-            'uploader_uuid'     => session('user'),
-            'subject_uuid'      => $subjectId,
-            'subject_type'      => Utils::getMutationType($subjectType),
-            'disk'              => $disk,
-            'name'              => basename($fullPath),
-            'original_filename' => basename($fullPath),
-            'extension'         => 'png',
-            'content_type'      => $contentType,
-            'path'              => $fullPath,
-            'bucket'            => $bucket,
-            'type'              => $fileType,
-            'size'              => Utils::getBase64ImageSize($data),
-        ]);
+        try {
+            $file = File::create([
+                'company_uuid'      => session('company'),
+                'uploader_uuid'     => session('user'),
+                'subject_uuid'      => $subjectId,
+                'subject_type'      => Utils::getMutationType($subjectType),
+                'disk'              => $disk,
+                'name'              => basename($fullPath),
+                'original_filename' => basename($fullPath),
+                'extension'         => 'png',
+                'content_type'      => $contentType,
+                'path'              => $fullPath,
+                'bucket'            => $bucket,
+                'type'              => $fileType,
+                'size'              => Utils::getBase64ImageSize($data),
+            ]);
+        } catch (\Throwable $e) {
+            return response()->error($e->getMessage());
+        }
 
         // Done ✓
         return response()->json(
