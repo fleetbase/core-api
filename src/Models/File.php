@@ -214,10 +214,8 @@ class File extends Model
 
     /**
      * Create a new file from uploaded file.
-     *
-     * @return File
      */
-    public static function createFromUpload(UploadedFile $file, $path, $type = null, $size = null, $disk = null, $bucket = null)
+    public static function createFromUpload(UploadedFile $file, $path, $type = null, $size = null, $disk = null, $bucket = null): ?File
     {
         $extension = $file->getClientOriginalExtension();
 
