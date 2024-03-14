@@ -94,7 +94,7 @@ class AuthenticateOnceWithBasicAuth
         }
 
         // Login user
-        Auth::setSession($apiCredential->company->owner ?? $apiCredential);
+        Auth::setSession($apiCredential);
 
         // Set sandbox session if applicable
         Auth::setSandboxSession($request, $apiCredential);

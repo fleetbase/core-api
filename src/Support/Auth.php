@@ -58,14 +58,15 @@ class Auth extends Authentication
             // user couldn't be loaded, fallback with api credential if applicable
             $user = User::find($apiCredential->user_uuid);
 
-            // if still no user -- return true and continue on
-            if (!$user) {
-                return true;
+            // Set is admin if user of api credential is admin
+            if ($user) {
+                session(['is_admin' => $user->isAdmin()]);
             }
+
+            return true;
         }
 
         session(['company' => $user->company_uuid, 'user' => $user->uuid, 'is_admin' => $user->isAdmin()]);
-
         if ($login) {
             Authentication::login($user);
         }
