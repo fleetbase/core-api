@@ -705,6 +705,7 @@ class User extends Authenticatable
 
     public static function applyUserInfoFromRequest($request, array $attributes = []): array
     {
+        $info = null;
         // Lookup user default details
         try {
             $info = \Fleetbase\Support\Http::lookupIp($request);
