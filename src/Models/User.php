@@ -703,8 +703,22 @@ class User extends Authenticatable
         return $this->isVerified() === false;
     }
 
+    /**
+     * Applies user information from the request to the provided attributes array.
+     *
+     * This function attempts to gather additional information about the user from their IP address,
+     * such as country, timezone, and other relevant metadata. If successful, this information
+     * is added to the attributes array. This function utilizes an external service to lookup
+     * IP information.
+     *
+     * @param \Illuminate\Http\Request $request    the request object containing user's IP address and optional timezone
+     * @param array                    $attributes an array of user attributes to which the additional information is appended
+     *
+     * @return array the array of attributes with added user information
+     */
     public static function applyUserInfoFromRequest($request, array $attributes = []): array
     {
+        $info = null;
         // Lookup user default details
         try {
             $info = \Fleetbase\Support\Http::lookupIp($request);
@@ -732,6 +746,18 @@ class User extends Authenticatable
         return $attributes;
     }
 
+    /**
+     * Sets user information from the request on the current User model instance.
+     *
+     * This method fetches user information based on the request data (IP address, timezone)
+     * and updates the current User model instance with this information. If the save parameter
+     * is true, it also persists these changes to the database.
+     *
+     * @param \Illuminate\Http\Request $request the request object to extract user information from
+     * @param bool                     $save    Determines whether to persist changes to the database. Defaults to false.
+     *
+     * @return User the current User model instance with updated information
+     */
     public function setUserInfoFromRequest($request, bool $save = false): User
     {
         $userInfoAttributes = static::getUserInfoFromRequest($request);

@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
+use Spatie\ScheduleMonitor\Models\MonitoredScheduledTaskLogItem;
 
 /**
  * CoreServiceProvider.
@@ -92,6 +93,7 @@ class CoreServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__ . '/../../config/webhook-server.php', 'webhook-server');
         $this->mergeConfigFrom(__DIR__ . '/../../config/permission.php', 'permission');
         $this->mergeConfigFrom(__DIR__ . '/../../config/activitylog.php', 'activitylog');
+        $this->mergeConfigFrom(__DIR__ . '/../../config/schedule-monitor.php', 'schedule-monitor');
         $this->mergeConfigFrom(__DIR__ . '/../../config/excel.php', 'excel');
         $this->mergeConfigFrom(__DIR__ . '/../../config/sentry.php', 'sentry');
         $this->mergeConfigFrom(__DIR__ . '/../../config/laravel-mysql-s3-backup.php', 'laravel-mysql-s3-backup');
@@ -110,6 +112,7 @@ class CoreServiceProvider extends ServiceProvider
         $this->registerCommands();
         $this->scheduleCommands(function ($schedule) {
             $schedule->command('cache:prune-stale-tags')->hourly();
+            $schedule->command('model:prune', ['--model' => MonitoredScheduledTaskLogItem::class])->daily();
         });
         $this->registerObservers();
         $this->registerExpansionsFrom();

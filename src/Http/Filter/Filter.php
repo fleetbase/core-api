@@ -65,6 +65,10 @@ abstract class Filter
             call_user_func([$this, 'queryForInternal']);
         }
 
+        if (Http::isPublicRequest($this->request) && method_exists($this, 'queryForPublic')) {
+            call_user_func([$this, 'queryForPublic']);
+        }
+
         return $this->builder;
     }
 

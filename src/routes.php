@@ -153,6 +153,13 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     }
                                 );
                                 $router->fleetbaseRoutes(
+                                    'schedule-monitor',
+                                    function ($router, $controller) {
+                                        $router->get('tasks', $controller('tasks'));
+                                        $router->get('{id}/logs', $controller('logs'));
+                                    }
+                                );
+                                $router->fleetbaseRoutes(
                                     'two-fa',
                                     function ($router, $controller) {
                                         $router->post('config', $controller('saveSystemConfig'));
