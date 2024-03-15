@@ -47,6 +47,7 @@
         "spatie/laravel-google-cloud-storage": "^2.2",
         "spatie/laravel-permission": "^6.3",
         "spatie/laravel-responsecache": "^7.4",
+        "spatie/laravel-schedule-monitor": "^3.7",
         "spatie/laravel-sluggable": "^3.5",
         "sqids/sqids": "^0.4.1",
         "xantios/mimey": "^2.2.0"
