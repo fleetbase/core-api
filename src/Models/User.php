@@ -247,6 +247,14 @@ class User extends Authenticatable
     }
 
     /**
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
+     */
+    public function groups()
+    {
+        return $this->hasManyThrough(Group::class, GroupUser::class, 'user_uuid', 'uuid', 'uuid', 'group_uuid');
+    }
+
+    /**
      * Generates a unique username based on the provided name.
      *
      * This method creates a username by taking the given name, appending
