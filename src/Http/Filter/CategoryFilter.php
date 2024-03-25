@@ -2,12 +2,16 @@
 
 namespace Fleetbase\Http\Filter;
 
+use Fleetbase\Support\Utils;
 use Illuminate\Support\Str;
 
 class CategoryFilter extends Filter
 {
     public function queryForInternal()
     {
+        if ($this->request->boolean('core_category')) {
+            return;
+        }
         $this->builder->where('company_uuid', $this->session->get('company'));
     }
 
@@ -15,6 +19,14 @@ class CategoryFilter extends Filter
     {
         if ($this->request->boolean('parents_only')) {
             $this->builder->whereNull('parent_uuid');
+        }
+    }
+
+    public function coreCategory($is)
+    {
+        $is = Utils::isTrue($is);
+        if ($is) {
+            $this->builder->where('core_category', 1);
         }
     }
 

@@ -2275,4 +2275,31 @@ class Utils
 
         return false;
     }
+
+    /**
+     * Recursively deletes all files and directories in the specified directory.
+     *
+     * @param string $dir the directory to delete
+     */
+    public static function deleteDirectory($dir)
+    {
+        if (!is_dir($dir)) {
+            return;
+        }
+
+        $items = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::CHILD_FIRST
+        );
+
+        foreach ($items as $item) {
+            if ($item->isDir()) {
+                rmdir($item->getRealPath());
+            } else {
+                unlink($item->getRealPath());
+            }
+        }
+
+        rmdir($dir);
+    }
 }
