@@ -2302,4 +2302,23 @@ class Utils
 
         rmdir($dir);
     }
+
+    /**
+     * Retrieves a specified key's value from an object or a default value if the key is not set.
+     *
+     * This method is a utility function that attempts to access a property of an object
+     * using a provided key. If the object property exists, its value is returned.
+     * Otherwise, a specified default value is returned. This is useful for safely accessing
+     * object properties without the risk of encountering undefined property errors.
+     *
+     * @param object $obj          the object from which to retrieve the value
+     * @param string $key          the key corresponding to the property in the object
+     * @param mixed  $defaultValue the default value to return if the object property does not exist
+     *
+     * @return mixed the value of the object property if it exists, otherwise the default value
+     */
+    public static function getObjectKeyValue($obj, $key, $defaultValue = null)
+    {
+        return $obj->{$key} ?? $defaultValue;
+    }
 }
