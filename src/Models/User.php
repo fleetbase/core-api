@@ -291,6 +291,19 @@ class User extends Authenticatable
     }
 
     /**
+     * Set the company for the user.
+     *
+     * @param Company $company
+     * @return User
+     */
+    public function setCompany(Company $company): User
+    {
+        $this->company_uuid = $company->uuid;
+        $this->save();
+        return $this;
+    }
+
+    /**
      * Checks if user is the owner of the company.
      */
     public function isCompanyOwner(Company $company): bool
