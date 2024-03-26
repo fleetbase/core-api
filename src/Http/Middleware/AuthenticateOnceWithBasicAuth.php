@@ -124,9 +124,11 @@ class AuthenticateOnceWithBasicAuth
             if ($apiCredential) {
                 // Set api credential session
                 Auth::setApiKey($apiCredential);
-
-                return true;
+            } else {
+                Auth::setApiKey($sanctumToken);
             }
+            
+            return true;
         }
 
         return response()->error('Oops! The api credentials provided were not valid', 401);
