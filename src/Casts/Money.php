@@ -29,6 +29,9 @@ class Money implements CastsAttributes
      */
     public function set($model, $key, $value, $attributes)
     {
+        if ($value === null) {
+            return 0;
+        }
         $value = $this->removeCurrencySymbols($value);
         $value = $this->removeSpecialCharactersExceptDotAndComma($value);
         if (is_float($value) || Str::contains($value, '.')) {
