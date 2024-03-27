@@ -127,7 +127,7 @@ class AuthenticateOnceWithBasicAuth
             } else {
                 Auth::setApiKey($sanctumToken);
             }
-            
+
             return true;
         }
 

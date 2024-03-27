@@ -88,12 +88,12 @@ class Auth extends Authentication
         if ($apiCredential instanceof PersonalAccessToken) {
             session([
                 'is_sanctum_token' => true,
-                'api_credential'  => $apiCredential->id,
-                'api_key'         => $apiCredential->token,
-                'api_key_version' => (string) $apiCredential->created_at,
-                'api_secret'      => $apiCredential->token,
-                'api_environment' => 'live',
-                'api_test_mode'   => false,
+                'api_credential'   => $apiCredential->id,
+                'api_key'          => $apiCredential->token,
+                'api_key_version'  => (string) $apiCredential->created_at,
+                'api_secret'       => $apiCredential->token,
+                'api_environment'  => 'live',
+                'api_test_mode'    => false,
             ]);
 
             return true;
