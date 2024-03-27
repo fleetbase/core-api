@@ -34,6 +34,7 @@ class Category extends FleetbaseResource
             'company_uuid' => $this->when(Http::isInternalRequest(), $this->company_uuid),
             'owner_uuid'   => $this->when(Http::isInternalRequest(), $this->owner_uuid),
             'owner_type'   => $this->when(Http::isInternalRequest(), $this->owner_type),
+            'icon'         => $this->icon,
             'icon_url'     => $this->icon_url,
             'name'         => $this->name,
             'description'  => $this->description,

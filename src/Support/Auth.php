@@ -9,6 +9,7 @@ use Fleetbase\Models\User;
 use Illuminate\Support\Facades\Auth as Authentication;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class Auth extends Authentication
 {
@@ -83,10 +84,25 @@ class Auth extends Authentication
      */
     public static function setApiKey($apiCredential)
     {
+        // If sanctum token indicate in session
+        if ($apiCredential instanceof PersonalAccessToken) {
+            session([
+                'is_sanctum_token' => true,
+                'api_credential'   => $apiCredential->id,
+                'api_key'          => $apiCredential->token,
+                'api_key_version'  => (string) $apiCredential->created_at,
+                'api_secret'       => $apiCredential->token,
+                'api_environment'  => 'live',
+                'api_test_mode'    => false,
+            ]);
+
+            return true;
+        }
+
         session([
             'api_credential'  => $apiCredential->uuid,
             'api_key'         => $apiCredential->key,
-            'api_key_version' => $apiCredential->created_at,
+            'api_key_version' => (string) $apiCredential->created_at,
             'api_secret'      => $apiCredential->secret,
             'api_environment' => $apiCredential->test_mode ? 'test' : 'live',
             'api_test_mode'   => $apiCredential->test_mode,

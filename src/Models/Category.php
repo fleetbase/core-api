@@ -47,7 +47,7 @@ class Category extends Model
      *
      * @var array
      */
-    protected $fillable = ['public_id', 'company_uuid', 'owner_uuid', 'parent_uuid', 'icon_file_uuid', 'owner_type', 'internal_id', 'name', 'description', 'translations', 'meta', 'tags', 'icon', 'icon_color', 'slug', 'order', 'for'];
+    protected $fillable = ['public_id', 'company_uuid', 'owner_uuid', 'parent_uuid', 'icon_file_uuid', 'owner_type', 'internal_id', 'name', 'description', 'translations', 'meta', 'tags', 'icon', 'icon_color', 'slug', 'order', 'for', 'core_category'];
 
     /**
      * Dynamic attributes that are appended to object.
@@ -76,9 +76,10 @@ class Category extends Model
      * @var array
      */
     protected $casts = [
-        'tags'         => 'array',
-        'meta'         => Json::class,
-        'translations' => Json::class,
+        'core_category' => 'boolean',
+        'tags'          => 'array',
+        'meta'          => Json::class,
+        'translations'  => Json::class,
     ];
 
     /**

@@ -5,6 +5,7 @@ namespace Fleetbase\Models;
 use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasPolicies;
+use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasUuid;
 use Illuminate\Notifications\Notifiable;
 use Spatie\Permission\Traits\HasPermissions;
@@ -18,6 +19,7 @@ use Spatie\Sluggable\SlugOptions;
 class Group extends Model
 {
     use HasUuid;
+    use HasPublicId;
     use HasApiModelBehavior;
     use HasPermissions;
     use HasPolicies;
@@ -41,6 +43,13 @@ class Group extends Model
     protected $table = 'groups';
 
     /**
+     * The type of public Id to generate.
+     *
+     * @var string
+     */
+    protected $publicIdType = 'group';
+
+    /**
      * The attributes that can be queried.
      *
      * @var array
@@ -52,7 +61,7 @@ class Group extends Model
      *
      * @var array
      */
-    protected $fillable = ['_key', 'company_uuid', 'name', 'description', 'slug'];
+    protected $fillable = ['_key', 'public_id', 'company_uuid', 'name', 'description', 'slug'];
 
     /**
      * The relationships that will always be appended.
