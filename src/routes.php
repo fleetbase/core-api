@@ -71,6 +71,14 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                             }
                         );
                         $router->group(
+                            ['prefix' => 'chat'],
+                            function ($router) {
+                                $router->get('/channels', 'ChatController@get');
+                   
+                            }
+                        );
+    
+                        $router->group(
                             ['prefix' => 'lookup'],
                             function ($router) {
                                 $router->get('whois', 'LookupController@whois');
