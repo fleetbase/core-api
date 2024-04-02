@@ -10,12 +10,13 @@ return new class() extends Migration {
      */
     public function up(): void
     {
-        Schema::create('chat_receipts', function (Blueprint $table) {
+        Schema::create('chat_attachments', function (Blueprint $table) {
             $table->increments('id');
             $table->uuid('uuid')->nullable()->index();
+            $table->foreignUuid('chat_channel_uuid')->nullable()->index()->references('uuid')->on('chat_channels');
+            $table->foreignUuid('sender_uuid')->nullable()->index()->references('uuid')->on('users');
             $table->foreignUuid('chat_message_uuid')->nullable()->index()->references('uuid')->on('chat_messages');
-            $table->foreignUuid('user_uuid')->nullable()->index()->references('uuid')->on('users');
-            $table->timestamp('read_at')->nullable();
+            $table->foreignUuid('file_uuid')->nullable()->index()->references('uuid')->on('files');
             $table->timestamps();
             $table->softDeletes();
         });
@@ -26,6 +27,6 @@ return new class() extends Migration {
      */
     public function down(): void
     {
-        Schema::dropIfExists('chat_receipts');
+        Schema::dropIfExists('chat_attachments');
     }
 };

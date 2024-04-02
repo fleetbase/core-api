@@ -2,10 +2,12 @@
 
 namespace Fleetbase\Models;
 
-use Illuminate\Database\Eloquent\Model;
+use Fleetbase\Traits\HasUuid;
 
 class ChatReceipt extends Model
 {
+    use HasUuid;
+
     /**
      * The table associated with the model.
      *
@@ -19,14 +21,22 @@ class ChatReceipt extends Model
      * @var array
      */
     protected $fillable = [
-        'uuid',
         'chat_message_uuid',
         'user_uuid',
         'read_at',
     ];
 
     /**
-     * Get the user who read the message.
+     * The attributes that should be cast to native types.
+     *
+     * @var array
+     */
+    protected $casts = [
+        'read_at'          => 'date_time',
+    ];
+
+    /**
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
      */
     public function user()
     {
@@ -34,7 +44,7 @@ class ChatReceipt extends Model
     }
 
     /**
-     * Get the chat message associated with the receipt.
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
      */
     public function chatMessage()
     {

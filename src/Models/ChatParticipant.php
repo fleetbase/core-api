@@ -1,41 +1,40 @@
 <?php
 
 namespace Fleetbase\Models;
-use Illuminate\Database\Eloquent\Model;
+
+use Fleetbase\Traits\HasUuid;
 
 class ChatParticipant extends Model
 {
+    use HasUuid;
+
     /**
      * The database table used by the model.
      *
      * @var string
      */
-    protected $table = "chat_participants";
+    protected $table = 'chat_participants';
 
     /**
      * The attributes that are mass assignable.
      *
      * @var array
      */
-    protected $fillable = ["chat_channel_uuid", "user_uuid"];
+    protected $fillable = ['chat_channel_uuid', 'user_uuid'];
 
     /**
-     * Get the user that is a participant in the chat.
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
      */
     public function user()
     {
-        return $this->belongsTo(User::class, "user_uuid", "uuid");
+        return $this->belongsTo(User::class, 'user_uuid', 'uuid');
     }
 
     /**
-     * Get the chat channel that the participant belongs to.
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
      */
     public function chatChannel()
     {
-        return $this->belongsTo(
-            ChatChannel::class,
-            "chat_channel_uuid",
-            "uuid"
-        );
+        return $this->belongsTo(ChatChannel::class, 'chat_channel_uuid', 'uuid');
     }
 }

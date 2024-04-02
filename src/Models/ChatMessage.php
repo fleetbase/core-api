@@ -2,10 +2,12 @@
 
 namespace Fleetbase\Models;
 
-use Illuminate\Database\Eloquent\Model;
+use Fleetbase\Traits\HasUuid;
 
 class ChatMessage extends Model
 {
+    use HasUuid;
+
     /**
      * The table associated with the model.
      *
@@ -19,14 +21,13 @@ class ChatMessage extends Model
      * @var array
      */
     protected $fillable = [
-        'uuid',
         'chat_channel_uuid',
         'sender_uuid',
         'content',
     ];
 
     /**
-     * Get the sender of the message.
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
      */
     public function sender()
     {
@@ -34,7 +35,7 @@ class ChatMessage extends Model
     }
 
     /**
-     * Get the chat channel associated with the message.
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
      */
     public function chatChannel()
     {

@@ -4,17 +4,19 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration
-{
+return new class() extends Migration {
     /**
      * Run the migrations.
      */
     public function up(): void
     {
         Schema::create('chat_participants', function (Blueprint $table) {
-            $table->uuid('chat_channel_uuid')->nullable()->index();
-            $table->string('user_uuid')->nullable()->index();
-            $table->timestamp('created_at')->nullable()->index();
+            $table->increments('id');
+            $table->uuid('uuid')->nullable()->index();
+            $table->foreignUuid('chat_channel_uuid')->nullable()->index()->references('uuid')->on('chat_channels');
+            $table->foreignUuid('user_uuid')->nullable()->index()->references('uuid')->on('users');
+            $table->timestamps();
+            $table->softDeletes();
         });
     }
 

@@ -2,10 +2,12 @@
 
 namespace Fleetbase\Models;
 
-use Illuminate\Database\Eloquent\Model;
+use Fleetbase\Traits\HasUuid;
 
 class ChatPresence extends Model
 {
+    use HasUuid;
+
     /**
      * The table associated with the model.
      *
@@ -26,7 +28,7 @@ class ChatPresence extends Model
     ];
 
     /**
-     * Get the user associated with the presence.
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
      */
     public function user()
     {
@@ -34,7 +36,7 @@ class ChatPresence extends Model
     }
 
     /**
-     * Get the chat channel associated with the presence.
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
      */
     public function chatChannel()
     {
