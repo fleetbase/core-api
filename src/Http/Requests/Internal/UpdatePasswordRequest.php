@@ -24,8 +24,8 @@ class UpdatePasswordRequest extends FleetbaseRequest
     public function rules()
     {
         return [
-            'password'              => 'required|confirmed|min:6',
-            'password_confirmation' => 'required',
+            'password'              => ['required', 'confirmed', 'min:4', 'max:24'],
+            'password_confirmation' => ['required'],
         ];
     }
 

@@ -57,7 +57,7 @@ class ValidatePasswordRequest extends FleetbaseRequest
     public function rules()
     {
         return [
-            'password'                   => ['required', 'string', 'min:4', 'confirmed', new ConfirmCurrentPassword($this->user())],
+            'password'                   => ['required', 'string', 'min:4', 'max:24', 'confirmed', new ConfirmCurrentPassword($this->user())],
             'password_confirmation'      => ['required', 'string'],
         ];
     }
