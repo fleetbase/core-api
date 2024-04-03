@@ -13,8 +13,9 @@ return new class() extends Migration {
         Schema::create('chat_attachments', function (Blueprint $table) {
             $table->increments('id');
             $table->uuid('uuid')->nullable()->index();
-            $table->foreignUuid('chat_channel_uuid')->nullable()->index()->references('uuid')->on('chat_channels');
+            $table->foreignUuid('company_uuid')->nullable()->index()->references('uuid')->on('companies');
             $table->foreignUuid('sender_uuid')->nullable()->index()->references('uuid')->on('users');
+            $table->foreignUuid('chat_channel_uuid')->nullable()->index()->references('uuid')->on('chat_channels');
             $table->foreignUuid('chat_message_uuid')->nullable()->index()->references('uuid')->on('chat_messages');
             $table->foreignUuid('file_uuid')->nullable()->index()->references('uuid')->on('files');
             $table->timestamps();

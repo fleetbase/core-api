@@ -21,6 +21,7 @@ class ChatAttachment extends Model
      * @var array
      */
     protected $fillable = [
+        'company_uuid',
         'chat_channel_uuid',
         'sender_uuid',
         'file_uuid',

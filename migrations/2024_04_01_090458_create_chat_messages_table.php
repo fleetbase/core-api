@@ -13,8 +13,9 @@ return new class() extends Migration {
         Schema::create('chat_messages', function (Blueprint $table) {
             $table->increments('id');
             $table->uuid('uuid')->nullable()->index();
+            $table->foreignUuid('company_uuid')->nullable()->index()->references('uuid')->on('companies');
+            $table->foreignUuid('sender_uuid')->nullable()->index()->references('uuid')->on('chat_participants');
             $table->foreignUuid('chat_channel_uuid')->nullable()->index()->references('uuid')->on('chat_channels');
-            $table->foreignUuid('sender_uuid')->nullable()->index()->references('uuid')->on('users');
             $table->mediumText('content')->nullable();
             $table->timestamps();
             $table->softDeletes();

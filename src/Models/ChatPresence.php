@@ -21,6 +21,7 @@ class ChatPresence extends Model
      * @var array
      */
     protected $fillable = [
+        'company_uuid',
         'chat_channel_uuid',
         'user_uuid',
         'last_seen_at',

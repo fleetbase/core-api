@@ -2,11 +2,13 @@
 
 namespace Fleetbase\Models;
 
+use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasUuid;
 
 class ChatMessage extends Model
 {
     use HasUuid;
+    use HasApiModelBehavior;
 
     /**
      * The table associated with the model.
@@ -21,6 +23,7 @@ class ChatMessage extends Model
      * @var array
      */
     protected $fillable = [
+        'company_uuid',
         'chat_channel_uuid',
         'sender_uuid',
         'content',
@@ -31,7 +34,7 @@ class ChatMessage extends Model
      */
     public function sender()
     {
-        return $this->belongsTo(User::class, 'sender_uuid', 'uuid');
+        return $this->belongsTo(ChatParticipant::class, 'sender_uuid', 'uuid');
     }
 
     /**

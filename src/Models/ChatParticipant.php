@@ -2,11 +2,13 @@
 
 namespace Fleetbase\Models;
 
+use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasUuid;
 
 class ChatParticipant extends Model
 {
     use HasUuid;
+    use HasApiModelBehavior;
 
     /**
      * The database table used by the model.
@@ -20,7 +22,7 @@ class ChatParticipant extends Model
      *
      * @var array
      */
-    protected $fillable = ['chat_channel_uuid', 'user_uuid'];
+    protected $fillable = ['company_uuid', 'chat_channel_uuid', 'user_uuid'];
 
     /**
      * @return \Illuminate\Database\Eloquent\Relations\BelongsTo

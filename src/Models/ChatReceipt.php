@@ -21,6 +21,7 @@ class ChatReceipt extends Model
      * @var array
      */
     protected $fillable = [
+        'company_uuid',
         'chat_message_uuid',
         'user_uuid',
         'read_at',

@@ -40,6 +40,8 @@ class ChatChannel extends Model
      * @var array
      */
     protected $fillable = [
+        'company_uuid',
+        'created_by_uuid',
         'name',
         'slug',
         'meta',
@@ -69,6 +71,35 @@ class ChatChannel extends Model
         return SlugOptions::create()
             ->generateSlugsFrom('name')
             ->saveSlugsTo('slug');
+    }
+
+    /** on boot make creator a participant */
+    public static function boot()
+    {
+        parent::boot();
+        static::created(function ($model) {
+            ChatParticipant::create([
+                'company_uuid'      => $model->company_uuid,
+                'user_uuid'         => $model->created_by_uuid,
+                'chat_channel_uuid' => $model->uuid,
+            ]);
+        });
+    }
+
+    /**
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     */
+    public function company()
+    {
+        return $this->belongsTo(Company::class, 'company_uuid', 'uuid');
+    }
+
+    /**
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     */
+    public function createdBy()
+    {
+        return $this->belongsTo(User::class, 'created_by_uuid', 'uuid');
     }
 
     /**
