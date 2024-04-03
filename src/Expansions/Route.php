@@ -122,19 +122,25 @@ class Route implements Expansion
             return $this->group(
                 ['prefix' => 'auth'],
                 function ($router) use ($registerFn, $registerProtectedFn) {
-                    $router->post('login', 'AuthController@login');
-                    $router->post('sign-up', 'AuthController@signUp');
-                    $router->post('logout', 'AuthController@logout');
-                    $router->post('get-magic-reset-link', 'AuthController@createPasswordReset');
-                    $router->post('reset-password', 'AuthController@resetPassword');
-                    $router->post('create-verification-session', 'AuthController@createVerificationSession');
-                    $router->post('validate-verification-session', 'AuthController@validateVerificationSession');
-                    $router->post('send-verification-email', 'AuthController@sendVerificationEmail');
-                    $router->post('verify-email', 'AuthController@verifyEmail');
+                    $router->group(
+                        ['middleware' => ['throttle:10,1']],
+                        function ($router) use ($registerFn) {
+                            $router->post('login', 'AuthController@login');
+                            $router->post('sign-up', 'AuthController@signUp');
+                            $router->post('logout', 'AuthController@logout');
+                            $router->post('get-magic-reset-link', 'AuthController@createPasswordReset');
+                            $router->post('reset-password', 'AuthController@resetPassword');
+                            $router->post('create-verification-session', 'AuthController@createVerificationSession');
+                            $router->post('validate-verification-session', 'AuthController@validateVerificationSession');
+                            $router->post('send-verification-email', 'AuthController@sendVerificationEmail');
+                            $router->post('verify-email', 'AuthController@verifyEmail');
+                            $router->get('validate-verification', 'AuthController@validateVerificationCode');
 
-                    if (is_callable($registerFn)) {
-                        $registerFn($router);
-                    }
+                            if (is_callable($registerFn)) {
+                                $registerFn($router);
+                            }
+                        }
+                    );
 
                     $router->group(
                         ['middleware' => ['fleetbase.protected']],

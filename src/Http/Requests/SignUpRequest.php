@@ -54,11 +54,11 @@ class SignUpRequest extends FleetbaseRequest
     public function rules()
     {
         return [
-            'user.name'                  => 'required',
-            'user.email'                 => 'required|email',
-            'user.password'              => 'required|confirmed',
-            'user.password_confirmation' => 'required',
-            'company.name'               => 'required',
+            'user.name'                  => ['required'],
+            'user.email'                 => ['required', 'email'],
+            'user.password'              => ['required', 'confirmed', 'min:4', 'max:24'],
+            'user.password_confirmation' => ['required'],
+            'company.name'               => ['required'],
         ];
     }
 

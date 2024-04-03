@@ -505,6 +505,19 @@ class AuthController extends Controller
     }
 
     /**
+     * Simple check if verificationc code is still valid.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function validateVerificationCode(Request $request)
+    {
+        $id    = $request->input('id');
+        $valid = VerificationCode::where('uuid', $id)->exists();
+
+        return response()->json(['is_valid' => $valid, 'id' => $id]);
+    }
+
+    /**
      * Takes a request username/ or email and password and attempts to authenticate user
      * will return the user model if the authentication was successful, else will 400.
      *

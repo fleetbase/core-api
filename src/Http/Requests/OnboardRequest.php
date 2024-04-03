@@ -27,8 +27,8 @@ class OnboardRequest extends FleetbaseRequest
             'name'                  => ['required'],
             'email'                 => ['required', 'email', Rule::unique('users', 'email')->whereNull('deleted_at')],
             'phone'                 => ['nullable', Rule::unique('users', 'phone')->whereNull('deleted_at')],
-            'password'              => ['required', 'confirmed', 'min:4'],
-            'password_confirmation' => ['required'],
+            'password'              => ['required', 'confirmed', 'min:4', 'max:24'],
+            'password_confirmation' => ['required', 'min:4', 'max:24'],
             'organization_name'     => ['required'],
         ];
     }
