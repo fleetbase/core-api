@@ -4,7 +4,7 @@ namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Http\Controllers\FleetbaseController;
 
-class CategoryController extends FleetbaseController
+class ChatChannelController extends FleetbaseController
 {
     /**
      * The resource to query.
