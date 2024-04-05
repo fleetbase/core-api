@@ -8,6 +8,7 @@ use Fleetbase\Traits\HasMetaAttributes;
 use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\Searchable;
+use Fleetbase\Traits\SendsWebhooks;
 use Spatie\Sluggable\HasSlug;
 use Spatie\Sluggable\SlugOptions;
 
@@ -19,6 +20,7 @@ class ChatChannel extends Model
     use HasSlug;
     use HasMetaAttributes;
     use Searchable;
+    use SendsWebhooks;
 
     /**
      * The table associated with the model.

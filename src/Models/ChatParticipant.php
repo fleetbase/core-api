@@ -4,11 +4,13 @@ namespace Fleetbase\Models;
 
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasUuid;
+use Fleetbase\Traits\SendsWebhooks;
 
 class ChatParticipant extends Model
 {
     use HasUuid;
     use HasApiModelBehavior;
+    use SendsWebhooks;
 
     /**
      * The database table used by the model.

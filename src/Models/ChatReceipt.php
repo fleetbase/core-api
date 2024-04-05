@@ -3,10 +3,12 @@
 namespace Fleetbase\Models;
 
 use Fleetbase\Traits\HasUuid;
+use Fleetbase\Traits\SendsWebhooks;
 
 class ChatReceipt extends Model
 {
     use HasUuid;
+    use SendsWebhooks;
 
     /**
      * The table associated with the model.

@@ -109,9 +109,20 @@ class ResourceLifecycleEvent implements ShouldBroadcastNow
      */
     public function broadcastOn()
     {
-        $model          = $this->getModelRecord();
-        $companySession = session('company', $model->company_uuid);
-        $channels       = [new Channel('company.' . $companySession)];
+        $model              = $this->getModelRecord();
+        $companySession     = session('company', $model->company_uuid);
+        $channels           = [new Channel('company.' . $companySession)];
+        $isChatChannelEvent = Str::startsWith($this->modelName, 'chat_');
+        if ($isChatChannelEvent) {
+            $chatChannelPublicId = $this->modelName === 'chat_channel' ? $model->public_id : data_get($model, 'chatChannel.public_id');
+            $chatChannelUuid     = $this->modelName === 'chat_channel' ? $model->uuid : data_get($model, 'chat_channel_uuid');
+            if ($chatChannelPublicId && Utils::isPublicId($chatChannelPublicId)) {
+                $channels[] = new Channel('chat.' . $chatChannelPublicId);
+            }
+            if ($chatChannelUuid && Str::isUuid($chatChannelUuid)) {
+                $channels[] = new Channel('chat.' . $chatChannelUuid);
+            }
+        }
 
         if ($model && isset($model->company)) {
             $channels[] = new Channel('company.' . $model->company->public_id);
@@ -195,9 +206,11 @@ class ResourceLifecycleEvent implements ShouldBroadcastNow
      */
     public function getEventData()
     {
-        $model        = $this->getModelRecord();
-        $resource     = $this->getModelResource($model, $this->namespace, $this->version);
-        $resourceData = [];
+        $model               = $this->getModelRecord();
+        $resource            = $this->getModelResource($model, $this->namespace, $this->version);
+        $resourceData        = [];
+        $keepRelations       = ['chat_message'];
+        $shouldKeepRelations = in_array($this->modelName, $keepRelations);
 
         if ($resource) {
             if (method_exists($resource, 'toWebhookPayload')) {
@@ -207,7 +220,9 @@ class ResourceLifecycleEvent implements ShouldBroadcastNow
             }
         }
 
-        $resourceData = static::transformResourceChildrenToId($resourceData);
+        if (!$shouldKeepRelations) {
+            $resourceData = static::transformResourceChildrenToId($resourceData);
+        }
 
         $data = [
             'id'          => $this->eventId,
