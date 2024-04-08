@@ -231,7 +231,8 @@ class ChatChannel extends Model
             return ['type' => 'log', 'data' => $log, 'created_at' => $log->created_at];
         });
 
-        $feed = collect([...$messages, ...$attachments, ...$logs])->sortBy('created_at');
+        $feed = collect([...$messages, ...$attachments, ...$logs])->sortBy('created_at')->values();
+
         return $feed;
     }
 
@@ -262,7 +263,8 @@ class ChatChannel extends Model
             return ['type' => 'log', 'data' => new ChatLogResource($log), 'created_at' => $log->created_at];
         });
 
-        $feed = collect([...$messages, ...$attachments, ...$logs])->sortBy('created_at');
+        $feed = collect([...$messages, ...$attachments, ...$logs])->sortBy('created_at')->values();
+
         return $feed;
     }
 }
