@@ -22,6 +22,7 @@ class ChatMessage extends FleetbaseResource
             'sender_uuid'                         => $this->when(Http::isInternalRequest(), $this->sender_uuid),
             'content'                             => $this->content,
             'sender'                              => new ChatParticipant($this->sender),
+            'attachments'                         => ChatAttachment::collection($this->attachments),
             'updated_at'                          => $this->updated_at,
             'created_at'                          => $this->created_at,
             'deleted_at'                          => $this->deleted_at,

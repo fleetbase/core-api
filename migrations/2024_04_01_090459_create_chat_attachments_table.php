@@ -14,7 +14,7 @@ return new class() extends Migration {
             $table->increments('id');
             $table->uuid('uuid')->nullable()->index();
             $table->foreignUuid('company_uuid')->nullable()->index()->references('uuid')->on('companies');
-            $table->foreignUuid('sender_uuid')->nullable()->index()->references('uuid')->on('users');
+            $table->foreignUuid('sender_uuid')->nullable()->index()->references('uuid')->on('chat_participants');
             $table->foreignUuid('chat_channel_uuid')->nullable()->index()->references('uuid')->on('chat_channels');
             $table->foreignUuid('chat_message_uuid')->nullable()->index()->references('uuid')->on('chat_messages');
             $table->foreignUuid('file_uuid')->nullable()->index()->references('uuid')->on('files');

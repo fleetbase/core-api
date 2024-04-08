@@ -44,7 +44,7 @@ class Controller extends BaseController
     public function test()
     {
         $chatChannel = \Fleetbase\Models\ChatChannel::first();
-        dd($chatChannel->toArray(), $chatChannel->logs);
+        dd($chatChannel->resource_feed);
         return response()->json(['status' => 'ok']);
     }
 }

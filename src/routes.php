@@ -214,6 +214,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 $router->fleetbaseRoutes('chat-channels');
                                 $router->fleetbaseRoutes('chat-participants');
                                 $router->fleetbaseRoutes('chat-messages');
+                                $router->fleetbaseRoutes('chat-attachments');
                                 $router->fleetbaseRoutes(
                                     'files',
                                     function ($router, $controller) {

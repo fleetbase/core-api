@@ -46,4 +46,12 @@ class ChatMessage extends Model
     {
         return $this->belongsTo(ChatChannel::class, 'chat_channel_uuid', 'uuid');
     }
+
+    /**
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     */
+    public function attachments()
+    {
+        return $this->hasMany(ChatAttachment::class, 'chat_message_uuid', 'uuid');
+    }
 }

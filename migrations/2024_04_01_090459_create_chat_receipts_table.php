@@ -14,7 +14,7 @@ return new class() extends Migration {
             $table->increments('id');
             $table->uuid('uuid')->nullable()->index();
             $table->foreignUuid('company_uuid')->nullable()->index()->references('uuid')->on('companies');
-            $table->foreignUuid('user_uuid')->nullable()->index()->references('uuid')->on('users');
+            $table->foreignUuid('participant_uuid')->nullable()->index()->references('uuid')->on('chat_participants');
             $table->foreignUuid('chat_message_uuid')->nullable()->index()->references('uuid')->on('chat_messages');
             $table->timestamp('read_at')->nullable();
             $table->timestamps();

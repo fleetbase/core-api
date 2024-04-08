@@ -144,7 +144,7 @@ class ChatChannel extends Model
      */
     public function attachments()
     {
-        return $this->hasMany(ChatAttachment::class, 'chat_channel_uuid', 'uuid');
+        return $this->hasMany(ChatAttachment::class, 'chat_channel_uuid', 'uuid')->whereNull('chat_message_uuid');
     }
 
     /**
@@ -231,8 +231,7 @@ class ChatChannel extends Model
             return ['type' => 'log', 'data' => $log, 'created_at' => $log->created_at];
         });
 
-        $feed = $messages->merge($attachments)->merge($logs)->sortByDesc('created_at');
-
+        $feed = collect([...$messages, ...$attachments, ...$logs])->sortBy('created_at');
         return $feed;
     }
 
@@ -263,8 +262,7 @@ class ChatChannel extends Model
             return ['type' => 'log', 'data' => new ChatLogResource($log), 'created_at' => $log->created_at];
         });
 
-        $feed = $messages->merge($attachments)->merge($logs)->sortByDesc('created_at');
-
+        $feed = collect([...$messages, ...$attachments, ...$logs])->sortBy('created_at');
         return $feed;
     }
 }

@@ -25,7 +25,7 @@ class ChatPresence extends Model
     protected $fillable = [
         'company_uuid',
         'chat_channel_uuid',
-        'user_uuid',
+        'participant_uuid',
         'last_seen_at',
         'is_online',
     ];
@@ -33,9 +33,9 @@ class ChatPresence extends Model
     /**
      * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
      */
-    public function user()
+    public function participant()
     {
-        return $this->belongsTo(User::class, 'user_uuid', 'uuid');
+        return $this->belongsTo(ChatParticipant::class, 'participant_uuid', 'uuid');
     }
 
     /**

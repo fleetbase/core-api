@@ -2,12 +2,14 @@
 
 namespace Fleetbase\Models;
 
+use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\SendsWebhooks;
 
 class ChatAttachment extends Model
 {
     use HasUuid;
+    use HasApiModelBehavior;
     use SendsWebhooks;
 
     /**
@@ -25,6 +27,7 @@ class ChatAttachment extends Model
     protected $fillable = [
         'company_uuid',
         'chat_channel_uuid',
+        'chat_message_uuid',
         'sender_uuid',
         'file_uuid',
     ];
@@ -34,7 +37,7 @@ class ChatAttachment extends Model
      */
     public function sender()
     {
-        return $this->belongsTo(User::class, 'sender_uuid', 'uuid');
+        return $this->belongsTo(ChatParticipant::class, 'sender_uuid', 'uuid');
     }
 
     /**
@@ -43,6 +46,14 @@ class ChatAttachment extends Model
     public function chatChannel()
     {
         return $this->belongsTo(ChatChannel::class, 'chat_channel_uuid', 'uuid');
+    }
+
+    /**
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     */
+    public function message()
+    {
+        return $this->belongsTo(ChatMessage::class, 'chat_message_uuid', 'uuid');
     }
 
     /**
