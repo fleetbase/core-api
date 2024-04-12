@@ -12,6 +12,7 @@ use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasCacheableAttributes;
 use Fleetbase\Traits\HasMetaAttributes;
+use Fleetbase\Traits\HasPresence;
 use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\Searchable;
@@ -34,6 +35,7 @@ class User extends Authenticatable
 {
     use HasUuid;
     use HasPublicId;
+    use HasPresence;
     use Searchable;
     use Notifiable;
     use HasRoles;
@@ -114,11 +116,13 @@ class User extends Authenticatable
         'name',
         'phone',
         'date_of_birth',
+        'is_online',
         'timezone',
         'meta',
         'country',
         'ip_address',
         'last_login',
+        'last_seen_at',
         'email_verified_at',
         'phone_verified_at',
         'slug',
@@ -792,5 +796,15 @@ class User extends Authenticatable
         }
 
         return $this;
+    }
+
+    public function getLastSeenAtAttribute()
+    {
+        return $this->lastSeenAt();
+    }
+
+    public function getIsOnlineAttribute()
+    {
+        return $this->isOnline();
     }
 }

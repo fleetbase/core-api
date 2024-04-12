@@ -190,12 +190,24 @@ class ChatLog extends Model
     {
         $content  = '{subject.0.name} has added {subject.1.name} to this chat.';
         $subjects = ['user:' . $initiator->user_uuid, 'user:' . $addedParticipant->user_uuid];
+        $type     = 'added_participant';
+
+        // If intiator is the added and the creator of the chat channel the log message should be created chat
+        $initiatorIsParticipant = $initiator->uuid === $addedParticipant->uuid;
+        if ($initiatorIsParticipant) {
+            $chatChannel = ChatChannel::where('uuid', $initiator->chat_channel_uuid)->first();
+            if ($chatChannel) {
+                $content  = '{subject.0.name} has created a new chat.';
+                $subjects = ['user:' . $initiator->user_uuid];
+                $type     = 'created_chat';
+            }
+        }
 
         return static::create([
             'company_uuid'      => $initiator->company_uuid,
             'initiator_uuid'    => $initiator->uuid,
             'chat_channel_uuid' => $initiator->chat_channel_uuid,
-            'event_type'        => 'added_participant',
+            'event_type'        => $type,
             'content'           => $content,
             'subjects'          => $subjects,
             'status'            => 'complete',

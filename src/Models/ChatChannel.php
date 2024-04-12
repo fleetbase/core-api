@@ -156,14 +156,6 @@ class ChatChannel extends Model
     }
 
     /**
-     * @return \Illuminate\Database\Eloquent\Relations\HasMany
-     */
-    public function presences()
-    {
-        return $this->hasMany(ChatPresence::class, 'chat_channel_uuid', 'uuid');
-    }
-
-    /**
      * Accessor to get the 'last_message' attribute for the chat.
      *
      * This method retrieves the last message of the chat. It uses the 'lastMessage'

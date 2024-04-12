@@ -16,18 +16,20 @@ class ChatParticipant extends FleetbaseResource
     public function toArray($request)
     {
         return [
-            'id'                               => $this->when(Http::isInternalRequest(), $this->id),
-            'uuid'                             => $this->when(Http::isInternalRequest(), $this->uuid),
-            'chat_channel_uuid'                => $this->when(Http::isInternalRequest(), $this->chat_channel_uuid),
-            'user_uuid'                        => $this->when(Http::isInternalRequest(), $this->user_uuid),
-            'name'                             => $this->user->name,
-            'username'                         => $this->user->username,
-            'email'                            => $this->user->email,
-            'phone'                            => $this->user->phone,
-            'avatar_url'                       => $this->user->avatar_url,
-            'updated_at'                       => $this->updated_at,
-            'created_at'                       => $this->created_at,
-            'deleted_at'                       => $this->deleted_at,
+            'id'                                 => $this->when(Http::isInternalRequest(), $this->id),
+            'uuid'                               => $this->when(Http::isInternalRequest(), $this->uuid),
+            'chat_channel_uuid'                  => $this->when(Http::isInternalRequest(), $this->chat_channel_uuid),
+            'user_uuid'                          => $this->when(Http::isInternalRequest(), $this->user_uuid),
+            'name'                               => $this->user->name,
+            'username'                           => $this->user->username,
+            'email'                              => $this->user->email,
+            'phone'                              => $this->user->phone,
+            'avatar_url'                         => $this->user->avatar_url,
+            'is_online'                          => $this->is_online,
+            'last_seen_at'                       => $this->last_seen_at,
+            'updated_at'                         => $this->updated_at,
+            'created_at'                         => $this->created_at,
+            'deleted_at'                         => $this->deleted_at,
         ];
     }
 }

@@ -17,7 +17,7 @@ class ChatParticipantObserver
     public function created(ChatParticipant $chatParticipant)
     {
         event(new ChatParticipantAdded($chatParticipant));
-        ChatLog::participantAdded(ChatParticipant::current(), $chatParticipant);
+        ChatLog::participantAdded(ChatParticipant::current($chatParticipant->chat_channel_uuid), $chatParticipant);
     }
 
     /**
@@ -28,6 +28,6 @@ class ChatParticipantObserver
     public function deleted(ChatParticipant $chatParticipant)
     {
         event(new ChatParticipantRemoved($chatParticipant));
-        ChatLog::participantRemoved(ChatParticipant::current(), $chatParticipant);
+        ChatLog::participantRemoved(ChatParticipant::current($chatParticipant->chat_channel_uuid), $chatParticipant);
     }
 }

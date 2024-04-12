@@ -43,6 +43,7 @@ class CoreServiceProvider extends ServiceProvider
             \Illuminate\Session\Middleware\StartSession::class,
             'auth:sanctum',
             \Fleetbase\Http\Middleware\SetupFleetbaseSession::class,
+            \Fleetbase\Http\Middleware\TrackPresence::class,
         ],
         'fleetbase.api' => [
             'throttle:60,1',

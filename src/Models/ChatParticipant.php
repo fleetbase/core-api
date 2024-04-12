@@ -36,6 +36,20 @@ class ChatParticipant extends Model
     protected $fillable = ['company_uuid', 'chat_channel_uuid', 'user_uuid'];
 
     /**
+     * Dynamic attributes that are appended to object.
+     *
+     * @var array
+     */
+    protected $appends = ['is_online', 'last_seen_at'];
+
+    /**
+     * The attributes that should be cast to native types.
+     *
+     * @var array
+     */
+    protected $casts = [];
+
+    /**
      * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
      */
     public function user()
@@ -61,8 +75,18 @@ class ChatParticipant extends Model
      *
      * @return ChatParticipant|null the ChatParticipant instance for the current session user, or null if not found
      */
-    public static function current(): ?ChatParticipant
+    public static function current(string $chatChannelId): ?ChatParticipant
     {
-        return static::where('user_uuid', session('user'))->first();
+        return static::where(['user_uuid' => session('user'), 'chat_channel_uuid' => $chatChannelId])->first();
+    }
+
+    public function getLastSeenAtAttribute()
+    {
+        return $this->user ? $this->user->lastSeenAt() : null;
+    }
+
+    public function getIsOnlineAttribute()
+    {
+        return $this->user ? $this->user->isOnline() : null;
     }
 }
