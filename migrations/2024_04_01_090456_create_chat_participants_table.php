@@ -13,6 +13,7 @@ return new class() extends Migration {
         Schema::create('chat_participants', function (Blueprint $table) {
             $table->increments('id');
             $table->uuid('uuid')->nullable()->index();
+            $table->string('public_id')->nullables()->index();
             $table->foreignUuid('company_uuid')->nullable()->index()->references('uuid')->on('companies');
             $table->foreignUuid('user_uuid')->nullable()->index()->references('uuid')->on('users');
             $table->foreignUuid('chat_channel_uuid')->nullable()->index()->references('uuid')->on('chat_channels');

@@ -3,12 +3,14 @@
 namespace Fleetbase\Models;
 
 use Fleetbase\Traits\HasApiModelBehavior;
+use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\SendsWebhooks;
 
 class ChatParticipant extends Model
 {
     use HasUuid;
+    use HasPublicId;
     use HasApiModelBehavior;
     use SendsWebhooks;
 
@@ -18,6 +20,13 @@ class ChatParticipant extends Model
      * @var string
      */
     protected $table = 'chat_participants';
+
+    /**
+     * The type of public Id to generate.
+     *
+     * @var string
+     */
+    protected $publicIdType = 'chat_participant';
 
     /**
      * The attributes that are mass assignable.

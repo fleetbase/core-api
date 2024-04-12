@@ -37,6 +37,20 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                         $router->get('current', 'OrganizationController@getCurrent');
                     }
                 );
+                $router->group(
+                    ['prefix' => 'chat-channels'],
+                    function ($router) {
+                        $router->post('/', 'ChatChannelController@create');
+                        $router->put('{id}', 'ChatChannelController@update');
+                        $router->get('/', 'ChatChannelController@query');
+                        $router->get('{id}', 'ChatChannelController@find');
+                        $router->delete('{id}', 'ChatChannelController@delete');
+                        $router->post('{id}/add-participant', 'ChatChannelController@addParticipant');
+                        $router->delete('remove-participant/{participantId}', 'ChatChannelController@removeParticipant');
+                        $router->post('{id}/send-message', 'ChatChannelController@sendMessage');
+                        $router->delete('delete-message/{messageId}', 'ChatChannelController@deleteMessage');
+                    }
+                );
             });
 
         /*
