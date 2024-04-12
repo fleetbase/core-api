@@ -30,6 +30,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
         */
         $router->prefix('v1')
             ->namespace('Api\v1')
+            ->middleware(['fleetbase.api'])
             ->group(function ($router) {
                 $router->group(
                     ['prefix' => 'organizations'],
