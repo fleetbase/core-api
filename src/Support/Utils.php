@@ -18,13 +18,37 @@ use Illuminate\Support\Str;
 class Utils
 {
     /**
-     * Generates a URL to this API.
+     * Generates a fully qualified URL to an API endpoint.
+     * 
+     * This function constructs a URL for given path and query parameters. It automatically
+     * determines whether to use HTTPS based on the application environment. The function
+     * allows specifying a custom port, which is appended to the domain in the generated URL
+     * unless it is the default HTTP (80) or HTTPS (443) port.
+     *
+     * @param string $path The URI path to append to the base URL.
+     * @param array|null $queryParams (Optional) Array of query string parameters.
+     * @param int $port (Optional) Port number to append to the URL. Default is 80.
+     * @return string The fully constructed URL including the specified path, query parameters, and port.
+     * @example apiUrl('/api/user', ['id' => 1], 8080) -> http://example.com:8080/api/user?id=1
      */
-    public static function apiUrl(string $path, ?array $queryParams = []): string
+    public static function apiUrl(string $path, ?array $queryParams = [], int $port = 80): string
     {
         $isLocalDevelopment = app()->environment(['local', 'development']);
+        $baseURL = url($path, $queryParams, !$isLocalDevelopment);
 
-        return url($path, $queryParams, !$isLocalDevelopment);
+        // Check if default port is used to avoid appending it unnecessarily
+        if (!in_array($port, [80, 443])) {
+            // Append the port to the domain
+            $parsedUrl = parse_url($baseURL);
+            $portString = ':' . $port;
+
+            if (isset($parsedUrl['host'])) {
+                // Insert port after the host
+                $baseURL = str_replace($parsedUrl['host'], $parsedUrl['host'] . $portString, $baseURL);
+            }
+        }
+
+        return $baseURL;
     }
 
     /**
