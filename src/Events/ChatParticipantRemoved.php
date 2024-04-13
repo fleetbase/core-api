@@ -33,7 +33,7 @@ class ChatParticipantRemoved implements ShouldBroadcastNow
         $this->eventId             = uniqid('event_');
         $this->createdAt           = Carbon::now();
         $this->chatChannel         = $chatParticipant->chatChannel;
-        $this->chatParticipant     = $chatParticipant;
+        $this->chatParticipant     = $chatParticipant->load('user');
     }
 
     /**
@@ -53,11 +53,17 @@ class ChatParticipantRemoved implements ShouldBroadcastNow
      */
     public function broadcastOn()
     {
-        return [
+        $channels = [
             new Channel('chat.' . $this->chatChannel->uuid),
             new Channel('chat.' . $this->chatChannel->public_id),
             new Channel('user.' . $this->chatParticipant->user_uuid),
         ];
+
+        if ($this->chatParticipant->user) {
+            $channels[] = new Channel('user.' . $this->chatParticipant->user->public_id);
+        }
+
+        return $channels;
     }
 
     /**
