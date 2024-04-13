@@ -407,7 +407,7 @@ trait HasApiModelBehavior
         ];
 
         foreach ($attributes as $attr => $key) {
-            if (!empty($only) && !in_array($attr, $only)) {
+            if ((!empty($only) && !in_array($attr, $only)) || isset($target[$attr])) {
                 continue;
             }
 

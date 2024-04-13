@@ -64,6 +64,8 @@ class UploadFileRequest extends FleetbaseRequest
                     'application/x-tgz',
                     'application/x-bzip2',
                     'application/x-xz',
+                    'application/vnd.ms-powerpoint',
+                    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
                 ]),
             ],
         ];
