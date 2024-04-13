@@ -7,12 +7,12 @@ use Fleetbase\Models\ChatChannel;
 use Fleetbase\Models\ChatParticipant;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Carbon;
 
-class ChatParticipantRemoved implements ShouldBroadcast
+class ChatParticipantRemoved implements ShouldBroadcastNow
 {
     use Dispatchable;
     use InteractsWithSockets;
@@ -56,6 +56,7 @@ class ChatParticipantRemoved implements ShouldBroadcast
         return [
             new Channel('chat.' . $this->chatChannel->uuid),
             new Channel('chat.' . $this->chatChannel->public_id),
+            new Channel('user.' . $this->chatParticipant->user_uuid),
         ];
     }
 
@@ -66,12 +67,14 @@ class ChatParticipantRemoved implements ShouldBroadcast
      */
     public function broadcastWith()
     {
+        $resource = new ChatParticipantResource($this->chatParticipant);
+
         return [
             'id'          => $this->eventId,
             'event'       => $this->broadcastAs(),
             'created_at'  => $this->createdAt->toDateTimeString(),
             'channel_id'  => $this->chatChannel->public_id,
-            'data'        => (new ChatParticipantResource($this->chatParticipant))->toArray(request()),
+            'data'        => $resource ? $resource->toArray(request()) : [],
         ];
     }
 }

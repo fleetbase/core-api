@@ -201,6 +201,67 @@ class ChatChannel extends Model
     }
 
     /**
+     * Retrieves unread messages for a given user within this chat channel.
+     *
+     * This method finds the chat participant record based on the user's UUID and this chat channel's UUID.
+     * If the participant exists, it fetches their unread messages by invoking `getUnreadMessagesForParticipant`.
+     * Returns an empty collection if the participant does not exist.
+     *
+     * @param User $user the user for whom to retrieve unread messages
+     *
+     * @return Collection a collection of unread messages; may be empty
+     */
+    public function getUnreadMessagesForUser(User $user): Collection
+    {
+        $chatParticipant = ChatParticipant::where(['user_uuid' => $user->uuid, 'chat_channel_uuid' => $this->uuid])->first();
+        if ($chatParticipant) {
+            return $this->getUnreadMessagesForParticipant($chatParticipant);
+        }
+
+        return collect();
+    }
+
+    /**
+     * Retrieves unread messages for a specific chat participant.
+     *
+     * This method returns messages from this chat channel that do not have a receipt recorded for the given participant,
+     * effectively returning messages that the participant has not yet read.
+     *
+     * @param ChatParticipant $chatParticipant the chat participant whose unread messages are to be retrieved
+     *
+     * @return Collection a collection of unread messages; may be empty
+     */
+    public function getUnreadMessagesForParticipant(ChatParticipant $chatParticipant): Collection
+    {
+        return $this->messages()->where('sender_uuid', '!=', $chatParticipant->uuid)->whereDoesntHave('receipts', function ($query) use ($chatParticipant) {
+            $query->where('participant_uuid', $chatParticipant->uuid);
+        });
+    }
+
+    /**
+     * Retrieves the count of unread messages for a given user within this chat channel.
+     *
+     * This method identifies the chat participant record using the user's UUID and the chat channel's UUID.
+     * It then counts the unread messages for that participant by checking messages that lack a receipt for this participant.
+     * If the participant is not found in this channel, it returns a count of zero.
+     *
+     * @param User $user the user for whom to count unread messages
+     *
+     * @return int the count of unread messages
+     */
+    public function getUnreadMessageCountForUser(User $user): int
+    {
+        $chatParticipant = ChatParticipant::where(['user_uuid' => $user->uuid, 'chat_channel_uuid' => $this->uuid])->first();
+        if ($chatParticipant) {
+            return $this->messages()->where('sender_uuid', '!=', $chatParticipant->uuid)->whereDoesntHave('receipts', function ($query) use ($chatParticipant) {
+                $query->where('participant_uuid', $chatParticipant->uuid);
+            })->count();
+        }
+
+        return 0;
+    }
+
+    /**
      * Accessor to get the 'feed' attribute for the chat.
      *
      * This method aggregates and returns a feed of different types of chat-related

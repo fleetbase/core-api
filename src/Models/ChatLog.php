@@ -4,12 +4,14 @@ namespace Fleetbase\Models;
 
 use Fleetbase\Casts\Json;
 use Fleetbase\Support\Utils;
+use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\SendsWebhooks;
 
 class ChatLog extends Model
 {
     use HasUuid;
+    use HasPublicId;
     use SendsWebhooks;
 
     /**
@@ -18,6 +20,13 @@ class ChatLog extends Model
      * @var string
      */
     protected $table = 'chat_logs';
+
+    /**
+     * The type of public Id to generate.
+     *
+     * @var string
+     */
+    protected $publicIdType = 'chat_log';
 
     /**
      * The attributes that are mass assignable.
@@ -162,12 +171,20 @@ class ChatLog extends Model
     {
         $content  = '{subject.0.name} has removed {subject.1.name} from this chat.';
         $subjects = ['user:' . $initiator->user_uuid, 'user:' . $removedParticipant->user_uuid];
+        $type     = 'removed_participant';
+
+        // If initiator removing themself
+        $initiatorIsRemovingSelf = $initiator->uuid === $removedParticipant->uuid;
+        if ($initiatorIsRemovingSelf) {
+            $content  = '{subject.0.name} has left the chat.';
+            $subjects = ['user:' . $initiator->user_uuid];
+        }
 
         return static::create([
             'company_uuid'      => $initiator->company_uuid,
             'initiator_uuid'    => $initiator->uuid,
             'chat_channel_uuid' => $initiator->chat_channel_uuid,
-            'event_type'        => 'removed_participant',
+            'event_type'        => $type,
             'content'           => $content,
             'subjects'          => $subjects,
             'status'            => 'complete',

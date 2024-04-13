@@ -226,10 +226,14 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 $router->fleetbaseRoutes('comments');
                                 $router->fleetbaseRoutes('custom-fields');
                                 $router->fleetbaseRoutes('custom-field-values');
-                                $router->fleetbaseRoutes('chat-channels');
+                                $router->fleetbaseRoutes('chat-channels', function ($router, $controller) {
+                                    $router->get('unread-count/{channelId}', $controller('getUnreadCountForChannel'));
+                                    $router->get('unread-count', $controller('getUnreadCount'));
+                                });
                                 $router->fleetbaseRoutes('chat-participants');
                                 $router->fleetbaseRoutes('chat-messages');
                                 $router->fleetbaseRoutes('chat-attachments');
+                                $router->fleetbaseRoutes('chat-receipts');
                                 $router->fleetbaseRoutes(
                                     'files',
                                     function ($router, $controller) {

@@ -16,10 +16,10 @@ class ChatParticipant extends FleetbaseResource
     public function toArray($request)
     {
         return [
-            'id'                                 => $this->when(Http::isInternalRequest(), $this->id),
+            'id'                                 => $this->when(Http::isInternalRequest(), $this->id, $this->public_id),
             'uuid'                               => $this->when(Http::isInternalRequest(), $this->uuid),
-            'chat_channel_uuid'                  => $this->when(Http::isInternalRequest(), $this->chat_channel_uuid),
-            'user_uuid'                          => $this->when(Http::isInternalRequest(), $this->user_uuid),
+            'chat_channel_uuid'                  => $this->when(Http::isInternalRequest(), $this->chat_channel_uuid, $this->chatChannel ? $this->chatChannel->public_id : null),
+            'user_uuid'                          => $this->when(Http::isInternalRequest(), $this->user_uuid, $this->user->public_id),
             'name'                               => $this->user->name,
             'username'                           => $this->user->username,
             'email'                              => $this->user->email,

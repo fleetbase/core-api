@@ -28,6 +28,11 @@ class ChatParticipantObserver
     public function deleted(ChatParticipant $chatParticipant)
     {
         event(new ChatParticipantRemoved($chatParticipant));
-        ChatLog::participantRemoved(ChatParticipant::current($chatParticipant->chat_channel_uuid), $chatParticipant);
+        $currentParticipant = ChatParticipant::current($chatParticipant->chat_channel_uuid, true);
+        // hotfix for leaving chat
+        if (session('user') === $chatParticipant->user_uuid) {
+            $currentParticipant = $chatParticipant;
+        }
+        ChatLog::participantRemoved($currentParticipant, $chatParticipant);
     }
 }

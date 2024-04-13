@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Models;
 
+use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\SendsWebhooks;
 
@@ -9,6 +10,7 @@ class ChatReceipt extends Model
 {
     use HasUuid;
     use SendsWebhooks;
+    use HasApiModelBehavior;
 
     /**
      * The table associated with the model.
@@ -35,8 +37,21 @@ class ChatReceipt extends Model
      * @var array
      */
     protected $casts = [
-        'read_at'          => 'date_time',
+        'read_at'          => 'datetime',
     ];
+
+    /**
+     * Set `read_at` when creating.
+     *
+     * @return void
+     */
+    public static function boot()
+    {
+        parent::boot();
+        static::creating(function ($model) {
+            $model->read_at = now();
+        });
+    }
 
     /**
      * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
@@ -52,5 +67,13 @@ class ChatReceipt extends Model
     public function chatMessage()
     {
         return $this->belongsTo(ChatMessage::class, 'chat_message_uuid', 'uuid');
+    }
+
+    /**
+     * Get the receipt participants name.
+     */
+    public function getParticipantNameAttribute(): ?string
+    {
+        return $this->participant ? $this->participant->name : null;
     }
 }

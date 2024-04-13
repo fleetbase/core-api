@@ -7,7 +7,18 @@ use Illuminate\Support\Str;
 
 class Find
 {
-    public static function httpResourceForModel(Model $model, ?string $namespace = null, ?int $version = 1)
+    /**
+     * Dynamically determines the HTTP resource class for a given Eloquent model based on the model type,
+     * optionally considering the model's namespace and API version.
+     * It attempts to find a resource from a custom or default namespace and handles internal requests specifically by adjusting namespaces.
+     *
+     * @param Model       $model     the Eloquent model instance for which the resource class is to be found
+     * @param string|null $namespace Optional. The namespace to search within, defaults to Fleetbase's HTTP resource namespace.
+     * @param int         $version   Optional. API version number, defaults to 1, to support versioning in API resources.
+     *
+     * @return string the fully qualified class name of the resource, or a default resource class if none found
+     */
+    public static function httpResourceForModel(Model $model, ?string $namespace = null, ?int $version = 1): ?string
     {
         $resourceNamespace = null;
         $defaultResourceNS = '\\Fleetbase\\Http\\Resources\\';
@@ -50,7 +61,18 @@ class Find
         return $resourceNamespace;
     }
 
-    public static function httpRequestForModel(Model $model, ?string $namespace = null, ?int $version = 1)
+    /**
+     * Resolves the HTTP request class for a specific Eloquent model, taking into account the model's namespace and API version.
+     * This method provides support for finding request classes tailored to specific actions (like Create, Update) on models.
+     * It handles internal requests by adapting the namespace to include internal paths and supports versioning.
+     *
+     * @param Model       $model     the Eloquent model instance for which the request class is to be determined
+     * @param string|null $namespace Optional. The base namespace for locating the request classes, defaults to Fleetbase's HTTP requests namespace.
+     * @param int         $version   Optional. Specifies the API version to support structured versioning in requests.
+     *
+     * @return string the fully qualified class name of the request, or a default request class if none applicable
+     */
+    public static function httpRequestForModel(Model $model, ?string $namespace = null, ?int $version = 1): ?string
     {
         $requestNamespace = null;
         $defaultRequestNS = '\\Fleetbase\\Http\\Requests\\';
@@ -97,7 +119,18 @@ class Find
         return $requestNamespace;
     }
 
-    public static function httpFilterForModel(Model $model, ?string $namespace = null, ?int $version = 1)
+    /**
+     * Retrieves the HTTP filter class associated with a specific Eloquent model. This function considers the model's namespace,
+     * versioning, and whether the request is internal to decide the appropriate filter class.
+     * The method uses a default or provided namespace and adapts it based on internal request checks and versioning needs.
+     *
+     * @param Model       $model     the Eloquent model instance whose filter class is being determined
+     * @param string|null $namespace Optional. A custom base namespace for filter classes, otherwise defaulting to a calculated namespace based on the model's path.
+     * @param int         $version   Optional. The version of the API for which the filter is being sought, affecting the namespace structure.
+     *
+     * @return string|null the fully qualified class name of the filter, or null if no appropriate class exists
+     */
+    public static function httpFilterForModel(Model $model, ?string $namespace = null, ?int $version = 1): ?string
     {
         $namespaceSegments = explode('Models', get_class($model));
         $baseNS            = '\\' . rtrim($namespaceSegments[0], '\\');

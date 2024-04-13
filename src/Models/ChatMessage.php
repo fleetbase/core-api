@@ -33,12 +33,14 @@ class ChatMessage extends Model
      *
      * @var array
      */
-    protected $fillable = [
-        'company_uuid',
-        'chat_channel_uuid',
-        'sender_uuid',
-        'content',
-    ];
+    protected $fillable = ['company_uuid', 'chat_channel_uuid', 'sender_uuid', 'content'];
+
+    /**
+     * The relationships to always load along with the model.
+     *
+     * @var array
+     */
+    protected $with = ['sender', 'attachments', 'receipts'];
 
     /**
      * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
@@ -62,5 +64,13 @@ class ChatMessage extends Model
     public function attachments()
     {
         return $this->hasMany(ChatAttachment::class, 'chat_message_uuid', 'uuid');
+    }
+
+    /**
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     */
+    public function receipts()
+    {
+        return $this->hasMany(ChatReceipt::class, 'chat_message_uuid', 'uuid')->whereHas('participant');
     }
 }

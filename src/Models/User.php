@@ -153,6 +153,8 @@ class User extends Authenticatable
         'session_status',
         'company_name',
         'is_admin',
+        'is_online',
+        'last_seen_at',
         'types',
     ];
 
