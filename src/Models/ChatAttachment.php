@@ -26,7 +26,7 @@ class ChatAttachment extends Model
      *
      * @var string
      */
-    protected $publicIdType = 'chat_attach';
+    protected $publicIdType = 'chat_attachment';
 
     /**
      * The attributes that are mass assignable.

@@ -20,6 +20,13 @@ class ChatReceipt extends Model
     protected $table = 'chat_receipts';
 
     /**
+     * The type of public Id to generate.
+     *
+     * @var string
+     */
+    protected $publicIdType = 'chat_receipt';
+
+    /**
      * The attributes that are mass assignable.
      *
      * @var array
