@@ -30,11 +30,26 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
         */
         $router->prefix('v1')
             ->namespace('Api\v1')
+            ->middleware(['fleetbase.api'])
             ->group(function ($router) {
                 $router->group(
                     ['prefix' => 'organizations'],
                     function ($router) {
                         $router->get('current', 'OrganizationController@getCurrent');
+                    }
+                );
+                $router->group(
+                    ['prefix' => 'chat-channels'],
+                    function ($router) {
+                        $router->post('/', 'ChatChannelController@create');
+                        $router->put('{id}', 'ChatChannelController@update');
+                        $router->get('/', 'ChatChannelController@query');
+                        $router->get('{id}', 'ChatChannelController@find');
+                        $router->delete('{id}', 'ChatChannelController@delete');
+                        $router->post('{id}/add-participant', 'ChatChannelController@addParticipant');
+                        $router->delete('remove-participant/{participantId}', 'ChatChannelController@removeParticipant');
+                        $router->post('{id}/send-message', 'ChatChannelController@sendMessage');
+                        $router->delete('delete-message/{messageId}', 'ChatChannelController@deleteMessage');
                     }
                 );
             });
@@ -211,6 +226,14 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 $router->fleetbaseRoutes('comments');
                                 $router->fleetbaseRoutes('custom-fields');
                                 $router->fleetbaseRoutes('custom-field-values');
+                                $router->fleetbaseRoutes('chat-channels', function ($router, $controller) {
+                                    $router->get('unread-count/{channelId}', $controller('getUnreadCountForChannel'));
+                                    $router->get('unread-count', $controller('getUnreadCount'));
+                                });
+                                $router->fleetbaseRoutes('chat-participants');
+                                $router->fleetbaseRoutes('chat-messages');
+                                $router->fleetbaseRoutes('chat-attachments');
+                                $router->fleetbaseRoutes('chat-receipts');
                                 $router->fleetbaseRoutes(
                                     'files',
                                     function ($router, $controller) {
