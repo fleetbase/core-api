@@ -379,7 +379,9 @@ class CoreServiceProvider extends ServiceProvider
     public function registerObservers(): void
     {
         foreach ($this->observers as $model => $observer) {
-            $model::observe($observer);
+            if (Utils::classExists($model)) {
+                $model::observe($observer);
+            }
         }
     }
 

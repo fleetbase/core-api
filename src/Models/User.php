@@ -116,13 +116,11 @@ class User extends Authenticatable
         'name',
         'phone',
         'date_of_birth',
-        'is_online',
         'timezone',
         'meta',
         'country',
         'ip_address',
         'last_login',
-        'last_seen_at',
         'email_verified_at',
         'phone_verified_at',
         'slug',
@@ -153,8 +151,6 @@ class User extends Authenticatable
         'session_status',
         'company_name',
         'is_admin',
-        'is_online',
-        'last_seen_at',
         'types',
     ];
 
