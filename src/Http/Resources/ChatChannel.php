@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Http\Resources;
 
+use Fleetbase\Support\Auth;
 use Fleetbase\Support\Http;
 
 class ChatChannel extends FleetbaseResource
@@ -15,6 +16,8 @@ class ChatChannel extends FleetbaseResource
      */
     public function toArray($request)
     {
+        $user = Auth::getUserFromSession();
+
         return [
             'id'                                 => $this->when(Http::isInternalRequest(), $this->id, $this->public_id),
             'uuid'                               => $this->when(Http::isInternalRequest(), $this->uuid),
@@ -24,7 +27,7 @@ class ChatChannel extends FleetbaseResource
             'name'                               => $this->name,
             'title'                              => $this->title,
             'last_message'                       => new ChatMessage($this->last_message),
-            'unread_count'                       => $this->getUnreadMessageCountForUser($request->user()),
+            'unread_count'                       => $this->getUnreadMessageCountForUser($user),
             'slug'                               => $this->slug,
             'feed'                               => $this->resource_feed,
             'participants'                       => ChatParticipant::collection($this->participants),

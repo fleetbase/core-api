@@ -1903,6 +1903,9 @@ class Utils
         foreach ($packages as $packageName => $package) {
             // Derive the seeds directory path
             $seedsDirectory = base_path('vendor/' . $packageName . '/server/seeders');
+            if (!is_dir($seedsDirectory)) {
+                $seedsDirectory = base_path('vendor/' . $packageName . '/seeders');
+            }
 
             // Check if the seeds directory exists
             if (!is_dir($seedsDirectory)) {
@@ -1913,7 +1916,7 @@ class Utils
             $files = glob($seedsDirectory . '/*.php');
 
             // Find the namespace that corresponds to the seeds directory
-            $namespace = static::getNamespaceFromAutoload($package['autoload']['psr-4'], 'seeds');
+            $namespace = static::getNamespaceFromAutoload($package['autoload']['psr-4'], 'seeders');
 
             foreach ($files as $file) {
                 // Get the base name of the file, and remove the .php extension to get the class name
@@ -1989,7 +1992,7 @@ class Utils
      * @return string|null the namespace corresponding to the given directory in the autoload configuration,
      *                     or null if no such namespace exists
      */
-    private static function getNamespaceFromAutoload(array $psr4, string $directory): ?string
+    protected static function getNamespaceFromAutoload(array $psr4, string $directory): ?string
     {
         foreach ($psr4 as $namespace => $path) {
             if (strpos($path, $directory) !== false) {
