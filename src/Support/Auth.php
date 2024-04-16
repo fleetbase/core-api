@@ -6,6 +6,7 @@ use Fleetbase\Models\ApiCredential;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\User;
+use Illuminate\Auth\SessionGuard;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth as Authentication;
 use Illuminate\Support\Facades\Hash;
@@ -180,7 +181,7 @@ class Auth extends Authentication
     public static function getUserFromSession()
     {
         // Attempt to retrieve the user using the extended Auth class method
-        $user = static::getUser();
+        $user = auth()->user();
         if ($user instanceof User) {
             return $user;
         }
