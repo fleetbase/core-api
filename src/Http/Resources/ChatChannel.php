@@ -1,27 +1,12 @@
 <?php
 
 namespace Fleetbase\Http\Resources;
-use Fleetbase\Models\User;
-use Illuminate\Http\Request;
+
+use Fleetbase\Support\Auth;
 use Fleetbase\Support\Http;
 
 class ChatChannel extends FleetbaseResource
-
 {
-    public function getCurrentUser(Request $request): ?User
-    {
-        
-        if ($user = $request->user()) {
-        return $user;
-        }
-
-        if (session()->has('user')) {
-        return User::where('uuid', session()->get('user'))->first();
-        }
-
-        return null;
-    }
-
     /**
      * Transform the resource into an array.
      *
@@ -31,9 +16,8 @@ class ChatChannel extends FleetbaseResource
      */
     public function toArray($request)
     {
-        
-        $user = $this->getCurrentUser($request);
-    
+        $user = Auth::getUserFromSession();
+
         return [
             'id'                                 => $this->when(Http::isInternalRequest(), $this->id, $this->public_id),
             'uuid'                               => $this->when(Http::isInternalRequest(), $this->uuid),
