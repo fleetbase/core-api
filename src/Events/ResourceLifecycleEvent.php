@@ -177,7 +177,7 @@ class ResourceLifecycleEvent implements ShouldBroadcastNow
     /**
      * Adds a channel for API credentials if available in session.
      *
-     * @param Model $model the model related to the event
+     * @param Model $model    the model related to the event
      * @param array $channels reference to the channels array
      */
     protected function addApiCredentialChannel($model, &$channels)
