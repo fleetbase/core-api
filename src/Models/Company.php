@@ -331,4 +331,14 @@ class Company extends Model
             'status'       => 'active',
         ]);
     }
+
+    /**
+     * Get the latest last login of any user in the company.
+     *
+     * @return mixed
+     */
+    public function getLastUserLogin()
+    {
+        return $this->companyUsers()->max('last_login');
+    }
 }
