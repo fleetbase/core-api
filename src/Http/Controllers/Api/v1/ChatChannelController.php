@@ -31,10 +31,10 @@ class ChatChannelController extends Controller
 
         // create the chat channel
         $chatChannel = ChatChannel::create([
-                'company_uuid'    => session('company'),
-                'created_by_uuid' => session('user'),
-                'name'            => strtoupper($input['name']),
-            ]);
+            'company_uuid'    => session('company'),
+            'created_by_uuid' => session('user'),
+            'name'            => strtoupper($input['name']),
+        ]);
 
         // response the driver resource
         return new ChatChannelResource($chatChannel);
