@@ -6,6 +6,7 @@ use Fleetbase\Models\ApiCredential;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\User;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth as Authentication;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -127,8 +128,8 @@ class Auth extends Authentication
      * Checks the request header for sandbox headers if to set and switch to the sandbox database,
      * or uses the `ApiCredential` provided to set sandbox session.
      *
-     * @param \Illuminate\Http\Request $request
-     * @param ApiCredential            $apiCredential
+     * @param Request       $request
+     * @param ApiCredential $apiCredential
      *
      * @return bool
      */
@@ -163,6 +164,34 @@ class Auth extends Authentication
         }
 
         return Company::select($select)->where('uuid', session('company'))->first();
+    }
+
+    /**
+     * Retrieve the currently authenticated user by checking multiple sources.
+     *
+     * This method extends the base Laravel Auth functionality to ensure robust user retrieval.
+     * It attempts to fetch the user in the following order:
+     * 1. Directly from the extended Auth class's user retrieval method.
+     * 2. From the session, if the user's UUID is stored there.
+     * 3. Returns null if no user can be authenticated through previous methods.
+     *
+     * @return User|null returns an instance of the User model if authenticated, or null if no user is authenticated
+     */
+    public static function getUserFromSession()
+    {
+        // Attempt to retrieve the user using the extended Auth class method
+        $user = static::getUser();
+        if ($user instanceof User) {
+            return $user;
+        }
+
+        // Check if the UUID is stored in the session and fetch the user from the database
+        if (session()->has('user')) {
+            return User::where('uuid', session('user'))->first();
+        }
+
+        // Return null if no user could be authenticated
+        return null;
     }
 
     /**
