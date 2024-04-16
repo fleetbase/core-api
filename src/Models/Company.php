@@ -334,8 +334,6 @@ class Company extends Model
 
     /**
      * Get the latest last login of any user in the company.
-     *
-     * @return mixed
      */
     public function getLastUserLogin()
     {
