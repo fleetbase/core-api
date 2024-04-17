@@ -133,6 +133,23 @@ class ChatChannelController extends Controller
     }
 
     /**
+     * Query for Fleetbase Chat Channel resources.
+     *
+     * @return \Fleetbase\Http\Resources\ChatChannelCollection
+     */
+    public function getAvailablePartificants($id) {
+        $chatChannel = ChatChannel::findRecordOrFail($id);
+        $users = User::where('company_uuid', session('company'))->get();
+
+        $users->filter(function ($user) use ($chatChannel) {
+            $isPartificant = $chatChannel->participants->firstWhere('user_uuid', $user->uuid);
+            return !$isPartificant;
+        });
+
+        return $users;
+    }
+
+    /**
      * Adds a new participant to a chat channel.
      *
      * @return ChatParticipantResource
