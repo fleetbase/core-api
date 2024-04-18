@@ -147,7 +147,7 @@ class ChatChannelController extends Controller
             return !$isPartificant;
         });
 
-        return new UserResource($users);
+        return UserResource::collection($users);
     }
 
     /**
