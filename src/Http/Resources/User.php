@@ -2,7 +2,6 @@
 
 namespace Fleetbase\Http\Resources;
 
-use Fleetbase\Http\Resources\FleetbaseResource;
 use Fleetbase\Support\Http;
 
 class User extends FleetbaseResource

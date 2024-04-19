@@ -18,8 +18,10 @@ class ChatReceipt extends FleetbaseResource
         return [
             'id'                                           => $this->when(Http::isInternalRequest(), $this->id, $this->public_id),
             'uuid'                                         => $this->when(Http::isInternalRequest(), $this->uuid),
-            'chat_message_uuid'                            => $this->when(Http::isInternalRequest(), $this->chat_message_uuid, $this->chatMessage ? $this->chatMessage->public_id : null),
-            'participant_uuid'                             => $this->when(Http::isInternalRequest(), $this->participant_uuid, $this->participant ? $this->participant->public_id : null),
+            'chat_message_uuid'                            => $this->when(Http::isInternalRequest(), $this->chat_message_uuid),
+            'chat_message'                                 => $this->when(Http::isInternalRequest(), $this->chatMessage->public_id),
+            'participant_uuid'                             => $this->when(Http::isInternalRequest(), $this->participant_uuid),
+            'participant'                                  => $this->when(Http::isInternalRequest(), $this->participant->public_id),
             'participant_name'                             => $this->participant_name,
             'read_at'                                      => $this->read_at,
             'updated_at'                                   => $this->updated_at,
