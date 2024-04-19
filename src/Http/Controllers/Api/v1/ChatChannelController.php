@@ -2,8 +2,8 @@
 
 namespace Fleetbase\Http\Controllers\Api\v1;
 
-use Fleetbase\FleetOps\Http\Resources\v1\DeletedResource;
-use Fleetbase\Http\Resources\v1\User as UserResource;
+use Fleetbase\Http\Resources\User as UserResource;
+use Fleetbase\Http\Resources\DeletedResource;
 use Fleetbase\Http\Controllers\Controller;
 use Fleetbase\Http\Requests\CreateChatChannelRequest;
 use Fleetbase\Http\Requests\UpdateChatChannelRequest;
