@@ -3,6 +3,7 @@
 namespace Fleetbase\Http\Controllers\Api\v1;
 
 use Fleetbase\FleetOps\Http\Resources\v1\DeletedResource;
+use Fleetbase\FleetOps\Http\Resources\v1\UserResource;
 use Fleetbase\Http\Controllers\Controller;
 use Fleetbase\Http\Requests\CreateChatChannelRequest;
 use Fleetbase\Http\Requests\UpdateChatChannelRequest;
@@ -130,6 +131,23 @@ class ChatChannelController extends Controller
 
         // response the chat channel resource
         return new DeletedResource($chatChannel);
+    }
+
+    /**
+     * Query for Fleetbase Chat Channel resources.
+     *
+     * @return \Fleetbase\Http\Resources\ChatChannelCollection
+     */
+    public function getAvailablePartificants($id) {
+        $chatChannel = ChatChannel::findRecordOrFail($id);
+        $users = User::where('company_uuid', session('company'))->get();
+
+        $users->filter(function ($user) use ($chatChannel) {
+            $isPartificant = $chatChannel->participants->firstWhere('user_uuid', $user->uuid);
+            return !$isPartificant;
+        });
+
+        return UserResource::collection($users);
     }
 
     /**
