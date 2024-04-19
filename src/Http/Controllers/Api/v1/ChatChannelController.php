@@ -276,7 +276,7 @@ class ChatChannelController extends Controller
 
                 return response()->json(
                     [
-                        'error' => 'File sent as attachment not found.',
+                        'error' => 'File not sent as attachment not found.',
                     ],
                     422
                 );
