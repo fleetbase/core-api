@@ -9,6 +9,11 @@ class FileFilter extends Filter
         $this->builder->where('company_uuid', $this->session->get('company'));
     }
 
+    public function queryForPublic()
+    {
+        $this->queryForInternal();
+    }
+
     public function typeEndsWith($type)
     {
         $this->builder->where('type', 'LIKE', '%-' . $type);

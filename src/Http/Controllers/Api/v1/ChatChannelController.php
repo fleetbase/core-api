@@ -2,14 +2,14 @@
 
 namespace Fleetbase\Http\Controllers\Api\v1;
 
-use Fleetbase\Http\Resources\User as UserResource;
-use Fleetbase\Http\Resources\DeletedResource;
 use Fleetbase\Http\Controllers\Controller;
 use Fleetbase\Http\Requests\CreateChatChannelRequest;
 use Fleetbase\Http\Requests\UpdateChatChannelRequest;
 use Fleetbase\Http\Resources\ChatChannel as ChatChannelResource;
 use Fleetbase\Http\Resources\ChatMessage as ChatMessageResource;
 use Fleetbase\Http\Resources\ChatParticipant as ChatParticipantResource;
+use Fleetbase\Http\Resources\DeletedResource;
+use Fleetbase\Http\Resources\User as UserResource;
 use Fleetbase\Models\ChatAttachment;
 use Fleetbase\Models\ChatChannel;
 use Fleetbase\Models\ChatMessage;
@@ -138,12 +138,14 @@ class ChatChannelController extends Controller
      *
      * @return \Fleetbase\Http\Resources\ChatChannelCollection
      */
-    public function getAvailablePartificants($id) {
+    public function getAvailablePartificants($id)
+    {
         $chatChannel = ChatChannel::findRecordOrFail($id);
-        $users = User::where('company_uuid', session('company'))->get();
+        $users       = User::where('company_uuid', session('company'))->get();
 
         $users->filter(function ($user) use ($chatChannel) {
             $isPartificant = $chatChannel->participants->firstWhere('user_uuid', $user->uuid);
+
             return !$isPartificant;
         });
 
@@ -196,7 +198,7 @@ class ChatChannelController extends Controller
     /**
      * Removes a participant from a chat channel.
      *
-     * @return \Fleetbase\Http\Resources\DeletedResource
+     * @return DeletedResource
      */
     public function removeParticipant($participantId)
     {
@@ -296,7 +298,7 @@ class ChatChannelController extends Controller
     /**
      * Deletes a message from a chat channel.
      *
-     * @return \Fleetbase\Http\Resources\DeletedResource
+     * @return DeletedResource
      */
     public function deleteMessage($messageId)
     {

@@ -39,6 +39,18 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                     }
                 );
                 $router->group(
+                    ['prefix' => 'files'],
+                    function ($router) {
+                        $router->post('/', 'FileController@create');
+                        $router->post('base64', 'FileController@createFromBase64');
+                        $router->put('{id}', 'FileController@update');
+                        $router->get('{id}/download', 'FileController@download');
+                        $router->get('/', 'FileController@query');
+                        $router->get('{id}', 'FileController@find');
+                        $router->delete('{id}', 'FileController@delete');
+                    }
+                );
+                $router->group(
                     ['prefix' => 'chat-channels'],
                     function ($router) {
                         $router->post('/', 'ChatChannelController@create');

@@ -585,23 +585,29 @@ class Utils
      *
      * @param string|array   $table
      * @param array|callable $where
-     *
-     * @return string
      */
-    public static function getUuid($table, $where = [])
+    public static function getUuid($table, $where = []): ?string
     {
         if (is_array($table)) {
             foreach ($table as $t) {
                 $uuid = static::getUuid($t, $where);
 
                 if ($uuid) {
-                    return ['uuid' => $uuid, 'table' => static::pluralize($t)];
+                    return $uuid;
                 }
             }
 
-            return;
+            return null;
         }
 
+        // handle ember format types "fleetops:contact"
+        if (Str::contains($table, ':')) {
+            $segments = explode(':', $table);
+            $table    = Arr::last($segments);
+        }
+
+        // make sure snake case
+        $table  = Str::snake($table);
         $result =  DB::table(static::pluralize($table))
             ->select(['uuid'])
             ->where($where)->first();

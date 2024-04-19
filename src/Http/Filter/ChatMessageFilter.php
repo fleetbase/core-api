@@ -15,6 +15,11 @@ class ChatMessageFilter extends Filter
             });
     }
 
+    public function queryForPublic()
+    {
+        $this->queryForInternal();
+    }
+
     public function query(?string $query)
     {
         $this->builder->search($query);
