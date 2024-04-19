@@ -48,6 +48,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                         $router->delete('{id}', 'ChatChannelController@delete');
                         $router->post('{id}/add-participant', 'ChatChannelController@addParticipant');
                         $router->delete('remove-participant/{participantId}', 'ChatChannelController@removeParticipant');
+                        $router->get('{id}/available-participants', 'ChatChannelController@getAvailablePartificants');
                         $router->post('{id}/send-message', 'ChatChannelController@sendMessage');
                         $router->delete('delete-message/{messageId}', 'ChatChannelController@deleteMessage');
                     }
