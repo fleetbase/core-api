@@ -6,7 +6,6 @@ use Fleetbase\Models\ApiCredential;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\User;
-use Illuminate\Auth\SessionGuard;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth as Authentication;
 use Illuminate\Support\Facades\Hash;
