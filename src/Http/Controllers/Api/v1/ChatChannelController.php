@@ -5,10 +5,13 @@ namespace Fleetbase\Http\Controllers\Api\v1;
 use Fleetbase\Http\Controllers\Controller;
 use Fleetbase\Http\Requests\CreateChatChannelRequest;
 use Fleetbase\Http\Requests\UpdateChatChannelRequest;
+use Fleetbase\Http\Requests\FileRequest;
+use Fleetbase\Http\Requests\UploadBase64Request;
 use Fleetbase\Http\Resources\ChatChannel as ChatChannelResource;
 use Fleetbase\Http\Resources\ChatMessage as ChatMessageResource;
 use Fleetbase\Http\Resources\ChatParticipant as ChatParticipantResource;
 use Fleetbase\Http\Resources\DeletedResource;
+use Fleetbase\Http\Resources\File as FileResource;
 use Fleetbase\Http\Resources\User as UserResource;
 use Fleetbase\Models\ChatAttachment;
 use Fleetbase\Models\ChatChannel;
@@ -17,6 +20,10 @@ use Fleetbase\Models\ChatParticipant;
 use Fleetbase\Models\File;
 use Fleetbase\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
+use Fleetbase\Support\Utils;
+use Illuminate\Support\Facades\Storage;
+
 
 class ChatChannelController extends Controller
 {
@@ -295,6 +302,105 @@ class ChatChannelController extends Controller
         return new ChatMessageResource($chatMessage);
     }
 
+
+    /**
+     * Uploads a file and returns the path.
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function uploadFile(FileRequest $request)
+    {
+        $disk        = $request->input('disk', config('filesystems.default'));
+        $bucket      = $request->input('bucket', config('filesystems.disks.' . $disk . '.bucket', config('filesystems.disks.s3.bucket')));
+        $type        = $request->input('type');
+        $size        = $request->input('file_size', $request->file->getSize());
+        $path        = $request->input('path', 'uploads');
+
+        $fileName = File::randomFileNameFromRequest($request);
+
+        try {
+            $path = $request->file->storeAs(
+                $path,
+                $fileName,
+                [
+                    'disk' => $disk,
+                ]
+            );
+        } catch (\Throwable $e) {
+            return response()->apiError('File upload failed.');
+        }
+
+        try {
+            $file = File::createFromUpload($request->file, $path, $type, $size, $disk, $bucket);
+        } catch (\Throwable $e) {
+            return response()->apiError($e->getMessage());
+        }
+
+          $file->setSubjectFromRequest($request);
+
+          return new FileResource($file);
+    }
+
+    public function createFromBase64(UploadBase64Request $request)
+    {
+        $disk        = $request->input('disk', config('filesystems.default'));
+        $bucket      = $request->input('bucket', config('filesystems.disks.' . $disk . '.bucket', config('filesystems.disks.s3.bucket')));
+        $data        = $request->input('data');
+        $path        = $request->input('path', 'uploads');
+        $fileName    = $request->input('file_name');
+        $fileType    = $request->input('file_type', 'image');
+        $contentType = $request->input('content_type', 'image/png');
+
+        if (!$data) {
+            return response()->apiError('Oops! Looks like nodata was provided for upload.', 400);
+        }
+
+        // Correct $path for uploads
+        if (Str::startsWith($path, 'uploads') && $disk === 'uploads') {
+            $path = str_replace('uploads/', '', $path);
+        }
+
+        // Set the full file path
+        $fullPath = $path . '/' . $fileName;
+        $uploaded = false;
+
+        // Upload file to path
+        try {
+            $uploaded = Storage::disk($disk)->put($fullPath, base64_decode($data));
+        } catch (\Throwable $e) {
+            return response()->apiError($e->getMessage());
+        }
+
+        // If file upload failed
+        if ($uploaded === false) {
+            return response()->apiError('File upload failed.');
+        }
+
+        // Create file record for upload
+        try {
+            $file = File::create([
+                'company_uuid'      => session('company'),
+                'uploader_uuid'     => session('user'),
+                'disk'              => $disk,
+                'original_filename' => basename($fullPath),
+                'extension'         => 'png',
+                'content_type'      => $contentType,
+                'path'              => $fullPath,
+                'bucket'            => $bucket,
+                'type'              => $fileType,
+                'size'              => Utils::getBase64ImageSize($data),
+            ]);
+        } catch (\Throwable $e) {
+            return response()->error($e->getMessage());
+        }
+
+        // Set the subject ID specified
+        $file->setSubjectFromRequest($request);
+
+        // Response the File resource
+        return new FileResource($file);
+    }
     /**
      * Deletes a message from a chat channel.
      *
