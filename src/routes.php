@@ -63,7 +63,6 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                         $router->get('{id}/available-participants', 'ChatChannelController@getAvailablePartificants');
                         $router->post('{id}/send-message', 'ChatChannelController@sendMessage');
                         $router->delete('delete-message/{messageId}', 'ChatChannelController@deleteMessage');
-                        $router->post('/upload-file', 'ChatChannelController@uploadFile');
                     }
                 );
             });
