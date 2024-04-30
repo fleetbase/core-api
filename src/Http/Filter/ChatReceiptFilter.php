@@ -17,6 +17,11 @@ class ChatReceiptFilter extends Filter
             });
     }
 
+    public function queryForPublic()
+    {
+        $this->queryForInternal();
+    }
+
     public function query(?string $query)
     {
         $this->builder->search($query);

@@ -12,6 +12,11 @@ class CommentFilter extends Filter
         $this->builder->where('company_uuid', $this->session->get('company'));
     }
 
+    public function queryForPublic()
+    {
+        $this->queryForInternal();
+    }
+
     public function parent(string $id)
     {
         if (Str::isUuid($id)) {

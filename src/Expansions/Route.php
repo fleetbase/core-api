@@ -123,7 +123,7 @@ class Route implements Expansion
                 ['prefix' => 'auth'],
                 function ($router) use ($registerFn, $registerProtectedFn) {
                     $router->group(
-                        ['middleware' => ['throttle:10,1']],
+                        ['middleware' => ['throttle:10,1', \Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]],
                         function ($router) use ($registerFn) {
                             $router->post('login', 'AuthController@login');
                             $router->post('sign-up', 'AuthController@signUp');
@@ -143,7 +143,7 @@ class Route implements Expansion
                     );
 
                     $router->group(
-                        ['middleware' => ['fleetbase.protected']],
+                        ['middleware' => ['fleetbase.protected', \Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]],
                         function ($router) use ($registerProtectedFn) {
                             $router->post('switch-organization', 'AuthController@switchOrganization');
                             $router->post('join-organization', 'AuthController@joinOrganization');

@@ -2,10 +2,20 @@
 
 namespace Fleetbase\Http\Requests;
 
+use Fleetbase\Rules\EmailDomainExcluded;
+use Fleetbase\Rules\ExcludeWords;
+use Fleetbase\Rules\ValidPhoneNumber;
 use Illuminate\Validation\Rule;
 
 class OnboardRequest extends FleetbaseRequest
 {
+    /**
+     * Array of blacklisted words which cannot be used in onboard names and company names.
+     *
+     * @return array
+     */
+    protected $excludedWords = ['test', 'example', 'trial', 'asdf', '1234', 'asdas'];
+
     /**
      * Determine if the user is authorized to make this request.
      *
@@ -24,12 +34,12 @@ class OnboardRequest extends FleetbaseRequest
     public function rules()
     {
         return [
-            'name'                  => ['required'],
-            'email'                 => ['required', 'email', Rule::unique('users', 'email')->whereNull('deleted_at')],
-            'phone'                 => ['nullable', Rule::unique('users', 'phone')->whereNull('deleted_at')],
+            'name'                  => ['required', 'min:2', 'regex:/^[a-zA-ZÀ-ÿ\'\- ]+$/u', new ExcludeWords($this->excludedWords)],
+            'email'                 => ['required', 'email', Rule::unique('users', 'email')->whereNull('deleted_at'), new EmailDomainExcluded()],
+            'phone'                 => ['required', new ValidPhoneNumber(), Rule::unique('users', 'phone')->whereNull('deleted_at')],
             'password'              => ['required', 'confirmed', 'min:4', 'max:24'],
             'password_confirmation' => ['required', 'min:4', 'max:24'],
-            'organization_name'     => ['required'],
+            'organization_name'     => ['required', 'min:4', new ExcludeWords($this->excludedWords)],
         ];
     }
 

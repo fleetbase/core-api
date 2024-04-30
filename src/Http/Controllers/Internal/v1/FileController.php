@@ -64,20 +64,7 @@ class FileController extends FleetbaseController
         }
 
         // Set the subject if specified
-        if ($request->has(['subject_uuid', 'subject_type'])) {
-            $file->update(
-                [
-                    'subject_uuid' => $subjectId,
-                    'subject_type' => Utils::getMutationType($subjectType),
-                ]
-            );
-        } elseif ($subjectType) {
-            $file->update(
-                [
-                    'subject_type' => Utils::getMutationType($subjectType),
-                ]
-            );
-        }
+        $file->setSubjectFromRequest($request);
 
         // Done ✓
         return response()->json(
@@ -105,7 +92,7 @@ class FileController extends FleetbaseController
         $subjectType = $request->input('subject_type');
 
         if (!$data) {
-            return response()->json(['errors' => ['Oops! Looks like nodata was provided for upload.']], 400);
+            return response()->error('Oops! Looks like nodata was provided for upload.', 400);
         }
 
         // Correct $path for uploads
@@ -137,7 +124,6 @@ class FileController extends FleetbaseController
                 'subject_uuid'      => $subjectId,
                 'subject_type'      => Utils::getMutationType($subjectType),
                 'disk'              => $disk,
-                'name'              => basename($fullPath),
                 'original_filename' => basename($fullPath),
                 'extension'         => 'png',
                 'content_type'      => $contentType,
@@ -159,9 +145,7 @@ class FileController extends FleetbaseController
     }
 
     /**
-     * Handle file uploads.
-     *
-     * @param UploadFileRequest $request
+     * Handle file download.
      *
      * @return \Illuminate\Http\Response
      */
@@ -169,7 +153,9 @@ class FileController extends FleetbaseController
     {
         $disk = $request->input('disk', config('filesystems.default'));
         $file = File::where('uuid', $id)->first();
+        /** @var \Illuminate\Filesystem\FilesystemAdapter $filesystem */
+        $filesystem = Storage::disk($disk);
 
-        return Storage::disk($disk)->download($file->path, $file->name);
+        return $filesystem->download($file->path, $file->original_filename);
     }
 }

@@ -2,13 +2,14 @@
 
 namespace Fleetbase\Http\Controllers\Api\v1;
 
-use Fleetbase\FleetOps\Http\Resources\v1\DeletedResource;
 use Fleetbase\Http\Controllers\Controller;
 use Fleetbase\Http\Requests\CreateChatChannelRequest;
 use Fleetbase\Http\Requests\UpdateChatChannelRequest;
 use Fleetbase\Http\Resources\ChatChannel as ChatChannelResource;
 use Fleetbase\Http\Resources\ChatMessage as ChatMessageResource;
 use Fleetbase\Http\Resources\ChatParticipant as ChatParticipantResource;
+use Fleetbase\Http\Resources\DeletedResource;
+use Fleetbase\Http\Resources\User as UserResource;
 use Fleetbase\Models\ChatAttachment;
 use Fleetbase\Models\ChatChannel;
 use Fleetbase\Models\ChatMessage;
@@ -133,6 +134,25 @@ class ChatChannelController extends Controller
     }
 
     /**
+     * Query for Fleetbase Chat Channel resources.
+     *
+     * @return \Fleetbase\Http\Resources\ChatChannelCollection
+     */
+    public function getAvailablePartificants($id)
+    {
+        $chatChannel = ChatChannel::findRecordOrFail($id);
+        $users       = User::where('company_uuid', session('company'))->get();
+
+        $users->filter(function ($user) use ($chatChannel) {
+            $isPartificant = $chatChannel->participants->firstWhere('user_uuid', $user->uuid);
+
+            return !$isPartificant;
+        });
+
+        return UserResource::collection($users);
+    }
+
+    /**
      * Adds a new participant to a chat channel.
      *
      * @return ChatParticipantResource
@@ -178,7 +198,7 @@ class ChatChannelController extends Controller
     /**
      * Removes a participant from a chat channel.
      *
-     * @return \Fleetbase\Http\Resources\DeletedResource
+     * @return DeletedResource
      */
     public function removeParticipant($participantId)
     {
@@ -256,7 +276,7 @@ class ChatChannelController extends Controller
 
                 return response()->json(
                     [
-                        'error' => 'File sent as attachment not found.',
+                        'error' => 'File not sent as attachment not found.',
                     ],
                     422
                 );
@@ -278,7 +298,7 @@ class ChatChannelController extends Controller
     /**
      * Deletes a message from a chat channel.
      *
-     * @return \Fleetbase\Http\Resources\DeletedResource
+     * @return DeletedResource
      */
     public function deleteMessage($messageId)
     {

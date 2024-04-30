@@ -91,43 +91,64 @@ class Setting extends EloquentModel
     ];
 
     /**
-     * Finds a system setting.
+     * Bootstraps the model and registers model event listeners.
+     * It attaches events to clear cache entries whenever a setting is saved or deleted.
+     * This ensures that updates to settings immediately reflect in the system without requiring
+     * a manual cache clear, maintaining data integrity and freshness across user sessions.
+     */
+    protected static function boot()
+    {
+        parent::boot();
+
+        // Using saved event to cover both creating and updating scenarios
+        static::saved(function ($setting) {
+            $cacheKey = 'system_settings.' . $setting->key;
+            cache()->forget($cacheKey);
+        });
+
+        // Handle the setting deletion scenario
+        static::deleted(function ($setting) {
+            $cacheKey = 'system_settings.' . $setting->key;
+            cache()->forget($cacheKey);
+        });
+    }
+
+    /**
+     * Retrieves a system setting by key, with optional default value. The settings are cached indefinitely
+     * to optimize performance by reducing database access. If the setting involves nested keys, it uses a dot notation
+     * to fetch sub-keys from JSON or serialized arrays stored in the database.
      *
-     * @param string $key
+     * @param string $key          the key of the setting to retrieve, which can include dot notation for nested data
+     * @param mixed  $defaultValue the default value to return if the setting does not exist
+     *
+     * @return mixed returns the setting value if found; otherwise, returns the default value
      */
     public static function system($key, $defaultValue = null)
     {
-        $segments   = explode('.', $key);
-        $settingKey = 'system.' . $key;
-        $queryKey   = 'system.' . $segments[0] . '.' . $segments[1];
+        $cacheKey = 'system_settings.' . $key;
 
-        if (count($segments) >= 3) {
-            // Remove first two segments, join remaining ones
-            $subKey = implode('.', array_slice($segments, 2));
+        // Attempt to get the value from the cache
+        return cache()->rememberForever($cacheKey, function () use ($key, $defaultValue) {
+            $segments   = explode('.', $key);
+            $settingKey = 'system.' . $key;
+            $queryKey   = 'system.' . $segments[0] . '.' . $segments[1];
 
-            // Query the database for the main setting
-            $setting = static::where('key', $queryKey)->first();
-            if ($setting) {
-                // Get the sub value from the setting value
-                return data_get($setting->value, $subKey);
-            }
-
-            // If not able to query from a value object find using full key
-            if (!$setting) {
-                $setting = static::where('key', $settingKey)->first();
+            if (count($segments) >= 3) {
+                $subKey  = implode('.', array_slice($segments, 2));
+                $setting = static::where('key', $queryKey)->first();
                 if ($setting) {
-                    return $setting->value;
+                    return data_get($setting->value, $subKey, $defaultValue);
                 }
-            }
-        } else {
-            $setting = static::where('key', $settingKey)->first();
 
-            if ($setting) {
-                return $setting->value;
-            }
-        }
+                $setting = static::where('key', $settingKey)->first();
 
-        return $defaultValue;
+                return $setting ? $setting->value : $defaultValue;
+            } else {
+                $setting = static::where('key', $settingKey)->first();
+
+                return $setting ? $setting->value : $defaultValue;
+            }
+        });
     }
 
     /**

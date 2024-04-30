@@ -39,6 +39,18 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                     }
                 );
                 $router->group(
+                    ['prefix' => 'files'],
+                    function ($router) {
+                        $router->post('/', 'FileController@create');
+                        $router->post('base64', 'FileController@createFromBase64');
+                        $router->put('{id}', 'FileController@update');
+                        $router->get('{id}/download', 'FileController@download');
+                        $router->get('/', 'FileController@query');
+                        $router->get('{id}', 'FileController@find');
+                        $router->delete('{id}', 'FileController@delete');
+                    }
+                );
+                $router->group(
                     ['prefix' => 'chat-channels'],
                     function ($router) {
                         $router->post('/', 'ChatChannelController@create');
@@ -48,6 +60,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                         $router->delete('{id}', 'ChatChannelController@delete');
                         $router->post('{id}/add-participant', 'ChatChannelController@addParticipant');
                         $router->delete('remove-participant/{participantId}', 'ChatChannelController@removeParticipant');
+                        $router->get('{id}/available-participants', 'ChatChannelController@getAvailablePartificants');
                         $router->post('{id}/send-message', 'ChatChannelController@sendMessage');
                         $router->delete('delete-message/{messageId}', 'ChatChannelController@deleteMessage');
                     }
@@ -67,7 +80,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                     function ($router) {
                         $router->fleetbaseAuthRoutes();
                         $router->group(
-                            ['prefix' => 'installer'],
+                            ['prefix' => 'installer', 'middleware' => [Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]],
                             function ($router) {
                                 $router->get('initialize', 'InstallerController@initialize');
                                 $router->post('createdb', 'InstallerController@createDatabase');
@@ -76,7 +89,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                             }
                         );
                         $router->group(
-                            ['prefix' => 'onboard'],
+                            ['prefix' => 'onboard', 'middleware' => [Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]],
                             function ($router) {
                                 $router->get('should-onboard', 'OnboardController@shouldOnboard');
                                 $router->post('create-account', 'OnboardController@createAccount');
@@ -115,7 +128,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                             }
                         );
                         $router->group(
-                            ['prefix' => 'two-fa'],
+                            ['prefix' => 'two-fa', 'middleware' => [Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]],
                             function ($router) {
                                 $router->get('check', 'TwoFaController@checkTwoFactor');
                                 $router->post('validate', 'TwoFaController@validateSession');

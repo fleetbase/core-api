@@ -2,13 +2,14 @@
 
 namespace Fleetbase\Rules;
 
-use Fleetbase\Support\Algo;
 use Illuminate\Contracts\Validation\Rule;
 
-class ComputableAlgo implements Rule
+class ValidPhoneNumber implements Rule
 {
     /**
      * Determine if the validation rule passes.
+     *
+     * Validates that the phone number starts with a '+' and is followed only by digits.
      *
      * @param string $attribute
      *
@@ -16,9 +17,7 @@ class ComputableAlgo implements Rule
      */
     public function passes($attribute, $value)
     {
-        $distanceAndTime = Algo::calculateDrivingDistanceAndTime('1.3506853', '103.87199110000006', '1.3621663', '103.88450490000002');
-
-        return Algo::exec($value, $distanceAndTime) > 0;
+        return preg_match('/^\+[0-9]+$/', $value) > 0;
     }
 
     /**
@@ -28,6 +27,6 @@ class ComputableAlgo implements Rule
      */
     public function message()
     {
-        return 'Algorithm provided is not computable.';
+        return 'The :attribute must start with a "+" and include only numbers.';
     }
 }

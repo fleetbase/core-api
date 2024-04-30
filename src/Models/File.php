@@ -123,7 +123,7 @@ class File extends Model
      */
     public function getFilesystem(?string $disk = null): \Illuminate\Contracts\Filesystem\Filesystem
     {
-        $disk = $disk ?? $this->getDisk();
+        $disk = $disk ? $disk : $this->getDisk();
 
         return Storage::disk($disk);
     }
@@ -164,7 +164,11 @@ class File extends Model
     }
 
     /**
-     * Sets the uploader of the file.
+     * Sets the uploader for the file using a User object.
+     *
+     * @param User $uploader the user object that represents the uploader
+     *
+     * @return File returns this instance to allow for method chaining
      */
     public function setUploader(User $uploader): File
     {
@@ -174,15 +178,24 @@ class File extends Model
     }
 
     /**
-     * Generate the file url attribute.
+     * Retrieves the MIME type of the file based on its extension.
      *
-     * @return string
+     * @param string|null $extension optional extension to determine the MIME type; defaults to the instance's extension
+     *
+     * @return string the MIME type of the file
      */
     public function getMimeType($extension = null)
     {
         return static::getFileMimeType($extension ?? $this->extension);
     }
 
+    /**
+     * Determines the file extension based on a given MIME type.
+     *
+     * @param string $mimeType the MIME type for which to find the corresponding file extension
+     *
+     * @return string the file extension associated with the given MIME type
+     */
     public static function getExtensionFromMimeType($mimeType)
     {
         $mimes     = new MimeTypes();
@@ -195,6 +208,13 @@ class File extends Model
         return $extension;
     }
 
+    /**
+     * Retrieves the MIME type associated with a specific file extension.
+     *
+     * @param string $extension the file extension for which to find the MIME type
+     *
+     * @return string the MIME type corresponding to the given file extension
+     */
     public static function getMimeTypeFromExtension($extension)
     {
         $mimes = new MimeTypes();
@@ -203,9 +223,11 @@ class File extends Model
     }
 
     /**
-     * Generate the file url attribute.
+     * Retrieves the MIME type for a given file extension.
      *
-     * @var string
+     * @param string $extension the file extension to look up
+     *
+     * @return string the MIME type for the given extension
      */
     public static function getFileMimeType($extension)
     {
@@ -213,7 +235,16 @@ class File extends Model
     }
 
     /**
-     * Create a new file from uploaded file.
+     * Creates a new file instance from an uploaded file.
+     *
+     * @param UploadedFile $file   the uploaded file object
+     * @param string       $path   the path where the file is to be stored
+     * @param string|null  $type   optional type of the file
+     * @param int|null     $size   optional size of the file, defaults to the size from the file object
+     * @param string|null  $disk   optional disk where the file is to be stored, defaults to the default filesystem disk
+     * @param string|null  $bucket optional bucket on the disk, defaults to the default configuration
+     *
+     * @return File|null a new file instance or null on failure
      */
     public static function createFromUpload(UploadedFile $file, $path, $type = null, $size = null, $disk = null, $bucket = null): ?File
     {
@@ -242,15 +273,25 @@ class File extends Model
         return static::create($data);
     }
 
+    /**
+     * Retrieves the hash name of the file based on its path.
+     *
+     * @return string the basename of the file path
+     */
     public function getHashNameAttribute()
     {
         return basename($this->path);
     }
 
     /**
-     * Assosciates the file to another model.
+     * Sets the subject and type of the file.
+     *
+     * @param mixed       $model the model associated with the file
+     * @param string|null $type  optional type of the file
+     *
+     * @return File returns this instance to allow for method chaining
      */
-    public function setKey($model, $type = null): File
+    public function setSubject($model, $type = null): File
     {
         $this->subject_uuid = data_get($model, 'uuid');
         $this->subject_type = Utils::getMutationType($model);
@@ -265,7 +306,70 @@ class File extends Model
     }
 
     /**
-     * Set the file type.
+     * Sets the key for the file by setting the subject.
+     *
+     * @param mixed       $model the model to associate with the file
+     * @param string|null $type  optional type for the file
+     *
+     * @return File returns this instance to allow for method chaining
+     */
+    public function setKey($model, $type = null): File
+    {
+        return $this->setSubject($model, $type);
+    }
+
+    /**
+     * Sets the subject's UUID and type from an HTTP request. This method supports updates from different
+     * types of subject inputs, either 'subject_uuid' or 'subject_id' along with 'subject_type'.
+     * Updates are based on the presence of specific request parameters.
+     *
+     * @param Request $request the HTTP request object containing the subject data
+     *
+     * @return File returns this instance to allow for method chaining after updating the subject's UUID and type
+     */
+    public function setSubjectFromRequest($request): File
+    {
+        $type = $request->input('subject_type');
+        if ($request->has(['subject_uuid', 'subject_type'])) {
+            $id = $request->input('subject_uuid');
+            $this->update(
+                [
+                    'subject_uuid' => $id,
+                    'subject_type' => Utils::getMutationType($type),
+                ]
+            );
+        }
+
+        if ($request->has(['subject_id', 'subject_type'])) {
+            $id = $request->input('subject_id');
+            $this->update(
+                [
+                    'subject_uuid' => Utils::getUuid($type, [
+                        'public_id'    => $id,
+                        'company_uuid' => session('company'),
+                    ]),
+                    'subject_type' => Utils::getMutationType($type),
+                ]
+            );
+        }
+
+        if ($request->has(['subject_type']) && $request->missing(['subject_uuid', 'subject_id'])) {
+            $this->update(
+                [
+                    'subject_type' => Utils::getMutationType($type),
+                ]
+            );
+        }
+
+        return $this;
+    }
+
+    /**
+     * Sets the type of the file.
+     *
+     * @param string|null $type the type of the file
+     *
+     * @return File returns this instance to allow for method chaining
      */
     public function setType($type = null): File
     {
@@ -275,6 +379,13 @@ class File extends Model
         return $this;
     }
 
+    /**
+     * Generates a random file name with a specified extension.
+     *
+     * @param string|null $extension the desired file extension; defaults to 'png'
+     *
+     * @return string the generated random file name with the specified extension
+     */
     public static function randomFileName(?string $extension = 'png')
     {
         $extension = Str::startsWith($extension, '.') ? $extension : '.' . $extension;
@@ -282,9 +393,18 @@ class File extends Model
         return uniqid() . strtolower($extension);
     }
 
-    public static function randomFileNameFromRequest(Request $request, ?string $extension = 'png')
+    /**
+     * Generates a random file name based on a request, with an optional specified extension.
+     *
+     * @param Request     $request   the request containing the file
+     * @param string|null $extension the desired file extension; defaults to 'png'
+     *
+     * @return string the generated random file name
+     */
+    public static function randomFileNameFromRequest($request, ?string $extension = 'png')
     {
-        /** @var \Illuminate\Http\File|Symfony\Component\HttpFoundation\File\File $file */
+        /** @var Request|\Fleetbase\Http\Requests\Internal\UploadFileRequest $request */
+        /** @var \Illuminate\Http\File|Symfony\Component\HttpFoundation\File\File|\Symfony\Component\HttpFoundation\File\UploadedFile $file */
         $file = $request->file;
 
         if ($request->hasFile('file')) {

@@ -47,9 +47,9 @@ class SocketClusterMessage extends Message
     /**
      * Create a new SocketCluster message instance.
      *
-     * @param string|\Illuminate\Broadcasting\Channel $channel the channel name to send the message to
-     * @param array                                   $data    the data to be sent in the message
-     * @param int                                     $cid     the socketcluster cid to use
+     * @param string|Channel $channel the channel name to send the message to
+     * @param array          $data    the data to be sent in the message
+     * @param int            $cid     the socketcluster cid to use
      */
     public function __construct(string $channel, array $data = [], int $cid = 1)
     {

@@ -52,8 +52,8 @@ trait HasPolicies
     /**
      * Scope the model query to certain policies only.
      *
-     * @param string|array|\Fleetbase\Contracts\Policy|\Illuminate\Support\Collection $policies
-     * @param string                                                                  $guard
+     * @param string|array|Policy|Collection $policies
+     * @param string                         $guard
      */
     public function scopePolicy(Builder $query, $policies, $guard = null): Builder
     {
@@ -84,7 +84,7 @@ trait HasPolicies
     /**
      * Assign the given role to the model.
      *
-     * @param array|string|\Fleetbase\Contracts\Policy ...$policies
+     * @param array|string|Policy ...$policies
      *
      * @return $this
      */
@@ -162,7 +162,7 @@ trait HasPolicies
     /**
      * Determine if the model has (one of) the given role(s).
      *
-     * @param string|int|array|\Fleebase\Contracts\Policy|\Illuminate\Support\Collection $policies
+     * @param string|int|array|\Fleebase\Contracts\Policy|Collection $policies
      */
     public function hasPolicy($policies, ?string $guard = null): bool
     {
@@ -204,7 +204,7 @@ trait HasPolicies
      *
      * Alias to hasPolicy() but without Guard controls
      *
-     * @param string|int|array|\Fleebase\Contracts\Policy|\Illuminate\Support\Collection $policies
+     * @param string|int|array|\Fleebase\Contracts\Policy|Collection $policies
      */
     public function hasAnyPolicy(...$policies): bool
     {
@@ -214,7 +214,7 @@ trait HasPolicies
     /**
      * Determine if the model has all of the given role(s).
      *
-     * @param string|array|\Fleebase\Contracts\Policy|\Illuminate\Support\Collection $policies
+     * @param string|array|\Fleebase\Contracts\Policy|Collection $policies
      */
     public function hasAllPolicies($policies, ?string $guard = null): bool
     {

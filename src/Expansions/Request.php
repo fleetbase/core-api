@@ -24,7 +24,7 @@ class Request implements Expansion
     /**
      * Extends Request to find the current organization/company.
      *
-     * @return \Fleetbase\Models\Company|null
+     * @return Company|null
      */
     public function company()
     {
