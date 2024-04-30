@@ -222,7 +222,7 @@ class WebhookCall
         return dispatch($this->callWebhookJob);
     }
 
-    public function dispatchIf($condition): PendingDispatch|null
+    public function dispatchIf($condition): ?PendingDispatch
     {
         if ($condition) {
             return $this->dispatch();
@@ -231,7 +231,7 @@ class WebhookCall
         return null;
     }
 
-    public function dispatchUnless($condition): PendingDispatch|null
+    public function dispatchUnless($condition): ?PendingDispatch
     {
         return $this->dispatchIf(!$condition);
     }

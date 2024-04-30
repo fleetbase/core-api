@@ -22,6 +22,7 @@
         "aloha/twilio": "^5.0",
         "aws/aws-sdk-php-laravel": "^3.7",
         "fleetbase/laravel-mysql-spatial": "^1.0.2",
+        "genealabs/laravel-model-caching": "dev-fix/handle-datetime-values",
         "giggsey/libphonenumber-for-php": "^8.13",
         "guzzlehttp/guzzle": "^7.4",
         "hammerstone/fast-paginate": "^1.0",
@@ -46,7 +47,7 @@
         "spatie/laravel-activitylog": "^4.7",
         "spatie/laravel-google-cloud-storage": "^2.2",
         "spatie/laravel-permission": "^6.3",
-        "spatie/laravel-responsecache": "^7.4",
+        "spatie/laravel-responsecache": "^7.5",
         "spatie/laravel-schedule-monitor": "^3.7",
         "spatie/laravel-sluggable": "^3.5",
         "sqids/sqids": "^0.4.1",
@@ -59,6 +60,12 @@
         "phpstan/phpstan": "^1.10.38",
         "symfony/var-dumper": "^5.4.29"
     },
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "https://github.com/fleetbase/laravel-model-caching"
+        }
+    ],
     "autoload": {
         "psr-4": {
             "Fleetbase\\": "src/",

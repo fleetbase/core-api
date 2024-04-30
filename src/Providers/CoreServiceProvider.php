@@ -44,6 +44,7 @@ class CoreServiceProvider extends ServiceProvider
             'auth:sanctum',
             \Fleetbase\Http\Middleware\SetupFleetbaseSession::class,
             \Fleetbase\Http\Middleware\TrackPresence::class,
+            \Spatie\ResponseCache\Middlewares\CacheResponse::class,
         ],
         'fleetbase.api' => [
             'throttle:60,1',
@@ -51,6 +52,7 @@ class CoreServiceProvider extends ServiceProvider
             \Fleetbase\Http\Middleware\AuthenticateOnceWithBasicAuth::class,
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
             \Fleetbase\Http\Middleware\LogApiRequests::class,
+            \Spatie\ResponseCache\Middlewares\CacheResponse::class,
         ],
     ];
 
@@ -99,6 +101,8 @@ class CoreServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__ . '/../../config/excel.php', 'excel');
         $this->mergeConfigFrom(__DIR__ . '/../../config/sentry.php', 'sentry');
         $this->mergeConfigFrom(__DIR__ . '/../../config/laravel-mysql-s3-backup.php', 'laravel-mysql-s3-backup');
+        $this->mergeConfigFrom(__DIR__ . '/../../config/laravel-model-caching.php', 'laravel-model-caching');
+        $this->mergeConfigFrom(__DIR__ . '/../../config/responsecache.php', 'responsecache');
     }
 
     /**

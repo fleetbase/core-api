@@ -46,7 +46,7 @@ class Auth extends Authentication
     /**
      * Set session variables for user.
      *
-     * @param \Fleetbase\Models\User|\Fleetbase\Models\ApiCredential|null $user
+     * @param User|ApiCredential|null $user
      */
     public static function setSession($user = null, $login = false): bool
     {

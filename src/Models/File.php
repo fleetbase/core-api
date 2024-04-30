@@ -403,7 +403,7 @@ class File extends Model
      */
     public static function randomFileNameFromRequest($request, ?string $extension = 'png')
     {
-        /** @var \Illuminate\Http\Request|\Fleetbase\Http\Requests\Internal\UploadFileRequest $request */
+        /** @var Request|\Fleetbase\Http\Requests\Internal\UploadFileRequest $request */
         /** @var \Illuminate\Http\File|Symfony\Component\HttpFoundation\File\File|\Symfony\Component\HttpFoundation\File\UploadedFile $file */
         $file = $request->file;
 

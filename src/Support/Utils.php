@@ -1526,7 +1526,7 @@ class Utils
     /**
      * @param string $type
      *
-     * @return \Fleetbase\Models\File|null
+     * @return File|null
      */
     public static function urlToStorefrontFile($url, $type = 'source', ?Model $owner = null)
     {

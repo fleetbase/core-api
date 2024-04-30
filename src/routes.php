@@ -80,7 +80,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                     function ($router) {
                         $router->fleetbaseAuthRoutes();
                         $router->group(
-                            ['prefix' => 'installer'],
+                            ['prefix' => 'installer', 'middleware' => [Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]],
                             function ($router) {
                                 $router->get('initialize', 'InstallerController@initialize');
                                 $router->post('createdb', 'InstallerController@createDatabase');
@@ -89,7 +89,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                             }
                         );
                         $router->group(
-                            ['prefix' => 'onboard'],
+                            ['prefix' => 'onboard', 'middleware' => [Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]],
                             function ($router) {
                                 $router->get('should-onboard', 'OnboardController@shouldOnboard');
                                 $router->post('create-account', 'OnboardController@createAccount');
@@ -128,7 +128,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                             }
                         );
                         $router->group(
-                            ['prefix' => 'two-fa'],
+                            ['prefix' => 'two-fa', 'middleware' => [Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]],
                             function ($router) {
                                 $router->get('check', 'TwoFaController@checkTwoFactor');
                                 $router->post('validate', 'TwoFaController@validateSession');

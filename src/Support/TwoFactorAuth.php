@@ -22,7 +22,7 @@ class TwoFactorAuth
      *
      * @param array $twoFaSettings an array containing Two-Factor Authentication settings
      *
-     * @return \Fleetbase\Models\Setting|null the saved Two-Factor Authentication settings, or null on failure
+     * @return Setting|null the saved Two-Factor Authentication settings, or null on failure
      *
      * @throws \Exception if invalid Two-Factor Authentication settings data is provided
      */
@@ -38,7 +38,7 @@ class TwoFactorAuth
     /**
      * Get system wide Two-Factor Authentication settings.
      *
-     * @return \Fleetbase\Models\Setting|null the Two-Factor Authentication settings, or null if not found
+     * @return Setting|null the Two-Factor Authentication settings, or null if not found
      */
     public static function getTwoFaConfiguration(): ?Setting
     {
@@ -596,7 +596,7 @@ class TwoFactorAuth
      *
      * @param string $identity the user identity (email or phone)
      *
-     * @return \Fleetbase\Models\User|null the user, or null if not found
+     * @return User|null the user, or null if not found
      */
     private static function getUserFromIdentity(string $identity): ?User
     {
@@ -608,9 +608,9 @@ class TwoFactorAuth
     /**
      * Get a user based on the provided verification code.
      *
-     * @param \Fleetbase\Models\VerificationCode|null $verificationCode the verification code
+     * @param VerificationCode|null $verificationCode the verification code
      *
-     * @return \Fleetbase\Models\User|null the user, or null if not found
+     * @return User|null the user, or null if not found
      */
     private static function getUserFromVerificationCode(?VerificationCode $verificationCode = null): ?User
     {
@@ -645,7 +645,7 @@ class TwoFactorAuth
      *
      * @param string $clientToken the client session token
      *
-     * @return \Fleetbase\Models\VerificationCode|null the verification code, or null if not found
+     * @return VerificationCode|null the verification code, or null if not found
      */
     private static function getVerificationCodeFromClientToken(string $clientToken): ?VerificationCode
     {
