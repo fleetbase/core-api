@@ -116,7 +116,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                             }
                         );
                         $router->group(
-                            ['prefix' => 'companies'],
+                            ['prefix' => 'companies', 'middleware' => [Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]],
                             function ($router) {
                                 $router->get('find/{id}', 'CompanyController@findCompany');
                             }
@@ -151,10 +151,10 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 $router->fleetbaseRoutes(
                                     'metrics',
                                     function ($router, $controller) {
-                                        $router->get('iam', $controller('iam'));
-                                        $router->get('iam-dashboard', $controller('iamDashboard'));
+                                        $router->get('iam', $controller('iam'))->middleware([Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]);
+                                        $router->get('iam-dashboard', $controller('iamDashboard'))->middleware([Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]);
                                     }
-                                );
+                                )->middleware([Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]);
                                 $router->fleetbaseRoutes(
                                     'settings',
                                     function ($router, $controller) {
@@ -179,22 +179,22 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                         $router->post('notification-channels-config', $controller('saveNotificationChannelsConfig'));
                                         $router->post('test-notification-channels-config', $controller('testNotificationChannelsConfig'));
                                     }
-                                );
+                                )->middleware([Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]);
                                 $router->fleetbaseRoutes(
                                     'schedule-monitor',
                                     function ($router, $controller) {
-                                        $router->get('tasks', $controller('tasks'));
-                                        $router->get('{id}/logs', $controller('logs'));
+                                        $router->get('tasks', $controller('tasks'))->middleware([Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]);
+                                        $router->get('{id}/logs', $controller('logs'))->middleware([Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]);
                                     }
-                                );
+                                )->middleware([Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]);
                                 $router->fleetbaseRoutes(
                                     'two-fa',
                                     function ($router, $controller) {
                                         $router->post('config', $controller('saveSystemConfig'));
-                                        $router->get('config', $controller('getSystemConfig'));
-                                        $router->get('enforce', $controller('shouldEnforce'));
+                                        $router->get('config', $controller('getSystemConfig'))->middleware([Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]);
+                                        $router->get('enforce', $controller('shouldEnforce'))->middleware([Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]);
                                     }
-                                );
+                                )->middleware([Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]);
                                 $router->fleetbaseRoutes('api-events');
                                 $router->fleetbaseRoutes('api-request-logs');
                                 $router->fleetbaseRoutes(
@@ -206,15 +206,15 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 );
                                 $router->fleetbaseRoutes('webhook-request-logs');
                                 $router->fleetbaseRoutes('companies', function ($router, $controller) {
-                                    $router->get('two-fa', $controller('getTwoFactorSettings'));
+                                    $router->get('two-fa', $controller('getTwoFactorSettings'))->middleware([Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]);
                                     $router->post('two-fa', $controller('saveTwoFactorSettings'));
-                                    $router->get('{id}/users', $controller('users'));
-                                });
+                                    $router->get('{id}/users', $controller('users'))->middleware([Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]);
+                                })->middleware([Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]);
                                 $router->fleetbaseRoutes(
                                     'users',
                                     function ($router, $controller) {
-                                        $router->get('me', $controller('current'));
-                                        $router->get('export', $controller('export'));
+                                        $router->get('me', $controller('current'))->middleware([Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]);
+                                        $router->get('export', $controller('export'))->middleware([Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]);
                                         $router->patch('deactivate/{id}', $controller('deactivate'));
                                         $router->patch('activate/{id}', $controller('activate'));
                                         $router->delete('remove-from-company/{id}', $controller('removeFromCompany'));
@@ -224,11 +224,11 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                         $router->post('validate-password', $controller('validatePassword'));
                                         $router->post('change-password', $controller('changeUserPassword'));
                                         $router->post('two-fa', $controller('saveTwoFactorSettings'));
-                                        $router->get('two-fa', $controller('getTwoFactorSettings'));
+                                        $router->get('two-fa', $controller('getTwoFactorSettings'))->middleware([Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]);
                                         $router->post('locale', $controller('setUserLocale'));
-                                        $router->get('locale', $controller('getUserLocale'));
+                                        $router->get('locale', $controller('getUserLocale'))->middleware([Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]);
                                     }
-                                );
+                                )->middleware([Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]);
                                 $router->fleetbaseRoutes('user-devices');
                                 $router->fleetbaseRoutes('groups');
                                 $router->fleetbaseRoutes('roles');
@@ -252,7 +252,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     function ($router, $controller) {
                                         $router->post('upload', $controller('upload'));
                                         $router->post('uploadBase64', $controller('upload-base64'));
-                                        $router->get('download/{id}', $controller('download'));
+                                        $router->get('download/{id}', $controller('download'))->middleware([Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]);
                                     }
                                 );
                                 $router->fleetbaseRoutes('transactions');
