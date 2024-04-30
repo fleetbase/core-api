@@ -100,7 +100,7 @@ class Route implements Expansion
             $register = function ($router) use ($name, $registerFn, $make, $controller, $options) {
                 if (is_callable($registerFn)) {
                     $router->group(
-                        ['prefix' => $name, ...$options],
+                        ['prefix' => $name],
                         function ($router) use ($registerFn, $make, $controller) {
                             $registerFn($router, $make, $controller);
                         }
