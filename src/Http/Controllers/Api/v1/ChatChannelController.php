@@ -18,7 +18,6 @@ use Fleetbase\Models\File;
 use Fleetbase\Models\User;
 use Illuminate\Http\Request;
 
-
 class ChatChannelController extends Controller
 {
     /**
