@@ -7,6 +7,7 @@ use Fleetbase\Notifications\UserCreated;
 use Fleetbase\Notifications\UserInvited;
 use Fleetbase\Support\NotificationRegistry;
 use Fleetbase\Support\Utils;
+use Fleetbase\Traits\ClearsHttpCache;
 use Fleetbase\Traits\Expandable;
 use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\HasApiModelBehavior;
@@ -50,6 +51,7 @@ class User extends Authenticatable
     use SoftDeletes;
     use Expandable;
     use Filterable;
+    use ClearsHttpCache;
 
     /**
      * The database connection to use.
@@ -641,7 +643,11 @@ class User extends Authenticatable
             $types[] = 'customer';
         }
 
-        return collect($types)->unique()->values()->toArray();
+        return collect($types)->filter(
+            function ($value) {
+                return !empty($value) && is_string($value);
+            }
+        )->unique()->values()->toArray();
     }
 
     /**

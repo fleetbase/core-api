@@ -97,7 +97,7 @@ class UserController extends FleetbaseController
 
         return response()->json(
             [
-                'user' => $user,
+                'user' => new $this->resource($user),
             ]
         );
     }
@@ -193,7 +193,7 @@ class UserController extends FleetbaseController
         // notify user
         $user->notify(new UserInvited($invitation));
 
-        return response()->json(['user' => $user]);
+        return response()->json(['user' => new $this->resource($user)]);
     }
 
     /**

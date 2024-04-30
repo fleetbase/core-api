@@ -66,7 +66,11 @@ class Route implements Expansion
 
     public function fleetbaseRoutes()
     {
-        return function (string $name, ?callable $registerFn = null, $options = [], $controller = null) {
+        return function (string $name, callable|array|null $registerFn = null, $options = [], $controller = null) {
+            if (is_array($registerFn) && !empty($registerFn) && empty($options)) {
+                $options = $registerFn;
+            }
+
             if (is_callable($controller) && $registerFn === null) {
                 $registerFn = $controller;
                 $controller = null;
@@ -93,7 +97,7 @@ class Route implements Expansion
                 return $controller . '@' . $routeName;
             };
 
-            $register = function ($router) use ($name, $registerFn, $make, $controller) {
+            $register = function ($router) use ($name, $registerFn, $make, $controller, $options) {
                 if (is_callable($registerFn)) {
                     $router->group(
                         ['prefix' => $name],
@@ -103,7 +107,7 @@ class Route implements Expansion
                     );
                 }
 
-                $router->fleetbaseRestRoutes($name, $controller);
+                $router->fleetbaseRestRoutes($name, $controller, $options);
             };
 
             /*
