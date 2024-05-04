@@ -18,7 +18,9 @@ class User extends FleetbaseResource
         return [
             'id'                                            => $this->when(Http::isInternalRequest(), $this->id, $this->public_id),
             'uuid'                                          => $this->when(Http::isInternalRequest(), $this->uuid),
+            'company_uuid'                                  => $this->when(Http::isInternalRequest(), $this->company_uuid),
             'public_id'                                     => $this->when(Http::isInternalRequest(), $this->public_id),
+            'company'                                       => $this->when(Http::isPublicRequest(), $this->company->public_id),
             'name'                                          => $this->name,
             'username'                                      => $this->username,
             'email'                                         => $this->email,

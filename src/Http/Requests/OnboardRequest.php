@@ -14,7 +14,7 @@ class OnboardRequest extends FleetbaseRequest
      *
      * @return array
      */
-    protected $excludedWords = ['test', 'example', 'trial', 'asdf', '1234', 'asdas'];
+    protected $excludedWords = ['test', 'testing', 'example', 'trial', 'trialing', 'asdf', '1234', 'asdas', 'dsdsds'];
 
     /**
      * Determine if the user is authorized to make this request.
