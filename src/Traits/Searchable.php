@@ -16,7 +16,7 @@ trait Searchable
      *
      * @return \Illuminate\Database\Query\Builder
      */
-    public function scopeSearch($query, $search)
+    public function scopeSearch($query, $search, ?callable $additionalQuery = null)
     {
         if (method_exists($this, 'search')) {
             return $this->search($search);
@@ -61,7 +61,7 @@ trait Searchable
             });
 
         // query on searchable columns
-        return $query->where(function ($q) use ($searchColumns, $relations, $search) {
+        return $query->where(function ($q) use ($searchColumns, $relations, $search, $additionalQuery) {
             // search on searchable columns
             foreach ($searchColumns as $column) {
                 // handle json columns
@@ -82,12 +82,19 @@ trait Searchable
                 $q->orWhere(DB::raw("lower($column)"), 'like', '%' . str_replace('.', '%', str_replace(',', '%', $search)) . '%');
             }
 
+            // do additional query if any
+            if (is_callable($additionalQuery)) {
+                $additionalQuery($q, $search);
+            }
+
             // now do relations
             foreach ($relations as $relationPath => $searchableRelationColumns) {
                 $q->orWhereHas($relationPath, function ($relationQuery) use ($searchableRelationColumns, $search) {
-                    foreach ($searchableRelationColumns as $column) {
-                        $relationQuery->orWhere(DB::raw("lower($column)"), 'like', '%' . str_replace('.', '%', str_replace(',', '%', $search)) . '%');
-                    }
+                    $relationQuery->where(function ($relationSubQuery) use ($searchableRelationColumns, $search) {
+                        foreach ($searchableRelationColumns as $column) {
+                            $relationSubQuery->orWhere(DB::raw("lower($column)"), 'like', '%' . str_replace('.', '%', str_replace(',', '%', $search)) . '%');
+                        }
+                    });
                 });
             }
         });

@@ -74,7 +74,16 @@ class VerificationCode extends Model
         return $this->morphTo(__FUNCTION__, 'subject_type', 'subject_uuid');
     }
 
-    /** static method to generate for a subject on the fly */
+    /**
+     * Generates a verification code object for the specified subject and context.
+     * This method can optionally save the generated verification code to the database.
+     *
+     * @param mixed  $subject The subject for which the verification code is generated. Could be a User model or similar.
+     * @param string $for     The context or purpose for generating the verification code. Default is 'general_verification'.
+     * @param bool   $save    Determines whether to persist the generated verification code to the database. Default is true.
+     *
+     * @return static returns an instance of the verification code with optional subject and purpose set
+     */
     public static function generateFor($subject = null, $for = 'general_verification', $save = true)
     {
         $verifyCode      = new static();
@@ -91,7 +100,19 @@ class VerificationCode extends Model
         return $verifyCode;
     }
 
-    /** static method to generate code for email verification */
+    /**
+     * Generates and sends an email verification code for a specified subject. This method configures and sends an email
+     * containing the verification code.
+     *
+     * @param mixed  $subject the subject (typically a User model) to whom the verification email will be sent
+     * @param string $for     Context or purpose of the verification. Default is 'email_verification'.
+     * @param array  $options Options to customize the verification process. Can include 'expireAfter' to set a custom expiration,
+     *                        'meta' for additional metadata, 'subject' for the email subject, and 'content' for the email content.
+     *
+     * @return static returns the verification code instance after persisting it to the database and sending the email
+     *
+     * @throws \Exception throws an exception if the email cannot be sent
+     */
     public static function generateEmailVerificationFor($subject, $for = 'email_verification', array $options = [])
     {
         $expireAfter                  = data_get($options, 'expireAfter');
@@ -130,7 +151,19 @@ class VerificationCode extends Model
         return $verificationCode;
     }
 
-    /** static method to generate code for phone verification */
+    /**
+     * Generates and sends an SMS verification code for a specified subject. This method handles the creation and dispatch
+     * of an SMS containing the verification code.
+     *
+     * @param mixed  $subject the subject (typically a User model) to whom the SMS will be sent
+     * @param string $for     Context or purpose of the verification. Default is 'phone_verification'.
+     * @param array  $options Options to customize the verification process. Can include 'expireAfter' to set a custom expiration,
+     *                        'meta' for additional metadata, and 'messageCallback' to customize the SMS message content.
+     *
+     * @return static returns the verification code instance after persisting it to the database and sending the SMS
+     *
+     * @throws \Exception throws an exception if the SMS cannot be sent
+     */
     public static function generateSmsVerificationFor($subject, $for = 'phone_verification', array $options = [])
     {
         $expireAfter                  = data_get($options, 'expireAfter');

@@ -144,10 +144,7 @@ class AuthController extends Controller
 
         // Generate hto
         $verifyCode    = mt_rand(100000, 999999);
-        $verifyCodeKey = Str::slug($queryPhone . '_verify_code', '_');
-
-        // Store verify code for this number
-        Redis::set($verifyCodeKey, $verifyCode);
+        $verifyCodeKey =  Str::slug($queryPhone . '_verify_code', '_');
 
         // Send user their verification code
         try {
@@ -155,6 +152,9 @@ class AuthController extends Controller
         } catch (\Exception|\Twilio\Exceptions\RestException $e) {
             return response()->json(['error' => $e->getMessage()], 400);
         }
+
+        // Store verify code for this number
+        Redis::set($verifyCodeKey, $verifyCode);
 
         // 200 OK
         return response()->json(['status' => 'OK']);
@@ -180,7 +180,7 @@ class AuthController extends Controller
 
         // Users verfiy code entered
         $verifyCode    = $request->input('code');
-        $verifyCodeKey = Str::slug($queryPhone . '_verify_code', '_');
+        $verifyCodeKey =  Str::slug($queryPhone . '_verify_code', '_');
 
         // Generate hto
         $storedVerifyCode = Redis::get($verifyCodeKey);
@@ -237,10 +237,6 @@ class AuthController extends Controller
         $token                    = Str::random(40);
         $verificationSessionToken = base64_encode($email . '|' . $token);
 
-        // Store in redis
-        $expirationTime = Carbon::now()->addMinutes(5)->timestamp;
-        Redis::set($token, $verificationSessionToken, 'EX', $expirationTime);
-
         // If opted to send verification token along with session
         if ($send) {
             // Get user
@@ -250,12 +246,18 @@ class AuthController extends Controller
                 // create verification code
                 VerificationCode::generateEmailVerificationFor($user);
             } else {
+                Redis::del($token);
+
                 return response()->error('No user found with provided email address.');
             }
         }
 
+        // Store in redis
+        Redis::set($token, $verificationSessionToken, 'EX', now()->addMinutes(10)->timestamp);
+
         return response()->json([
-            'token' => $token,
+            'token'   => $token,
+            'session' => base64_encode($user->uuid),
         ]);
     }
 
@@ -271,7 +273,8 @@ class AuthController extends Controller
         $email                    = $request->input('email');
         $token                    = $request->input('token');
         $verificationSessionToken = base64_encode($email . '|' . $token);
-        $isValid                  = Redis::get($token) === $verificationSessionToken;
+        $sessionToken             = Redis::get($token);
+        $isValid                  = $sessionToken === $verificationSessionToken;
 
         return response()->json([
             'valid' => $isValid,
@@ -290,7 +293,8 @@ class AuthController extends Controller
         $email                    = $request->input('email');
         $token                    = $request->input('token');
         $verificationSessionToken = base64_encode($email . '|' . $token);
-        $isValid                  = Redis::get($token) === $verificationSessionToken;
+        $sessionToken             = Redis::get($token);
+        $isValid                  = $sessionToken === $verificationSessionToken;
 
         // Check in session
         if (!$isValid) {
@@ -326,7 +330,8 @@ class AuthController extends Controller
         $email                    = $request->input('email');
         $code                     = $request->input('code');
         $verificationSessionToken = base64_encode($email . '|' . $token);
-        $isValid                  = Redis::get($token) === $verificationSessionToken;
+        $sessionToken             = Redis::get($token);
+        $isValid                  = $sessionToken === $verificationSessionToken;
 
         // Check in session
         if (!$isValid) {
@@ -412,7 +417,7 @@ class AuthController extends Controller
 
         // Users verfiy code entered
         $verifyCode    = $request->input('code');
-        $verifyCodeKey = Str::slug($phone . '_verify_code', '_');
+        $verifyCodeKey =  Str::slug($phone . '_verify_code', '_');
 
         // Generate hto
         $storedVerifyCode = Redis::get($verifyCodeKey);
