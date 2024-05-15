@@ -17,4 +17,9 @@ Welcome to {{ $appName }}, use the code below to verify your email address and c
 Your verification code: `{{ $code }}`
 <br>
 @endif
+
+@component('mail::button', ['url' => \Fleetbase\Support\Utils::consoleUrl('onboard/verify-email', ['hello' => base64_encode($user->uuid), 'code' => $code ])])
+    Verify Email
+@endcomponent
+
 </x-mail-layout>
