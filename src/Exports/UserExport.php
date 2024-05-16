@@ -55,12 +55,10 @@ class UserExport implements FromCollection, WithHeadings, WithMapping, WithColum
      */
     public function collection()
     {
-        if ($this->selections) {
-            return User::where("company_uuid", session("company"))
-                ->whereIn("uuid", $this->selections)
-                ->get();
+        if (!empty($this->selections)) {
+            return User::where('company_uuid', session('company'))->whereIn('uuid', $this->selections)->get();
         }
 
-        return User::where("company_uuid", session("company"))->get();
+        return User::where('company_uuid', session('company'))->get();
     }
 }
