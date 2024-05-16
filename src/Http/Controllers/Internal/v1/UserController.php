@@ -432,7 +432,7 @@ class UserController extends FleetbaseController
      *
      * @return \Illuminate\Http\Response
      */
-    public static function export(ExportRequest $request)
+    public function export(ExportRequest $request)
     {
         $format   = $request->input('format', 'xlsx');
         $selections   = $request->array('selections');

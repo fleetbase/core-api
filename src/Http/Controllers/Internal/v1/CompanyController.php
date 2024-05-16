@@ -4,13 +4,15 @@ namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Http\Resources\Organization;
+use Fleetbase\Exports\CompanyExport;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\Invite;
-use Fleetbase\Models\User;
+use Maatwebsite\Excel\Facades\Excel;
 use Fleetbase\Support\Auth;
 use Fleetbase\Support\TwoFactorAuth;
 use Illuminate\Http\Request;
+use Fleetbase\Http\Requests\ExportRequest;
 use Illuminate\Support\Str;
 
 class CompanyController extends FleetbaseController
@@ -150,5 +152,19 @@ class CompanyController extends FleetbaseController
         });
 
         return response()->json(['users' => $users]);
+    }
+
+        /**
+     * Export the users to excel or csv.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function export(ExportRequest $request)
+    {
+        $format   = $request->input('format', 'xlsx');
+        $selections   = $request->array('selections');
+        $fileName = trim(Str::slug('company-' . date('Y-m-d-H:i')) . '.' . $format);
+
+        return Excel::download(new CompanyExport($selections), $fileName);
     }
 }
