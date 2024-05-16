@@ -164,7 +164,6 @@ class CompanyController extends FleetbaseController
         $format   = $request->input('format', 'xlsx');
         $selections   = $request->array('selections');
         $fileName = trim(Str::slug('company-' . date('Y-m-d-H:i')) . '.' . $format);
-
         return Excel::download(new CompanyExport($selections), $fileName);
     }
 }

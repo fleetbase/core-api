@@ -19,15 +19,15 @@ class CompanyExport implements FromCollection, WithHeadings, WithMapping, WithCo
         $this->selections = $selections;
     }
 
-    public function map($user): array
+    public function map($company): array
     {
         return [
-            $user->name,
-            $user->owner,
-            $user->email,
-            $user->phone,
-            $user->user,
-            Date::dateTimeToExcel($user->created_at),
+            $company->name,
+            data_get($company, 'owner.name'), 
+            data_get($company, 'owner.email'),
+            data_get($company, 'owner.phone'),
+            data_get($company, 'owner.user'),
+            $company->created_at ? Date::dateTimeToExcel($company->created_at) : 'N/A',
         ];
     }
 
@@ -57,14 +57,12 @@ class CompanyExport implements FromCollection, WithHeadings, WithMapping, WithCo
      */
     public function collection()
     {
-        info("Selections:", [$this->selections]);
-        info("Session company:", [session("company")]);
-
         if ($this->selections) {
-            return Company::where("uuid", $this->selections)
+           
+            return Company::where("owner_uuid", session("user"))->whereIn("uuid", $this->selections)
                 ->get();
         }
 
-        return Company::where("company_uuid", session("company"))->get();
+        return Company::where("owner_uuid", session("user"))->get();
     }
 }
