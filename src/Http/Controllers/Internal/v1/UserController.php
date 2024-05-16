@@ -435,9 +435,10 @@ class UserController extends FleetbaseController
     public static function export(ExportRequest $request)
     {
         $format   = $request->input('format', 'xlsx');
+        $selections   = $request->array('selections');
         $fileName = trim(Str::slug('users-' . date('Y-m-d-H:i')) . '.' . $format);
 
-        return Excel::download(new UserExport(), $fileName);
+        return Excel::download(new UserExport($selections), $fileName);
     }
 
     /**

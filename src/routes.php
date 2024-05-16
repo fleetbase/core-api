@@ -214,7 +214,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     'users',
                                     function ($router, $controller) {
                                         $router->get('me', $controller('current'))->middleware([Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]);
-                                        $router->get('export', $controller('export'))->middleware([Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]);
+                                        $router->match(['get', 'post'], 'export', $controller('export'))->middleware([Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]);
                                         $router->patch('deactivate/{id}', $controller('deactivate'));
                                         $router->patch('activate/{id}', $controller('activate'));
                                         $router->delete('remove-from-company/{id}', $controller('removeFromCompany'));

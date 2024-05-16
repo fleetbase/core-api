@@ -12,6 +12,13 @@ use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 
 class UserExport implements FromCollection, WithHeadings, WithMapping, WithColumnFormatting
 {
+    protected array $selections = [];
+
+    public function __construct(array $selections = [])
+    {
+        $this->selections = $selections;
+    }
+
     public function map($user): array
     {
         return [
@@ -48,6 +55,12 @@ class UserExport implements FromCollection, WithHeadings, WithMapping, WithColum
      */
     public function collection()
     {
-        return User::where('company_uuid', session('company'))->get();
+        if ($this->selections) {
+            return User::where("company_uuid", session("company"))
+                ->whereIn("uuid", $this->selections)
+                ->get();
+        }
+
+        return User::where("company_uuid", session("company"))->get();
     }
 }
