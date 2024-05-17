@@ -208,13 +208,14 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 $router->fleetbaseRoutes('companies', function ($router, $controller) {
                                     $router->get('two-fa', $controller('getTwoFactorSettings'))->middleware([Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]);
                                     $router->post('two-fa', $controller('saveTwoFactorSettings'));
+                                    $router->match(['get', 'post'], 'export', $controller('export'))->middleware([Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]);
                                     $router->get('{id}/users', $controller('users'))->middleware([Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]);
                                 })->middleware([Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]);
                                 $router->fleetbaseRoutes(
                                     'users',
                                     function ($router, $controller) {
                                         $router->get('me', $controller('current'))->middleware([Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]);
-                                        $router->get('export', $controller('export'))->middleware([Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]);
+                                        $router->match(['get', 'post'], 'export', $controller('export'))->middleware([Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]);
                                         $router->patch('deactivate/{id}', $controller('deactivate'));
                                         $router->patch('activate/{id}', $controller('activate'));
                                         $router->delete('remove-from-company/{id}', $controller('removeFromCompany'));

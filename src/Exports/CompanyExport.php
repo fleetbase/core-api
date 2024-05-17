@@ -2,7 +2,7 @@
 
 namespace Fleetbase\Exports;
 
-use Fleetbase\Models\User;
+use Fleetbase\Models\Company;
 use Maatwebsite\Excel\Concerns\FromCollection;
 use Maatwebsite\Excel\Concerns\WithColumnFormatting;
 use Maatwebsite\Excel\Concerns\WithHeadings;
@@ -10,7 +10,7 @@ use Maatwebsite\Excel\Concerns\WithMapping;
 use PhpOffice\PhpSpreadsheet\Shared\Date;
 use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 
-class UserExport implements FromCollection, WithHeadings, WithMapping, WithColumnFormatting
+class CompanyExport implements FromCollection, WithHeadings, WithMapping, WithColumnFormatting
 {
     protected array $selections = [];
 
@@ -19,14 +19,15 @@ class UserExport implements FromCollection, WithHeadings, WithMapping, WithColum
         $this->selections = $selections;
     }
 
-    public function map($user): array
+    public function map($company): array
     {
         return [
-            $user->name,
-            $user->company_name,
-            $user->last_login,
-            $user->email_verified_at ? Date::dateTimeToExcel($user->email_verified_at) : 'Never',
-            Date::dateTimeToExcel($user->created_at),
+            $company->name,
+            data_get($company, 'owner.name'), 
+            data_get($company, 'owner.email'),
+            data_get($company, 'owner.phone'),
+            data_get($company, 'owner.user'),
+            $company->created_at ? Date::dateTimeToExcel($company->created_at) : 'N/A',
         ];
     }
 
@@ -34,9 +35,10 @@ class UserExport implements FromCollection, WithHeadings, WithMapping, WithColum
     {
         return [
             'Name',
-            'Company',
-            'Last Login',
-            'Email Verified At',
+            'Owner',
+            'Email',
+            'Phone',
+            'User',
             'Created',
         ];
     }
@@ -55,10 +57,12 @@ class UserExport implements FromCollection, WithHeadings, WithMapping, WithColum
      */
     public function collection()
     {
-        if (!empty($this->selections)) {
-            return User::where('company_uuid', session('company'))->whereIn('uuid', $this->selections)->get();
+        if ($this->selections) {
+           
+            return Company::where("owner_uuid", session("user"))->whereIn("uuid", $this->selections)
+                ->get();
         }
 
-        return User::where('company_uuid', session('company'))->get();
+        return Company::where("owner_uuid", session("user"))->get();
     }
 }
