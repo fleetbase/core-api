@@ -23,7 +23,7 @@ class CompanyExport implements FromCollection, WithHeadings, WithMapping, WithCo
     {
         return [
             $company->name,
-            data_get($company, 'owner.name'), 
+            data_get($company, 'owner.name'),
             data_get($company, 'owner.email'),
             data_get($company, 'owner.phone'),
             data_get($company, 'owner.user'),
@@ -58,11 +58,9 @@ class CompanyExport implements FromCollection, WithHeadings, WithMapping, WithCo
     public function collection()
     {
         if ($this->selections) {
-           
-            return Company::where("owner_uuid", session("user"))->whereIn("uuid", $this->selections)
-                ->get();
+            return Company::where('owner_uuid', session('user'))->whereIn('uuid', $this->selections)->get();
         }
 
-        return Company::where("owner_uuid", session("user"))->get();
+        return Company::where('owner_uuid', session('user'))->get();
     }
 }
