@@ -36,6 +36,7 @@ class User extends FleetbaseResource
             'is_admin'                                      => $this->when(Http::isInternalRequest(), $this->is_admin),
             'is_online'                                     => $this->is_online,
             'last_seen_at'                                  => $this->last_seen_at,
+            'last_login'                                    => $this->last_login,
             'updated_at'                                    => $this->updated_at,
             'created_at'                                    => $this->created_at,
         ];

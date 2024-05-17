@@ -4,13 +4,13 @@ namespace Fleetbase\Exports;
 
 use Fleetbase\Models\Company;
 use Maatwebsite\Excel\Concerns\FromCollection;
+use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithColumnFormatting;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithMapping;
-use PhpOffice\PhpSpreadsheet\Shared\Date;
 use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 
-class CompanyExport implements FromCollection, WithHeadings, WithMapping, WithColumnFormatting
+class CompanyExport implements FromCollection, WithHeadings, WithMapping, WithColumnFormatting, ShouldAutoSize
 {
     protected array $selections = [];
 
@@ -26,8 +26,8 @@ class CompanyExport implements FromCollection, WithHeadings, WithMapping, WithCo
             data_get($company, 'owner.name'),
             data_get($company, 'owner.email'),
             data_get($company, 'owner.phone'),
-            data_get($company, 'owner.user'),
-            $company->created_at ? Date::dateTimeToExcel($company->created_at) : 'N/A',
+            $company->companyUsers ? $company->companyUsers->count() : $company->companyUsers()->count(),
+            $company->created_at,
         ];
     }
 
@@ -38,7 +38,7 @@ class CompanyExport implements FromCollection, WithHeadings, WithMapping, WithCo
             'Owner',
             'Email',
             'Phone',
-            'User',
+            'Users Count',
             'Created',
         ];
     }
@@ -46,9 +46,8 @@ class CompanyExport implements FromCollection, WithHeadings, WithMapping, WithCo
     public function columnFormats(): array
     {
         return [
-            'E' => NumberFormat::FORMAT_DATE_DDMMYYYY,
+            'D' => '+#',
             'F' => NumberFormat::FORMAT_DATE_DDMMYYYY,
-            'G' => NumberFormat::FORMAT_DATE_DDMMYYYY,
         ];
     }
 
@@ -58,9 +57,9 @@ class CompanyExport implements FromCollection, WithHeadings, WithMapping, WithCo
     public function collection()
     {
         if ($this->selections) {
-            return Company::where('owner_uuid', session('user'))->whereIn('uuid', $this->selections)->get();
+            return Company::whereIn('uuid', $this->selections)->with(['companyUsers'])->get();
         }
 
-        return Company::where('owner_uuid', session('user'))->get();
+        return Company::with(['companyUsers'])->get();
     }
 }

@@ -4,22 +4,26 @@ namespace Fleetbase\Exports;
 
 use Fleetbase\Models\Group;
 use Maatwebsite\Excel\Concerns\FromCollection;
+use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithColumnFormatting;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithMapping;
-use PhpOffice\PhpSpreadsheet\Shared\Date;
 use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 
-class GroupExport implements FromCollection, WithHeadings, WithMapping, WithColumnFormatting
+class GroupExport implements FromCollection, WithHeadings, WithMapping, WithColumnFormatting, ShouldAutoSize
 {
+    protected array $selections = [];
+
+    public function __construct(array $selections = [])
+    {
+        $this->selections = $selections;
+    }
+
     public function map($group): array
     {
         return [
             $group->name,
-            $group->company_name,
-            $group->last_login,
-            $group->email_verified_at ? Date::dateTimeToExcel($group->email_verified_at) : 'Never',
-            Date::dateTimeToExcel($group->created_at),
+            $group->created_at,
         ];
     }
 
@@ -27,19 +31,14 @@ class GroupExport implements FromCollection, WithHeadings, WithMapping, WithColu
     {
         return [
             'Name',
-            'Company',
-            'Last Login',
-            'Email Verified At',
-            'Created',
+            'Date Created',
         ];
     }
 
     public function columnFormats(): array
     {
         return [
-            'E' => NumberFormat::FORMAT_DATE_DDMMYYYY,
-            'F' => NumberFormat::FORMAT_DATE_DDMMYYYY,
-            'G' => NumberFormat::FORMAT_DATE_DDMMYYYY,
+            'B' => NumberFormat::FORMAT_DATE_DDMMYYYY,
         ];
     }
 
@@ -48,6 +47,10 @@ class GroupExport implements FromCollection, WithHeadings, WithMapping, WithColu
      */
     public function collection()
     {
+        if ($this->selections) {
+            return Group::whereIn('uuid', $this->selections)->get();
+        }
+
         return Group::where('company_uuid', session('company'))->get();
     }
 }
