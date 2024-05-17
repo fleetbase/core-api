@@ -2,7 +2,7 @@
 
 namespace Fleetbase\Exports;
 
-use Fleetbase\Models\Group;
+use Fleetbase\Models\Company;
 use Maatwebsite\Excel\Concerns\FromCollection;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithColumnFormatting;
@@ -10,7 +10,7 @@ use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithMapping;
 use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 
-class GroupExport implements FromCollection, WithHeadings, WithMapping, WithColumnFormatting, ShouldAutoSize
+class CompanyExport implements FromCollection, WithHeadings, WithMapping, WithColumnFormatting, ShouldAutoSize
 {
     protected array $selections = [];
 
@@ -19,11 +19,15 @@ class GroupExport implements FromCollection, WithHeadings, WithMapping, WithColu
         $this->selections = $selections;
     }
 
-    public function map($group): array
+    public function map($company): array
     {
         return [
-            $group->name,
-            $group->created_at,
+            $company->name,
+            data_get($company, 'owner.name'),
+            data_get($company, 'owner.email'),
+            data_get($company, 'owner.phone'),
+            $company->companyUsers ? $company->companyUsers->count() : $company->companyUsers()->count(),
+            $company->created_at,
         ];
     }
 
@@ -31,14 +35,19 @@ class GroupExport implements FromCollection, WithHeadings, WithMapping, WithColu
     {
         return [
             'Name',
-            'Date Created',
+            'Owner',
+            'Email',
+            'Phone',
+            'Users Count',
+            'Created',
         ];
     }
 
     public function columnFormats(): array
     {
         return [
-            'B' => NumberFormat::FORMAT_DATE_DDMMYYYY,
+            'D' => '+#',
+            'F' => NumberFormat::FORMAT_DATE_DDMMYYYY,
         ];
     }
 
@@ -48,9 +57,9 @@ class GroupExport implements FromCollection, WithHeadings, WithMapping, WithColu
     public function collection()
     {
         if ($this->selections) {
-            return Group::whereIn('uuid', $this->selections)->get();
+            return Company::whereIn('uuid', $this->selections)->with(['companyUsers'])->get();
         }
 
-        return Group::where('company_uuid', session('company'))->get();
+        return Company::with(['companyUsers'])->get();
     }
 }

@@ -4,14 +4,21 @@ namespace Fleetbase\Exports;
 
 use Fleetbase\Models\ApiCredential;
 use Maatwebsite\Excel\Concerns\FromCollection;
+use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithColumnFormatting;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithMapping;
-use PhpOffice\PhpSpreadsheet\Shared\Date;
 use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 
-class ApiCredentialExport implements FromCollection, WithHeadings, WithMapping, WithColumnFormatting
+class ApiCredentialExport implements FromCollection, WithHeadings, WithMapping, WithColumnFormatting, ShouldAutoSize
 {
+    protected array $selections = [];
+
+    public function __construct(array $selections = [])
+    {
+        $this->selections = $selections;
+    }
+
     public function map($apiCredential): array
     {
         return [
@@ -19,9 +26,9 @@ class ApiCredentialExport implements FromCollection, WithHeadings, WithMapping, 
             $apiCredential->key,
             $apiCredential->secret,
             $apiCredential->test_mode ? 'Test' : 'Live',
-            $apiCredential->expires_at ? Date::dateTimeToExcel($apiCredential->expires_at) : 'Never',
-            $apiCredential->last_used_at ? Date::dateTimeToExcel($apiCredential->last_used_at) : 'Never',
-            Date::dateTimeToExcel($apiCredential->created_at),
+            $apiCredential->expires_at ? $apiCredential->expires_at : 'Never',
+            $apiCredential->last_used_at ? $apiCredential->last_used_at : 'Never',
+            $apiCredential->created_at,
         ];
     }
 
@@ -32,9 +39,9 @@ class ApiCredentialExport implements FromCollection, WithHeadings, WithMapping, 
             'Public Key',
             'Secret Key',
             'Environment',
-            'Expiry',
+            'Expiry Date',
             'Last Used',
-            'Created',
+            'Date Created',
         ];
     }
 
@@ -52,6 +59,10 @@ class ApiCredentialExport implements FromCollection, WithHeadings, WithMapping, 
      */
     public function collection()
     {
+        if ($this->selections) {
+            return ApiCredential::whereIn('uuid', $this->selections)->get();
+        }
+
         return ApiCredential::where('company_uuid', session('company'))->get();
     }
 }
