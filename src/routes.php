@@ -190,7 +190,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 $router->fleetbaseRoutes(
                                     'two-fa',
                                     function ($router, $controller) {
-                                        $router->post('config', $controller('saveSystemConfig'));
+                                        $router->post('config', $controller('saveSystemConfig'))->middleware([Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]);
                                         $router->get('config', $controller('getSystemConfig'))->middleware([Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]);
                                         $router->get('enforce', $controller('shouldEnforce'))->middleware([Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]);
                                     }
