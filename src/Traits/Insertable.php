@@ -32,8 +32,18 @@ trait Insertable
             if (method_exists($model, 'onRowInsert')) {
                 $rows[$i] = static::onRowInsert($rows[$i]);
             }
+
+            // remove invalid keys
+            $keys = array_keys($rows[$i]);
+            foreach ($keys as $key) {
+                if (!$model->isFillable($key) && !in_array($key, ['uuid', 'public_id'])) {
+                    unset($rows[$i][$key]);
+                }
+            }
         }
 
-        return static::insert($rows);
+        $result = static::insert($rows);
+        $model->flushCache();
+        return $result;
     }
 }
