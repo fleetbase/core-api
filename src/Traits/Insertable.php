@@ -43,7 +43,12 @@ trait Insertable
         }
 
         $result = static::insert($rows);
-        $model->flushCache();
+
+        // flush cache
+        if (method_exists($model, 'flushCache')) {
+            $model->flushCache();
+        }
+
         return $result;
     }
 }

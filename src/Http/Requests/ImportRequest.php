@@ -22,7 +22,7 @@ class ImportRequest extends FleetbaseRequest
     public function rules()
     {
         return [
-            'files' => ['required', 'array']
+            'files' => ['required', 'array'],
         ];
     }
 }
