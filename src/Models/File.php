@@ -4,6 +4,7 @@ namespace Fleetbase\Models;
 
 use Fleetbase\Casts\Json;
 use Fleetbase\Casts\PolymorphicType;
+use Fleetbase\Support\ImportValidator;
 use Fleetbase\Support\Utils;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasPublicId;
@@ -11,6 +12,7 @@ use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\SendsWebhooks;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Mimey\MimeTypes;
@@ -416,5 +418,25 @@ class File extends Model
         }
 
         return static::randomFileName($extension);
+    }
+
+    public static function validImports(array $ids = []): Collection
+    {
+        if (empty($ids)) {
+            $ids = request()->array('files');
+        }
+
+        $files = File::whereIn('uuid', $ids)->get();
+
+        return $files->filter(function ($file) {
+            return !ImportValidator::isValid($file);
+        });
+    }
+
+    public static function importsFromRequest(Request $request): Collection
+    {
+        $ids = $request->array('files');
+
+        return static::validImports($ids);
     }
 }
