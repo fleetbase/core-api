@@ -4,7 +4,6 @@ namespace Fleetbase\Models;
 
 use Fleetbase\Casts\Json;
 use Fleetbase\Casts\PolymorphicType;
-use Fleetbase\Support\ImportValidator;
 use Fleetbase\Support\Utils;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasPublicId;
@@ -420,23 +419,24 @@ class File extends Model
         return static::randomFileName($extension);
     }
 
-    public static function validImports(array $ids = []): Collection
+    /**
+     * Retrieves a collection of files based on UUIDs provided via a request.
+     *
+     * This method extracts an array of UUIDs from the request and retrieves
+     * corresponding file models. It is static, allowing it to be called on the class itself
+     * without needing an instance of the class.
+     *
+     * @param Request $request the HTTP request containing the 'files' array with UUIDs
+     * @param string  $param   the Param which should hold the array of files
+     *
+     * @return Collection a collection of File models that match the provided UUIDs
+     *
+     * @throws \Illuminate\Database\Eloquent\ModelNotFoundException if no model is found
+     */
+    public static function fromRequest(Request $request, string $param = 'files'): Collection
     {
-        if (empty($ids)) {
-            $ids = request()->array('files');
-        }
+        $ids = $request->array($param);
 
-        $files = File::whereIn('uuid', $ids)->get();
-
-        return $files->filter(function ($file) {
-            return !ImportValidator::isValid($file);
-        });
-    }
-
-    public static function importsFromRequest(Request $request): Collection
-    {
-        $ids = $request->array('files');
-
-        return static::validImports($ids);
+        return static::whereIn('uuid', $ids)->get();
     }
 }
