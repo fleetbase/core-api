@@ -45,6 +45,7 @@ class CoreServiceProvider extends ServiceProvider
             \Fleetbase\Http\Middleware\SetupFleetbaseSession::class,
             \Fleetbase\Http\Middleware\TrackPresence::class,
             \Spatie\ResponseCache\Middlewares\CacheResponse::class,
+            \Fleetbase\Http\Middleware\ClearCacheAfterDelete::class,
         ],
         'fleetbase.api' => [
             'throttle:60,1',
@@ -53,6 +54,7 @@ class CoreServiceProvider extends ServiceProvider
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
             \Fleetbase\Http\Middleware\LogApiRequests::class,
             \Spatie\ResponseCache\Middlewares\CacheResponse::class,
+            \Fleetbase\Http\Middleware\ClearCacheAfterDelete::class,
         ],
     ];
 
