@@ -79,7 +79,7 @@ return [
      *
      * You may use a string or an array here.
      */
-    'cache_tag' => '',
+    'cache_tag' => 'fleetbase-responsecache',
 
     /*
      * This class is responsible for generating a hash for a request. This hash

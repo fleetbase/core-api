@@ -1,7 +1,7 @@
 <?php
 
 return [
-    'cache-prefix' => '',
+    'cache-prefix' => 'fleetbase-model-cache',
 
     'enabled' => env('MODEL_CACHE_ENABLED', true),
 

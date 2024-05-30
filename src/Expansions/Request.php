@@ -4,17 +4,20 @@ namespace Fleetbase\Expansions;
 
 use Fleetbase\Build\Expansion;
 use Fleetbase\Models\Company;
+use Fleetbase\Models\File;
 use Illuminate\Support\Str;
 
 /**
+ * Expands the Illuminate\Http\Request class with additional helper methods.
+ *
  * @mixin \Illuminate\Support\Facades\Request
  */
 class Request implements Expansion
 {
     /**
-     * Get the target class to expand.
+     * Specifies the class this expansion targets.
      *
-     * @return string|Class
+     * @return string the name of the class to expand
      */
     public static function target()
     {
@@ -22,9 +25,9 @@ class Request implements Expansion
     }
 
     /**
-     * Extends Request to find the current organization/company.
+     * Retrieves the current company based on the session data.
      *
-     * @return Company|null
+     * @return \Closure returns a closure that resolves to a Company instance or null
      */
     public function company()
     {
@@ -39,21 +42,15 @@ class Request implements Expansion
     }
 
     /**
-     * Iterates request params until a param is found.
+     * Attempts to retrieve the first available parameter from a specified set.
      *
-     * @return Closure
+     * @return \Closure returns a closure that checks for the presence of parameters
+     *                  in a specific order and returns the value of the first parameter found
      */
     public function or()
     {
-        /*
-         * Iterates request params until a param is found.
-         *
-         * @param array $params
-         * @param mixed $default
-         * @return mixed
-         */
         return function (array $params = [], $default = null) {
-            /* @var \Illuminate\Http\Request $this */
+            /** @var \Illuminate\Http\Request $this */
             foreach ($params as $param) {
                 if ($this->has($param)) {
                     return $this->input($param);
@@ -65,18 +62,13 @@ class Request implements Expansion
     }
 
     /**
-     * Retrieve input from the request as a array.
+     * Converts a specified request parameter into an array by splitting it by commas.
      *
-     * @return Closure
+     * @return \Closure returns a closure that splits a string parameter into an array,
+     *                  or directly returns the array parameter
      */
     public function array()
     {
-        /*
-         * Retrieve input from the request as a array.
-         *
-         * @param string $param
-         * @return array
-         */
         return function (string $param) {
             /** @var \Illuminate\Http\Request $this */
             if (is_string($this->input($param)) && Str::contains($this->input($param), ',')) {
@@ -88,52 +80,40 @@ class Request implements Expansion
     }
 
     /**
-     * Check if param is string value.
+     * Checks if a specified parameter is a string.
      *
-     * @return Closure
+     * @return \Closure returns a closure that determines if a parameter is a string
      */
     public function isString()
     {
         return function ($param) {
-            /*
-             * Context.
-             *
-             * @var \Illuminate\Support\Facades\Request $this
-             */
+            /** @var \Illuminate\Http\Request $this */
             return $this->has($param) && is_string($this->input($param));
         };
     }
 
     /**
-     * Check if param is array value.
+     * Checks if a specified parameter is an array.
      *
-     * @return Closure
+     * @return \Closure returns a closure that determines if a parameter is an array
      */
     public function isArray()
     {
         return function ($param) {
-            /*
-             * Context.
-             *
-             * @var \Illuminate\Support\Facades\Request $this
-             */
+            /** @var \Illuminate\Http\Request $this */
             return $this->has($param) && is_array($this->input($param));
         };
     }
 
     /**
-     * Check value exists in request array param.
+     * Checks if a specific value exists within an array parameter.
      *
-     * @return Closure
+     * @return \Closure returns a closure that checks if a value is present in an array parameter
      */
     public function inArray()
     {
         return function ($param, $needle) {
-            /**
-             * Context.
-             *
-             * @var \Illuminate\Support\Facades\Request $this
-             */
+            /** @var \Illuminate\Http\Request $this */
             $haystack = (array) $this->input($param, []);
 
             if (is_array($haystack)) {
@@ -145,55 +125,39 @@ class Request implements Expansion
     }
 
     /**
-     * Retrieve input from the request as a integer.
+     * Retrieves an integer value from a specified request parameter.
      *
-     * @return Closure
+     * @return \Closure returns a closure that fetches an integer from the request
      */
     public function integer()
     {
-        /*
-         * Retrieve input from the request as a integer.
-         *
-         * @param string $key
-         * @return array
-         */
         return function (string $key, $default = 0) {
-            /* @var \Illuminate\Http\Request $this */
+            /** @var \Illuminate\Http\Request $this */
             return intval($this->input($key, $default));
         };
     }
 
     /**
-     * Removes a param from the request.
+     * Removes a specified parameter from the request.
      *
-     * @return Closure
+     * @return \Closure returns a closure that removes a parameter from the request
      */
     public function removeParam()
     {
-        /*
-         * Retrieve input from the request as a integer.
-         *
-         * @param string $key
-         * @return array
-         */
         return function (string $key) {
-            /* @var \Illuminate\Http\Request $this */
+            /** @var \Illuminate\Http\Request $this */
             return $this->request->remove($key);
         };
     }
 
     /**
-     * Retrieves the search query parameter.
+     * Retrieves the search query from the request, with prioritization over multiple possible keys.
      *
-     * @return Closure
+     * @return \Closure returns a closure that fetches a search query parameter, prioritizing
+     *                  specific keys and handling potential casing and encoding issues
      */
     public function searchQuery()
     {
-        /*
-         * Retrieve the search query parameter.
-         *
-         * @return string
-         */
         return function () {
             /** @var \Illuminate\Http\Request $this */
             $searchQueryParam = $this->or(['query', 'searchQuery', 'nestedQuery']);
@@ -207,9 +171,22 @@ class Request implements Expansion
     }
 
     /**
-     * Returns all Fleetbase global filters.
+     * Fetches File models based on UUIDs provided in a specified request parameter.
      *
-     * @return Closure
+     * @return \Closure returns a closure that retrieves a collection of File models from UUIDs specified in the request
+     */
+    public function resolveFilesFromIds()
+    {
+        return function (string $param = 'files') {
+            /** @var \Illuminate\Http\Request $this */
+            return File::fromRequest($this, $param);
+        };
+    }
+
+    /**
+     * Retrieves all request parameters except for those related to Fleetbase's global filters.
+     *
+     * @return \Closure returns a closure that filters out global parameters and retrieves the rest
      */
     public function getFilters()
     {
@@ -244,7 +221,7 @@ class Request implements Expansion
             ];
             $filters = is_array($additionalFilters) ? array_merge($defaultFilters, $additionalFilters) : $defaultFilters;
 
-            /* @var \Illuminate\Http\Request $this */
+            /** @var \Illuminate\Http\Request $this */
             return $this->except($filters);
         };
     }

@@ -172,4 +172,14 @@ class ApiCredential extends Model
             'secret' => $hash,
         ];
     }
+
+    /**
+     * Update the datetime of the last usage.
+     *
+     * @return bool
+     */
+    public function trackLastUsed()
+    {
+        return $this->update(['last_used_at' => now()]);
+    }
 }

@@ -776,6 +776,25 @@ class User extends Authenticatable
     }
 
     /**
+     * Create a new User instance with enriched attributes from the request.
+     *
+     * This static method constructs a new User object using information obtained from
+     * a request object. It enhances the initial user attributes with additional details
+     * such as country, timezone, and IP-related metadata by leveraging the
+     * applyUserInfoFromRequest() method. This method is ideal for initializing a user with
+     * comprehensive details at the point of creation, particularly during registration processes.
+     *
+     * @param \Illuminate\Http\Request $request    the request object containing user's IP address and possibly other details
+     * @param array                    $attributes an optional array of initial attributes that may be provided for the user
+     *
+     * @return User returns the newly created User instance with enriched attributes
+     */
+    public static function newUserWithRequestInfo($request, $attributes = []): User
+    {
+        return new User(static::applyUserInfoFromRequest($request, $attributes));
+    }
+
+    /**
      * Sets user information from the request on the current User model instance.
      *
      * This method fetches user information based on the request data (IP address, timezone)
@@ -804,11 +823,29 @@ class User extends Authenticatable
         return $this;
     }
 
+    /**
+     * Retrieve the last seen timestamp of the user.
+     *
+     * This method acts as an accessor for the 'lastSeenAt' attribute of the User model.
+     * It returns the datetime when the user was last active in the system. This can be
+     * used to display the last seen status or to calculate if the user is offline.
+     *
+     * @return \Carbon\Carbon|null returns the Carbon instance for the last seen timestamp or null if not set
+     */
     public function getLastSeenAtAttribute()
     {
         return $this->lastSeenAt();
     }
 
+    /**
+     * Check if the user is currently online.
+     *
+     * This accessor method for the 'isOnline' attribute determines if the user is considered
+     * online based on certain criteria like their last activity timestamp. It leverages the
+     * isOnline() method, which should contain the logic to ascertain the user's online status.
+     *
+     * @return bool returns true if the user is online, otherwise false
+     */
     public function getIsOnlineAttribute()
     {
         return $this->isOnline();

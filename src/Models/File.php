@@ -11,6 +11,7 @@ use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\SendsWebhooks;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Mimey\MimeTypes;
@@ -416,5 +417,26 @@ class File extends Model
         }
 
         return static::randomFileName($extension);
+    }
+
+    /**
+     * Retrieves a collection of files based on UUIDs provided via a request.
+     *
+     * This method extracts an array of UUIDs from the request and retrieves
+     * corresponding file models. It is static, allowing it to be called on the class itself
+     * without needing an instance of the class.
+     *
+     * @param Request $request the HTTP request containing the 'files' array with UUIDs
+     * @param string  $param   the Param which should hold the array of files
+     *
+     * @return Collection a collection of File models that match the provided UUIDs
+     *
+     * @throws \Illuminate\Database\Eloquent\ModelNotFoundException if no model is found
+     */
+    public static function fromRequest(Request $request, string $param = 'files'): Collection
+    {
+        $ids = $request->array($param);
+
+        return static::whereIn('uuid', $ids)->get();
     }
 }

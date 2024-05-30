@@ -354,6 +354,9 @@ class TwoFactorAuth
         return $twoFaSettings->getBoolean('enabled');
     }
 
+    /**
+     * True if 2FA should be enforced for a user.
+     */
     public static function shouldEnforce(User $user): bool
     {
         $systemEnforced  = static::isSystemEnforced();
@@ -379,6 +382,9 @@ class TwoFactorAuth
         return false;
     }
 
+    /**
+     * True if 2FA is enforced system wide.
+     */
     public static function isSystemEnforced(): bool
     {
         $twoFaSettings = static::getTwoFaConfiguration();
@@ -404,7 +410,7 @@ class TwoFactorAuth
 
         if ($user) {
             $token           = Str::random($tokenLength);
-            $twoFaSessionKey = static::createTwoFaSessionKey($user, $token, true);
+            $twoFaSessionKey = static::createTwoFaSessionKey($user, $token);
 
             return static::encryptSessionKey($twoFaSessionKey, $user->uuid);
         }
@@ -579,13 +585,12 @@ class TwoFactorAuth
      *
      * @return string the Two-Factor Authentication session key
      */
-    private static function createTwoFaSessionKey(User $user, string $token, bool $storeInCache = false, int $expiresAfter = 600): string
+    private static function createTwoFaSessionKey(User $user, string $token, bool $storeInCache = true, int $expiresAfter = 600): string
     {
         $twoFaSessionKey = 'two_fa_session:' . $user->uuid . ':' . $token;
 
         if ($storeInCache) {
-            $expirationTime = Carbon::now()->addSeconds($expiresAfter)->timestamp;
-            Redis::set($twoFaSessionKey, $user->uuid, 'EX', $expirationTime);
+            Redis::set($twoFaSessionKey, $user->uuid, 'EX', now()->addSeconds($expiresAfter)->timestamp);
         }
 
         return $twoFaSessionKey;
