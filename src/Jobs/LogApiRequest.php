@@ -14,6 +14,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
+use Spatie\ResponseCache\Facades\ResponseCache;
 
 class LogApiRequest implements ShouldQueue
 {
@@ -58,6 +59,8 @@ class LogApiRequest implements ShouldQueue
     {
         // Log::info('Logging API Request ' . print_r($this->payload, true));
         ApiRequestLog::on($this->dbConnection)->create($this->payload);
+        // Clear response cache
+        ResponseCache::clear();
     }
 
     /**

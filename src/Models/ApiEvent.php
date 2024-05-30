@@ -5,12 +5,14 @@ namespace Fleetbase\Models;
 use Fleetbase\Casts\Json;
 use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\HasApiModelBehavior;
+use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\Searchable;
 
 class ApiEvent extends Model
 {
     use HasUuid;
+    use HasPublicId;
     use HasApiModelBehavior;
     use Searchable;
     use Filterable;
