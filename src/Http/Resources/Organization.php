@@ -30,7 +30,7 @@ class Organization extends FleetbaseResource
             'backdrop_url'       => $this->backdrop_url,
             'branding'           => Setting::getBranding(),
             'options'            => $this->options,
-            'owner'              => new Author($this->owner),
+            'owner'              => new User($this->owner),
             'slug'               => $this->slug,
             'status'             => $this->status,
             'updated_at'         => $this->updated_at,
