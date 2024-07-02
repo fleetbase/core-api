@@ -44,6 +44,13 @@ class ChatParticipant extends Model
     protected $appends = ['is_online', 'last_seen_at'];
 
     /**
+     * The relationships to always load along with the model.
+     *
+     * @var array
+     */
+    protected $with = ['user'];
+
+    /**
      * The attributes that should be cast to native types.
      *
      * @var array

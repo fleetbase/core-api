@@ -158,15 +158,65 @@ class Auth extends Authentication
     }
 
     /**
-     * Get the session company.
+     * Retrieves a company entity based on session or request parameters.
+     *
+     * This method first attempts to fetch the company information from the session. If it is not available,
+     * it looks for the company identifier either as 'company' or 'company_uuid' in the request parameters.
+     * The function supports dynamic selection of fields specified by the $select parameter, which can be
+     * a string or an array of field names.
+     *
+     * @param string|array $select the fields to select from the company model, defaults to all (*)
+     *
+     * @return Company|null returns the Company object if found, or null if no company is identified
+     *
+     * @throws \Illuminate\Database\Eloquent\ModelNotFoundException throws exception if no model is found
      */
-    public static function getCompany($select = '*'): ?Company
+    public static function getCompany(string|array $select = '*'): ?Company
     {
-        if (!session('company')) {
-            return null;
+        $company = null;
+
+        if (session()->has('company')) {
+            $company = Company::select($select)->where('uuid', session('company'))->first();
         }
 
-        return Company::select($select)->where('uuid', session('company'))->first();
+        if (!$company) {
+            $companyId = request()->or(['company', 'company_uuid']);
+            if ($companyId) {
+                $company = Company::select($select)->where(function ($query) use ($companyId) {
+                    $query->where('uuid', $companyId);
+                    $query->orWhere('public_id', $companyId);
+                })->first();
+            }
+        }
+
+        return $company;
+    }
+
+    /**
+     * Fetches a company entity based on the provided HTTP request.
+     *
+     * This method looks for a company identifier in the request using 'company' or 'company_uuid' keys.
+     * It then retrieves a company from the database where the company's UUID or public ID matches the given identifier.
+     * The method assumes the request object has a method `or` that fetches the values for specified keys.
+     *
+     * @param Request $request the HTTP request object containing potential company identifiers
+     *
+     * @return Company returns the Company object if found based on the identifiers
+     *
+     * @throws \Illuminate\Database\Eloquent\ModelNotFoundException throws exception if no model is found
+     */
+    public static function getCompanyFromRequest(Request $request): Company
+    {
+        $company   = null;
+        $companyId = $request->or(['company', 'company_uuid']);
+        if ($companyId) {
+            $company = Company::where(function ($query) use ($companyId) {
+                $query->where('uuid', $companyId);
+                $query->orWhere('public_id', $companyId);
+            })->first();
+        }
+
+        return $company;
     }
 
     /**
@@ -200,17 +250,17 @@ class Auth extends Authentication
     /**
      * Verifies a password against a hash.
      */
-    public static function checkPassword(string $pw1, string $pw2): bool
+    public static function checkPassword(string $password, string $hashedPassword): bool
     {
-        return Hash::check($pw1, $pw2);
+        return Hash::check($password, $hashedPassword);
     }
 
     /**
      * Checks if password is invalid.
      */
-    public static function isInvalidPassword(string $pw1, string $pw2): bool
+    public static function isInvalidPassword(string $password, string $hashedPassword): bool
     {
-        return !static::checkPassword($pw1, $pw2);
+        return !static::checkPassword($password, $hashedPassword);
     }
 
     /**

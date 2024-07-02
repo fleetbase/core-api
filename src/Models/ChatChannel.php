@@ -128,7 +128,7 @@ class ChatChannel extends Model
      */
     public function participants()
     {
-        return $this->hasMany(ChatParticipant::class, 'chat_channel_uuid', 'uuid');
+        return $this->hasMany(ChatParticipant::class, 'chat_channel_uuid', 'uuid')->whereHas('user');
     }
 
     /**
