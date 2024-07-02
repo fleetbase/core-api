@@ -250,17 +250,17 @@ class Auth extends Authentication
     /**
      * Verifies a password against a hash.
      */
-    public static function checkPassword(string $pw1, string $pw2): bool
+    public static function checkPassword(string $password, string $hashedPassword): bool
     {
-        return Hash::check($pw1, $pw2);
+        return Hash::check($password, $hashedPassword);
     }
 
     /**
      * Checks if password is invalid.
      */
-    public static function isInvalidPassword(string $pw1, string $pw2): bool
+    public static function isInvalidPassword(string $password, string $hashedPassword): bool
     {
-        return !static::checkPassword($pw1, $pw2);
+        return !static::checkPassword($password, $hashedPassword);
     }
 
     /**
