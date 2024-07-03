@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Jobs;
 
+use Fleetbase\Models\ApiCredential;
 use Fleetbase\Models\ApiRequestLog;
 use Fleetbase\Support\Utils;
 use Illuminate\Bus\Queueable;
@@ -44,10 +45,8 @@ class LogApiRequest implements ShouldQueue
      */
     public function __construct(array $payload, string $session)
     {
-        // set the connection to log request
         $this->dbConnection = $session;
-        // build payload
-        $this->payload = $payload;
+        $this->payload      = $payload;
     }
 
     /**
@@ -57,9 +56,7 @@ class LogApiRequest implements ShouldQueue
      */
     public function handle()
     {
-        // Log::info('Logging API Request ' . print_r($this->payload, true));
         ApiRequestLog::on($this->dbConnection)->create($this->payload);
-        // Clear response cache
         ResponseCache::clear();
     }
 
@@ -70,24 +67,34 @@ class LogApiRequest implements ShouldQueue
      */
     public static function getPayload(Request $request, $response): array
     {
+        // Prepare the payload
+        $payload = [];
+
         // get response content
         $content = json_decode($response->content());
 
-        // get request/response relations
+        // Get request/response relations
         $related = [];
 
-        // // if response has a `id` property push to related
+        // If response has a `id` property push to related
         if (Utils::get($content, 'id')) {
             $related[] = Utils::get($content, 'id');
         }
 
-        // get request duration
+        // Validate api credential, if not uuid then it could be internal
+        if (ApiCredential::where('uuid', session('api_credential'))->exists()) {
+            // Need to add a `api_credentail_type` field and morph -- in later versions
+            // As could be `PersonalAccessToken` `ApiCredential` and eventually `NavigatorAppToken`
+            $payload['api_credential_uuid'] = session('api_credential');
+        }
+
+        // Get request duration
         $duration = round(microtime(true) - LARAVEL_START, 13);
 
-        $payload = [
+        // Finalize payload
+        $payload = array_merge($payload, [
             '_key'                => session('api_key'),
             'company_uuid'        => session('company'),
-            'api_credential_uuid' => session('api_credential'),
             'method'              => $request->method(),
             'path'                => $request->path(),
             'full_url'            => $request->url(),
@@ -106,7 +113,7 @@ class LogApiRequest implements ShouldQueue
             'response_headers'    => static::getResponseHeaders($response),
             'response_body'       => $content,
             'response_raw_body'   => $response->content(),
-        ];
+        ]);
 
         return $payload;
     }

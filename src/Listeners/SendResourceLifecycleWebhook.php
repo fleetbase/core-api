@@ -31,7 +31,7 @@ class SendResourceLifecycleWebhook implements ShouldQueue
         $apiCredentialId = session()->get('api_credential', $event->apiCredential);
         $apiKey          = session()->get('api_key', $event->apiKey ?? 'console');
         $apiSecret       = session()->get('api_secret', $event->apiSecret ?? 'internal');
-        $apiEnvironment  = session()->get('api_environment', $event->apiEnvironment);
+        $apiEnvironment  = session()->get('api_environment', $event->apiEnvironment ?? 'live');
         $isSandbox       = session()->get('is_sandbox', $event->isSandbox);
 
         try {
@@ -49,25 +49,17 @@ class SendResourceLifecycleWebhook implements ShouldQueue
             return;
         }
 
-        // if no api environment set used do not send webhooks
-        if (!$apiEnvironment) {
-            return;
-        }
-
         // get all webhooks for current company
         $webhooks = WebhookEndpoint::where([
             'company_uuid' => $companyId,
             'status'       => 'enabled',
             'mode'         => $apiEnvironment,
-        ])->where(function ($q) use ($apiCredentialId) {
-            $q->whereNull('api_credential_uuid');
-            $q->orWhere('api_credential_uuid', $apiCredentialId);
-        })->get();
+        ])->get();
 
         // Send Webhook for event
         foreach ($webhooks as $webhook) {
             // Only Send Webhook if webhook requires this event
-            if (!empty($webhook->events) && is_array($webhook->events) && !in_array($apiEvent->event, $webhook->events)) {
+            if ($webhook->cannotFireEvent($apiEvent->event)) {
                 continue;
             }
 

@@ -108,4 +108,35 @@ class WebhookEndpoint extends Model
 
         return static::attributeFromCache($this, 'apiCredential.key');
     }
+
+    /**
+     * Determines if an event cannot be fired based on the current events array.
+     *
+     * Checks if the 'events' property is an array, it is not empty, and the specified
+     * event is not present in the array. If these conditions are met, the event
+     * cannot be fired.
+     *
+     * @param string $event the name of the event to check
+     *
+     * @return bool returns true if the event cannot be fired, otherwise false
+     */
+    public function cannotFireEvent(string $event): bool
+    {
+        return is_array($this->events) && count($this->events) && !in_array($event, $this->events);
+    }
+
+    /**
+     * Determines if an event can be fired.
+     *
+     * Utilizes the `cannotFireEvent` method to check if the event cannot be fired.
+     * If `cannotFireEvent` returns false, then it implies the event can be fired.
+     *
+     * @param string $event the name of the event to check
+     *
+     * @return bool returns true if the event can be fired, otherwise false
+     */
+    public function canFireEvent(string $event): bool
+    {
+        return !$this->cannotFireEvent($event);
+    }
 }
