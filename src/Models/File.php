@@ -439,4 +439,26 @@ class File extends Model
 
         return static::whereIn('uuid', $ids)->get();
     }
+
+    /**
+     * Retrieves the contents of the file from the specified disk and path.
+     *
+     * This method utilizes the Laravel Storage facade to access the filesystem configured
+     * for the model's specified disk and retrieves the file located at the model's path.
+     * Error handling is included to manage cases where the disk or path might not be set,
+     * or if the file does not exist on the disk.
+     *
+     * @return string|null the file contents as a string if found, or null if the file does not exist
+     *
+     * @throws \InvalidArgumentException                              if the disk or path property is not set
+     * @throws \Illuminate\Contracts\Filesystem\FileNotFoundException if the file does not exist
+     */
+    public function getContents(): ?string
+    {
+        if (!isset($this->disk) || !isset($this->path)) {
+            throw new \InvalidArgumentException('Disk or path is not specified.');
+        }
+
+        return Storage::disk($this->disk)->get($this->path);
+    }
 }
