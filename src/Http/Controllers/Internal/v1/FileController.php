@@ -32,8 +32,6 @@ class FileController extends FleetbaseController
         $type        = $request->input('type');
         $size        = $request->input('file_size', $request->file->getSize());
         $path        = $request->input('path', 'uploads');
-        $subjectId   = $request->input('subject_uuid');
-        $subjectType = $request->input('subject_type');
 
         // Generate a filename
         $fileName = File::randomFileNameFromRequest($request);

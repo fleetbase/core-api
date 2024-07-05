@@ -1,12 +1,12 @@
 {
     "name": "fleetbase/core-api",
-    "version": "1.4.26",
+    "version": "1.4.27",
     "description": "Core Framework and Resources for Fleetbase API",
     "keywords": [
         "fleetbase",
         "logistics platform"
     ],
-    "license": "MIT",
+    "license": "AGPL-3.0-or-later",
     "authors": [
         {
             "name": "Fleetbase Pte Ltd.",
