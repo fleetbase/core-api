@@ -14,6 +14,7 @@ return [
         ]
     ],
     'console' => [
+        'path' => env('CONSOLE_PATH', '/fleetbase/console'),
         'host' => env('CONSOLE_HOST', 'fleetbase.io'),
         'subdomain' => env('CONSOLE_SUBDOMAIN'),
         'secure' => env('CONSOLE_SECURE', !app()->environment(['development', 'local']))
