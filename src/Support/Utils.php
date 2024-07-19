@@ -2407,4 +2407,25 @@ class Utils
     {
         return $obj->{$key} ?? $defaultValue;
     }
+
+    /**
+     * Check if there is a database connection.
+     *
+     * This function attempts to establish a connection to the database by making a simple PDO call.
+     * If the connection attempt fails, it catches the exception and returns false.
+     *
+     * @return bool true if a valid database connection is established, otherwise false
+     */
+    public static function hasDatabaseConnection(): bool
+    {
+        try {
+            // Try to make a simple DB call
+            DB::connection()->getPdo();
+        } catch (\Throwable $e) {
+            // Connection failed, or other error occurred
+            return false;
+        }
+
+        return true;
+    }
 }

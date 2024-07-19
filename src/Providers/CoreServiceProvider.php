@@ -9,8 +9,6 @@ use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Blade;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
 use Spatie\ScheduleMonitor\Models\MonitoredScheduledTaskLogItem;
 
@@ -48,7 +46,7 @@ class CoreServiceProvider extends ServiceProvider
             \Fleetbase\Http\Middleware\ClearCacheAfterDelete::class,
         ],
         'fleetbase.api' => [
-            'throttle:60,1',
+            'throttle:80,1',
             \Illuminate\Session\Middleware\StartSession::class,
             \Fleetbase\Http\Middleware\AuthenticateOnceWithBasicAuth::class,
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
@@ -160,16 +158,7 @@ class CoreServiceProvider extends ServiceProvider
      */
     public function mergeConfigFromSettings()
     {
-        try {
-            // Try to make a simple DB call
-            DB::connection()->getPdo();
-
-            // Check if the settings table exists
-            if (!Schema::hasTable('settings')) {
-                return;
-            }
-        } catch (\Exception $e) {
-            // Connection failed, or other error occurred
+        if (Setting::doesntHaveConnection()) {
             return;
         }
 
