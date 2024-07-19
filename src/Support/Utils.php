@@ -98,6 +98,58 @@ class Utils
     }
 
     /**
+     * Get the full path to the console directory.
+     *
+     * This function retrieves the base path for the console directory from the configuration
+     * and appends an optional subpath if provided. The resulting path is normalized to
+     * remove any trailing slashes.
+     *
+     * @param string|null $path optional subpath to append to the base console path
+     *
+     * @return string the full path to the console directory, optionally including the subpath
+     */
+    public static function consolePath(?string $path = null): string
+    {
+        $basePath = rtrim(config('fleetbase.console.path', ''), DIRECTORY_SEPARATOR);
+        $path     = trim($path ?? '', DIRECTORY_SEPARATOR);
+
+        return $path ? $basePath . DIRECTORY_SEPARATOR . $path : $basePath;
+    }
+
+    /**
+     * Extract the domain from a URL, optionally including the port.
+     *
+     * This function parses the given URL to extract the domain name. If the URL does not
+     * include a scheme (e.g., http or https), it prepends 'http://' to the URL before parsing.
+     * Optionally, the port can be included in the returned domain string.
+     *
+     * @param string $url      the URL to extract the domain from
+     * @param bool   $withPort whether to include the port in the returned domain string
+     *
+     * @return string the extracted domain, optionally including the port
+     */
+    public static function getDomainFromUrl(string $url, bool $withPort = false): string
+    {
+        // Parse the URL and get the host
+        $parsedUrl = parse_url($url);
+
+        if (!isset($parsedUrl['host'])) {
+            // Handle cases where only the hostname is provided without a scheme (e.g., domain:8000)
+            $url       = 'http://' . ltrim($url, '/');
+            $parsedUrl = parse_url($url);
+        }
+
+        $domain = $parsedUrl['host'];
+
+        // Include the port if it's set
+        if ($withPort === true && isset($parsedUrl['port'])) {
+            $domain .= ':' . $parsedUrl['port'];
+        }
+
+        return $domain;
+    }
+
+    /**
      * Return asset URL from s3.
      *
      * @return bool
