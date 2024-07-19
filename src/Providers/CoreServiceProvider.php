@@ -46,7 +46,7 @@ class CoreServiceProvider extends ServiceProvider
             \Fleetbase\Http\Middleware\ClearCacheAfterDelete::class,
         ],
         'fleetbase.api' => [
-            'throttle:60,1',
+            'throttle:80,1',
             \Illuminate\Session\Middleware\StartSession::class,
             \Fleetbase\Http\Middleware\AuthenticateOnceWithBasicAuth::class,
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
