@@ -8,6 +8,8 @@ use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\Searchable;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class Setting extends EloquentModel
 {
@@ -203,6 +205,16 @@ class Setting extends EloquentModel
         return static::where('key', $key)->first();
     }
 
+    /**
+     * Retrieve the branding settings.
+     *
+     * This function fetches the branding settings, including icon URL, logo URL, and default theme.
+     * It first retrieves the values from the configuration and then checks for any overrides
+     * in the settings database. If the icon or logo UUID is valid, it fetches the corresponding
+     * file record to get the URL.
+     *
+     * @return array an associative array containing branding settings such as 'icon_url', 'logo_url', and 'default_theme'
+     */
     public static function getBranding()
     {
         $brandingSettings = [
@@ -241,6 +253,15 @@ class Setting extends EloquentModel
         return $brandingSettings;
     }
 
+    /**
+     * Retrieve the branding logo URL.
+     *
+     * This function fetches the logo URL for branding purposes. It first checks the settings database
+     * for a logo UUID. If a valid UUID is found, it retrieves the corresponding file record and returns the URL.
+     * If no valid UUID is found, it returns the default logo URL from the configuration.
+     *
+     * @return string the URL of the branding logo
+     */
     public static function getBrandingLogoUrl()
     {
         $logoUuid         = static::where('key', 'branding.logo_uuid')->value('value');
@@ -256,6 +277,15 @@ class Setting extends EloquentModel
         return config('fleetbase.branding.logo_url');
     }
 
+    /**
+     * Retrieve the branding icon URL.
+     *
+     * This function fetches the icon URL for branding purposes. It first checks the settings database
+     * for an icon UUID. If a valid UUID is found, it retrieves the corresponding file record and returns the URL.
+     * If no valid UUID is found, it returns the default icon URL from the configuration.
+     *
+     * @return string the URL of the branding icon
+     */
     public static function getBrandingIconUrl()
     {
         $iconUuid         = static::where('key', 'branding.icon_uuid')->value('value');
@@ -271,13 +301,71 @@ class Setting extends EloquentModel
         return config('fleetbase.branding.icon_url');
     }
 
+    /**
+     * Retrieve a value from the setting.
+     *
+     * This function fetches a value from the setting's stored JSON data. If the key is not found,
+     * it returns the provided default value.
+     *
+     * @param string $key          the key to retrieve the value for
+     * @param mixed  $defaultValue the default value to return if the key is not found
+     *
+     * @return mixed the value corresponding to the key, or the default value if the key is not found
+     */
     public function getValue(string $key, $defaultValue = null)
     {
         return data_get($this->value, $key, $defaultValue);
     }
 
+    /**
+     * Retrieve a boolean value from the setting.
+     *
+     * This function fetches a value from the setting's stored JSON data and casts it to a boolean.
+     *
+     * @param string $key the key to retrieve the boolean value for
+     *
+     * @return bool the boolean value corresponding to the key
+     */
     public function getBoolean(string $key)
     {
         return Utils::castBoolean($this->getValue($key, false));
+    }
+
+    /**
+     * Check if there is a database connection.
+     *
+     * This function attempts to establish a connection to the database and checks if the 'settings' table exists.
+     * If the connection or table check fails, it returns false.
+     *
+     * @return bool true if there is a valid database connection and the 'settings' table exists, otherwise false
+     */
+    public static function hasConnection(): bool
+    {
+        try {
+            // Try to make a simple DB call
+            DB::connection()->getPdo();
+
+            // Check if the settings table exists
+            if (!Schema::hasTable('settings')) {
+                return false;
+            }
+        } catch (\Throwable $e) {
+            // Connection failed, or other error occurred
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Check if there is no database connection.
+     *
+     * This function checks if there is no valid database connection by negating the result of `hasConnection`.
+     *
+     * @return bool true if there is no valid database connection, otherwise false
+     */
+    public static function doesntHaveConnection(): bool
+    {
+        return !static::hasConnection();
     }
 }
