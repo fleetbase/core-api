@@ -154,9 +154,14 @@ class Setting extends EloquentModel
     }
 
     /**
-     * Updates a system setting.
+     * Updates a system setting by the specified key with the provided value.
+     * If the setting does not exist, it creates a new one. This method is primarily used
+     * for system-level configuration values.
      *
-     * @param string $key
+     * @param string $key   the key identifier for the setting
+     * @param mixed  $value The value to be set. If null, the setting is updated to have a null value.
+     *
+     * @return Setting|null returns the updated or newly created setting instance, or null if the update fails
      */
     public static function configureSystem($key, $value = null): ?Setting
     {
@@ -164,9 +169,13 @@ class Setting extends EloquentModel
     }
 
     /**
-     * Updates a system setting.
+     * Updates a system setting by key and value, or creates it if it does not exist.
+     * This function is typically used to dynamically configure system settings during runtime.
      *
-     * @param string $key
+     * @param string $key   the key of the setting to update or create
+     * @param mixed  $value The value to set for the setting. If null, it updates the setting with null.
+     *
+     * @return Setting|null the updated or created setting instance, or null if the operation fails
      */
     public static function configure($key, $value = null): ?Setting
     {
@@ -180,9 +189,31 @@ class Setting extends EloquentModel
     }
 
     /**
-     * lookup a setting and return the value.
+     * Configures a company-specific setting by key and value.
+     * This is useful in multi-tenant environments where settings may vary between companies.
      *
-     * @return mixed|null
+     * @param string $key   the key of the setting to configure, prefixed by the company identifier
+     * @param mixed  $value the value to set for the setting
+     *
+     * @return bool returns true if the setting is successfully updated or created, false if not or if the company session is missing
+     */
+    public static function configureCompany(string $key, $value)
+    {
+        if (session()->missing('company')) {
+            return false;
+        }
+
+        return static::configure('company.' . session('company') . '.' . $key, $value);
+    }
+
+    /**
+     * Look up a setting by key and return its value, or a default value if the setting does not exist.
+     * This is a generic lookup function used for retrieving setting values directly from the database.
+     *
+     * @param string $key          the key of the setting to retrieve
+     * @param mixed  $defaultValue the default value to return if the setting does not exist
+     *
+     * @return mixed|null returns the value of the setting if found, or the default value if not
      */
     public static function lookup(string $key, $defaultValue = null)
     {
@@ -196,9 +227,29 @@ class Setting extends EloquentModel
     }
 
     /**
-     * Get a settting record by key.
+     * Retrieves a setting specific to a company from the session context. If the company identifier is not
+     * available in the session, it returns the default value.
      *
-     * @return Setting|null
+     * @param string     $key          the setting key associated with a company
+     * @param mixed|null $defaultValue the default value to return if the setting or company is not found
+     *
+     * @return mixed returns the value of the setting if found, or the default value if not
+     */
+    public static function lookupFromCompany(string $key, $defaultValue = null)
+    {
+        if (session()->missing('company')) {
+            return $defaultValue;
+        }
+
+        return static::lookup('company.' . session('company') . '.' . $key, $defaultValue);
+    }
+
+    /**
+     * Retrieve a specific setting record by its key.
+     *
+     * @param string $key the key of the setting to retrieve
+     *
+     * @return Setting|null returns the setting instance if found, or null if no setting exists with the provided key
      */
     public static function getByKey(string $key)
     {
