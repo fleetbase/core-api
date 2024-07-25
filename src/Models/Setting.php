@@ -245,6 +245,21 @@ class Setting extends EloquentModel
     }
 
     /**
+     * Alias for `lookupFromCompany'
+     * Retrieves a setting specific to a company from the session context. If the company identifier is not
+     * available in the session, it returns the default value.
+     *
+     * @param string     $key          the setting key associated with a company
+     * @param mixed|null $defaultValue the default value to return if the setting or company is not found
+     *
+     * @return mixed returns the value of the setting if found, or the default value if not
+     */
+    public static function lookupCompany(string $key, $defaultValue = null)
+    {
+        return static::lookupFromCompany($key, $defaultValue);
+    }
+
+    /**
      * Retrieve a specific setting record by its key.
      *
      * @param string $key the key of the setting to retrieve
