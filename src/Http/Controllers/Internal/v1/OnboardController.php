@@ -74,12 +74,10 @@ class OnboardController extends Controller
         // assign user to organization
         $user->assignCompany($company);
 
-        // create company user
-        CompanyUser::create([
-            'user_uuid'    => $user->uuid,
-            'company_uuid' => $company->uuid,
-            'status'       => 'active',
-        ]);
+        // Create company user record
+        if (CompanyUser::where(['company_uuid' => $company->uuid, 'user_uuid' => $user->uuid])->doesntExist()) {
+            CompanyUser::create(['company_uuid' => $company->uuid, 'user_uuid' => $user->uuid, 'status' => $user->status]);
+        }
 
         // send account created event
         event(new AccountCreated($user, $company));

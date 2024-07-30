@@ -53,6 +53,8 @@ return new class() extends Migration {
      */
     public function down()
     {
-        Schema::dropIfExists('companies');
+        Schema::withoutForeignKeyConstraints(function () {
+            Schema::dropIfExists('companies');
+        });
     }
 };
