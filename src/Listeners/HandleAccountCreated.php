@@ -19,7 +19,7 @@ class HandleAccountCreated
         // Send user a verification email
         $user = $event->user;
 
-        if ($user) {
+        if ($user && $user->isNotAdmin()) {
             // Create and send verification code
             try {
                 VerificationCode::generateEmailVerificationFor($user);

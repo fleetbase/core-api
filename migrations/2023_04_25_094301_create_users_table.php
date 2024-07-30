@@ -51,6 +51,8 @@ return new class() extends Migration {
      */
     public function down()
     {
-        Schema::dropIfExists('users');
+        Schema::withoutForeignKeyConstraints(function () {
+            Schema::dropIfExists('users');
+        });
     }
 };

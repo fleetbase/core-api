@@ -71,7 +71,7 @@ class AuthController extends Controller
             return response()->error('Authentication failed using password provided.', 401, ['code' => 'invalid_password']);
         }
 
-        if ($user->isNotVerified()) {
+        if ($user->isNotVerified() && $user->isNotAdmin()) {
             return response()->error('User is not verified.', 400, ['code' => 'not_verified']);
         }
 

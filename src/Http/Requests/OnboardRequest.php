@@ -34,7 +34,7 @@ class OnboardRequest extends FleetbaseRequest
     public function rules()
     {
         return [
-            'name'                  => ['required', 'min:2', 'regex:/^[a-zA-ZÀ-ÿ\'\- ]+$/u', new ExcludeWords($this->excludedWords)],
+            'name'                  => ['required', 'min:2', 'regex:/^[a-zA-ZÀ-ÿ\'\-\. ]+$/u', new ExcludeWords($this->excludedWords)],
             'email'                 => ['required', 'email', Rule::unique('users', 'email')->whereNull('deleted_at'), new EmailDomainExcluded()],
             'phone'                 => ['required', new ValidPhoneNumber(), Rule::unique('users', 'phone')->whereNull('deleted_at')],
             'password'              => ['required', 'confirmed', 'min:4', 'max:24'],
