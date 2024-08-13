@@ -19,12 +19,12 @@ class Policy extends FleetbaseResource
             'name'         => $this->name,
             'guard_name'   => $this->guard_name,
             'description'  => $this->description,
+            'permissions'  => $this->serializePermissions($this->permissions),
             'type'         => $this->type,
             'is_mutable'   => $this->is_mutable,
             'is_deletable' => $this->is_deletable,
             'updated_at'   => $this->updated_at,
             'created_at'   => $this->created_at,
-            'permissions'  => $this->serializePermissions($this->permissions),
         ];
     }
 

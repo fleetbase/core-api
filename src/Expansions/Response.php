@@ -4,6 +4,7 @@ namespace Fleetbase\Expansions;
 
 use CompressJson\Core\Compressor;
 use Fleetbase\Build\Expansion;
+use Fleetbase\Support\Auth;
 use Illuminate\Support\MessageBag;
 
 class Response implements Expansion
@@ -19,19 +20,12 @@ class Response implements Expansion
     }
 
     /**
-     * Iterates request params until a param is found.
+     * Responds with a Fleetbase compatible error response.
      *
      * @return Closure
      */
     public function error()
     {
-        /*
-         * Returns an error response.
-         *
-         * @param array $params
-         * @param mixed $default
-         * @return mixed
-         */
         return function ($error, int $statusCode = 400, ?array $data = []) {
             if ($error instanceof MessageBag) {
                 $error = $error->all();
@@ -48,19 +42,33 @@ class Response implements Expansion
     }
 
     /**
+     * Responds with a Fleetbase compatible error response.
+     *
+     * @return Closure
+     */
+    public function authorizationError()
+    {
+        return function (?array $data = []) {
+            /* @var \Illuminate\Support\Facades\Response $this */
+            $requiredPermission = Auth::getRequiredPermissionNameFromRequest(request());
+            $error              = 'User is not authorized to ' . $requiredPermission;
+
+            return static::json(
+                array_merge([
+                    'errors' => [$error],
+                ], $data),
+                401
+            );
+        };
+    }
+
+    /**
      * Formats a error response for the consumable API.
      *
      * @return Closure
      */
     public function apiError()
     {
-        /*
-         * Returns an error response.
-         *
-         * @param array $params
-         * @param mixed $default
-         * @return mixed
-         */
         return function ($error, int $statusCode = 400, ?array $data = []) {
             if ($error instanceof MessageBag) {
                 $error = $error->all();

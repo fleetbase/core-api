@@ -19,9 +19,10 @@ class Role extends FleetbaseResource
             'name'         => $this->name,
             'guard_name'   => $this->guard_name,
             'description'  => $this->description,
+            'policies'     => Policy::collection($this->policies),
+            'permissions'  => $this->serializePermissions($this->permissions),
             'updated_at'   => $this->updated_at,
             'created_at'   => $this->created_at,
-            'permissions'  => $this->serializePermissions($this->permissions),
         ];
     }
 

@@ -13,6 +13,7 @@ use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasCacheableAttributes;
 use Fleetbase\Traits\HasMetaAttributes;
+use Fleetbase\Traits\HasPolicies;
 use Fleetbase\Traits\HasPresence;
 use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasUuid;
@@ -22,6 +23,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\HasApiTokens;
@@ -40,6 +43,7 @@ class User extends Authenticatable
     use Searchable;
     use Notifiable;
     use HasRoles;
+    use HasPolicies;
     use HasApiTokens;
     use HasSlug;
     use HasApiModelBehavior;
@@ -94,6 +98,13 @@ class User extends Authenticatable
      * @var string
      */
     protected $publicIdType = 'user';
+
+    /**
+     * The default guard for this model.
+     *
+     * @var string
+     */
+    public $guard_name = 'sanctum';
 
     /**
      * The attributes that can be queried.
@@ -220,42 +231,28 @@ class User extends Authenticatable
 
     /**
      * The company this user belongs to.
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
      */
-    public function company()
+    public function company(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
         return $this->belongsTo(Company::class);
     }
 
-    /**
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
-     */
-    public function avatar()
+    public function avatar(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
         return $this->belongsTo(File::class);
     }
 
-    /**
-     * @return \Illuminate\Database\Eloquent\Relations\HasMany
-     */
-    public function devices()
+    public function devices(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
         return $this->hasMany(UserDevice::class);
     }
 
-    /**
-     * @return \Illuminate\Database\Eloquent\Relations\HasMany
-     */
-    public function companies()
+    public function companies(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
         return $this->hasMany(CompanyUser::class, 'user_uuid');
     }
 
-    /**
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
-     */
-    public function groups()
+    public function groups(): \Illuminate\Database\Eloquent\Relations\HasManyThrough
     {
         return $this->hasManyThrough(Group::class, GroupUser::class, 'user_uuid', 'uuid', 'uuid', 'group_uuid');
     }
@@ -339,6 +336,11 @@ class User extends Authenticatable
         }
 
         return $this;
+    }
+
+    public function getRoleAttribute(): ?Role
+    {
+        return $this->roles()->first();
     }
 
     /**
@@ -849,5 +851,76 @@ class User extends Authenticatable
     public function getIsOnlineAttribute()
     {
         return $this->isOnline();
+    }
+
+    /**
+     * Assign a single role to the user, removing any existing roles.
+     *
+     * This method deletes all existing roles assigned to the user and then assigns the specified role.
+     *
+     * @param string|int|\Spatie\Permission\Models\Role $role The role to assign to the user (can be a role name, ID, or instance)
+     *
+     * @return User The assigned role instance
+     */
+    public function assignSingleRole($role): self
+    {
+        DB::table('model_has_roles')->where('model_uuid', $this->uuid)->delete();
+
+        return $this->assignRole($role);
+    }
+
+    /**
+     * Return all the permissions the model has, both directly and via roles and policies.
+     */
+    public function getAllPermissions()
+    {
+        /** @var \Illuminate\Database\Eloquent\Model|\Spatie\Permission\Traits\HasPermissions $this */
+        /** @var Collection $permissions */
+        $permissions = $this->permissions;
+
+        if (method_exists($this, 'roles')) {
+            $permissions = $permissions->merge($this->getPermissionsViaRoles());
+        }
+
+        if (method_exists($this, 'policies')) {
+            $permissions = $permissions->merge($this->getPermissionsViaPolicies());
+            $permissions = $permissions->merge($this->getPermissionsViaRolePolicies());
+        }
+
+        return $permissions->sort()->values();
+    }
+
+    /**
+     * Checks if the user has any of the given permissions.
+     *
+     * This method checks if the user's attached permissions intersect with the given permissions.
+     * If there is at least one matching permission, the method returns true.
+     *
+     * @param Collection|array $permissions The permissions to check against
+     *
+     * @return bool True if the user has any of the given permissions, false otherwise
+     */
+    public function hasPermissions(Collection|array $permissions): bool
+    {
+        $attachedPermissions = $this->getAllPermissions();
+
+        return $attachedPermissions->filter(function ($permission) use ($permissions) {
+            return $permissions->contains($permission);
+        })->isNotEmpty();
+    }
+
+    /**
+     * Checks if the user does not have any of the given permissions.
+     *
+     * This method checks if the user's attached permissions do not intersect with the given permissions.
+     * If there are no matching permissions, the method returns true.
+     *
+     * @param Collection|array $permissions The permissions to check against
+     *
+     * @return bool True if the user does not have any of the given permissions, false otherwise
+     */
+    public function doesntHavePermissions(Collection|array $permissions): bool
+    {
+        return !$this->hasPermissions($permissions);
     }
 }

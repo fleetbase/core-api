@@ -6,6 +6,7 @@ use Fleetbase\Models\Permission;
 use Fleetbase\Models\Policy;
 use Fleetbase\Support\Utils;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
@@ -21,6 +22,9 @@ class PermissionSeeder extends Seeder
         Schema::disableForeignKeyConstraints();
         Permission::truncate();
         Policy::truncate();
+        DB::table('model_has_permissions')->truncate();
+        DB::table('model_has_roles')->truncate();
+        DB::table('model_has_policies')->truncate();
 
         $actions = ['create', 'update', 'delete', 'view', 'list'];
         $schemas = Utils::getAuthSchemas();
@@ -29,7 +33,7 @@ class PermissionSeeder extends Seeder
             $service     = $schema->name;
             $resources   = $schema->resources ?? [];
             $permissions = $schema->permissions ?? null;
-            $guard       = 'web';
+            $guard       = 'sanctum';
 
             // first create a wilcard permission for the entire schema
             $administratorPolicy = Policy::firstOrCreate(
@@ -103,11 +107,11 @@ class PermissionSeeder extends Seeder
             // create a resource policy for read-only access
             $readOnlyPolicy = Policy::firstOrCreate(
                 [
-                    'name'       => Str::studly(data_get($schema, 'policyName')) . 'FullAccess',
+                    'name'       => Str::studly(data_get($schema, 'policyName')) . 'ReadOnly',
                     'guard_name' => $guard,
                 ],
                 [
-                    'name'        => Str::studly(data_get($schema, 'policyName')) . 'FullAccess',
+                    'name'        => Str::studly(data_get($schema, 'policyName')) . 'ReadOnly',
                     'description' => 'Provides read-only access to ' . Str::studly(data_get($schema, 'policyName')) . '.',
                     'guard_name'  => $guard,
                 ]
@@ -115,32 +119,6 @@ class PermissionSeeder extends Seeder
 
             // create wilcard permission for service and all resources
             foreach ($resources as $resource) {
-                // create a resource policy for full access
-                $resourceFullAccessPolicy = Policy::firstOrCreate(
-                    [
-                        'name'       => Str::studly(data_get($schema, 'policyName')) . Str::studly(data_get($resource, 'name')) . 'FullAccess',
-                        'guard_name' => $guard,
-                    ],
-                    [
-                        'name'        => Str::studly(data_get($schema, 'policyName')) . Str::studly(data_get($resource, 'name')) . 'FullAccess',
-                        'description' => 'Provides full access to ' . Str::studly(data_get($schema, 'policyName')) . ' ' . Str::plural(data_get($resource, 'name')) . '.',
-                        'guard_name'  => $guard,
-                    ]
-                );
-
-                // create a resource policy for read-only access
-                $resourceReadOnlyPolicy = Policy::firstOrCreate(
-                    [
-                        'name'       => Str::studly(data_get($schema, 'policyName')) . Str::studly(data_get($resource, 'name')) . 'FullAccess',
-                        'guard_name' => $guard,
-                    ],
-                    [
-                        'name'        => Str::studly(data_get($schema, 'policyName')) . Str::studly(data_get($resource, 'name')) . 'FullAccess',
-                        'description' => 'Provides read-only access to ' . Str::studly(data_get($schema, 'policyName')) . ' ' . Str::plural(data_get($resource, 'name')) . '.',
-                        'guard_name'  => $guard,
-                    ]
-                );
-
                 $permission = Permission::firstOrCreate(
                     [
                         'name'       => $service . ' * ' . data_get($resource, 'name'),
@@ -158,11 +136,6 @@ class PermissionSeeder extends Seeder
                 } catch (\Spatie\Permission\Exceptions\GuardDoesNotMatch $e) {
                     dd($e->getMessage());
                 }
-                try {
-                    $resourceFullAccessPolicy->givePermissionTo($permission);
-                } catch (\Spatie\Permission\Exceptions\GuardDoesNotMatch $e) {
-                    dd($e->getMessage());
-                }
 
                 // output message for permissions creation
                 // $this->output('Created (' . $guard . ') permission: ' . $permission->name);
@@ -174,7 +147,7 @@ class PermissionSeeder extends Seeder
                 if (is_array(data_get($resource, 'remove_actions', null))) {
                     foreach (data_get($resource, 'remove_actions') as $remove) {
                         if (($key = array_search($remove, $actions)) !== false) {
-                            unset($actions[$key]);
+                            unset($resourceActions[$key]);
                         }
                     }
                 }
@@ -196,11 +169,6 @@ class PermissionSeeder extends Seeder
                     if ($action === 'view' || $action === 'list') {
                         try {
                             $readOnlyPolicy->givePermissionTo($permission);
-                        } catch (\Spatie\Permission\Exceptions\GuardDoesNotMatch $e) {
-                            dd($e->getMessage());
-                        }
-                        try {
-                            $resourceReadOnlyPolicy->givePermissionTo($permission);
                         } catch (\Spatie\Permission\Exceptions\GuardDoesNotMatch $e) {
                             dd($e->getMessage());
                         }

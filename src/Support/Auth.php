@@ -2,11 +2,14 @@
 
 namespace Fleetbase\Support;
 
+use Fleetbase\Attributes\SkipAuthorizationCheck;
 use Fleetbase\Models\ApiCredential;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
+use Fleetbase\Models\Permission;
 use Fleetbase\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth as Authentication;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -230,8 +233,16 @@ class Auth extends Authentication
      *
      * @return User|null returns an instance of the User model if authenticated, or null if no user is authenticated
      */
-    public static function getUserFromSession()
+    public static function getUserFromSession(?Request $request = null): ?User
     {
+        // If request passed try to resolve directly from the request
+        if ($request) {
+            $user = $request->user();
+            if ($user instanceof User) {
+                return $user;
+            }
+        }
+
         // Attempt to retrieve the user using the extended Auth class method
         $user = auth()->user();
         if ($user instanceof User) {
@@ -292,5 +303,49 @@ class Auth extends Authentication
         }
 
         return null;
+    }
+
+    /**
+     * Resolves the required permissions from the given request.
+     *
+     * This method resolves the controller, action, and resource from the request,
+     * and then constructs the permission names based on the service, action, and
+     * resource. It then uses the Permission model to find the permissions that
+     * match the constructed names.
+     *
+     * @param Request $request The HTTP request
+     *
+     * @return Collection A collection of permission models
+     */
+    public static function resolvePermissionsFromRequest(Request $request): Collection
+    {
+        // If method has skip authorization check
+        if (ControllerResolver::methodHasAttribute($request, SkipAuthorizationCheck::class)) {
+            return collect();
+        }
+
+        $controller       = ControllerResolver::resolve($request);
+        if (!method_exists($controller, 'getResourceSingularName')) {
+            return collect();
+        }
+
+        $action     = ActionMapper::resolve($request);
+        $resource   = $controller->getResourceSingularName();
+        $service    = $controller->getService();
+
+        $permissionName                = implode(' ', [$service, $action, $resource]);
+        $permissionWildcardName        = implode(' ', [$service, '*', $resource]);
+        $permissionWildcardServiceName = implode(' ', [$service, '*']);
+
+        return Permission::findByNames([$permissionName, $permissionWildcardName, $permissionWildcardServiceName]);
+    }
+
+    public static function getRequiredPermissionNameFromRequest(Request $request): string
+    {
+        $controller = ControllerResolver::resolve($request);
+        $action     = ActionMapper::resolve($request);
+        $resource   = $controller->getResourceSingularName();
+
+        return implode(' ', [$action, $resource]);
     }
 }

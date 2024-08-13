@@ -2,18 +2,20 @@
 
 namespace Fleetbase\Traits;
 
-use Fleetbase\Contracts\Policy;
+use Fleetbase\Models\Permission;
+use Fleetbase\Models\Policy;
+use Fleetbase\Models\Role;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Collection;
-use Spatie\Permission\PermissionRegistrar;
+use Illuminate\Support\Str;
 use Spatie\Permission\Traits\HasPermissions;
 
 trait HasPolicies
 {
     use HasPermissions;
 
-    private $policyClass;
+    private $policyClass = Policy::class;
 
     public static function bootHasPolicies()
     {
@@ -28,11 +30,7 @@ trait HasPolicies
 
     public function getPolicyClass()
     {
-        if (!isset($this->policyClass)) {
-            $this->policyClass = app(PermissionRegistrar::class)->getPolicyClass();
-        }
-
-        return $this->policyClass;
+        return app($this->policyClass);
     }
 
     /**
@@ -40,11 +38,12 @@ trait HasPolicies
      */
     public function policies(): BelongsToMany
     {
+        /** @var \Illuminate\Database\Eloquent\Model|HasPermissions $this */
         return $this->morphToMany(
-            \Fleetbase\Models\Policy::class,
+            Policy::class,
             'model',
             'model_has_policies',
-            'model_uuid',
+            config('permission.column_names.model_morph_key'),
             'policy_id'
         );
     }
@@ -92,18 +91,18 @@ trait HasPolicies
     {
         $policies = collect($policies)
             ->flatten()
-            ->map(function ($role) {
-                if (empty($role)) {
+            ->map(function ($policy) {
+                if (empty($policy)) {
                     return false;
                 }
 
-                return $this->getStoredPolicy($role);
+                return $this->getStoredPolicy($policy);
             })
-            ->filter(function ($role) {
-                return $role instanceof Policy;
+            ->filter(function ($policy) {
+                return $policy instanceof Policy;
             })
-            ->each(function ($role) {
-                $this->ensureModelSharesGuard($role);
+            ->each(function ($policy) {
+                $this->ensureModelSharesGuard($policy);
             })
             ->map->id
             ->all();
@@ -256,19 +255,19 @@ trait HasPolicies
         return $this->policies->pluck('name');
     }
 
-    protected function getStoredPolicy($role): Policy
+    protected function getStoredPolicy($policy): Policy
     {
         $policyClass = $this->getPolicyClass();
 
-        if (is_numeric($role)) {
-            return $policyClass->findById($role, $this->getDefaultGuardName());
+        if (Str::isUuid($policy)) {
+            return $policyClass->findById($policy, $this->getDefaultGuardName());
         }
 
-        if (is_string($role)) {
-            return $policyClass->findByName($role, $this->getDefaultGuardName());
+        if (is_string($policy)) {
+            return $policyClass->findByName($policy, $this->getDefaultGuardName());
         }
 
-        return $role;
+        return $policy;
     }
 
     protected function _convertPipeToArray(string $pipeString)
@@ -291,5 +290,37 @@ trait HasPolicies
         }
 
         return explode('|', trim($pipeString, $quoteCharacter));
+    }
+
+    public function getPermissionsViaRolePolicies()
+    {
+        if (is_a($this, Policy::class) || is_a($this, Role::class) || is_a($this, Permission::class)) {
+            return collect();
+        }
+
+        /** @var \Illuminate\Database\Eloquent\Model|HasPermissions $this */
+        $roles        = $this->loadMissing(['roles', 'roles.policies', 'roles.policies.permissions'])->roles;
+        $rolePolicies = collect();
+        foreach ($roles as $role) {
+            $rolePolicies = $rolePolicies->merge($role->policies);
+        }
+
+        return $rolePolicies->flatMap(fn ($policy) => $policy->permissions)
+            ->sort()->values();
+    }
+
+    /**
+     * Return all the permissions the model has via policies.
+     */
+    public function getPermissionsViaPolicies()
+    {
+        if (is_a($this, Policy::class) || is_a($this, Permission::class)) {
+            return collect();
+        }
+
+        /** @var \Illuminate\Database\Eloquent\Model|HasPermissions $this */
+        return $this->loadMissing('policies', 'policies.permissions')
+            ->policies->flatMap(fn ($policy) => $policy->permissions)
+            ->sort()->values();
     }
 }

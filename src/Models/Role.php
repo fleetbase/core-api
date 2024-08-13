@@ -41,6 +41,13 @@ class Role extends BaseRole
     public $keyType = 'string';
 
     /**
+     * The default guard for this model.
+     *
+     * @var string
+     */
+    public $guard_name = 'sanctum';
+
+    /**
      * Indicates if the IDs are auto-incrementing.
      *
      * @var bool
@@ -105,12 +112,12 @@ class Role extends BaseRole
     }
 
     /**
-     * Default guard should be `web`.
+     * Default guard should be `sanctum`.
      *
      * @return void
      */
     public function setGuardNameAttribute()
     {
-        $this->attributes['guard_name'] = 'web';
+        $this->attributes['guard_name'] = 'sanctum';
     }
 }

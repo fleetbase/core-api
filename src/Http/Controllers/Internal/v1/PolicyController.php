@@ -18,6 +18,13 @@ class PolicyController extends FleetbaseController
     public $resource = 'policy';
 
     /**
+     * The service which this controller belongs to.
+     *
+     * @var string
+     */
+    public $service = 'iam';
+
+    /**
      * Creates a record by an identifier with request payload.
      *
      * @return \Illuminate\Http\Response

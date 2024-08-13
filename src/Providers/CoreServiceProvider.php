@@ -41,6 +41,7 @@ class CoreServiceProvider extends ServiceProvider
             \Illuminate\Session\Middleware\StartSession::class,
             'auth:sanctum',
             \Fleetbase\Http\Middleware\SetupFleetbaseSession::class,
+            \Fleetbase\Http\Middleware\AuthorizationGuard::class,
             \Fleetbase\Http\Middleware\TrackPresence::class,
             \Spatie\ResponseCache\Middlewares\CacheResponse::class,
             \Fleetbase\Http\Middleware\ClearCacheAfterDelete::class,
@@ -239,7 +240,7 @@ class CoreServiceProvider extends ServiceProvider
             if ($value) {
                 // some settings should set env variables to be accessed throughout entire application
                 if (in_array($settingsKey, array_keys($putsenv))) {
-                    $environmentVariables = $putsenv[$settingsKey];
+                    $environmentVariables = $putsenv[$settingsKey] ?? '';
 
                     foreach ($environmentVariables as $configEnvKey => $envKey) {
                         // hack fix for aws set envs
@@ -254,7 +255,7 @@ class CoreServiceProvider extends ServiceProvider
 
                         // only set if env variable is not set already
                         if ($doesntHaveEnvSet && $hasValue) {
-                            putenv($envKey . '="' . data_get($value, $configEnvKey) . '"');
+                            putenv($envKey . '="' . data_get($value, $configEnvKey, '') . '"');
                         }
                     }
                 }
