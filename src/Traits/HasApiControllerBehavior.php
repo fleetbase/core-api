@@ -188,8 +188,8 @@ trait HasApiControllerBehavior
      */
     private function getServiceNameFromNamespace(string $namespace)
     {
-        $segments         = explode('\\', $namespace);
-        $targetSegment    = count($segments) < 2 ? $segments[0] : $segments[1];
+        $segments         = array_values(array_filter(explode('\\', $namespace)));
+        $targetSegment    = count($segments) === 1 ? $segments[0] : $segments[1];
         $slugifiedSegment = preg_replace('/(?<=[a-z])(?=[A-Z])/', '-', $targetSegment);
         $slugifiedSegment = strtolower($slugifiedSegment);
 
