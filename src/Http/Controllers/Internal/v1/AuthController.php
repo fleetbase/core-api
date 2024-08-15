@@ -2,7 +2,7 @@
 
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
-use Aloha\Twilio\Support\Laravel\Facade as Twilio;
+use Fleetbase\Twilio\Support\Laravel\Facade as Twilio;
 use Fleetbase\Http\Controllers\Controller;
 use Fleetbase\Http\Requests\Internal\ResetPasswordRequest;
 use Fleetbase\Http\Requests\Internal\UserForgotPasswordRequest;

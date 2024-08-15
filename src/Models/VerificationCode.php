@@ -2,7 +2,7 @@
 
 namespace Fleetbase\Models;
 
-use Aloha\Twilio\Support\Laravel\Facade as Twilio;
+use Fleetbase\Twilio\Support\Laravel\Facade as Twilio;
 use Fleetbase\Casts\Json;
 use Fleetbase\Mail\VerificationMail;
 use Fleetbase\Traits\Expirable;
