@@ -67,6 +67,11 @@ class AuthController extends Controller
             ]);
         }
 
+        // If no password prompt user to reset password
+        if (empty($user->password)) {
+            return response()->error('Password reset required to continue.', 400, ['code' => 'reset_password']);
+        }
+
         if (Auth::isInvalidPassword($password, $user->password)) {
             return response()->error('Authentication failed using password provided.', 401, ['code' => 'invalid_password']);
         }

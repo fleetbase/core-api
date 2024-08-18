@@ -329,9 +329,9 @@ class Auth extends Authentication
             return collect();
         }
 
-        $action     = ActionMapper::resolve($request);
-        $resource   = $controller->getResourceSingularName();
         $service    = $controller->getService();
+        $resource   = $controller->getResourceSingularName();
+        $action     = ActionMapper::resolve($request, $resource);
 
         $permissionName                = implode(' ', [$service, $action, $resource]);
         $permissionWildcardName        = implode(' ', [$service, '*', $resource]);
@@ -343,8 +343,8 @@ class Auth extends Authentication
     public static function getRequiredPermissionNameFromRequest(Request $request): string
     {
         $controller = ControllerResolver::resolve($request);
-        $action     = ActionMapper::resolve($request);
         $resource   = $controller->getResourceSingularName();
+        $action     = ActionMapper::resolve($request, $resource);
 
         return implode(' ', [$action, $resource]);
     }

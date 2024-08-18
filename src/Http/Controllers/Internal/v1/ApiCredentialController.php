@@ -22,6 +22,13 @@ class ApiCredentialController extends FleetbaseController
     public $resource = 'api_credential';
 
     /**
+     * The service which this controller belongs to.
+     *
+     * @var string
+     */
+    public $service = 'developers';
+
+    /**
      * Export the companies/users api credentials to excel or csv.
      *
      * @return \Illuminate\Http\Response

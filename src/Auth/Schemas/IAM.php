@@ -17,7 +17,7 @@ class IAM
     /**
      * Guards these permissions should apply to.
      */
-    public array $guards = ['web'];
+    public array $guards = ['sanctum'];
 
     /**
      * Direct permissions for the schema.
@@ -34,7 +34,7 @@ class IAM
         ],
         [
             'name'    => 'user',
-            'actions' => ['deactivate', 'export'],
+            'actions' => ['deactivate', 'activate', 'export'],
         ],
         [
             'name'    => 'role',
@@ -42,7 +42,7 @@ class IAM
         ],
         [
             'name'    => 'policy',
-            'actions' => [],
+            'actions' => ['export'],
         ],
     ];
 }

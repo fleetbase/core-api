@@ -13,9 +13,10 @@
 {!! $content !!}
 @else
 Welcome to {{ $appName }}, use the code below to verify your email address and complete registration to {{ $appName }}.
-<br>
+<br />
+<br />
 Your verification code: `{{ $code }}`
-<br>
+<br />
 @endif
 
 @if($type === 'email_verification')

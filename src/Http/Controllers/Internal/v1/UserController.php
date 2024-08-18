@@ -560,6 +560,7 @@ class UserController extends FleetbaseController
      *
      * @return \Illuminate\Http\Response
      */
+    #[SkipAuthorizationCheck]
     public function setUserLocale(Request $request)
     {
         $locale           = $request->input('locale', 'en-us');
@@ -577,6 +578,7 @@ class UserController extends FleetbaseController
      *
      * @return \Illuminate\Http\Response
      */
+    #[SkipAuthorizationCheck]
     public function getUserLocale(Request $request)
     {
         $user             = $request->user();
@@ -586,5 +588,19 @@ class UserController extends FleetbaseController
         $locale = Setting::lookup($localeSettingKey, 'en-us');
 
         return response()->json(['status' => 'ok', 'locale' => $locale]);
+    }
+
+    /**
+     * Get all current user permissions.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    #[SkipAuthorizationCheck]
+    public function getUserPermissions(Request $request)
+    {
+        $user        = $request->user();
+        $permissions = $user->getAllPermissions();
+
+        return response()->json(['permissions' => $permissions]);
     }
 }

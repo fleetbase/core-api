@@ -200,6 +200,8 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 $router->fleetbaseRoutes(
                                     'webhook-endpoints',
                                     function ($router, $controller) {
+                                        $router->patch('enable/{id}', $controller('enable'));
+                                        $router->patch('disable/{id}', $controller('disable'));
                                         $router->get('events', $controller('events'));
                                         $router->get('versions', $controller('versions'));
                                     }

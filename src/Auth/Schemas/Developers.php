@@ -17,7 +17,7 @@ class Developers
     /**
      * Guards these permissions should apply to.
      */
-    public array $guards = ['web'];
+    public array $guards = ['sanctum'];
 
     /**
      * The permission schema resources.
@@ -29,7 +29,7 @@ class Developers
         ],
         [
             'name'    => 'webhook',
-            'actions' => [],
+            'actions' => ['enable', 'disable'],
         ],
         [
             'name'           => 'socket',
@@ -38,12 +38,12 @@ class Developers
         ],
         [
             'name'           => 'log',
-            'actions'        => [],
-            'remove_actions' => ['create', 'update', 'delete', 'export'],
+            'actions'        => ['export'],
+            'remove_actions' => ['create', 'update', 'delete'],
         ],
         [
             'name'           => 'event',
-            'actions'        => [],
+            'actions'        => ['export'],
             'remove_actions' => ['create', 'update', 'delete'],
         ],
     ];

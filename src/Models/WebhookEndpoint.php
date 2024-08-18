@@ -139,4 +139,24 @@ class WebhookEndpoint extends Model
     {
         return !$this->cannotFireEvent($event);
     }
+
+    /**
+     * Enables the webhook.
+     */
+    public function enable(): bool
+    {
+        $this->status = 'enabled';
+
+        return $this->save();
+    }
+
+    /**
+     * Disables the webhook.
+     */
+    public function disable(): bool
+    {
+        $this->status = 'disabled';
+
+        return $this->save();
+    }
 }

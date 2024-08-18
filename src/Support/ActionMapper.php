@@ -40,6 +40,24 @@ class ActionMapper
         'GET'    => 'view',
     ];
 
+    public static function getActionViaSchemaResource(string $resource, string $method): ?string
+    {
+        $schemas = Utils::getAuthSchemas();
+        foreach ($schemas as $schema) {
+            $resources   = $schema->resources ?? [];
+            foreach ($resources as $resourceArray) {
+                if (data_get($resourceArray, 'name') === $resource) {
+                    $actions = data_get($resourceArray, 'actions', []);
+                    if (in_array($method, $actions)) {
+                        return $method;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
     /**
      * Maps a controller action to a permission action based on the request method.
      *
@@ -53,9 +71,16 @@ class ActionMapper
      *
      * @return string|null The mapped permission action, or null if not found
      */
-    public function mapAction(string $method, string $requestMethod): ?string
+    public function mapAction(string $method, string $requestMethod, ?string $resource = null): ?string
     {
-        return self::ACTION_MAP[$method] ?? self::METHOD_MAP[$requestMethod];
+        $action = self::ACTION_MAP[$method] ?? null;
+
+        // Attempt to get action from resource schema
+        if (!$action && $resource) {
+            $action = static::getActionViaSchemaResource($resource, $method);
+        }
+
+        return $action ?? self::METHOD_MAP[$requestMethod];
     }
 
     /**
@@ -70,9 +95,9 @@ class ActionMapper
      *
      * @return string|null The mapped permission action, or null if not found
      */
-    public static function getAction(string $method, string $requestMethod): ?string
+    public static function getAction(string $method, string $requestMethod, ?string $resource = null): ?string
     {
-        return app(static::class)->mapAction($method, $requestMethod);
+        return app(static::class)->mapAction($method, $requestMethod, $resource);
     }
 
     /**
@@ -86,13 +111,13 @@ class ActionMapper
      *
      * @return string|null The mapped permission action, or null if not found
      */
-    public static function getFromRequest(Request $request): ?string
+    public static function getFromRequest(Request $request, ?string $resource = null): ?string
     {
         $route               = $request->route();
         $controllerNamespace = $route->getAction('controller');
         [, $method]          = explode('@', $controllerNamespace);
 
-        return static::getAction($method, $request->method());
+        return static::getAction($method, $request->method(), $resource);
     }
 
     /**
@@ -106,8 +131,8 @@ class ActionMapper
      *
      * @return string|null The resolved permission action, or null if not found
      */
-    public static function resolve(Request $request): ?string
+    public static function resolve(Request $request, ?string $resource = null): ?string
     {
-        return static::getFromRequest($request);
+        return static::getFromRequest($request, $resource);
     }
 }
