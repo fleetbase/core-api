@@ -5,6 +5,7 @@ namespace Fleetbase\Expansions;
 use Fleetbase\Build\Expansion;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\File;
+use Fleetbase\Support\ControllerResolver;
 use Illuminate\Support\Str;
 
 /**
@@ -223,6 +224,24 @@ class Request implements Expansion
 
             /** @var \Illuminate\Http\Request $this */
             return $this->except($filters);
+        };
+    }
+
+    /**
+     * Get the controller instance for the route.
+     *
+     * @return \Closure returns a closure that filters out global parameters and retrieves the rest
+     */
+    public function getController()
+    {
+        return function () {
+            /** @var \Illuminate\Http\Request $this */
+            $controller = ControllerResolver::resolve($this);
+            if (!$controller) {
+                $controller = $this->route()->getController();
+            }
+
+            return $controller;
         };
     }
 }

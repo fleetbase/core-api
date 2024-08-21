@@ -324,13 +324,13 @@ class Auth extends Authentication
             return collect();
         }
 
-        $controller       = ControllerResolver::resolve($request);
+        $controller       = $request->getController();
         if (!method_exists($controller, 'getResourceSingularName')) {
             return collect();
         }
 
         $service    = $controller->getService();
-        $resource   = $controller->getResourceSingularName();
+        $resource   = str_replace('_', '-', $controller->getResourceSingularName());
         $action     = ActionMapper::resolve($request, $resource);
 
         $permissionName                = implode(' ', [$service, $action, $resource]);
@@ -342,10 +342,29 @@ class Auth extends Authentication
 
     public static function getRequiredPermissionNameFromRequest(Request $request): string
     {
-        $controller = ControllerResolver::resolve($request);
-        $resource   = $controller->getResourceSingularName();
+        $controller = $request->getController();
+        $resource   = str_replace('_', '-', $controller->getResourceSingularName());
         $action     = ActionMapper::resolve($request, $resource);
 
         return implode(' ', [$action, $resource]);
+    }
+
+    public static function can(string $permission): bool
+    {
+        [$service, $action, $resource] = explode(' ', $permission);
+        $permissionName                = implode(' ', [$service, $action, $resource]);
+        $permissionWildcardName        = implode(' ', [$service, '*', $resource]);
+        $permissionWildcardServiceName = implode(' ', [$service, '*']);
+        $permissionRecords             = Permission::findByNames([$permissionName, $permissionWildcardName, $permissionWildcardServiceName]);
+        $user                          = static::getUserFromSession();
+
+        return $permissionRecords->contains(function ($permissionRecord) use ($user) {
+            return $user->hasPermissionTo($permissionRecord);
+        });
+    }
+
+    public static function cannot(string $permission): bool
+    {
+        return !static::can($permission);
     }
 }

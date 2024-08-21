@@ -68,6 +68,7 @@ class CoreServiceProvider extends ServiceProvider
         \Fleetbase\Console\Commands\MigrateSandbox::class,
         \Fleetbase\Console\Commands\InitializeSandboxKeyColumn::class,
         \Fleetbase\Console\Commands\SyncSandbox::class,
+        \Fleetbase\Console\Commands\CreatePermissions::class,
         \Fleetbase\Console\Commands\BackupDatabase\MysqlS3Backup::class,
     ];
 

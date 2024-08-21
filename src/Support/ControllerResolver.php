@@ -22,15 +22,32 @@ class ControllerResolver
      *
      * @param Request $request The request object
      *
-     * @return Controller The resolved controller instance
+     * @return Controller|null The resolved controller instance
      */
-    public function resolveController(Request $request): Controller
+    public function resolveController(Request $request): ?Controller
     {
-        $route               = $request->route();
-        $controllerNamespace = $route->getAction('controller');
-        [$controller]        = explode('@', $controllerNamespace);
+        return $request->route()->controller;
+    }
 
-        return app($controller);
+    /**
+     * Retrieves the fully qualified namespace of the controller from the given request.
+     *
+     * This method extracts the controller's namespace from the route associated with the request.
+     * The controller's namespace is determined by parsing the 'controller' action from the route,
+     * which typically includes both the fully qualified class name and the method (e.g.,
+     * 'Fleetbase\Http\Controllers\MyController@method'). This function returns only the class namespace.
+     *
+     * @param Request $request the HTTP request object from which the route is extracted
+     *
+     * @return string the fully qualified namespace of the controller class
+     */
+    public static function getControllerNamespace(Request $request): string
+    {
+        $route                        = $request->route();
+        $controllerActionNamespace    = $route->getAction('controller');
+        [$controllerNamespace]        = explode('@', $controllerActionNamespace);
+
+        return $controllerNamespace;
     }
 
     /**
@@ -62,10 +79,10 @@ class ControllerResolver
      */
     public static function methodHasAttribute(Request $request, $attribute): bool
     {
-        $controller       = static::resolve($request);
-        $method           = $request->route()->getActionMethod();
-        $reflectionMethod = new \ReflectionMethod($controller, $method);
-        $attributes       = $reflectionMethod->getAttributes();
+        $controllerNamespace = static::getControllerNamespace($request);
+        $method              = $request->route()->getActionMethod();
+        $reflectionMethod    = new \ReflectionMethod($controllerNamespace, $method);
+        $attributes          = $reflectionMethod->getAttributes();
 
         $skipAuthorizationCheck = false;
         foreach ($attributes as $attr) {
