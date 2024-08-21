@@ -19,7 +19,7 @@
     ],
     "require": {
         "php": "^8.0",
-        "aloha/twilio": "^5.0",
+        "fleetbase/twilio": "^5.0.1",
         "aws/aws-sdk-php-laravel": "^3.7",
         "fleetbase/laravel-mysql-spatial": "^1.0.2",
         "genealabs/laravel-model-caching": "dev-fix/handle-datetime-values",
