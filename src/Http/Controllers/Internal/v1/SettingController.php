@@ -668,7 +668,7 @@ class SettingController extends Controller
         $status  = 'success';
 
         try {
-            \Aloha\Twilio\Support\Laravel\Facade::message($phone, 'This is a Twilio test from Fleetbase');
+            \Fleetbase\Twilio\Support\Laravel\Facade::message($phone, 'This is a Twilio test from Fleetbase');
         } catch (\Twilio\Exceptions\RestException $e) {
             $message = $e->getMessage();
             $status  = 'error';
