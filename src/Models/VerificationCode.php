@@ -2,13 +2,13 @@
 
 namespace Fleetbase\Models;
 
-use Fleetbase\Twilio\Support\Laravel\Facade as Twilio;
 use Fleetbase\Casts\Json;
 use Fleetbase\Mail\VerificationMail;
 use Fleetbase\Traits\Expirable;
 use Fleetbase\Traits\HasMetaAttributes;
 use Fleetbase\Traits\HasSubject;
 use Fleetbase\Traits\HasUuid;
+use Fleetbase\Twilio\Support\Laravel\Facade as Twilio;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Mail;
 

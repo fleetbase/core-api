@@ -3,6 +3,7 @@
 namespace Fleetbase\Support;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 /**
  * Maps controller actions to permission actions based on the request method.
@@ -20,11 +21,13 @@ class ActionMapper
      * @var array
      */
     private const ACTION_MAP = [
-        'createRecord' => 'create',
-        'updateRecord' => 'update',
-        'deleteRecord' => 'delete',
-        'findRecord'   => 'view',
-        'queryRecord'  => 'list',
+        'createRecord'   => 'create',
+        'updateRecord'   => 'update',
+        'deleteRecord'   => 'delete',
+        'findRecord'     => 'view',
+        'queryRecord'    => 'list',
+        'searchRecords'  => 'list',
+        'search'         => 'list',
     ];
 
     /**
@@ -42,14 +45,26 @@ class ActionMapper
 
     public static function getActionViaSchemaResource(string $resource, string $method): ?string
     {
-        $schemas = Utils::getAuthSchemas();
+        $additionalAbilities = ['assign', 'remove'];
+        $methodAction        = Utils::slugify($method);
+        $schemas             = Utils::getAuthSchemas();
         foreach ($schemas as $schema) {
             $resources   = $schema->resources ?? [];
             foreach ($resources as $resourceArray) {
                 if (data_get($resourceArray, 'name') === $resource) {
                     $actions = data_get($resourceArray, 'actions', []);
-                    if (in_array($method, $actions)) {
+                    if (in_array($method, $actions) || in_array($methodAction, $actions)) {
                         return $method;
+                    }
+
+                    foreach ($additionalAbilities as $additionalAbility) {
+                        if (Str::startsWith($methodAction, $additionalAbility)) {
+                            foreach ($actions as $action) {
+                                if (Str::startsWith($action, $methodAction)) {
+                                    return $action;
+                                }
+                            }
+                        }
                     }
                 }
             }

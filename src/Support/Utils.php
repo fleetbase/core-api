@@ -2428,4 +2428,33 @@ class Utils
 
         return true;
     }
+
+    /**
+     * Converts a given string into a slugified version, making it URL-friendly.
+     *
+     * This function transforms strings by:
+     * - Converting camelCase or TitleCase to lowercase words separated by hyphens.
+     * - Removing all non-alphanumeric characters except for hyphens.
+     * - Replacing spaces and other separators with hyphens.
+     * - Ensuring that the result is in lowercase and contains no leading or trailing hyphens.
+     *
+     * Example conversions:
+     * - "HelloWorld" becomes "hello-world"
+     * - "thisIsATest" becomes "this-is-a-test"
+     * - "Hello World!" becomes "hello-world"
+     *
+     * @param string $string the input string to be slugified
+     *
+     * @return string the slugified version of the input string, suitable for URLs and other identifiers
+     */
+    public static function slugify($string)
+    {
+        $string = preg_replace('/([a-z])([A-Z])/', '$1 $2', $string);
+        $string = str_replace(' ', '-', $string);
+        $string = strtolower($string);
+        $string = preg_replace('/[^a-z0-9\-]/', '', $string);
+        $string = preg_replace('/-+/', '-', $string);
+
+        return trim($string, '-');
+    }
 }

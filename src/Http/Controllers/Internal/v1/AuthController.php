@@ -2,7 +2,6 @@
 
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
-use Fleetbase\Twilio\Support\Laravel\Facade as Twilio;
 use Fleetbase\Http\Controllers\Controller;
 use Fleetbase\Http\Requests\Internal\ResetPasswordRequest;
 use Fleetbase\Http\Requests\Internal\UserForgotPasswordRequest;
@@ -20,6 +19,7 @@ use Fleetbase\Notifications\UserForgotPassword;
 use Fleetbase\Support\Auth;
 use Fleetbase\Support\TwoFactorAuth;
 use Fleetbase\Support\Utils;
+use Fleetbase\Twilio\Support\Laravel\Facade as Twilio;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Redis;

@@ -333,6 +333,11 @@ class Auth extends Authentication
         $resource   = str_replace('_', '-', $controller->getResourceSingularName());
         $action     = ActionMapper::resolve($request, $resource);
 
+        // If the resource is not guarded at all
+        if (!static::isResourceGuarded($resource)) {
+            return collect();
+        }
+
         $permissionName                = implode(' ', [$service, $action, $resource]);
         $permissionWildcardName        = implode(' ', [$service, '*', $resource]);
         $permissionWildcardServiceName = implode(' ', [$service, '*']);
@@ -340,6 +345,17 @@ class Auth extends Authentication
         return Permission::findByNames([$permissionName, $permissionWildcardName, $permissionWildcardServiceName]);
     }
 
+    /**
+     * Generates the required permission name based on the provided request.
+     *
+     * This method extracts the controller from the request, converts the associated resource name
+     * to a singular, kebab-case format, and then determines the appropriate action using the
+     * ActionMapper. The resulting permission name is constructed by combining the action and resource.
+     *
+     * @param Request $request the HTTP request object containing route and controller information
+     *
+     * @return string the generated permission name in the format '{action} {resource}'
+     */
     public static function getRequiredPermissionNameFromRequest(Request $request): string
     {
         $controller = $request->getController();
@@ -349,6 +365,33 @@ class Auth extends Authentication
         return implode(' ', [$action, $resource]);
     }
 
+    /**
+     * Checks if a resource is guarded by any permissions.
+     *
+     * This method searches for any permissions in the database that end with the given resource name.
+     * The resource is expected to be at the end of the permission name following the format
+     * '{service} {ability} {resource}'. If a matching permission exists, the method returns true.
+     *
+     * @param string $resource the resource name to check for in the permissions
+     *
+     * @return bool true if the resource is guarded by any permissions, false otherwise
+     */
+    public static function isResourceGuarded(string $resource): bool
+    {
+        return Permission::where('name', 'like', '% ' . $resource)->exists();
+    }
+
+    /**
+     * Determines if the current user has the specified permission.
+     *
+     * This method checks whether the current user session has the required permission by evaluating
+     * the exact permission name, a wildcard action for the specified resource, or a wildcard service
+     * permission. The method returns true if the user has any of the evaluated permissions.
+     *
+     * @param string $permission the permission string in the format '{service} {action} {resource}'
+     *
+     * @return bool true if the user has the specified permission, false otherwise
+     */
     public static function can(string $permission): bool
     {
         [$service, $action, $resource] = explode(' ', $permission);
@@ -363,6 +406,16 @@ class Auth extends Authentication
         });
     }
 
+    /**
+     * Determines if the current user lacks the specified permission.
+     *
+     * This method is a negation of the `can` method. It returns true if the user does not have the
+     * specified permission and false if the user does have it.
+     *
+     * @param string $permission the permission string in the format '{service} {action} {resource}'
+     *
+     * @return bool true if the user does not have the specified permission, false otherwise
+     */
     public static function cannot(string $permission): bool
     {
         return !static::can($permission);
