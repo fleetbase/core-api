@@ -67,6 +67,9 @@ class OnboardController extends Controller
         // set the user type
         $user->setUserType($isAdmin ? 'admin' : 'user');
 
+        // assign admin role
+        $user->assignSingleRole('Administrator');
+
         // create company
         $company = new Company(['name' => $request->input('organization_name')]);
         $company->setOwner($user)->save();

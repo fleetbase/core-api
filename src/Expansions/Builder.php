@@ -3,6 +3,7 @@
 namespace Fleetbase\Expansions;
 
 use Fleetbase\Build\Expansion;
+use Fleetbase\Support\Auth;
 use Fleetbase\Support\Http;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
@@ -182,6 +183,47 @@ class Builder implements Expansion
 
                 list($param, $direction) = Http::useSort($request);
                 $this->orderBy($param, $direction);
+            }
+
+            return $this;
+        };
+    }
+
+    /**
+     * Macro to apply directives to the query builder instance based on the current authenticated user's permissions.
+     *
+     * This macro allows directives to be automatically applied to a query builder instance. When invoked,
+     * it retrieves the appropriate directives based on the current authenticated user's context and permissions,
+     * and applies them to the query. This is particularly useful for dynamically enforcing permission-based
+     * constraints on queries within your application.
+     *
+     * @return \Illuminate\Database\Eloquent\Builder the query builder instance with the applied directives
+     */
+    public function applyDirectives()
+    {
+        return function () {
+            /** @var \Illuminate\Database\Eloquent\Builder $this */
+            return Auth::applyDirectivesToQuery($this);
+        };
+    }
+
+    /**
+     * Macro to apply directives to the query builder based on specific permissions.
+     *
+     * This macro retrieves directives associated with the given permission names and applies
+     * them to the query builder instance. It allows for dynamically enforcing permission-based
+     * constraints on queries, tailored to the specific permissions provided.
+     *
+     * @return \Illuminate\Database\Eloquent\Builder the query builder instance with the applied directives
+     */
+    public function applyDirectivesForPermissions()
+    {
+        return function (string|array $names = []) {
+            /** @var \Illuminate\Database\Eloquent\Builder $this */
+            $names      = is_string($names) ? [$names] : $names;
+            $directives = Auth::getDirectivesForPermissions($names);
+            foreach ($directives as $directive) {
+                $directive->apply($this);
             }
 
             return $this;

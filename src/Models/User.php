@@ -434,22 +434,34 @@ class User extends Authenticatable
 
     /**
      * Checks if the user is admin.
-     *
-     * @return bool
      */
-    public function isAdmin()
+    public function isAdmin(): bool
     {
         return $this->type === 'admin';
     }
 
     /**
      * Checks if the user is NOT admin.
-     *
-     * @return bool
      */
-    public function isNotAdmin()
+    public function isNotAdmin(): bool
     {
         return $this->type !== 'admin';
+    }
+
+    /**
+     * Checks if the user is NOT admin.
+     */
+    public function isType(string $type): bool
+    {
+        return $this->type === $type;
+    }
+
+    /**
+     * Checks if the user is NOT admin.
+     */
+    public function isNotType(string $type): bool
+    {
+        return $this->type !== $type;
     }
 
     /**

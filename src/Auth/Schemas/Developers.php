@@ -47,4 +47,54 @@ class Developers
             'remove_actions' => ['create', 'update', 'delete'],
         ],
     ];
+
+    /**
+     * Policies provided by this schema.
+     */
+    public array $policies = [
+        [
+            'name'        => 'FLBDeveloper',
+            'description' => 'Policy for developers to create api credentials, webhooks and view logs.',
+            'permissions' => [
+                'view extension',
+                '* api-key',
+                '* webhook',
+                '* event',
+                '* log',
+                '* socket',
+            ],
+        ],
+        [
+            'name'        => 'FLBDevProjectManager',
+            'description' => 'Policy for view and read access to development resources.',
+            'permissions' => [
+                'view extension',
+                'see api-key',
+                'list api-key',
+                'view api-key',
+                'see webhook',
+                'list webhook',
+                'view webhook',
+                'see event',
+                'list event',
+                'view event',
+                'see log',
+                'list log',
+                'view log',
+            ],
+        ],
+    ];
+
+    /**
+     * Roles provided by this schema.
+     */
+    public array $roles = [
+        [
+            'name'        => 'Fleetbase Developer',
+            'description' => 'Role for developers to create api credentials, webhooks and view real time events and logs.',
+            'policies'    => [
+                'FLBDeveloper',
+            ],
+        ],
+    ];
 }

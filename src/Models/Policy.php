@@ -74,7 +74,7 @@ class Policy extends Model implements PolicyContract
      *
      * @var array
      */
-    protected $fillable = ['company_uuid', 'name', 'guard_name', 'description'];
+    protected $fillable = ['company_uuid', 'name', 'guard_name', 'service', 'description'];
 
     /**
      * The guarded attributes.

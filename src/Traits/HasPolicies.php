@@ -323,4 +323,46 @@ trait HasPolicies
             ->policies->flatMap(fn ($policy) => $policy->permissions)
             ->sort()->values();
     }
+
+    /**
+     * Retrieves all policies associated with the user, including those through direct assignment and roles.
+     *
+     * This method loads all related policies and roles for the user, as well as policies associated with those roles.
+     * It merges all these policies into a single collection, providing a comprehensive list of policies that the user
+     * is associated with, either directly or through their roles.
+     *
+     * @return Collection a collection of all `Policy` models associated with the user, including those through roles
+     */
+    public function getAllPolicies(): Collection
+    {
+        $this->loadMissing('policies', 'roles', 'roles.policies');
+        $allPolicies = collect();
+
+        $allPolicies = $allPolicies->merge($this->policies);
+        foreach ($this->roles as $role) {
+            $allPolicies = $allPolicies->merge($role->policies);
+        }
+
+        return $allPolicies;
+    }
+
+    /**
+     * Checks if the user has the specified policy assigned, either directly or through a role.
+     *
+     * This method retrieves all policies associated with the user, including those assigned directly and those
+     * assigned through roles. It then checks if the specified policy is within this collection of policies. The method
+     * returns `true` if the policy is assigned to the user, and `false` otherwise.
+     *
+     * @param Policy $policy the `Policy` model to check against the user's assigned policies
+     *
+     * @return bool `True` if the policy is assigned to the user, `false` otherwise
+     */
+    public function hasPolicyAssigned(Policy $policy): bool
+    {
+        $policies = $this->getAllPolicies();
+
+        return $policies->contains(function ($anyPolicy) use ($policy) {
+            return $policy->id === $anyPolicy->id;
+        });
+    }
 }

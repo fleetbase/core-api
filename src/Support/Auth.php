@@ -6,7 +6,10 @@ use Fleetbase\Attributes\SkipAuthorizationCheck;
 use Fleetbase\Models\ApiCredential;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
+use Fleetbase\Models\Directive;
 use Fleetbase\Models\Permission;
+use Fleetbase\Models\Policy;
+use Fleetbase\Models\Role;
 use Fleetbase\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -343,6 +346,104 @@ class Auth extends Authentication
         $permissionWildcardServiceName = implode(' ', [$service, '*']);
 
         return Permission::findByNames([$permissionName, $permissionWildcardName, $permissionWildcardServiceName]);
+    }
+
+    /**
+     * Retrieves a collection of directives associated with the permissions extracted from the given request.
+     *
+     * This method first resolves the user from the session and then extracts the permissions from the request.
+     * It then queries the `Directive` model to retrieve all directives that correspond to those permissions,
+     * loading the related `subject` (either a `Policy` or `Role`). After retrieving the directives, it filters
+     * them based on whether the user has the associated policy or role assigned. The resulting collection
+     * contains only the directives applicable to the current user.
+     *
+     * @param Request $request the HTTP request instance from which to resolve permissions
+     *
+     * @return Collection a collection of `Directive` models that are associated with the resolved permissions and applicable to the current user
+     */
+    public static function getDirectivesFromRequest(Request $request): Collection
+    {
+        $user        = static::getUserFromSession();
+        $permissions = static::resolvePermissionsFromRequest($request);
+        $directives  = Directive::whereIn('permission_uuid', $permissions->pluck('id'))
+            ->with(['subject'])
+            ->get()
+            ->filter(
+                function ($directive) use ($user) {
+                    if ($directive->subject instanceof Policy) {
+                        return $user->hasPolicyAssigned($directive->subject);
+                    }
+
+                    if ($directive->subject instanceof Role) {
+                        return $user->hasRole($directive->subject);
+                    }
+
+                    return false;
+                }
+            );
+
+        return $directives;
+    }
+
+    /**
+     * Retrieves a collection of directives associated with the specified permissions.
+     *
+     * This method resolves the user from the session and looks up the specified permissions by name.
+     * It then queries the `Directive` model to retrieve all directives that correspond to those permissions,
+     * loading the related `subject` (either a `Policy` or `Role`). After retrieving the directives, it filters
+     * them based on whether the user has the associated policy or role assigned. The resulting collection
+     * contains only the directives that are applicable to the current user.
+     *
+     * @param array $names an array of permission names to look up and retrieve directives for
+     *
+     * @return Collection a collection of `Directive` models that are associated with the specified permissions and applicable to the current user
+     */
+    public static function getDirectivesForPermissions(array $names = []): Collection
+    {
+        $user        = static::getUserFromSession();
+        $permissions = Permission::findByNames($names);
+        $directives  = Directive::whereIn('permission_uuid', $permissions->pluck('id'))
+            ->with(['subject'])
+            ->get()
+            ->filter(
+                function ($directive) use ($user) {
+                    if ($directive->subject instanceof Policy) {
+                        return $user->hasPolicyAssigned($directive->subject);
+                    }
+
+                    if ($directive->subject instanceof Role) {
+                        return $user->hasRole($directive->subject);
+                    }
+
+                    return false;
+                }
+            );
+
+        return $directives;
+    }
+
+    /**
+     * Applies directives to a query builder instance based on the permissions extracted from the request.
+     *
+     * This method retrieves directives associated with the current request and applies each directive
+     * to the given query builder instance. If a request is not explicitly provided, the current request
+     * is used by default. The method is typically used to enforce permissions and constraints dynamically
+     * on a query based on the user's context or permissions.
+     *
+     * @param \Illuminate\Database\Eloquent\Builder $builder the query builder instance to which the directives will be applied
+     * @param \Illuminate\Http\Request|null         $request An optional HTTP request instance. If not provided, the current request is used.
+     *
+     * @return \Illuminate\Database\Eloquent\Builder the query builder with the applied directives
+     */
+    public static function applyDirectivesToQuery($builder, ?Request $request = null)
+    {
+        $request    = $request instanceof Request ? $request : request();
+        $directives = static::getDirectivesFromRequest($request);
+        foreach ($directives as $directive) {
+            $directive->apply($builder);
+        }
+
+        return $builder;
     }
 
     /**

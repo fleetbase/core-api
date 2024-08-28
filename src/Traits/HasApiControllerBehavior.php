@@ -487,10 +487,12 @@ trait HasApiControllerBehavior
     {
         if (Http::isInternalRequest($request)) {
             $key       = $this->model->getKeyName();
-            $dataModel = $this->model->where($key, $id)->first();
+            $builder   = $this->model->where($key, $id);
         } else {
-            $dataModel = $this->model->wherePublicId($id)->first();
+            $builder = $this->model->wherePublicId($id);
         }
+        $builder   = $this->model->applyDirectivesToQuery($request, $builder);
+        $dataModel = $builder->first();
 
         if ($dataModel) {
             $dataModel->delete();

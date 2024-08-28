@@ -2,7 +2,9 @@
 
 namespace Fleetbase\Traits;
 
+use Fleetbase\Support\Auth;
 use Fleetbase\Support\Http;
+use Fleetbase\Support\QueryOptimizer;
 use Fleetbase\Support\Resolve;
 use Fleetbase\Support\Utils;
 use Illuminate\Http\JsonResponse;
@@ -221,14 +223,16 @@ trait HasApiModelBehavior
      */
     public function updateRecordFromRequest(Request $request, $id, ?callable $onBefore = null, ?callable $onAfter = null, array $options = [])
     {
-        $record = $this->where(function ($q) use ($id) {
+        $builder = $this->where(function ($q) use ($id) {
             $publicIdColumn = $this->getQualifiedPublicId();
 
             $q->where($this->getQualifiedKeyName(), $id);
             if ($this->isColumn($publicIdColumn)) {
                 $q->orWhere($publicIdColumn, $id);
             }
-        })->first();
+        });
+        $builder = $this->applyDirectivesToQuery($request, $builder);
+        $record  = $builder->first();
 
         if (!$record) {
             throw new \Exception($this->getApiHumanReadableName() . ' not found');
@@ -596,6 +600,7 @@ trait HasApiModelBehavior
         $builder = $this->withCounts($request, $builder);
         $builder = $this->withRelationships($request, $builder);
         $builder = $this->applySorts($request, $builder);
+        $builder = $this->applyDirectivesToQuery($request, $builder);
 
         return $builder->first();
     }
@@ -656,8 +661,48 @@ trait HasApiModelBehavior
         $builder = $this->withRelationships($request, $builder);
         $builder = $this->withCounts($request, $builder);
         $builder = $this->applySorts($request, $builder);
+        $builder = $this->applyDirectivesToQuery($request, $builder);
 
         return $builder;
+    }
+
+    /**
+     * Applies all authorization directives from the request to the given query builder.
+     *
+     * This method retrieves directives from the request using the `Auth::getDirectivesFromRequest` method,
+     * then iterates over each directive and applies it to the provided query builder. The directives modify
+     * the query to enforce the appropriate access controls based on the authenticated user's permissions.
+     *
+     * @param Request                               $request the HTTP request containing the authorization directives
+     * @param \Illuminate\Database\Eloquent\Builder $builder the query builder instance to which the directives will be applied
+     *
+     * @return \Illuminate\Database\Eloquent\Builder the modified query builder with all directives applied
+     */
+    public function applyDirectivesToQuery(Request $request, $builder)
+    {
+        $directives = Auth::getDirectivesFromRequest($request);
+        foreach ($directives as $directive) {
+            $directive->apply($builder);
+        }
+
+        return $builder;
+    }
+
+    /**
+     * Optimizes the given query builder by removing duplicate where clauses.
+     *
+     * This method takes a query builder instance and passes it to the QueryOptimizer,
+     * which processes the query to remove any duplicate where clauses while ensuring
+     * that the associated bindings are correctly managed. This optimization helps in
+     * improving query performance and avoiding potential issues with redundant conditions.
+     *
+     * @param \Illuminate\Database\Eloquent\Builder $builder the query builder instance to optimize
+     *
+     * @return \Illuminate\Database\Eloquent\Builder the optimized query builder with unique where clauses
+     */
+    public function optimizeQuery($builder)
+    {
+        return QueryOptimizer::removeDuplicateWheres($builder);
     }
 
     /**

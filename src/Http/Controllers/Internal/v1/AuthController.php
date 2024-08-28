@@ -622,4 +622,21 @@ class AuthController extends Controller
 
         return new Organization($company);
     }
+
+    /**
+     * Returns all authorization services which provide schemas.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function services()
+    {
+        $schemas  = Utils::getAuthSchemas();
+        $services = [];
+
+        foreach ($schemas as $schema) {
+            $services[] = $schema->name;
+        }
+
+        return response()->json(array_unique($services));
+    }
 }
