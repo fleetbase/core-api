@@ -367,9 +367,7 @@ class UserController extends FleetbaseController
             return response()->error('No user found', 401);
         }
 
-        // $user->deactivate();
-        // deactivate for company session
-        $user->companies()->where('company_uuid', session('company'))->update(['status' => 'inactive']);
+        $user->deactivate();
         $user = $user->refresh();
 
         return response()->json([
@@ -395,10 +393,7 @@ class UserController extends FleetbaseController
             return response()->error('No user found', 401);
         }
 
-        // $user->activate();
-        // activate for company session
-        // maybe we dont want to activate for all organizations
-        $user->companies()->where('company_uuid', session('company'))->update(['status' => 'active']);
+        $user->activate();
         $user = $user->refresh();
 
         return response()->json([

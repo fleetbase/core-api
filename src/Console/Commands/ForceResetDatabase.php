@@ -3,6 +3,7 @@
 namespace Fleetbase\Console\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -31,6 +32,17 @@ class ForceResetDatabase extends Command
     {
         // Get the connection name or use the default
         $connection = $this->option('connection') ?: config('database.default');
+
+        // If connection is "all"
+        if (strtolower($connection) === 'all') {
+            $connections = config('database.connections', []);
+            foreach ($connections as $connectionName => $connectionConfig) {
+                Artisan::call('db:force-reset', ['--connection' => $connectionName]);
+                echo Artisan::output();
+            }
+
+            return;
+        }
 
         // Set the connection for the schema builder and DB facade
         $schema = Schema::connection($connection);

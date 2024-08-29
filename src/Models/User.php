@@ -3,6 +3,7 @@
 namespace Fleetbase\Models;
 
 use Fleetbase\Casts\Json;
+use Fleetbase\Exceptions\InvalidVerificationCodeException;
 use Fleetbase\Notifications\UserCreated;
 use Fleetbase\Notifications\UserInvited;
 use Fleetbase\Support\NotificationRegistry;
@@ -13,25 +14,28 @@ use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasCacheableAttributes;
 use Fleetbase\Traits\HasMetaAttributes;
-use Fleetbase\Traits\HasPolicies;
 use Fleetbase\Traits\HasPresence;
 use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasUuid;
+use Fleetbase\Traits\ProxiesAuthorizationMethods;
 use Fleetbase\Traits\Searchable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasTimestamps;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\CausesActivity;
 use Spatie\Activitylog\Traits\LogsActivity;
-use Spatie\Permission\Traits\HasRoles;
 use Spatie\Sluggable\HasSlug;
 use Spatie\Sluggable\SlugOptions;
 
@@ -42,8 +46,6 @@ class User extends Authenticatable
     use HasPresence;
     use Searchable;
     use Notifiable;
-    use HasRoles;
-    use HasPolicies;
     use HasApiTokens;
     use HasSlug;
     use HasApiModelBehavior;
@@ -53,7 +55,10 @@ class User extends Authenticatable
     use LogsActivity;
     use CausesActivity;
     use SoftDeletes;
-    use Expandable;
+    use ProxiesAuthorizationMethods, Expandable {
+        ProxiesAuthorizationMethods::__call insteadof Expandable;
+        Expandable::__call as __callExpansion;
+    }
     use Filterable;
     use ClearsHttpCache;
 
@@ -166,7 +171,6 @@ class User extends Authenticatable
         'is_admin',
         'is_online',
         'last_seen_at',
-        'types',
     ];
 
     /**
@@ -230,29 +234,76 @@ class User extends Authenticatable
     }
 
     /**
-     * The company this user belongs to.
+     * Defines the relationship between the user and their company.
+     *
+     * This method establishes a `BelongsTo` relationship, indicating that the user belongs to a single company.
+     *
+     * @return BelongsTo the relationship instance between the User and the Company model
      */
-    public function company(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    public function company(): BelongsTo
     {
         return $this->belongsTo(Company::class);
     }
 
-    public function avatar(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    /**
+     * Defines the relationship between the user and their avatar file.
+     *
+     * This method establishes a `BelongsTo` relationship, indicating that the user's avatar is a file record.
+     *
+     * @return BelongsTo the relationship instance between the User and the File model
+     */
+    public function avatar(): BelongsTo
     {
         return $this->belongsTo(File::class);
     }
 
-    public function devices(): \Illuminate\Database\Eloquent\Relations\HasMany
+    /**
+     * Defines the relationship between the user and their devices.
+     *
+     * This method establishes a `HasMany` relationship, indicating that the user can have multiple associated devices.
+     *
+     * @return HasMany the relationship instance between the User and the UserDevice model
+     */
+    public function devices(): HasMany
     {
         return $this->hasMany(UserDevice::class);
     }
 
-    public function companies(): \Illuminate\Database\Eloquent\Relations\HasMany
+    /**
+     * Defines the relationship between the user and the companies they are associated with.
+     *
+     * This method establishes a `HasMany` relationship, indicating that the user can be associated with multiple companies
+     * through the `CompanyUser` model.
+     *
+     * @return HasMany the relationship instance between the User and the CompanyUser model
+     */
+    public function companies(): HasMany
     {
         return $this->hasMany(CompanyUser::class, 'user_uuid');
     }
 
-    public function groups(): \Illuminate\Database\Eloquent\Relations\HasManyThrough
+    /**
+     * Defines the relationship between the user and their current company user record.
+     *
+     * This method establishes a `HasOne` relationship, indicating that the user has one associated
+     * `CompanyUser` record for the current company (determined by the `company_uuid` stored in the session).
+     *
+     * @return HasOne|Builder the relationship instance between the User and the CompanyUser model
+     */
+    public function companyUser(): HasOne|Builder
+    {
+        return $this->hasOne(CompanyUser::class, 'user_uuid', 'uuid')->where('company_uuid', session('company'));
+    }
+
+    /**
+     * Defines the relationship between the user and the groups they are part of.
+     *
+     * This method establishes a `HasManyThrough` relationship, indicating that the user can belong to multiple groups
+     * through the `GroupUser` pivot table.
+     *
+     * @return HasManyThrough the relationship instance between the User and the Group model
+     */
+    public function groups(): HasManyThrough
     {
         return $this->hasManyThrough(Group::class, GroupUser::class, 'user_uuid', 'uuid', 'uuid', 'group_uuid');
     }
@@ -276,15 +327,71 @@ class User extends Authenticatable
     }
 
     /**
-     * Set the company for this user.
+     * Retrieves the `CompanyUser` record for the user, either for the current or a specified company.
+     *
+     * This method first attempts to load the `companyUser` relationship, which is associated with the current company
+     * (as determined by the session). If a `CompanyUser` record is found, it is returned.
+     * If not, and a specific company is provided, the method searches the user's associated companies
+     * for a `CompanyUser` record matching the given company UUID.
+     *
+     * @param Company|null $company the company to retrieve the `CompanyUser` record for, or null to use the current company
+     *
+     * @return CompanyUser|null the `CompanyUser` instance if found, or null if not found
      */
-    public function assignCompany(Company $company): User
+    public function getCompanyUser(?Company $company = null): ?CompanyUser
+    {
+        $this->loadMissing(['companyUser', 'companies']);
+        if ($this->companyUser) {
+            return $this->companyUser;
+        }
+
+        $companyUser = $this->companies()->where('company_uuid', $company->uuid)->first();
+        if ($companyUser) {
+            $this->setRelation('companyUser', $companyUser);
+
+            return $companyUser;
+        }
+
+        return null;
+    }
+
+    /**
+     * Set the `companyUser` relation on the user for the specified company.
+     *
+     * This method searches for the `CompanyUser` relationship instance associated with the provided
+     * company. If a matching `CompanyUser` record is found, it sets the `companyUser` relation
+     * on the user model, allowing it to be accessed as if it were loaded through a relationship.
+     *
+     * @param Company $company the company instance to set the `companyUser` relation for
+     */
+    public function setCompanyUserRelation(Company $company): void
+    {
+        $companyUser = $this->companies()->where('company_uuid', $company->uuid)->first();
+        if ($companyUser) {
+            $this->setRelation('companyUser', $companyUser);
+        }
+    }
+
+    /**
+     * Assigns the user to a company and handles related processes.
+     *
+     * This method assigns the given company to the user by updating the `company_uuid` attribute.
+     * It creates a new `CompanyUser` record if it does not exist. If the user is not an admin
+     * and is not the company owner, they will be invited to join the company and the company owner
+     * will be notified that a user has been created.
+     *
+     * @param Company $company the company to assign the user to
+     *
+     * @return self returns the current User instance
+     */
+    public function assignCompany(Company $company): self
     {
         $this->company_uuid = $company->uuid;
 
         // Create company user record
         if (CompanyUser::where(['company_uuid' => $company->uuid, 'user_uuid' => $this->uuid])->doesntExist()) {
-            CompanyUser::create(['company_uuid' => $company->uuid, 'user_uuid' => $this->uuid, 'status' => $this->status]);
+            $companyUser = CompanyUser::create(['company_uuid' => $company->uuid, 'user_uuid' => $this->uuid, 'status' => $this->status]);
+            $this->setRelation('companyUser', $companyUser);
         }
 
         // Determine if user should receive invite to join company
@@ -302,9 +409,16 @@ class User extends Authenticatable
     }
 
     /**
-     * Set the company for the user.
+     * Sets the user's company without any additional processing.
+     *
+     * This method directly assigns the given company to the user by updating the `company_uuid` attribute
+     * and saving the model.
+     *
+     * @param Company $company the company to set for the user
+     *
+     * @return self returns the current User instance
      */
-    public function setCompany(Company $company): User
+    public function setCompany(Company $company): self
     {
         $this->company_uuid = $company->uuid;
         $this->save();
@@ -313,7 +427,14 @@ class User extends Authenticatable
     }
 
     /**
-     * Checks if user is the owner of the company.
+     * Checks if the user is the owner of the given company.
+     *
+     * This method compares the user's UUID with the owner's UUID of the specified company
+     * to determine if the user is the owner.
+     *
+     * @param Company $company the company to check ownership of
+     *
+     * @return bool returns true if the user is the company owner, false otherwise
      */
     public function isCompanyOwner(Company $company): bool
     {
@@ -321,9 +442,16 @@ class User extends Authenticatable
     }
 
     /**
-     * Set the company for this user.
+     * Assigns the user to a company based on a company ID or public ID.
+     *
+     * This method checks if the provided ID is a valid UUID or public ID.
+     * If a company is found with the given ID, the user is assigned to that company.
+     *
+     * @param string|null $id the UUID or public ID of the company to assign the user to
+     *
+     * @return self returns the current User instance
      */
-    public function assignCompanyFromId(?string $id): User
+    public function assignCompanyFromId(?string $id): self
     {
         if (!Str::isUuid($id) && !Utils::isPublicId($id)) {
             return $this;
@@ -338,33 +466,89 @@ class User extends Authenticatable
         return $this;
     }
 
+    /**
+     * Accessor for the user's role.
+     *
+     * This method retrieves the first role assigned to the user in the current company context.
+     *
+     * @return Role|null the first Role instance associated with the user, or null if no role is found
+     */
     public function getRoleAttribute(): ?Role
     {
-        return $this->roles()->first();
+        $this->loadMissing('companyUser');
+
+        return $this->companyUser->roles()->first();
     }
 
     /**
-     * @return string
+     * Accessor for the user's roles.
+     *
+     * This method retrieves all roles assigned to the user in the current company context.
+     *
+     * @return Collection a collection of Role instances associated with the user, or null if no roles are found
      */
-    public function getSessionStatusAttribute()
+    public function getRolesAttribute(): Collection
     {
-        if (!session('company')) {
-            return 'pending';
-        }
+        $this->loadMissing('companyUser');
 
-        $result = $this->companies()->where('company_uuid', session('company'))->first('status');
-
-        return data_get($result, 'status', 'pending');
+        return $this->companyUser->roles()->get();
     }
 
     /**
-     * @return string
+     * Accessor for the user's policies.
+     *
+     * This method retrieves all policies assigned to the user in the current company context.
+     *
+     * @return Collection a collection of Policy instances associated with the user, or null if no policies are found
      */
-    public function findSessionStatus()
+    public function getPoliciesAttribute(): Collection
     {
-        $result = $this->companies()->where('company_uuid', session('company'))->first('status');
-        $status = $result->status ?? 'pending';
+        $this->loadMissing('companyUser');
 
+        return $this->companyUser->policies()->get();
+    }
+
+    /**
+     * Accessor for the user's permissions.
+     *
+     * This method retrieves all permissions assigned to the user in the current company context.
+     *
+     * @return Collection a collection of Permission instances associated with the user, or null if no permissions are found
+     */
+    public function getPermissionsAttribute(): Collection
+    {
+        $this->loadMissing('companyUser');
+
+        return $this->companyUser->permissions()->get();
+    }
+
+    /**
+     * Accessor for the user's session status.
+     *
+     * This method retrieves the user's status in the current company context.
+     * If no status is found, it defaults to 'pending'.
+     *
+     * @return string the user's session status, or 'pending' if not set
+     */
+    public function getSessionStatusAttribute(): string
+    {
+        $this->loadMissing('companyUser');
+
+        return $this->companyUser->status ?? 'pending';
+    }
+
+    /**
+     * Finds and sets the user's session status.
+     *
+     * This method retrieves the user's status in the current company context
+     * and sets it as an attribute on the user model. If no status is found, it defaults to 'pending'.
+     *
+     * @return string the user's session status, or 'pending' if not set
+     */
+    public function findSessionStatus(): string
+    {
+        $this->loadMissing('companyUser');
+        $status = $this->companyUser->status ?? 'pending';
         $this->setAttribute('session_status', $status);
 
         return $status;
@@ -372,11 +556,11 @@ class User extends Authenticatable
 
     /**
      * Specifies the user's FCM tokens.
-     *
-     * @return string|array
      */
-    public function routeNotificationForFcm()
+    public function routeNotificationForFcm(): array
     {
+        $this->loadMissing('devices');
+
         return $this->devices->where('platform', 'android')->map(
             function ($userDevice) {
                 return $userDevice->token;
@@ -386,11 +570,11 @@ class User extends Authenticatable
 
     /**
      * Specifies the user's APNS tokens.
-     *
-     * @return string|array
      */
-    public function routeNotificationForApn()
+    public function routeNotificationForApn(): array
     {
+        $this->loadMissing('devices');
+
         return $this->devices->where('platform', 'ios')->map(
             function ($userDevice) {
                 return $userDevice->token;
@@ -400,10 +584,8 @@ class User extends Authenticatable
 
     /**
      * Get avatar URL attribute.
-     *
-     * @return string
      */
-    public function getAvatarUrlAttribute()
+    public function getAvatarUrlAttribute(): string
     {
         if ($this->avatar instanceof File) {
             return $this->avatar->url;
@@ -414,20 +596,16 @@ class User extends Authenticatable
 
     /**
      * Get the users's company name.
-     *
-     * @return string
      */
-    public function getCompanyNameAttribute()
+    public function getCompanyNameAttribute(): string
     {
         return data_get($this, 'company.name');
     }
 
     /**
      * Get the users's company name.
-     *
-     * @return string
      */
-    public function getDriverUuidAttribute()
+    public function getDriverUuidAttribute(): ?string
     {
         return data_get($this, 'driver.uuid');
     }
@@ -469,33 +647,34 @@ class User extends Authenticatable
      *
      * @return void
      */
-    public function getIsAdminAttribute()
+    public function getIsAdminAttribute(): bool
     {
         return $this->isAdmin();
     }
 
     /**
      * Set and hash password.
-     *
-     * @return void
      */
-    public function setPasswordAttribute($value)
+    public function setPasswordAttribute($value): void
     {
         $this->attributes['password'] = Hash::make($value);
     }
 
     /**
      * Set the default status to `active`.
-     *
-     * @return void
      */
-    public function setStatusAttribute($value = 'active')
+    public function setStatusAttribute($value = 'active'): void
     {
         $this->attributes['status'] = $value ?? 'active';
     }
 
     /**
-     * Get the user timezone.
+     * Retrieves the user's timezone.
+     *
+     * This method returns the timezone associated with the user. If no timezone is set,
+     * it defaults to 'Asia/Singapore'.
+     *
+     * @return string the user's timezone, or 'Asia/Singapore' if not set
      */
     public function getTimezone(): string
     {
@@ -503,9 +682,14 @@ class User extends Authenticatable
     }
 
     /**
-     * Get the company relationship from the user.
+     * Retrieves the company associated with the user.
+     *
+     * This method first attempts to load the company relationship. If the relationship
+     * is not found, it attempts to locate the company using the user's `company_uuid` attribute.
+     *
+     * @return Company|null the associated Company instance, or null if no company is found
      */
-    public function getCompany(): ?Company
+    public function getCompany(): Company
     {
         // Get company relationship
         $company = $this->load(['company'])->company;
@@ -519,9 +703,14 @@ class User extends Authenticatable
     }
 
     /**
-     * Updates the users last login.
+     * Updates the user's last login timestamp.
+     *
+     * This method sets the user's `last_login` attribute to the current date and time
+     * and then saves the model.
+     *
+     * @return self returns the current User instance
      */
-    public function updateLastLogin(): User
+    public function updateLastLogin(): self
     {
         $this->last_login = Carbon::now()->toDateTimeString();
         $this->save();
@@ -530,9 +719,15 @@ class User extends Authenticatable
     }
 
     /**
-     * Changes the users password.
+     * Changes the user's password.
+     *
+     * This method updates the user's password to the provided new password and saves the model.
+     *
+     * @param string $newPassword the new password for the user
+     *
+     * @return self returns the current User instance
      */
-    public function changePassword($newPassword): User
+    public function changePassword($newPassword): self
     {
         $this->password = $newPassword;
         $this->save();
@@ -541,7 +736,13 @@ class User extends Authenticatable
     }
 
     /**
-     * Checks if password provided is the correct and current password for the user.
+     * Verifies the given password against the user's stored password.
+     *
+     * This method checks if the provided password matches the user's current password.
+     *
+     * @param string $password the plain text password to verify
+     *
+     * @return bool returns true if the password matches, false otherwise
      */
     public function checkPassword(string $password): bool
     {
@@ -549,25 +750,109 @@ class User extends Authenticatable
     }
 
     /**
-     * Deactivate this user.
+     * Deactivates the user.
+     *
+     * This method sets the user's status to 'inactive' and saves the model.
+     *
+     * @return self returns the current User instance
      */
-    public function deactivate()
+    public function deactivate(): self
     {
         $this->status = 'inactive';
+        $this->save();
+
+        $this->loadMissing('companyUser');
+        if ($this->companyUser) {
+            $this->companyUser->status = 'inactive';
+            $this->companyUser->save();
+        }
+
+        return $this;
+    }
+
+    /**
+     * Activates the user.
+     *
+     * This method sets the user's status to 'active' and saves the model.
+     *
+     * @return self returns the current User instance
+     */
+    public function activate(): self
+    {
+        $this->status = 'active';
+        $this->save();
+
+        $this->loadMissing('companyUser');
+        if ($this->companyUser) {
+            $this->companyUser->status = 'active';
+            $this->companyUser->save();
+        }
+
+        return $this;
+    }
+
+    /**
+     * Retrieve the verification code for the given type and code.
+     *
+     * @param string $code  the verification code to verify
+     * @param array  $types The types of verification to check (e.g., 'email_verification', 'phone_verification').
+     *
+     * @throws \Illuminate\Database\Eloquent\ModelNotFoundException
+     */
+    public function getVerificationCodeOrFail(string $code, array $types = ['email_verification', 'phone_verification']): VerificationCode
+    {
+        $verifyCode = VerificationCode::where('subject_uuid', $this->uuid)
+            ->whereIn('for', $types)
+            ->where('code', $code)
+            ->firstOrFail();
+
+        return $verifyCode;
+    }
+
+    /**
+     * Verify the user's email or phone based on the verification code.
+     *
+     * @param string|\Fleetbase\Models\VerificationCode $code the verification code or its model instance
+     *
+     * @throws InvalidVerificationCodeException
+     */
+    public function verify(VerificationCode|string $code): self
+    {
+        // Check if $code is a string, and retrieve the verification code model if necessary
+        if (is_string($code)) {
+            $verifyCode = $this->getVerificationCodeOrFail($code);
+        } elseif ($code instanceof VerificationCode) {
+            $verifyCode = $code;
+        } else {
+            throw new InvalidVerificationCodeException('Invalid verification code.');
+        }
+
+        // Get the current time
+        $verifiedAt = Carbon::now();
+
+        // Verify the user's email or phone based on the type of verification
+        if ($verifyCode->for === 'email_verification') {
+            $this->email_verified_at = $verifiedAt;
+        } elseif ($verifyCode->for === 'phone_verification') {
+            $this->phone_verified_at = $verifiedAt;
+        } else {
+            throw new InvalidVerificationCodeException('Invalid verification type.');
+        }
+
+        // Save the user's verification status
         $this->save();
 
         return $this;
     }
 
     /**
-     * Activate this user.
+     * Get the date and time when the user was verified.
+     *
+     * @return \Illuminate\Support\Carbon|null the date and time of verification, or null if not verified
      */
-    public function activate()
+    public function getDateVerified(): ?Carbon
     {
-        $this->status = 'active';
-        $this->save();
-
-        return $this;
+        return $this->email_verified_at ?? $this->phone_verified_at;
     }
 
     /**
@@ -575,7 +860,7 @@ class User extends Authenticatable
      *
      * @return bool true if the class uses the Searchable trait or the 'searchable' property exists and is true, false otherwise
      */
-    public static function isSearchable()
+    public static function isSearchable(): bool
     {
         return class_uses_recursive(Searchable::class) || (property_exists(new static(), 'searchable') && static::$searchable);
     }
@@ -585,7 +870,7 @@ class User extends Authenticatable
      *
      * @return bool true if the model instance is searchable, false otherwise
      */
-    public function searchable()
+    public function searchable(): bool
     {
         return static::isSearchable();
     }
@@ -595,25 +880,29 @@ class User extends Authenticatable
      *
      * @return string the phone number of the model instance
      */
-    public function routeNotificationForTwilio()
+    public function routeNotificationForTwilio(): string
     {
         return $this->phone;
     }
 
     /**
      * The channels the user receives notification broadcasts on.
-     *
-     * @return string
      */
-    public function receivesBroadcastNotificationsOn()
+    public function receivesBroadcastNotificationsOn(): string
     {
         return 'user.' . $this->uuid;
     }
 
     /**
-     * Set the user type.
+     * Sets the user's type and saves the model.
+     *
+     * This method assigns the given type to the user and immediately persists the change to the database.
+     *
+     * @param string $type the type to assign to the user
+     *
+     * @return self returns the current User instance
      */
-    public function setUserType(string $type): User
+    public function setUserType(string $type): self
     {
         $this->type = $type;
         $this->save();
@@ -622,57 +911,15 @@ class User extends Authenticatable
     }
 
     /**
-     * Accessor to get the types associated with the model instance.
+     * Sends an invitation to the user to join a company.
      *
-     * @return array an array of types associated with the model instance
-     */
-    public function getTypesAttribute()
-    {
-        $driver   = false;
-        $customer = false;
-
-        // // if (method_exists($this, 'driver')) {
-        // try {
-        //     $driver = $this->driver()->exists();
-        // } catch (QueryException $e) {
-        //     // keep silent
-        // }
-        // // }
-
-        // if (method_exists($this, 'customer')) {
-        //     try {
-        //         $customer = $this->customer()->exists();
-        //     } catch (QueryException $e) {
-        //         // keep silent
-        //     }
-        // }
-
-        $types = [$this->type];
-
-        if ($driver) {
-            $types[] = 'driver';
-        }
-
-        if ($customer) {
-            $types[] = 'customer';
-        }
-
-        return collect($types)->filter(
-            function ($value) {
-                return !empty($value) && is_string($value);
-            }
-        )->unique()->values()->toArray();
-    }
-
-    /**
-     * Sends an invitation from a company to join.
+     * This method checks if a company is provided. If not, it loads the user's associated company.
+     * It then verifies that the company is valid and that the user hasn't already been invited.
+     * If these checks pass, it creates an invitation and sends a notification to the user.
      *
-     * This function checks if the user is already invited to the company.
-     * If not, it creates a new invitation and notifies the user.
+     * @param Company|null $company The company to send the invitation from. If null, the user's associated company will be used.
      *
-     * @param Company $company the company from which the invitation is being sent
-     *
-     * @return bool returns true if the invitation is successfully sent, false otherwise
+     * @return bool returns true if the invitation was sent successfully, or false if the invitation could not be sent
      */
     public function sendInviteFromCompany(?Company $company = null): bool
     {
@@ -709,26 +956,33 @@ class User extends Authenticatable
         return true;
     }
 
-    public function getIdentity(): ?string
+    /**
+     * Retrieves the user's primary identity.
+     *
+     * This method returns the user's email if available. If the email is not set,
+     * it returns the user's phone number. If neither is set, it returns null.
+     *
+     * @return string|null the user's email, phone number, or null if neither is available
+     */
+    public function getIdentity(): string
     {
-        $email = data_get($this, 'email');
-        $phone = data_get($this, 'phone');
+        $email    = data_get($this, 'email');
+        $phone    = data_get($this, 'phone');
+        $username = data_get($this, 'username');
 
-        if ($email) {
-            return $email;
-        }
-
-        return $phone;
+        return $email ?? $phone ?? $username;
     }
 
     /**
-     * Check if the user is verified.
+     * Checks if the user is verified.
      *
-     * @return bool true if the user is verified (either email or phone), false otherwise
+     * This method determines if the user has been verified based on their email or phone verification status.
+     * If the user is an admin, they are considered verified by default.
+     *
+     * @return bool returns true if the user is verified, or false otherwise
      */
     public function isVerified(): bool
     {
-        // if admin bypass
         if ($this->type === 'admin') {
             return true;
         }
@@ -737,9 +991,12 @@ class User extends Authenticatable
     }
 
     /**
-     * Check if the user is NOT verified.
+     * Checks if the user is not verified.
      *
-     * @return bool true if the user is NOT verified (either email or phone), false otherwise
+     * This method is the inverse of `isVerified()`. It returns true if the user is not verified,
+     * and false if the user is verified.
+     *
+     * @return bool returns true if the user is not verified, or false if the user is verified
      */
     public function isNotVerified(): bool
     {
@@ -803,7 +1060,7 @@ class User extends Authenticatable
      *
      * @return User returns the newly created User instance with enriched attributes
      */
-    public static function newUserWithRequestInfo($request, $attributes = []): User
+    public static function newUserWithRequestInfo($request, $attributes = []): self
     {
         return new User(static::applyUserInfoFromRequest($request, $attributes));
     }
@@ -820,7 +1077,7 @@ class User extends Authenticatable
      *
      * @return User the current User model instance with updated information
      */
-    public function setUserInfoFromRequest($request, bool $save = false): User
+    public function setUserInfoFromRequest($request, bool $save = false): self
     {
         $userInfoAttributes = static::getUserInfoFromRequest($request);
 
@@ -866,73 +1123,27 @@ class User extends Authenticatable
     }
 
     /**
-     * Assign a single role to the user, removing any existing roles.
+     * Assigns a single role to the user for the current company.
      *
-     * This method deletes all existing roles assigned to the user and then assigns the specified role.
+     * This method loads the related `companyUser` relationship if it hasn't been loaded already.
+     * It then delegates the role assignment to the `assignRole` method on the `CompanyUser` model,
+     * which is responsible for managing roles within the context of a specific company.
      *
-     * @param string|int|\Spatie\Permission\Models\Role $role The role to assign to the user (can be a role name, ID, or instance)
+     * @param string|\Fleetbase\Models\Role $role the role instance or role name to be assigned
      *
-     * @return User The assigned role instance
+     * @return CompanyUser returns the current CompanyUser instance
+     *
+     * @throws \Exception if the `companyUser` relationship is not available or the role assignment fails
      */
     public function assignSingleRole($role): self
     {
-        DB::table('model_has_roles')->where('model_uuid', $this->uuid)->delete();
+        $this->loadMissing('companyUser');
+        if ($this->companyUser) {
+            $this->companyUser->assignSingleRole($role);
 
-        return $this->assignRole($role);
-    }
-
-    /**
-     * Return all the permissions the model has, both directly and via roles and policies.
-     */
-    public function getAllPermissions()
-    {
-        /** @var \Illuminate\Database\Eloquent\Model|\Spatie\Permission\Traits\HasPermissions $this */
-        /** @var Collection $permissions */
-        $permissions = $this->permissions;
-
-        if (method_exists($this, 'roles')) {
-            $permissions = $permissions->merge($this->getPermissionsViaRoles());
+            return $this;
         }
 
-        if (method_exists($this, 'policies')) {
-            $permissions = $permissions->merge($this->getPermissionsViaPolicies());
-            $permissions = $permissions->merge($this->getPermissionsViaRolePolicies());
-        }
-
-        return $permissions->sort()->values();
-    }
-
-    /**
-     * Checks if the user has any of the given permissions.
-     *
-     * This method checks if the user's attached permissions intersect with the given permissions.
-     * If there is at least one matching permission, the method returns true.
-     *
-     * @param Collection|array $permissions The permissions to check against
-     *
-     * @return bool True if the user has any of the given permissions, false otherwise
-     */
-    public function hasPermissions(Collection|array $permissions): bool
-    {
-        $attachedPermissions = $this->getAllPermissions();
-
-        return $attachedPermissions->filter(function ($permission) use ($permissions) {
-            return $permissions->contains($permission);
-        })->isNotEmpty();
-    }
-
-    /**
-     * Checks if the user does not have any of the given permissions.
-     *
-     * This method checks if the user's attached permissions do not intersect with the given permissions.
-     * If there are no matching permissions, the method returns true.
-     *
-     * @param Collection|array $permissions The permissions to check against
-     *
-     * @return bool True if the user does not have any of the given permissions, false otherwise
-     */
-    public function doesntHavePermissions(Collection|array $permissions): bool
-    {
-        return !$this->hasPermissions($permissions);
+        throw new \Exception('Company User relationship not found!');
     }
 }

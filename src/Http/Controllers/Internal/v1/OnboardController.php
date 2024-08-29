@@ -6,7 +6,6 @@ use Fleetbase\Events\AccountCreated;
 use Fleetbase\Http\Controllers\Controller;
 use Fleetbase\Http\Requests\OnboardRequest;
 use Fleetbase\Models\Company;
-use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\User;
 use Fleetbase\Models\VerificationCode;
 use Illuminate\Http\Request;
@@ -67,9 +66,6 @@ class OnboardController extends Controller
         // set the user type
         $user->setUserType($isAdmin ? 'admin' : 'user');
 
-        // assign admin role
-        $user->assignSingleRole('Administrator');
-
         // create company
         $company = new Company(['name' => $request->input('organization_name')]);
         $company->setOwner($user)->save();
@@ -77,10 +73,8 @@ class OnboardController extends Controller
         // assign user to organization
         $user->assignCompany($company);
 
-        // Create company user record
-        if (CompanyUser::where(['company_uuid' => $company->uuid, 'user_uuid' => $user->uuid])->doesntExist()) {
-            CompanyUser::create(['company_uuid' => $company->uuid, 'user_uuid' => $user->uuid, 'status' => $user->status]);
-        }
+        // assign admin role
+        $user->assignSingleRole('Administrator');
 
         // send account created event
         event(new AccountCreated($user, $company));
