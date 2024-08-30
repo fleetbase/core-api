@@ -11,6 +11,7 @@ use Fleetbase\Support\Utils;
 use Illuminate\Http\Request;
 use Illuminate\Notifications\AnonymousNotifiable;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -89,9 +90,9 @@ class SettingController extends Controller
         $s3     = $request->input('s3', config('filesystems.disks.s3'));
         $gcs    = static::_getGcsConfigWithIcomingRequest($request);
 
-        Setting::configure('system.filesystem.driver', $driver);
-        Setting::configure('system.filesystem.gcs', $gcs);
-        Setting::configure('system.filesystem.s3', array_merge(config('filesystems.disks.s3', []), $s3));
+        Setting::configureSystem('filesystem.driver', $driver);
+        Setting::configureSystem('filesystem.gcs', $gcs);
+        Setting::configureSystem('filesystem.s3', array_merge(config('filesystems.disks.s3', []), $s3));
 
         return response()->json(['status' => 'OK']);
     }
@@ -172,10 +173,18 @@ class SettingController extends Controller
         // set config values from input
         config(['filesystems.default' => $disk]);
         try {
-            $uploaded = Storage::disk($disk)->put('testfile.txt', 'Hello World');
+            Storage::disk($disk)->put('testfile.txt', 'Hello World');
         } catch (\Aws\S3\Exception\S3Exception $e) {
             $message = $e->getMessage();
             $status  = 'error';
+        } catch (\Throwable $e) {
+            $message = $e->getMessage();
+            $status  = 'error';
+        }
+
+        // confirm file uploaded
+        try {
+            $uploaded = Storage::disk($disk)->exists('testfile.txt');
         } catch (\Throwable $e) {
             $message = $e->getMessage();
             $status  = 'error';
@@ -231,9 +240,9 @@ class SettingController extends Controller
         $from   = $request->input('from', []);
         $smtp   = $request->input('smtp', []);
 
-        Setting::configure('system.mail.mailer', $mailer);
-        Setting::configure('system.mail.from', $from);
-        Setting::configure('system.mail.smtp', array_merge(['transport' => 'smtp'], $smtp));
+        Setting::configureSystem('mail.mailer', $mailer);
+        Setting::configureSystem('mail.from', $from);
+        Setting::configureSystem('mail.smtp', array_merge(['transport' => 'smtp'], $smtp));
 
         return response()->json(['status' => 'OK']);
     }
@@ -269,13 +278,7 @@ class SettingController extends Controller
 
         try {
             Mail::send(new \Fleetbase\Mail\TestMail($user));
-        } catch (\Aws\Ses\Exception\SesException $e) {
-            $message = $e->getMessage();
-            $status  = 'error';
-        } catch (\Swift_TransportException $e) {
-            $message = $e->getMessage();
-            $status  = 'error';
-        } catch (\Throwable $e) {
+        } catch (\Aws\Ses\Exception\SesException|\Exception $e) {
             $message = $e->getMessage();
             $status  = 'error';
         }
@@ -322,9 +325,9 @@ class SettingController extends Controller
         $sqs        = $request->input('sqs', config('queue.connections.sqs'));
         $beanstalkd = $request->input('beanstalkd', config('queue.connections.beanstalkd'));
 
-        Setting::configure('system.queue.driver', $driver);
-        Setting::configure('system.queue.sqs', array_merge(config('queue.connections.sqs'), $sqs));
-        Setting::configure('system.queue.beanstalkd', array_merge(config('queue.connections.beanstalkd'), $beanstalkd));
+        Setting::configureSystem('queue.driver', $driver);
+        Setting::configureSystem('queue.sqs', array_merge(config('queue.connections.sqs'), $sqs));
+        Setting::configureSystem('queue.beanstalkd', array_merge(config('queue.connections.beanstalkd'), $beanstalkd));
 
         return response()->json(['status' => 'OK']);
     }
@@ -346,17 +349,11 @@ class SettingController extends Controller
         config(['queue.default' => $queue]);
 
         try {
-            \Illuminate\Support\Facades\Queue::pushRaw(new \Illuminate\Support\MessageBag(['Hello World']));
+            Queue::pushRaw(json_encode(['message' => 'Hello World']));
         } catch (\Aws\Sqs\Exception\SqsException $e) {
             $message = $e->getMessage();
             $status  = 'error';
-        } catch (\Exception $e) {
-            $message = $e->getMessage();
-            $status  = 'error';
-        } catch (\Error $e) {
-            $message = $e->getMessage();
-            $status  = 'error';
-        } catch (\ErrorException $e) {
+        } catch (\Throwable $e) {
             $message = $e->getMessage();
             $status  = 'error';
         }
@@ -418,11 +415,11 @@ class SettingController extends Controller
         $twilio     = $request->input('twilio', config('services.twilio'));
         $sentry     = $request->input('sentry', config('sentry.dsn'));
 
-        Setting::configure('system.services.aws', array_merge(config('services.aws', []), $aws));
-        Setting::configure('system.services.ipinfo', array_merge(config('services.ipinfo', []), $ipinfo));
-        Setting::configure('system.services.google_maps', array_merge(config('services.google_maps', []), $googleMaps));
-        Setting::configure('system.services.twilio', array_merge(config('services.twilio', []), $twilio));
-        Setting::configure('system.services.sentry', array_merge(config('sentry', []), $sentry));
+        Setting::configureSystem('services.aws', array_merge(config('services.aws', []), $aws));
+        Setting::configureSystem('services.ipinfo', array_merge(config('services.ipinfo', []), $ipinfo));
+        Setting::configureSystem('services.google_maps', array_merge(config('services.google_maps', []), $googleMaps));
+        Setting::configureSystem('services.twilio', array_merge(config('services.twilio', []), $twilio));
+        Setting::configureSystem('services.sentry', array_merge(config('sentry', []), $sentry));
 
         return response()->json(['status' => 'OK']);
     }
@@ -470,8 +467,8 @@ class SettingController extends Controller
         // Get credentials config array from file contents
         $firebase = static::_setupFcmConfigUsingFileId($firebase);
 
-        Setting::configure('system.broadcasting.apn', array_merge(config('broadcasting.connections.apn', []), $apn));
-        Setting::configure('system.firebase.app', array_merge(config('firebase.projects.app', []), $firebase));
+        Setting::configureSystem('broadcasting.apn', array_merge(config('broadcasting.connections.apn', []), $apn));
+        Setting::configureSystem('firebase.app', array_merge(config('firebase.projects.app', []), $firebase));
 
         return response()->json(['status' => 'OK']);
     }

@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Storage;
@@ -2456,5 +2457,39 @@ class Utils
         $string = preg_replace('/-+/', '-', $string);
 
         return trim($string, '-');
+    }
+
+    /**
+     * Clears all cache entries that match a specific pattern.
+     *
+     * This utility function connects to the Redis cache store and retrieves
+     * all keys that match the provided pattern, with the prefix applied by Laravel.
+     * It then iterates over the matched keys, removes the prefix, and deletes the
+     * corresponding cache entries using Laravel's Cache facade.
+     *
+     * Note: This function is specifically designed to work with Redis as the cache driver.
+     * If a different cache driver is used, the function may not behave as expected.
+     *
+     * @param string $pattern The pattern to match cache keys against.
+     *                        This pattern should not include the prefix,
+     *                        as the prefix is automatically applied.
+     */
+    public static function clearCacheByPattern(string $pattern): void
+    {
+        $redis  = Redis::connection();
+        $prefix = Cache::getPrefix();
+        $keys   = $redis->keys($prefix . $pattern);
+
+        if (is_array($keys)) {
+            $keys = array_map(function ($key) {
+                $segments = explode(':', $key);
+
+                return $segments[1];
+            }, $keys);
+
+            foreach ($keys as $key) {
+                Cache::forget($key);
+            }
+        }
     }
 }

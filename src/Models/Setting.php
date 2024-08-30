@@ -8,8 +8,11 @@ use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\Searchable;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 
 class Setting extends EloquentModel
 {
@@ -127,29 +130,30 @@ class Setting extends EloquentModel
      */
     public static function system($key, $defaultValue = null)
     {
+        if (!$key || !is_string($key)) {
+            return $defaultValue;
+        }
+
         $cacheKey = 'system_settings.' . $key;
 
         // Attempt to get the value from the cache
         return cache()->rememberForever($cacheKey, function () use ($key, $defaultValue) {
+            $prefix     = Str::startsWith($key, 'system.') ? '' : 'system.';
             $segments   = explode('.', $key);
-            $settingKey = 'system.' . $key;
-            $queryKey   = 'system.' . $segments[0] . '.' . $segments[1];
+            $settingKey = $prefix . $key;
 
             if (count($segments) >= 3) {
-                $subKey  = implode('.', array_slice($segments, 2));
-                $setting = static::where('key', $queryKey)->first();
+                $queryKey   = $prefix . $segments[0] . '.' . $segments[1];
+                $subKey     = implode('.', array_slice($segments, 2));
+                $setting    = static::where('key', $queryKey)->first();
                 if ($setting) {
                     return data_get($setting->value, $subKey, $defaultValue);
                 }
-
-                $setting = static::where('key', $settingKey)->first();
-
-                return $setting ? $setting->value : $defaultValue;
-            } else {
-                $setting = static::where('key', $settingKey)->first();
-
-                return $setting ? $setting->value : $defaultValue;
             }
+
+            $setting = static::where('key', $settingKey)->first();
+
+            return $setting ? $setting->value : $defaultValue;
         });
     }
 
@@ -165,27 +169,36 @@ class Setting extends EloquentModel
      */
     public static function configureSystem($key, $value = null): ?Setting
     {
-        return static::configure('system.' . $key, $value);
+        return static::configure('system.' . $key, $value, function () {
+            static::clearSystemCache();
+        });
     }
 
     /**
      * Updates a system setting by key and value, or creates it if it does not exist.
      * This function is typically used to dynamically configure system settings during runtime.
      *
-     * @param string $key   the key of the setting to update or create
-     * @param mixed  $value The value to set for the setting. If null, it updates the setting with null.
+     * @param string        $key      the key of the setting to update or create
+     * @param mixed         $value    The value to set for the setting. If null, it updates the setting with null.
+     * @param \Closure|null $callback a callback to do something with the setting record
      *
      * @return Setting|null the updated or created setting instance, or null if the operation fails
      */
-    public static function configure($key, $value = null): ?Setting
+    public static function configure($key, $value = null, ?\Closure $callback = null): ?Setting
     {
-        return static::updateOrCreate(
+        $setting = static::updateOrCreate(
             ['key' => $key],
             [
                 'key'   => $key,
                 'value' => $value,
             ]
         );
+
+        if (is_callable($callback)) {
+            $callback($setting);
+        }
+
+        return $setting;
     }
 
     /**
@@ -294,7 +307,7 @@ class Setting extends EloquentModel
         $defaultTheme     = static::where('key', 'branding.default_theme')->value('value');
 
         // get icon file record
-        if (\Illuminate\Support\Str::isUuid($iconUuid)) {
+        if (Str::isUuid($iconUuid)) {
             $icon = File::where('uuid', $iconUuid)->first();
 
             if ($icon && $icon instanceof File) {
@@ -303,7 +316,7 @@ class Setting extends EloquentModel
         }
 
         // getlogo file record
-        if (\Illuminate\Support\Str::isUuid($logoUuid)) {
+        if (Str::isUuid($logoUuid)) {
             $logo = File::where('uuid', $logoUuid)->first();
 
             if ($logo && $logo instanceof File) {
@@ -332,7 +345,7 @@ class Setting extends EloquentModel
     {
         $logoUuid         = static::where('key', 'branding.logo_uuid')->value('value');
 
-        if (\Illuminate\Support\Str::isUuid($logoUuid)) {
+        if (Str::isUuid($logoUuid)) {
             $logo = File::where('uuid', $logoUuid)->first();
 
             if ($logo && $logo instanceof File) {
@@ -356,7 +369,7 @@ class Setting extends EloquentModel
     {
         $iconUuid         = static::where('key', 'branding.icon_uuid')->value('value');
 
-        if (\Illuminate\Support\Str::isUuid($iconUuid)) {
+        if (Str::isUuid($iconUuid)) {
             $icon = File::where('uuid', $iconUuid)->first();
 
             if ($icon && $icon instanceof File) {
@@ -433,5 +446,21 @@ class Setting extends EloquentModel
     public static function doesntHaveConnection(): bool
     {
         return !static::hasConnection();
+    }
+
+    /**
+     * Clears all cache entries with keys that start with "system_setting".
+     *
+     * This method connects to the Redis cache store and retrieves all keys
+     * that begin with the prefix "system_setting". It then iterates through each key
+     * and removes the corresponding cache entry using Laravel's Cache facade.
+     *
+     * Note: This function assumes that the application is using Redis as the
+     * cache driver. If a different cache driver is being used, this method
+     * may not function as expected.
+     */
+    public static function clearSystemCache(): void
+    {
+        Utils::clearCacheByPattern('system_setting*');
     }
 }

@@ -2,7 +2,7 @@
 
 namespace Fleetbase\Providers;
 
-use Fleetbase\Models\Setting;
+use Fleetbase\Support\EnvironmentMapper;
 use Fleetbase\Support\NotificationRegistry;
 use Fleetbase\Support\Utils;
 use Illuminate\Console\Scheduling\Schedule;
@@ -162,122 +162,7 @@ class CoreServiceProvider extends ServiceProvider
      */
     public function mergeConfigFromSettings()
     {
-        if (Setting::doesntHaveConnection()) {
-            return;
-        }
-
-        $putsenv = [
-            'services.aws'         => ['key' => 'AWS_ACCESS_KEY_ID', 'secret' => 'AWS_SECRET_ACCESS_KEY', 'region' => 'AWS_DEFAULT_REGION'],
-            'services.google_maps' => ['api_key' => 'GOOGLE_MAPS_API_KEY', 'locale' => 'GOOGLE_MAPS_LOCALE'],
-            'services.twilio'      => ['sid' => 'TWILIO_SID', 'token' => 'TWILIO_TOKEN', 'from' => 'TWILIO_FROM'],
-            'services.sentry'      => ['dsn' => 'SENTRY_DSN'],
-        ];
-
-        $settings = [
-            ['settingsKey' => 'filesystem.driver', 'configKey' => 'filesystems.default'],
-            ['settingsKey' => 'filesystem.s3', 'configKey' => 'filesystems.disks.s3'],
-            ['settingsKey' => 'filesystem.gcs', 'configKey' => 'filesystems.disks.gcs'],
-            ['settingsKey' => 'mail.mailer', 'configKey' => 'mail.default'],
-            ['settingsKey' => 'mail.from', 'configKey' => 'mail.from'],
-            ['settingsKey' => 'mail.smtp', 'configKey' => 'mail.mailers.smtp'],
-            ['settingsKey' => 'queue.driver', 'configKey' => 'queue.default'],
-            ['settingsKey' => 'queue.sqs', 'configKey' => 'queue.connections.sqs'],
-            ['settingsKey' => 'queue.beanstalkd', 'configKey' => 'queue.connections.beanstalkd'],
-            ['settingsKey' => 'services.aws', 'configKey' => 'services.aws'],
-            ['settingsKey' => 'services.aws.key', 'configKey' => 'queue.connections.sqs.key'],
-            ['settingsKey' => 'services.aws.secret', 'configKey' => 'queue.connections.sqs.secret'],
-            ['settingsKey' => 'services.aws.region', 'configKey' => 'queue.connections.sqs.region'],
-            ['settingsKey' => 'services.aws.key', 'configKey' => 'cache.stores.dynamodb.key'],
-            ['settingsKey' => 'services.aws.secret', 'configKey' => 'cache.stores.dynamodb.secret'],
-            ['settingsKey' => 'services.aws.region', 'configKey' => 'cache.stores.dynamodb.region'],
-            ['settingsKey' => 'services.aws.key', 'configKey' => 'filesystems.disks.s3.key'],
-            ['settingsKey' => 'services.aws.secret', 'configKey' => 'filesystems.disks.s3.secret'],
-            ['settingsKey' => 'services.aws.region', 'configKey' => 'filesystems.disks.s3.region'],
-            ['settingsKey' => 'services.aws.key', 'configKey' => 'mail.mailers.ses.key'],
-            ['settingsKey' => 'services.aws.secret', 'configKey' => 'mail.mailers.ses.secret'],
-            ['settingsKey' => 'services.aws.region', 'configKey' => 'mail.mailers.ses.region'],
-            ['settingsKey' => 'services.aws.key', 'configKey' => 'services.ses.key'],
-            ['settingsKey' => 'services.aws.secret', 'configKey' => 'services.ses.secret'],
-            ['settingsKey' => 'services.aws.region', 'configKey' => 'services.ses.region'],
-            ['settingsKey' => 'services.google_maps', 'configKey' => 'services.google_maps'],
-            ['settingsKey' => 'services.twilio', 'configKey' => 'services.twilio'],
-            ['settingsKey' => 'services.twilio', 'configKey' => 'twilio.twilio.connections.twilio'],
-            ['settingsKey' => 'services.ipinfo', 'configKey' => 'services.ipinfo'],
-            ['settingsKey' => 'services.ipinfo', 'configKey' => 'fleetbase.services.ipinfo'],
-            ['settingsKey' => 'services.sentry.dsn', 'configKey' => 'sentry.dsn'],
-            ['settingsKey' => 'broadcasting.apn', 'configKey' => 'broadcasting.connections.apn'],
-            ['settingsKey' => 'firebase.app', 'configKey' => 'firebase.projects.app'],
-        ];
-
-        $priorityEnvs = [
-            'AWS_ACCESS_KEY_ID'     => ['services.aws.key'],
-            'AWS_SECRET_ACCESS_KEY' => ['services.aws.secret', 'filesystems.disks.s3.secret', 'cache.stores.dynamodb.secret', 'queue.connections.sqs.secret', 'mail.mailers.ses.secret'],
-            'AWS_DEFAULT_REGION'    => ['services.aws.region', 'filesystems.disks.s3.region', 'cache.stores.dynamodb.region', 'queue.connections.sqs.region', 'mail.mailers.ses.region'],
-            'AWS_BUCKET'            => ['filesystems.disks.s3'],
-            'FILESYSTEM_DRIVER'     => ['filesystems.default'],
-            'MAIL_MAILER'           => ['mail.default'],
-            'QUEUE_CONNECTION'      => ['queue.default'],
-            'SQS_PREFIX'            => ['queue.connections.sqs'],
-            'MAIL_FROM_ADDRESS'     => ['mail.from'],
-            'MAIL_HOST'             => ['mail.mailers.smtp'],
-        ];
-
-        foreach ($settings as $setting) {
-            $settingsKey = $setting['settingsKey'];
-            $configKey   = $setting['configKey'];
-
-            // Check if the setting should be skipped based on priorityEnvs
-            $shouldSkip = false;
-            foreach ($priorityEnvs as $envKey => $settingKeys) {
-                if (env($envKey) && in_array($configKey, $settingKeys)) {
-                    $shouldSkip = true;
-                    break;
-                }
-            }
-
-            if ($shouldSkip) {
-                continue;
-            }
-
-            $value = Setting::system($settingsKey);
-            if ($value) {
-                // some settings should set env variables to be accessed throughout entire application
-                if (in_array($settingsKey, array_keys($putsenv))) {
-                    $environmentVariables = $putsenv[$settingsKey] ?? '';
-
-                    foreach ($environmentVariables as $configEnvKey => $envKey) {
-                        // hack fix for aws set envs
-                        $hasDefaultRegion = !empty(env('AWS_DEFAULT_REGION'));
-                        if ($hasDefaultRegion && \Illuminate\Support\Str::startsWith($envKey, 'AWS_')) {
-                            continue;
-                        }
-
-                        $envValue         = data_get($value, $configEnvKey);
-                        $doesntHaveEnvSet = empty(env($envKey));
-                        $hasValue         = !empty($envValue) && !is_array($envValue);
-
-                        // only set if env variable is not set already
-                        if ($doesntHaveEnvSet && $hasValue) {
-                            putenv($envKey . '="' . data_get($value, $configEnvKey, '') . '"');
-                        }
-                    }
-                }
-
-                // Fetch the current config array
-                $config = config()->all();
-
-                // Update the specific value in the config array
-                Arr::set($config, $configKey, $value);
-
-                // Set the entire config array
-                config($config);
-            }
-        }
-
-        // we need a mail from set
-        if (empty(config('mail.from.address'))) {
-            config()->set('mail.from.address', Utils::getDefaultMailFromAddress());
-        }
+        EnvironmentMapper::mergeConfigFromSettings();
     }
 
     /**
