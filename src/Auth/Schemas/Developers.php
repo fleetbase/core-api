@@ -56,7 +56,7 @@ class Developers
             'name'        => 'FLBDeveloper',
             'description' => 'Policy for developers to create api credentials, webhooks and view logs.',
             'permissions' => [
-                'view extension',
+                'see extension',
                 '* api-key',
                 '* webhook',
                 '* event',
@@ -68,7 +68,7 @@ class Developers
             'name'        => 'FLBDevProjectManager',
             'description' => 'Policy for view and read access to development resources.',
             'permissions' => [
-                'view extension',
+                'see extension',
                 'see api-key',
                 'list api-key',
                 'view api-key',
