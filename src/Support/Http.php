@@ -42,7 +42,7 @@ class Http extends HttpClient
         }
 
         $param     = $sort;
-        $direction = 'desc';
+        $direction = 'asc';
 
         if (Str::startsWith($sort, '-')) {
             $direction = Str::startsWith($sort, '-') ? 'desc' : 'asc';

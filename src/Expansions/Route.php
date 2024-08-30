@@ -154,6 +154,7 @@ class Route implements Expansion
                             $router->post('create-organization', 'AuthController@createOrganization');
                             $router->get('session', 'AuthController@session');
                             $router->get('organizations', 'AuthController@getUserOrganizations');
+                            $router->get('services', 'AuthController@services');
 
                             if (is_callable($registerProtectedFn)) {
                                 $registerProtectedFn($router);

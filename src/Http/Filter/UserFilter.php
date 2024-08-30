@@ -44,4 +44,11 @@ class UserFilter extends Filter
     {
         $this->builder->searchWhere('email', $email);
     }
+
+    public function role(?string $roleId)
+    {
+        $this->builder->whereHas('roles', function ($query) use ($roleId) {
+            $query->where('id', $roleId);
+        });
+    }
 }

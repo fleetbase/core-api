@@ -21,6 +21,13 @@ class GroupController extends FleetbaseController
     public $resource = 'group';
 
     /**
+     * The service which this controller belongs to.
+     *
+     * @var string
+     */
+    public $service = 'iam';
+
+    /**
      * Creates a record with request payload.
      *
      * @return \Illuminate\Http\Response

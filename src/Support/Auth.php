@@ -2,11 +2,17 @@
 
 namespace Fleetbase\Support;
 
+use Fleetbase\Attributes\SkipAuthorizationCheck;
 use Fleetbase\Models\ApiCredential;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
+use Fleetbase\Models\Directive;
+use Fleetbase\Models\Permission;
+use Fleetbase\Models\Policy;
+use Fleetbase\Models\Role;
 use Fleetbase\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth as Authentication;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -230,8 +236,16 @@ class Auth extends Authentication
      *
      * @return User|null returns an instance of the User model if authenticated, or null if no user is authenticated
      */
-    public static function getUserFromSession()
+    public static function getUserFromSession(?Request $request = null): ?User
     {
+        // If request passed try to resolve directly from the request
+        if ($request) {
+            $user = $request->user();
+            if ($user instanceof User) {
+                return $user;
+            }
+        }
+
         // Attempt to retrieve the user using the extended Auth class method
         $user = auth()->user();
         if ($user instanceof User) {
@@ -292,5 +306,219 @@ class Auth extends Authentication
         }
 
         return null;
+    }
+
+    /**
+     * Resolves the required permissions from the given request.
+     *
+     * This method resolves the controller, action, and resource from the request,
+     * and then constructs the permission names based on the service, action, and
+     * resource. It then uses the Permission model to find the permissions that
+     * match the constructed names.
+     *
+     * @param Request $request The HTTP request
+     *
+     * @return Collection A collection of permission models
+     */
+    public static function resolvePermissionsFromRequest(Request $request): Collection
+    {
+        // If method has skip authorization check
+        if (ControllerResolver::methodHasAttribute($request, SkipAuthorizationCheck::class)) {
+            return collect();
+        }
+
+        $controller       = $request->getController();
+        if (!method_exists($controller, 'getResourceSingularName')) {
+            return collect();
+        }
+
+        $service    = $controller->getService();
+        $resource   = str_replace('_', '-', $controller->getResourceSingularName());
+        $action     = ActionMapper::resolve($request, $resource);
+
+        // If the resource is not guarded at all
+        if (!static::isResourceGuarded($resource)) {
+            return collect();
+        }
+
+        $permissionName                = implode(' ', [$service, $action, $resource]);
+        $permissionWildcardName        = implode(' ', [$service, '*', $resource]);
+        $permissionWildcardServiceName = implode(' ', [$service, '*']);
+
+        return Permission::findByNames([$permissionName, $permissionWildcardName, $permissionWildcardServiceName]);
+    }
+
+    /**
+     * Retrieves a collection of directives associated with the permissions extracted from the given request.
+     *
+     * This method first resolves the user from the session and then extracts the permissions from the request.
+     * It then queries the `Directive` model to retrieve all directives that correspond to those permissions,
+     * loading the related `subject` (either a `Policy` or `Role`). After retrieving the directives, it filters
+     * them based on whether the user has the associated policy or role assigned. The resulting collection
+     * contains only the directives applicable to the current user.
+     *
+     * @param Request $request the HTTP request instance from which to resolve permissions
+     *
+     * @return Collection a collection of `Directive` models that are associated with the resolved permissions and applicable to the current user
+     */
+    public static function getDirectivesFromRequest(Request $request): Collection
+    {
+        $user        = static::getUserFromSession();
+        $permissions = static::resolvePermissionsFromRequest($request);
+        $directives  = Directive::whereIn('permission_uuid', $permissions->pluck('id'))
+            ->with(['subject'])
+            ->get()
+            ->filter(
+                function ($directive) use ($user) {
+                    if ($directive->subject instanceof Policy) {
+                        return $user->hasPolicyAssigned($directive->subject);
+                    }
+
+                    if ($directive->subject instanceof Role) {
+                        return $user->hasRole($directive->subject);
+                    }
+
+                    return false;
+                }
+            );
+
+        return $directives;
+    }
+
+    /**
+     * Retrieves a collection of directives associated with the specified permissions.
+     *
+     * This method resolves the user from the session and looks up the specified permissions by name.
+     * It then queries the `Directive` model to retrieve all directives that correspond to those permissions,
+     * loading the related `subject` (either a `Policy` or `Role`). After retrieving the directives, it filters
+     * them based on whether the user has the associated policy or role assigned. The resulting collection
+     * contains only the directives that are applicable to the current user.
+     *
+     * @param array $names an array of permission names to look up and retrieve directives for
+     *
+     * @return Collection a collection of `Directive` models that are associated with the specified permissions and applicable to the current user
+     */
+    public static function getDirectivesForPermissions(array $names = []): Collection
+    {
+        $user        = static::getUserFromSession();
+        $permissions = Permission::findByNames($names);
+        $directives  = Directive::whereIn('permission_uuid', $permissions->pluck('id'))
+            ->with(['subject'])
+            ->get()
+            ->filter(
+                function ($directive) use ($user) {
+                    if ($directive->subject instanceof Policy) {
+                        return $user->hasPolicyAssigned($directive->subject);
+                    }
+
+                    if ($directive->subject instanceof Role) {
+                        return $user->hasRole($directive->subject);
+                    }
+
+                    return false;
+                }
+            );
+
+        return $directives;
+    }
+
+    /**
+     * Applies directives to a query builder instance based on the permissions extracted from the request.
+     *
+     * This method retrieves directives associated with the current request and applies each directive
+     * to the given query builder instance. If a request is not explicitly provided, the current request
+     * is used by default. The method is typically used to enforce permissions and constraints dynamically
+     * on a query based on the user's context or permissions.
+     *
+     * @param \Illuminate\Database\Eloquent\Builder $builder the query builder instance to which the directives will be applied
+     * @param \Illuminate\Http\Request|null         $request An optional HTTP request instance. If not provided, the current request is used.
+     *
+     * @return \Illuminate\Database\Eloquent\Builder the query builder with the applied directives
+     */
+    public static function applyDirectivesToQuery($builder, ?Request $request = null)
+    {
+        $request    = $request instanceof Request ? $request : request();
+        $directives = static::getDirectivesFromRequest($request);
+        foreach ($directives as $directive) {
+            $directive->apply($builder);
+        }
+
+        return $builder;
+    }
+
+    /**
+     * Generates the required permission name based on the provided request.
+     *
+     * This method extracts the controller from the request, converts the associated resource name
+     * to a singular, kebab-case format, and then determines the appropriate action using the
+     * ActionMapper. The resulting permission name is constructed by combining the action and resource.
+     *
+     * @param Request $request the HTTP request object containing route and controller information
+     *
+     * @return string the generated permission name in the format '{action} {resource}'
+     */
+    public static function getRequiredPermissionNameFromRequest(Request $request): string
+    {
+        $controller = $request->getController();
+        $resource   = str_replace('_', '-', $controller->getResourceSingularName());
+        $action     = ActionMapper::resolve($request, $resource);
+
+        return implode(' ', [$action, $resource]);
+    }
+
+    /**
+     * Checks if a resource is guarded by any permissions.
+     *
+     * This method searches for any permissions in the database that end with the given resource name.
+     * The resource is expected to be at the end of the permission name following the format
+     * '{service} {ability} {resource}'. If a matching permission exists, the method returns true.
+     *
+     * @param string $resource the resource name to check for in the permissions
+     *
+     * @return bool true if the resource is guarded by any permissions, false otherwise
+     */
+    public static function isResourceGuarded(string $resource): bool
+    {
+        return Permission::where('name', 'like', '% ' . $resource)->exists();
+    }
+
+    /**
+     * Determines if the current user has the specified permission.
+     *
+     * This method checks whether the current user session has the required permission by evaluating
+     * the exact permission name, a wildcard action for the specified resource, or a wildcard service
+     * permission. The method returns true if the user has any of the evaluated permissions.
+     *
+     * @param string $permission the permission string in the format '{service} {action} {resource}'
+     *
+     * @return bool true if the user has the specified permission, false otherwise
+     */
+    public static function can(string $permission): bool
+    {
+        [$service, $action, $resource] = explode(' ', $permission);
+        $permissionName                = implode(' ', [$service, $action, $resource]);
+        $permissionWildcardName        = implode(' ', [$service, '*', $resource]);
+        $permissionWildcardServiceName = implode(' ', [$service, '*']);
+        $permissionRecords             = Permission::findByNames([$permissionName, $permissionWildcardName, $permissionWildcardServiceName]);
+        $user                          = static::getUserFromSession();
+
+        return $permissionRecords->contains(function ($permissionRecord) use ($user) {
+            return $user->hasPermissionTo($permissionRecord);
+        });
+    }
+
+    /**
+     * Determines if the current user lacks the specified permission.
+     *
+     * This method is a negation of the `can` method. It returns true if the user does not have the
+     * specified permission and false if the user does have it.
+     *
+     * @param string $permission the permission string in the format '{service} {action} {resource}'
+     *
+     * @return bool true if the user does not have the specified permission, false otherwise
+     */
+    public static function cannot(string $permission): bool
+    {
+        return !static::can($permission);
     }
 }

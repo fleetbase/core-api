@@ -2,7 +2,7 @@
 
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
-use Aloha\Twilio\Support\Laravel\Facade as Twilio;
+use Fleetbase\Exceptions\InvalidVerificationCodeException;
 use Fleetbase\Http\Controllers\Controller;
 use Fleetbase\Http\Requests\Internal\ResetPasswordRequest;
 use Fleetbase\Http\Requests\Internal\UserForgotPasswordRequest;
@@ -20,6 +20,7 @@ use Fleetbase\Notifications\UserForgotPassword;
 use Fleetbase\Support\Auth;
 use Fleetbase\Support\TwoFactorAuth;
 use Fleetbase\Support\Utils;
+use Fleetbase\Twilio\Support\Laravel\Facade as Twilio;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Redis;
@@ -65,6 +66,11 @@ class AuthController extends Controller
                 'twoFaSession' => $twoFaSession,
                 'isEnabled'    => true,
             ]);
+        }
+
+        // If no password prompt user to reset password
+        if (empty($user->password)) {
+            return response()->error('Password reset required to continue.', 400, ['code' => 'reset_password']);
         }
 
         if (Auth::isInvalidPassword($password, $user->password)) {
@@ -349,56 +355,32 @@ class AuthController extends Controller
             return response()->error('User is already verified.');
         }
 
-        // get verification code for session
-        $verifyCode = VerificationCode::where([
-            'subject_uuid' => $user->uuid,
-            'for'          => 'email_verification',
-            'code'         => $code,
-        ])->first();
-
-        // check if sms verification
-        if (!$verifyCode) {
-            $verifyCode = VerificationCode::where([
-                'subject_uuid' => $user->uuid,
-                'for'          => 'phone_verification',
-                'code'         => $code,
-            ])->first();
-        }
-
-        // no verification code found
-        if (!$verifyCode) {
+        // Verify the user using the verification code
+        try {
+            $user->verify($code);
+        } catch (InvalidVerificationCodeException $e) {
             return response()->error('Invalid verification code.');
         }
 
-        // get verify time
-        $verifiedAt = Carbon::now();
-
-        // verify users email address or phone depending
-        if ($verifyCode->for === 'email_verification') {
-            $user->email_verified_at = $verifiedAt;
-        } elseif ($verifyCode->for === 'phone_verification') {
-            $user->phone_verified_at = $verifiedAt;
-        }
-
         // Activate user
-        $user->status = 'active';
-        $user->save();
+        $user->activate();
 
-        // if authenticate is set
+        // If authenticate is set, generate and return a token
         if ($authenticate) {
             $user->updateLastLogin();
             $token = $user->createToken($user->uuid);
 
             return response()->json([
                 'status'      => 'ok',
-                'verified_at' => $verifiedAt,
+                'verified_at' => $user->getDateVerified(),
                 'token'       => $token->plainTextToken,
             ]);
         }
 
+        // Return success response without token
         return response()->json([
             'status'      => 'ok',
-            'verified_at' => $verifiedAt,
+            'verified_at' => $user->getDateVerified(),
             'token'       => null,
         ]);
     }
@@ -616,5 +598,22 @@ class AuthController extends Controller
         Auth::setSession($user);
 
         return new Organization($company);
+    }
+
+    /**
+     * Returns all authorization services which provide schemas.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function services()
+    {
+        $schemas  = Utils::getAuthSchemas();
+        $services = [];
+
+        foreach ($schemas as $schema) {
+            $services[] = $schema->name;
+        }
+
+        return response()->json(array_unique($services));
     }
 }

@@ -41,6 +41,13 @@ class Role extends BaseRole
     public $keyType = 'string';
 
     /**
+     * The default guard for this model.
+     *
+     * @var string
+     */
+    public $guard_name = 'sanctum';
+
+    /**
      * Indicates if the IDs are auto-incrementing.
      *
      * @var bool
@@ -76,6 +83,13 @@ class Role extends BaseRole
     protected $with = ['permissions'];
 
     /**
+     * Dynamic attributes that are appended to object.
+     *
+     * @var array
+     */
+    protected $appends = ['type', 'is_mutable', 'is_deletable'];
+
+    /**
      * Hotfix for tiemstamps bug.
      *
      * @return void
@@ -105,12 +119,42 @@ class Role extends BaseRole
     }
 
     /**
-     * Default guard should be `web`.
+     * Default guard should be `sanctum`.
      *
      * @return void
      */
     public function setGuardNameAttribute()
     {
-        $this->attributes['guard_name'] = 'web';
+        $this->attributes['guard_name'] = 'sanctum';
+    }
+
+    /**
+     * Check if the company_uuid attribute is set.
+     *
+     * @return bool
+     */
+    public function getIsMutableAttribute()
+    {
+        return isset($this->company_uuid);
+    }
+
+    /**
+     * Check if the company_uuid attribute is set.
+     *
+     * @return bool
+     */
+    public function getIsDeletableAttribute()
+    {
+        return isset($this->company_uuid);
+    }
+
+    /**
+     * Get the type of attribute based on the company_uuid.
+     *
+     * @return string
+     */
+    public function getTypeAttribute()
+    {
+        return empty($this->company_uuid) ? 'FLB Managed' : 'Organization Managed';
     }
 }

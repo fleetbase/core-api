@@ -12,4 +12,11 @@ class ApiEventController extends FleetbaseController
      * @var string
      */
     public $resource = 'api_event';
+
+    /**
+     * The service which this controller belongs to.
+     *
+     * @var string
+     */
+    public $service = 'developers';
 }

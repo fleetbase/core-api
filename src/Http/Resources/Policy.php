@@ -14,17 +14,18 @@ class Policy extends FleetbaseResource
     public function toArray($request)
     {
         return [
-            'id'           => $this->id,
-            'company_uuid' => $this->company_uuid,
-            'name'         => $this->name,
-            'guard_name'   => $this->guard_name,
-            'description'  => $this->description,
-            'type'         => $this->type,
-            'is_mutable'   => $this->is_mutable,
-            'is_deletable' => $this->is_deletable,
-            'updated_at'   => $this->updated_at,
-            'created_at'   => $this->created_at,
-            'permissions'  => $this->serializePermissions($this->permissions),
+            'id'              => $this->id,
+            'company_uuid'    => $this->company_uuid,
+            'name'            => $this->name,
+            'guard_name'      => $this->guard_name,
+            'description'     => $this->description,
+            'permissions'     => $this->serializePermissions($this->permissions),
+            'type'            => $this->type,
+            'service'         => $this->service,
+            'is_mutable'      => $this->is_mutable,
+            'is_deletable'    => $this->is_deletable,
+            'updated_at'      => $this->updated_at,
+            'created_at'      => $this->created_at,
         ];
     }
 
@@ -42,6 +43,7 @@ class Policy extends FleetbaseResource
                     'name'        => $permission->name,
                     'guard_name'  => $permission->guard_name,
                     'description' => $permission->description,
+                    'service'     => $permission->service,
                     'updated_at'  => $permission->updated_at,
                     'created_at'  => $permission->created_at,
                 ];

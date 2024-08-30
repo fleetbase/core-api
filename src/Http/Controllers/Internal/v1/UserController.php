@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
+use Fleetbase\Attributes\SkipAuthorizationCheck;
 use Fleetbase\Events\UserRemovedFromCompany;
 use Fleetbase\Exceptions\FleetbaseRequestValidationException;
 use Fleetbase\Exports\UserExport;
@@ -15,6 +16,8 @@ use Fleetbase\Http\Requests\Internal\ValidatePasswordRequest;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\Invite;
+use Fleetbase\Models\Permission;
+use Fleetbase\Models\Policy;
 use Fleetbase\Models\Setting;
 use Fleetbase\Models\User;
 use Fleetbase\Notifications\UserAcceptedCompanyInvite;
@@ -39,13 +42,20 @@ class UserController extends FleetbaseController
     public $resource = 'user';
 
     /**
+     * The service which this controller belongs to.
+     *
+     * @var string
+     */
+    public $service = 'iam';
+
+    /**
      * Creates a record with request payload.
      *
      * @return \Illuminate\Http\Response
      */
     public function createRecord(Request $request)
     {
-        // @todo Add user creation validation
+        // @TODO Add user creation validation
         try {
             $record = $this->model->createRecordFromRequest($request, function (&$request, &$input) {
                 // Get user properties
@@ -70,6 +80,60 @@ class UserController extends FleetbaseController
 
                 // Assign to user
                 $user->assignCompany($company);
+
+                // Assign role if set
+                if ($request->filled('user.role')) {
+                    $user->assignSingleRole($request->input('user.role'));
+                }
+
+                // Sync Permissions
+                if ($request->isArray('user.permissions')) {
+                    $permissions = Permission::whereIn('id', $request->array('user.permissions'))->get();
+                    $user->syncPermissions($permissions);
+                }
+
+                // Sync Policies
+                if ($request->isArray('user.policies')) {
+                    $policies = Policy::whereIn('id', $request->array('user.policies'))->get();
+                    $user->syncPolicies($policies);
+                }
+            });
+
+            return ['user' => new $this->resource($record)];
+        } catch (\Exception $e) {
+            return response()->error($e->getMessage());
+        } catch (\Illuminate\Database\QueryException $e) {
+            return response()->error($e->getMessage());
+        } catch (FleetbaseRequestValidationException $e) {
+            return response()->error($e->getErrors());
+        }
+    }
+
+    /**
+     * Updates a record with request payload.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function updateRecord(Request $request, string $id)
+    {
+        try {
+            $record = $this->model->updateRecordFromRequest($request, $id, function (&$request, &$user) {
+                // Assign role if set
+                if ($request->filled('user.role')) {
+                    $user->assignSingleRole($request->input('user.role'));
+                }
+
+                // Sync Permissions
+                if ($request->isArray('user.permissions')) {
+                    $permissions = Permission::whereIn('id', $request->array('user.permissions'))->get();
+                    $user->syncPermissions($permissions);
+                }
+
+                // Sync Policies
+                if ($request->isArray('user.policies')) {
+                    $policies = Policy::whereIn('id', $request->array('user.policies'))->get();
+                    $user->syncPolicies($policies);
+                }
             });
 
             return ['user' => new $this->resource($record)];
@@ -87,6 +151,7 @@ class UserController extends FleetbaseController
      *
      * @return \Illuminate\Http\Response
      */
+    #[SkipAuthorizationCheck]
     public function current(Request $request)
     {
         $user = $request->user();
@@ -107,6 +172,7 @@ class UserController extends FleetbaseController
      *
      * @return \Illuminate\Http\Response
      */
+    #[SkipAuthorizationCheck]
     public function getTwoFactorSettings(Request $request)
     {
         $user = $request->user();
@@ -125,6 +191,7 @@ class UserController extends FleetbaseController
      *
      * @return \Illuminate\Http\Response
      */
+    #[SkipAuthorizationCheck]
     public function saveTwoFactorSettings(Request $request)
     {
         $twoFaSettings = $request->array('twoFaSettings');
@@ -144,6 +211,7 @@ class UserController extends FleetbaseController
      *
      * @return \Illuminate\Http\Response
      */
+    #[SkipAuthorizationCheck]
     public function inviteUser(InviteUserRequest $request)
     {
         // $data = $request->input(['name', 'email', 'phone', 'status', 'country', 'date_of_birth']);
@@ -201,6 +269,7 @@ class UserController extends FleetbaseController
      *
      * @return \Illuminate\Http\Response
      */
+    #[SkipAuthorizationCheck]
     public function resendInvitation(ResendUserInvite $request)
     {
         $user    = User::where('uuid', $request->input('user'))->first();
@@ -228,6 +297,7 @@ class UserController extends FleetbaseController
      *
      * @return \Illuminate\Http\Response
      */
+    #[SkipAuthorizationCheck]
     public function acceptCompanyInvite(AcceptCompanyInvite $request)
     {
         $invite = Invite::where('code', $request->input('code'))->with(['subject'])->first();
@@ -297,9 +367,7 @@ class UserController extends FleetbaseController
             return response()->error('No user found', 401);
         }
 
-        // $user->deactivate();
-        // deactivate for company session
-        $user->companies()->where('company_uuid', session('company'))->update(['status' => 'inactive']);
+        $user->deactivate();
         $user = $user->refresh();
 
         return response()->json([
@@ -325,10 +393,7 @@ class UserController extends FleetbaseController
             return response()->error('No user found', 401);
         }
 
-        // $user->activate();
-        // activate for company session
-        // maybe we dont want to activate for all organizations
-        $user->companies()->where('company_uuid', session('company'))->update(['status' => 'active']);
+        $user->activate();
         $user = $user->refresh();
 
         return response()->json([
@@ -490,6 +555,7 @@ class UserController extends FleetbaseController
      *
      * @return \Illuminate\Http\Response
      */
+    #[SkipAuthorizationCheck]
     public function setUserLocale(Request $request)
     {
         $locale           = $request->input('locale', 'en-us');
@@ -507,6 +573,7 @@ class UserController extends FleetbaseController
      *
      * @return \Illuminate\Http\Response
      */
+    #[SkipAuthorizationCheck]
     public function getUserLocale(Request $request)
     {
         $user             = $request->user();
@@ -516,5 +583,19 @@ class UserController extends FleetbaseController
         $locale = Setting::lookup($localeSettingKey, 'en-us');
 
         return response()->json(['status' => 'ok', 'locale' => $locale]);
+    }
+
+    /**
+     * Get all current user permissions.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    #[SkipAuthorizationCheck]
+    public function getUserPermissions(Request $request)
+    {
+        $user        = $request->user();
+        $permissions = $user->getAllPermissions();
+
+        return response()->json(['permissions' => $permissions]);
     }
 }

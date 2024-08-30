@@ -7,12 +7,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 interface Policy
 {
     /**
-     * A role may be given various permissions.
+     * A policy may be given various permissions.
      */
     public function permissions(): BelongsToMany;
 
     /**
-     * Find a role by its name and guard name.
+     * Find a policy by its name and guard name.
      *
      * @param string|null $guardName
      *
@@ -23,7 +23,7 @@ interface Policy
     public static function findByName(string $name, $guardName): self;
 
     /**
-     * Find a role by its id and guard name.
+     * Find a policy by its id and guard name.
      *
      * @param string|null $guardName
      *
@@ -31,10 +31,10 @@ interface Policy
      *
      * @throws \Fleetbase\Exceptions\PolicyDoesNotExist
      */
-    public static function findById(int $id, $guardName): self;
+    public static function findById(string $id, $guardName): self;
 
     /**
-     * Find or create a role by its name and guard name.
+     * Find or create a policy by its name and guard name.
      *
      * @param string|null $guardName
      *

@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Models;
 
+use Fleetbase\Contracts\Policy as PolicyContract;
 use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasUuid;
@@ -9,7 +10,7 @@ use Fleetbase\Traits\Searchable;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Permission\Traits\HasPermissions;
 
-class Policy extends Model
+class Policy extends Model implements PolicyContract
 {
     use HasUuid;
     use HasApiModelBehavior;
@@ -21,7 +22,7 @@ class Policy extends Model
     /** @__construct */
     public function __construct(array $attributes = [])
     {
-        $attributes['guard_name'] = $attributes['guard_name'] ?? config('auth.defaults.guard');
+        $attributes['guard_name'] = $attributes['guard_name'] ?? config('auth.defaults.guard', 'sanctum');
 
         parent::__construct($attributes);
     }
@@ -45,7 +46,7 @@ class Policy extends Model
      *
      * @var string
      */
-    public $guard_name = 'api';
+    public $guard_name = 'sanctum';
 
     /**
      * The column to use for generating uuid.
@@ -73,7 +74,7 @@ class Policy extends Model
      *
      * @var array
      */
-    protected $fillable = ['company_uuid', 'name', 'guard_name', 'description'];
+    protected $fillable = ['company_uuid', 'name', 'guard_name', 'service', 'description'];
 
     /**
      * The guarded attributes.
@@ -137,12 +138,57 @@ class Policy extends Model
     }
 
     /**
-     * Default guard should be `web`.
+     * Default guard should be `sanctum`.
      *
      * @return void
      */
     public function setGuardNameAttribute()
     {
-        $this->attributes['guard_name'] = 'web';
+        $this->attributes['guard_name'] = 'sanctum';
+    }
+
+    /**
+     * Find a policy by its name and guard name.
+     *
+     * @param string|null $guardName
+     *
+     * @return \Fleebase\Models\Policy
+     *
+     * @throws \Fleetbase\Exceptions\PolicyDoesNotExist
+     */
+    public static function findByName(string $name, $guardName): self
+    {
+        return static::where(['name' => $name, 'guard_name' => $guardName])->first();
+    }
+
+    /**
+     * Find a policy by its id and guard name.
+     *
+     * @param string|null $guardName
+     *
+     * @return \Fleebase\Models\Policy
+     *
+     * @throws \Fleetbase\Exceptions\PolicyDoesNotExist
+     */
+    public static function findById(string $id, $guardName): self
+    {
+        return static::where(['id' => $id, 'guard_name' => $guardName])->first();
+    }
+
+    /**
+     * Find or create a policy by its name and guard name.
+     *
+     * @param string|null $guardName
+     *
+     * @return \Fleebase\Policy
+     */
+    public static function findOrCreate(string $name, $guardName): self
+    {
+        $policy = static::findByName($name, $guardName);
+        if (!$policy) {
+            $policy = static::create(['name' => $name, 'guard_name' => $guardName]);
+        }
+
+        return $policy;
     }
 }
