@@ -518,7 +518,10 @@ class AuthController extends Controller
             function ($q) use ($user) {
                 $q->where('users.uuid', $user->uuid);
             }
-        )->get();
+        )
+        ->whereHas('owner.companyUser')
+        ->with(['owner', 'owner.companyUser'])
+        ->get();
 
         return Organization::collection($companies);
     }
