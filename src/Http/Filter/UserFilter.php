@@ -9,8 +9,7 @@ class UserFilter extends Filter
         $this->builder->where(
             function ($query) {
                 $query
-                    ->where('company_uuid', $this->session->get('company'))
-                    ->orWhereHas(
+                    ->whereHas(
                         'companies',
                         function ($query) {
                             $query->where('company_uuid', $this->session->get('company'));

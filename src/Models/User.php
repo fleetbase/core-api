@@ -77,6 +77,13 @@ class User extends Authenticatable
     protected $primaryKey = 'uuid';
 
     /**
+     * The "type" of the primary key ID.
+     *
+     * @var string
+     */
+    protected $keyType = 'string';
+
+    /**
      * Primary key is non incrementing.
      *
      * @var string
@@ -292,7 +299,20 @@ class User extends Authenticatable
      */
     public function companyUser(): HasOne|Builder
     {
-        return $this->hasOne(CompanyUser::class, 'user_uuid', 'uuid')->where('company_uuid', session('company'));
+        return $this->hasOne(CompanyUser::class, 'user_uuid', 'uuid')->where('company_uuid', $this->company_uuid);
+    }
+
+    /**
+     * Defines the relationship between the user and any company user record.
+     *
+     * This method establishes a `HasOne` relationship, indicating that the user has one associated
+     * `CompanyUser` record, regardless of the company.
+     *
+     * @return HasOne|Builder the relationship instance between the User and the CompanyUser model
+     */
+    public function anyCompanyUser(): HasOne|Builder
+    {
+        return $this->hasOne(CompanyUser::class, 'user_uuid', 'uuid');
     }
 
     /**
@@ -345,7 +365,12 @@ class User extends Authenticatable
             return $this->companyUser;
         }
 
-        $companyUser = $this->companies()->where('company_uuid', $company->uuid)->first();
+        $companyUuid = $company ? $company->uuid : $this->company_uuid;
+        if (!$companyUuid) {
+            return null;
+        }
+
+        $companyUser = $this->companies()->where('company_uuid', $companyUuid)->first();
         if ($companyUser) {
             $this->setRelation('companyUser', $companyUser);
 
@@ -353,6 +378,32 @@ class User extends Authenticatable
         }
 
         return null;
+    }
+
+    /**
+     * Load the associated company user relationship for the current user.
+     *
+     * This method ensures that the `companyUser` relationship is loaded for the user.
+     * If the relationship is not already loaded and no associated `companyUser` exists,
+     * it attempts to load the `company` relationship and retrieve the `companyUser`
+     * associated with the loaded company. If a `companyUser` is found, it sets
+     * the relationship accordingly.
+     *
+     * @return $this the current instance of the user model with the `companyUser` relationship loaded
+     */
+    public function loadCompanyUser(): self
+    {
+        $this->loadMissing('companyUser');
+
+        if (!$this->companyUser) {
+            $this->loadMissing('company');
+            $companyUser = $this->getCompanyUser($this->company);
+            if ($companyUser) {
+                $this->setRelation('companyUser', $companyUser);
+            }
+        }
+
+        return $this;
     }
 
     /**
@@ -475,7 +526,10 @@ class User extends Authenticatable
      */
     public function getRoleAttribute(): ?Role
     {
-        $this->loadMissing('companyUser');
+        $this->loadCompanyUser();
+        if (!$this->companyUser) {
+            return null;
+        }
 
         return $this->companyUser->roles()->first();
     }
@@ -489,7 +543,10 @@ class User extends Authenticatable
      */
     public function getRolesAttribute(): Collection
     {
-        $this->loadMissing('companyUser');
+        $this->loadCompanyUser();
+        if (!$this->companyUser) {
+            return collect();
+        }
 
         return $this->companyUser->roles()->get();
     }
@@ -503,7 +560,10 @@ class User extends Authenticatable
      */
     public function getPoliciesAttribute(): Collection
     {
-        $this->loadMissing('companyUser');
+        $this->loadCompanyUser();
+        if (!$this->companyUser) {
+            return collect();
+        }
 
         return $this->companyUser->policies()->get();
     }
@@ -517,7 +577,10 @@ class User extends Authenticatable
      */
     public function getPermissionsAttribute(): Collection
     {
-        $this->loadMissing('companyUser');
+        $this->loadCompanyUser();
+        if (!$this->companyUser) {
+            return collect();
+        }
 
         return $this->companyUser->permissions()->get();
     }
@@ -532,9 +595,9 @@ class User extends Authenticatable
      */
     public function getSessionStatusAttribute(): string
     {
-        $this->loadMissing('companyUser');
+        $this->loadCompanyUser();
 
-        return $this->companyUser->status ?? 'pending';
+        return $this->companyUser ? $this->companyUser->status : 'pending';
     }
 
     /**
@@ -547,8 +610,8 @@ class User extends Authenticatable
      */
     public function findSessionStatus(): string
     {
-        $this->loadMissing('companyUser');
-        $status = $this->companyUser->status ?? 'pending';
+        $this->loadCompanyUser();
+        $status = $this->companyUser ? $this->companyUser->status : 'pending';
         $this->setAttribute('session_status', $status);
 
         return $status;
@@ -1137,7 +1200,7 @@ class User extends Authenticatable
      */
     public function assignSingleRole($role): self
     {
-        $this->loadMissing('companyUser');
+        $this->loadCompanyUser();
         if ($this->companyUser) {
             $this->companyUser->assignSingleRole($role);
 

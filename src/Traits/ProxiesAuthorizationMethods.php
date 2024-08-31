@@ -35,7 +35,7 @@ trait ProxiesAuthorizationMethods
         // Check if the method name contains any of the keywords
         foreach ($keywords as $keyword) {
             if (stripos($method, $keyword) !== false) {
-                $this->loadMissing($this->authorizationRelationship);
+                $this->loadAuthorizationRelationship();
 
                 // Get the relationship model instance
                 $relationshipInstance = $this->{$this->authorizationRelationship};
@@ -54,5 +54,20 @@ trait ProxiesAuthorizationMethods
 
         // Fallback to the parent class's __call method
         return parent::__call($method, $parameters);
+    }
+
+    /**
+     * Load the authorization relationship for the current instance.
+     *
+     * This method ensures that the relationship defined in $authorizationRelationship
+     * is loaded. If the relationship is 'companyUser' and it is not loaded, it attempts
+     * to load it via the loadCompanyUser method if it exists.
+     */
+    public function loadAuthorizationRelationship(): void
+    {
+        $this->loadMissing($this->authorizationRelationship);
+        if ($this->authorizationRelationship === 'companyUser' && !$this->companyUser && method_exists($this, 'loadCompanyUser')) {
+            $this->loadCompanyUser();
+        }
     }
 }
