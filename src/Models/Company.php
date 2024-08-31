@@ -152,7 +152,9 @@ class Company extends Model
      */
     public function owner()
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class)->whereHas('anyCompanyUser', function ($query) {
+            $query->where('company_uuid', $this->uuid);
+        });
     }
 
     /**
