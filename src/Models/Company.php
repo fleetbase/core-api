@@ -11,6 +11,7 @@ use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\Searchable;
 use Fleetbase\Traits\SendsWebhooks;
 use Fleetbase\Traits\TracksApiCredential;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -151,16 +152,16 @@ class Company extends Model
             ->saveSlugsTo('slug');
     }
 
-    public function creator(): BelongsTo
-    {
-        return $this->belongsTo(User::class);
-    }
-
-    public function owner(): BelongsTo
+    public function creator(): BelongsTo|Builder
     {
         return $this->belongsTo(User::class)->whereHas('anyCompanyUser', function ($query) {
             $query->where('company_uuid', $this->uuid);
         });
+    }
+
+    public function owner(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
     }
 
     public function users(): BelongsToMany
