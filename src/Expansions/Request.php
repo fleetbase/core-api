@@ -94,6 +94,19 @@ class Request implements Expansion
     }
 
     /**
+     * Checks if a specified parameter is an valid UUID.
+     *
+     * @return \Closure returns a closure that determines if a parameter is an array
+     */
+    public function isUuid()
+    {
+        return function ($param) {
+            /** @var \Illuminate\Http\Request $this */
+            return !empty($param) && $this->has($param) && Str::isUuid($this->input($param));
+        };
+    }
+
+    /**
      * Checks if a specified parameter is an array.
      *
      * @return \Closure returns a closure that determines if a parameter is an array
@@ -102,7 +115,7 @@ class Request implements Expansion
     {
         return function ($param) {
             /** @var \Illuminate\Http\Request $this */
-            return $this->has($param) && is_array($this->input($param));
+            return !empty($param) && $this->has($param) && is_array($this->input($param));
         };
     }
 

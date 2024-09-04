@@ -12,6 +12,10 @@ use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\Searchable;
 use Fleetbase\Traits\SendsWebhooks;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Collection;
 use Spatie\Sluggable\HasSlug;
 use Spatie\Sluggable\SlugOptions;
@@ -100,57 +104,39 @@ class ChatChannel extends Model
     }
 
     /**
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     * @return BelongsTo
      */
     public function company()
     {
         return $this->belongsTo(Company::class, 'company_uuid', 'uuid');
     }
 
-    /**
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
-     */
-    public function createdBy()
+    public function createdBy(): BelongsTo|Builder
     {
-        return $this->belongsTo(User::class, 'created_by_uuid', 'uuid');
+        return $this->belongsTo(User::class, 'created_by_uuid', 'uuid')->withTrashed();
     }
 
-    /**
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
-     */
-    public function lastMessage()
+    public function lastMessage(): HasOne|Builder
     {
         return $this->hasOne(ChatMessage::class, 'chat_channel_uuid', 'uuid')->latest();
     }
 
-    /**
-     * @return \Illuminate\Database\Eloquent\Relations\HasMany
-     */
-    public function participants()
+    public function participants(): HasMany|Builder
     {
         return $this->hasMany(ChatParticipant::class, 'chat_channel_uuid', 'uuid')->whereHas('user');
     }
 
-    /**
-     * @return \Illuminate\Database\Eloquent\Relations\HasMany
-     */
-    public function messages()
+    public function messages(): HasMany
     {
         return $this->hasMany(ChatMessage::class, 'chat_channel_uuid', 'uuid');
     }
 
-    /**
-     * @return \Illuminate\Database\Eloquent\Relations\HasMany
-     */
-    public function attachments()
+    public function attachments(): HasMany|Builder
     {
         return $this->hasMany(ChatAttachment::class, 'chat_channel_uuid', 'uuid')->whereNull('chat_message_uuid');
     }
 
-    /**
-     * @return \Illuminate\Database\Eloquent\Relations\HasMany
-     */
-    public function logs()
+    public function logs(): HasMany
     {
         return $this->hasMany(ChatLog::class, 'chat_channel_uuid', 'uuid');
     }

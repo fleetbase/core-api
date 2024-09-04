@@ -304,21 +304,18 @@ class UserController extends FleetbaseController
 
         // get invited email
         $email = Arr::first($invite->recipients);
-
         if (!$email) {
             return response()->error('Unable to locate the user for this invitation.');
         }
 
         // get user from invite
         $user = User::where('email', $email)->first();
-
         if (!$user) {
             return response()->error('Unable to locate the user for this invitation.');
         }
 
         // get the company who sent the invite
         $company = $invite->subject;
-
         if (!$company) {
             return response()->error('The organization that invited you no longer exists.');
         }
@@ -334,7 +331,8 @@ class UserController extends FleetbaseController
 
         // activate user
         if ($isPending) {
-            $user->update(['status' => 'active', 'email_verified_at' => Carbon::now()]);
+            $user->update(['email_verified_at' => now()]);
+            $user->activate();
         }
 
         // create authentication token for user

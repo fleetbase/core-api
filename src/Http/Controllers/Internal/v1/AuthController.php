@@ -43,9 +43,10 @@ class AuthController extends Controller
         // if attempting to authenticate with auth token validate it first against database and respond with it
         if ($authToken) {
             $personalAccessToken = PersonalAccessToken::findToken($authToken);
+            $personalAccessToken->loadMissing('tokenable');
 
             if ($personalAccessToken) {
-                return response()->json(['token' => $authToken]);
+                return response()->json(['token' => $authToken, 'type' => $personalAccessToken->tokenable instanceof User ? $personalAccessToken->tokenable->getType() : null]);
             }
         }
 
@@ -85,7 +86,7 @@ class AuthController extends Controller
         $user->updateLastLogin();
         $token = $user->createToken($user->uuid);
 
-        return response()->json(['token' => $token->plainTextToken]);
+        return response()->json(['token' => $token->plainTextToken, 'type' => $user->getType()]);
     }
 
     /**
@@ -101,7 +102,7 @@ class AuthController extends Controller
             return response()->error('Session has expired.', 401, ['restore' => false]);
         }
 
-        return response()->json(['token' => $request->bearerToken(), 'user' => $user->uuid, 'verified' => $user->isVerified()]);
+        return response()->json(['token' => $request->bearerToken(), 'user' => $user->uuid, 'verified' => $user->isVerified(), 'type' => $user->getType()]);
     }
 
     /**

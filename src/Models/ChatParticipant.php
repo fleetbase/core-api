@@ -6,6 +6,8 @@ use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\SendsWebhooks;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 class ChatParticipant extends Model
@@ -57,18 +59,12 @@ class ChatParticipant extends Model
      */
     protected $casts = [];
 
-    /**
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
-     */
-    public function user()
+    public function user(): BelongsTo|Builder
     {
-        return $this->belongsTo(User::class, 'user_uuid', 'uuid');
+        return $this->belongsTo(User::class, 'user_uuid', 'uuid')->withTrashed();
     }
 
-    /**
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
-     */
-    public function chatChannel()
+    public function chatChannel(): BelongsTo
     {
         return $this->belongsTo(ChatChannel::class, 'chat_channel_uuid', 'uuid');
     }
