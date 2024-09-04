@@ -11,7 +11,13 @@ use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\Searchable;
 use Fleetbase\Traits\SendsWebhooks;
 use Fleetbase\Traits\TracksApiCredential;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Str;
 use Spatie\Sluggable\HasSlug;
 use Spatie\Sluggable\SlugOptions;
 
@@ -80,7 +86,6 @@ class Company extends Model
         'website_url',
         'description',
         'options',
-        'owner_uuid',
         'type',
         'currency',
         'country',
@@ -147,62 +152,69 @@ class Company extends Model
             ->saveSlugsTo('slug');
     }
 
-    /**
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
-     */
-    public function owner()
+    public function creator(): BelongsTo|Builder
     {
         return $this->belongsTo(User::class)->whereHas('anyCompanyUser', function ($query) {
             $query->where('company_uuid', $this->uuid);
         });
     }
 
-    /**
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
-     */
-    public function users()
+    public function owner(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    public function users(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'company_users');
     }
 
-    /**
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
-     */
-    public function companyUsers()
+    public function companyUsers(): HasManyThrough
     {
         return $this->hasManyThrough(User::class, CompanyUser::class, 'company_uuid', 'uuid', 'uuid', 'user_uuid');
     }
 
-    /**
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
-     */
-    public function logo()
+    public function logo(): BelongsTo
     {
         return $this->belongsTo(File::class);
     }
 
-    /**
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
-     */
-    public function backdrop()
+    public function backdrop(): BelongsTo
     {
         return $this->belongsTo(File::class);
     }
 
-    /**
-     * @return \Illuminate\Database\Eloquent\Relations\HasMany
-     */
-    public function drivers()
+    public function drivers(): HasMany
     {
         return $this->hasMany(Driver::class);
     }
 
-    /**
-     * @return \Illuminate\Database\Eloquent\Relations\HasMany
-     */
-    public function apiCredentials()
+    public function apiCredentials(): HasMany
     {
         return $this->hasMany(ApiCredential::class);
+    }
+
+    public function loadCompanyOwner(): self
+    {
+        $this->loadMissing(['owner', 'creator']);
+        $owner = $this->owner ?? $this->creator;
+
+        if ($owner) {
+            $this->setRelation('owner', $owner);
+
+            return $this;
+        }
+
+        if (Str::isUuid($this->owner_uuid)) {
+            $owner = User::where('uuid', $this->owner_uuid)->first();
+            if ($owner) {
+                $this->setRelation('owner', $owner);
+
+                return $this;
+            }
+        }
+
+        return $this;
     }
 
     /**

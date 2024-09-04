@@ -32,6 +32,16 @@ class CompanyUser extends Model
         'company_uuid',
         'user_uuid',
         'status',
+        'external',
+    ];
+
+    /**
+     * The attributes that should be cast to native types.
+     *
+     * @var array
+     */
+    protected $casts = [
+        'external'                     => 'boolean',
     ];
 
     /**
@@ -64,7 +74,7 @@ class CompanyUser extends Model
      */
     public function setStatusAttribute($value = 'active')
     {
-        $this->attributes['status'] = $value ?? 'active';
+        $this->attributes['status'] = $value;
     }
 
     /**

@@ -24,6 +24,11 @@ class UserFilter extends Filter
         $this->queryForInternal();
     }
 
+    public function isNotAdmin()
+    {
+        $this->builder->where('type', '!=', 'admin');
+    }
+
     public function query(?string $query)
     {
         $this->builder->search($query);

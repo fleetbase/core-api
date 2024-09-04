@@ -38,7 +38,7 @@ class Category extends FleetbaseResource
             'icon_url'     => $this->icon_url,
             'name'         => $this->name,
             'description'  => $this->description,
-            'owner'        => $this->whenLoaded('owner', $this->owner),
+            'owner'        => $this->whenLoaded('owner', fn () => $this->owner),
             'parent'       => $this->whenLoaded(
                 'parentCategory',
                 function ($parentCategory) {

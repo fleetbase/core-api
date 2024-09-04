@@ -441,7 +441,7 @@ class User extends Authenticatable
 
         // Create company user record
         if (CompanyUser::where(['company_uuid' => $company->uuid, 'user_uuid' => $this->uuid])->doesntExist()) {
-            $companyUser = CompanyUser::create(['company_uuid' => $company->uuid, 'user_uuid' => $this->uuid, 'status' => $this->status]);
+            $companyUser = CompanyUser::create(['company_uuid' => $company->uuid, 'user_uuid' => $this->uuid, 'status' => $this->status ?? 'pending']);
             $this->setRelation('companyUser', $companyUser);
         }
 
@@ -716,6 +716,27 @@ class User extends Authenticatable
     }
 
     /**
+     * Set the user type.
+     */
+    public function setType(string $type): self
+    {
+        static::unguarded(function () use ($type) {
+            $this->type = $type;
+            $this->save();
+        });
+
+        return $this;
+    }
+
+    /**
+     * Get the user type.
+     */
+    public function getType(): ?string
+    {
+        return $this->getAttribute('type');
+    }
+
+    /**
      * Set and hash password.
      */
     public function setPasswordAttribute($value): void
@@ -824,7 +845,7 @@ class User extends Authenticatable
         $this->status = 'inactive';
         $this->save();
 
-        $this->loadMissing('companyUser');
+        $this->loadCompanyUser();
         if ($this->companyUser) {
             $this->companyUser->status = 'inactive';
             $this->companyUser->save();
@@ -845,7 +866,7 @@ class User extends Authenticatable
         $this->status = 'active';
         $this->save();
 
-        $this->loadMissing('companyUser');
+        $this->loadCompanyUser();
         if ($this->companyUser) {
             $this->companyUser->status = 'active';
             $this->companyUser->save();
