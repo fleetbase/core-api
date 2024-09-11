@@ -2,9 +2,11 @@
 
 namespace Fleetbase\Support;
 
+use Fleetbase\Contracts\Directive;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Session;
+use Illuminate\Support\Str;
 
 class DirectiveParser
 {
@@ -22,6 +24,14 @@ class DirectiveParser
     public function applyDirective(Builder $query, array $directive): Builder
     {
         $method = array_shift($directive); // Extract the Eloquent method (e.g., 'where', 'whereHas')
+
+        // Run directive classes
+        if (Str::containsAll($method, ['Directive', '\\'])) {
+            $directiveInstance = app($method);
+            if ($directiveInstance instanceof Directive) {
+                return app($method)->apply($query);
+            }
+        }
 
         // Special handling for 'whereHas' and similar methods requiring a closure
         if ($method === 'whereHas' || $method === 'orWhereHas') {

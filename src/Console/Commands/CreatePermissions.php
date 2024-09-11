@@ -42,13 +42,19 @@ class CreatePermissions extends Command
         $reset = $this->option('reset');
 
         if ($reset) {
-            Schema::disableForeignKeyConstraints();
-            Permission::truncate();
-            Policy::truncate();
-            DB::table('model_has_permissions')->truncate();
-            DB::table('model_has_roles')->truncate();
-            DB::table('model_has_policies')->truncate();
+            Schema::withoutForeignKeyConstraints(function () {
+                Permission::truncate();
+                Policy::truncate();
+                DB::table('model_has_permissions')->truncate();
+                DB::table('model_has_roles')->truncate();
+                DB::table('model_has_policies')->truncate();
+            });
         }
+
+        // Always truncate directives
+        Schema::withoutForeignKeyConstraints(function () {
+            Directive::truncate();
+        });
 
         $actions = ['create', 'update', 'delete', 'view', 'list', 'see'];
         $schemas = Utils::getAuthSchemas();
@@ -315,10 +321,6 @@ class CreatePermissions extends Command
                 $this->info('New Role for service ' . $service . ' created as ' . $role->name);
             }
         }
-
-        if ($reset) {
-            Schema::enableForeignKeyConstraints();
-        }
     }
 
     /**
@@ -338,7 +340,7 @@ class CreatePermissions extends Command
      */
     public function createDirectives(Model $subject, string $service, string $guard, array $directives = []): Collection
     {
-        $directiveRecords= collect();
+        $directiveRecords = collect();
         if (empty($directives)) {
             return $directiveRecords;
         }
@@ -364,12 +366,7 @@ class CreatePermissions extends Command
             }
 
             // Create the directive
-            $directive = Directive::updateOrCreate(
-                [
-                    'permission_uuid' => $permissionRecord->id,
-                    'subject_uuid'    => $subject->{$subject->getKeyName()},
-                    'key'             => Directive::createKey($rules),
-                ],
+            $directive = Directive::create(
                 [
                     'permission_uuid' => $permissionRecord->id,
                     'subject_type'    => Utils::getMutationType($subject),
