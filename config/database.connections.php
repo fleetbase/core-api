@@ -38,6 +38,20 @@ if (env('APP_ENV') === 'local') {
     $mysql_options[PDO::ATTR_EMULATE_PREPARES] = true;
 }
 
+if (extension_loaded('pdo_mysql')) {
+    if (env('MYSQL_ATTR_SSL_CA')) {
+        $mysql_options[PDO::MYSQL_ATTR_SSL_CA] = env('MYSQL_ATTR_SSL_CA');
+    }
+    if (env('MYSQL_ATTR_SSL_CERT')) {
+        $mysql_options[PDO::MYSQL_ATTR_SSL_CERT] = env('MYSQL_ATTR_SSL_CERT');
+    }
+    if (env('MYSQL_ATTR_SSL_KEY')) {
+        $mysql_options[PDO::MYSQL_ATTR_SSL_KEY] = env('MYSQL_ATTR_SSL_KEY');
+    }
+    // Setting default SSL verification behavior based on environment
+    $mysql_options[PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT] = env('MYSQL_ATTR_SSL_VERIFY_SERVER_CERT', env('APP_ENV') === 'production');
+}
+
 /*
     |--------------------------------------------------------------------------
     | Database Connections
