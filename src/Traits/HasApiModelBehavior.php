@@ -680,8 +680,9 @@ trait HasApiModelBehavior
      */
     public function applyDirectivesToQuery(Request $request, $builder)
     {
-        $directives = Auth::getDirectivesFromRequest($request);
-        foreach ($directives as $directive) {
+        $directives       = Auth::getDirectivesFromRequest($request);
+        $uniqueDirectives = $directives->unique('rules');
+        foreach ($uniqueDirectives as $directive) {
             $directive->apply($builder);
         }
 
@@ -822,14 +823,15 @@ trait HasApiModelBehavior
      */
     public function prioritizedCustomColumnFilter($request, $builder, $column)
     {
-        $resourceFilter     = Resolve::httpFilterForModel($this, $request);
-        $camlizedColumnName = Str::camel($column);
+        $resourceFilter        = Resolve::httpFilterForModel($this, $request);
+        $camelizedColumnName   = Str::camel($column);
+        $camelizedRelationName = Str::camel(Str::replace('_uuid', '', $column));
 
         if (empty($resourceFilter)) {
             return false;
         }
 
-        return method_exists($resourceFilter, $camlizedColumnName) || method_exists($resourceFilter, $column);
+        return method_exists($resourceFilter, $camelizedColumnName) || method_exists($resourceFilter, $column) || method_exists($resourceFilter, $camelizedRelationName);
     }
 
     /**
