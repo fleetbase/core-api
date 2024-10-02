@@ -346,9 +346,13 @@ class CreatePermissions extends Command
         }
 
         foreach ($directives as $permission => $rules) {
-            // dd($permission, $rules);
-            // role permission names can be shorthanded by excluding the service since the schema provides the service name
-            $permissionName = Str::startsWith($permission, $service) ? $permission : $service . ' ' . $permission;
+            $permissionSegmentCount = count(explode(' ', $permission));
+            if ($permissionSegmentCount === 3) {
+                $permissionName = $permission;
+            } else {
+                // role permission names can be shorthanded by excluding the service since the schema provides the service name
+                $permissionName = Str::startsWith($permission, $service) ? $permission : $service . ' ' . $permission;
+            }
 
             // next we validate the permission name
             $permissionNameSegmentsCount = count(explode(' ', $permissionName));
@@ -404,8 +408,14 @@ class CreatePermissions extends Command
     public function assignPermissions(Model $subject, string $service, string $guard, array $permissions = []): Model
     {
         foreach ($permissions as $permissionName) {
-            // role permission names can be shorthanded by excluding the service since the schema provides the service name
-            $permissionName = Str::startsWith($permissionName, $service) ? $permissionName : $service . ' ' . $permissionName;
+            $permissionSegmentCount = count(explode(' ', $permissionName));
+            if ($permissionSegmentCount === 3) {
+                $permissionName = $permissionName;
+            } else {
+                // role permission names can be shorthanded by excluding the service since the schema provides the service name
+                $permissionName = Str::startsWith($permissionName, $service) ? $permissionName : $service . ' ' . $permissionName;
+            }
+
             // next we validate the permission name
             $permissionNameSegmentsCount = count(explode(' ', $permissionName));
             if ($permissionNameSegmentsCount !== 3) {

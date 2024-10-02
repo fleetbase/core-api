@@ -143,6 +143,16 @@ trait HasMetaAttributes
     }
 
     /**
+     * Checks if a meta-data key is missing.
+     *
+     * @param string $key key of the meta-data to check
+     */
+    public function doesntHaveMeta($key): bool
+    {
+        return !$this->hasMeta($key);
+    }
+
+    /**
      * Checks if a meta-data property's value is true.
      *
      * @param string $key key of the meta-data to check

@@ -122,6 +122,8 @@ class LookupController extends Controller
         $query   = strtolower($request->input('query', null));
         $simple  = $request->boolean('simple');
         $columns = $request->array('columns');
+        $only    = array_map(fn ($s) => strtolower($s), $request->array('only'));
+        $except  = array_map(fn ($s) => strtolower($s), $request->array('except'));
 
         $countries = Country::search($query);
 
@@ -141,7 +143,19 @@ class LookupController extends Controller
             );
         }
 
-        return response()->json($countries);
+        if ($only) {
+            $countries = $countries->filter(function ($country) use ($only) {
+                return in_array(strtolower(data_get($country, 'cca2')), $only);
+            });
+        }
+
+        if ($except) {
+            $countries = $countries->filter(function ($country) use ($except) {
+                return !in_array(strtolower(data_get($country, 'cca2')), $except);
+            });
+        }
+
+        return response()->json($countries->values());
     }
 
     /**
