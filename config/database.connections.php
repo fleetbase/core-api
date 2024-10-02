@@ -86,7 +86,7 @@ return [
     'sandbox' => [
         'driver' => 'mysql',
         'host' => $host,
-        'port' => env('SANDBOX_DB_PORT', '3306'),
+        'port' => env('SANDBOX_DB_PORT', env('DB_PORT', '3306')),
         'database' => $database . '_sandbox',
         'username' => $username,
         'password' => $password,

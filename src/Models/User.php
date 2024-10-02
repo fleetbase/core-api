@@ -328,6 +328,11 @@ class User extends Authenticatable
         return $this->hasManyThrough(Group::class, GroupUser::class, 'user_uuid', 'uuid', 'uuid', 'group_uuid');
     }
 
+    public function getLocale(): string
+    {
+        return Setting::lookup('user.' . $this->uuid . '.locale', 'en-us');
+    }
+
     /**
      * Generates a unique username based on the provided name.
      *
