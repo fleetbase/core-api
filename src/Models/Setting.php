@@ -463,4 +463,20 @@ class Setting extends EloquentModel
     {
         Utils::clearCacheByPattern('system_setting*');
     }
+
+    public function getCompany(): ?Company
+    {
+        $keySegments = explode('.', $this->key);
+        if (count($keySegments) >= 3 && $keySegments[0] === 'company' && Str::isUuid($keySegments[1])) {
+            return Company::where('uuid', $keySegments[1])->first();
+        }
+    }
+
+    public function getUser(): ?User
+    {
+        $keySegments = explode('.', $this->key);
+        if (count($keySegments) >= 3 && $keySegments[0] === 'user' && Str::isUuid($keySegments[1])) {
+            return User::where('uuid', $keySegments[1])->first();
+        }
+    }
 }

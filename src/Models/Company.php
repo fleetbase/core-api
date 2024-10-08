@@ -166,7 +166,14 @@ class Company extends Model
 
     public function users(): BelongsToMany
     {
-        return $this->belongsToMany(User::class, 'company_users');
+        return $this->belongsToMany(
+            User::class,
+            'company_users',
+            'company_uuid',
+            'user_uuid',
+            'uuid',
+            'uuid'
+        );
     }
 
     public function companyUsers(): HasManyThrough
@@ -317,11 +324,14 @@ class Company extends Model
     }
 
     /**
-     * Uses the current session to get the current company model instance.
+     * Retrieves the current session's Company instance.
      *
-     * @return Company|null
+     * This static method fetches the 'company' identifier from the session and attempts to retrieve
+     * the corresponding Company model. If no company identifier is found in the session, it returns null.
+     *
+     * @return Company|null the current session's Company instance or null if not found
      */
-    public static function currentSession()
+    public static function currentSession(): ?Company
     {
         $id = session('company');
 
@@ -333,21 +343,66 @@ class Company extends Model
     }
 
     /**
-     * Adds a new user to this company.
+     * Adds a user to the company with an optional role and status.
      *
-     * @return void
+     * This method associates a given User with the company by creating or retrieving a CompanyUser record.
+     * If a role name is provided, it assigns that role to the CompanyUser. If no role name is specified,
+     * it defaults to the user's current role. The status can also be specified, defaulting to 'active'.
+     *
+     * @param User        $user     the user to be added to the company
+     * @param string|null $roleName The name of the role to assign to the user. Defaults to the user's current role if null.
+     * @param string      $status   The status of the user within the company. Defaults to 'active'.
+     *
+     * @return CompanyUser the CompanyUser instance representing the association between the user and the company
      */
-    public function addUser(?User $user)
+    public function addUser(User $user, ?string $roleName = null, string $status = 'active'): CompanyUser
     {
-        return CompanyUser::create([
-            'company_uuid' => $this->uuid,
-            'user_uuid'    => $user->uuid,
-            'status'       => 'active',
-        ]);
+        // Get the currentuser role
+        $roleName = $roleName ?? $user->getRoleName();
+
+        $companyUser = CompanyUser::firstOrCreate(
+            [
+                'company_uuid'     => $this->uuid,
+                'user_uuid'        => $user->uuid,
+            ],
+            [
+                'company_uuid' => $this->uuid,
+                'user_uuid'    => $user->uuid,
+                'status'       => $user->status ?? $status,
+            ]
+        );
+
+        // Assign the role to the new user
+        $companyUser->assignSingleRole($roleName);
+
+        return $companyUser;
     }
 
     /**
-     * Get the latest last login of any user in the company.
+     * Assigns a user to the company and sets their role.
+     *
+     * This method adds a user to the company using the addUser method and then associates the company with the user.
+     * It optionally allows specifying a role name for the user within the company.
+     *
+     * @param User        $user     the user to assign to the company
+     * @param string|null $roleName The name of the role to assign to the user. If null, defaults to the user's current role.
+     *
+     * @return CompanyUser the CompanyUser instance representing the association between the user and the company
+     */
+    public function assignUser(User $user, ?string $roleName = null): CompanyUser
+    {
+        $companyUser = $this->addUser($user, $roleName);
+        $user->assignCompany($this);
+
+        return $companyUser;
+    }
+
+    /**
+     * Retrieves the timestamp of the most recent user login in the company.
+     *
+     * This method queries the company's associated users and returns the latest 'last_login' timestamp.
+     *
+     * @return string|null the timestamp of the last user login in 'Y-m-d H:i:s' format, or null if no logins are recorded
      */
     public function getLastUserLogin()
     {

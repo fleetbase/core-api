@@ -446,7 +446,7 @@ class User extends Authenticatable
 
         // Create company user record
         if (CompanyUser::where(['company_uuid' => $company->uuid, 'user_uuid' => $this->uuid])->doesntExist()) {
-            $companyUser = CompanyUser::create(['company_uuid' => $company->uuid, 'user_uuid' => $this->uuid, 'status' => $this->status ?? 'pending']);
+            $companyUser = $company->addUser($this);
             $this->setRelation('companyUser', $companyUser);
         }
 
@@ -1234,5 +1234,36 @@ class User extends Authenticatable
         }
 
         throw new \Exception('Company User relationship not found!');
+    }
+
+    /**
+     * Retrieves the first Role associated with the user.
+     *
+     * This method fetches the first Role linked to the user via the roles relationship.
+     * If the user has no roles assigned, it returns null.
+     *
+     * @return Role|null the first Role associated with the user, or null if no roles are found
+     */
+    public function getRole(): ?Role
+    {
+        return $this->roles()->first();
+    }
+
+    /**
+     * Retrieves the name of the first Role associated with the user.
+     *
+     * This method obtains the first Role linked to the user and returns its name.
+     * If the user has no roles assigned, it returns null.
+     *
+     * @return string|null the name of the first Role associated with the user, or null if no roles are found
+     */
+    public function getRoleName(): ?string
+    {
+        $role = $this->getRole();
+        if ($role) {
+            return $role->name;
+        }
+
+        return null;
     }
 }

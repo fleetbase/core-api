@@ -516,11 +516,12 @@ class AuthController extends Controller
         $user      = $request->user();
         $companies = Company::whereHas(
             'users',
-            function ($q) use ($user) {
-                $q->where('users.uuid', $user->uuid);
+            function ($query) use ($user) {
+                $query->where('users.uuid', $user->uuid);
+                $query->whereNull('company_users.deleted_at');
             }
         )
-        ->whereHas('owner.companyUser')
+        ->whereHas('owner')
         ->with(['owner', 'owner.companyUser'])
         ->get();
 
@@ -580,8 +581,7 @@ class AuthController extends Controller
             return response()->error('User is already a member of this organization.');
         }
 
-        $company->addUser($user);
-        $user->assignCompany($company);
+        $company->assignUser($user);
         Auth::setSession($user);
 
         return response()->json(['status' => 'ok']);
@@ -595,10 +595,14 @@ class AuthController extends Controller
     public function createOrganization(Request $request)
     {
         $user    = $request->user();
-        $company = Company::create(array_merge($request->only(['name', 'description', 'phone', 'email', 'currency', 'country', 'timezone']), ['owner_uuid' => $user->uuid]));
-        $company->addUser($user);
 
-        $user->assignCompany($company);
+        try {
+            $company = Company::create(array_merge($request->only(['name', 'description', 'phone', 'email', 'currency', 'country', 'timezone']), ['owner_uuid' => $user->uuid]));
+            $company->assignUser($user, 'Administrator');
+        } catch (\Throwable $e) {
+            return response()->error($e->getMessage());
+        }
+
         Auth::setSession($user);
 
         return new Organization($company);
