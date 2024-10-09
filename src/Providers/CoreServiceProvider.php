@@ -63,6 +63,7 @@ class CoreServiceProvider extends ServiceProvider
      * @var array
      */
     public $commands = [
+        \Fleetbase\Console\Commands\Recovery::class,
         \Fleetbase\Console\Commands\AssignAdminRoles::class,
         \Fleetbase\Console\Commands\ForceResetDatabase::class,
         \Fleetbase\Console\Commands\CreateDatabase::class,

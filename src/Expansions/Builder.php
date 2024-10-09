@@ -175,13 +175,13 @@ class Builder implements Expansion
                 }
 
                 if (Str::startsWith($sort, '-')) {
-                    list($param, $direction) = Http::useSort($request);
+                    list($param, $direction) = Http::useSort($sort);
 
                     $this->orderBy($param, $direction);
                     continue;
                 }
 
-                list($param, $direction) = Http::useSort($request);
+                list($param, $direction) = Http::useSort($sort);
                 $this->orderBy($param, $direction);
             }
 
