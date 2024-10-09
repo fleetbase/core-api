@@ -164,7 +164,7 @@ class User extends Authenticatable
      *
      * @var array
      */
-    protected $hidden = ['password', 'remember_token', 'secret', 'avatar', 'username', 'company', 'companies'];
+    protected $hidden = ['password', 'remember_token', 'secret', 'avatar', 'username', 'company', 'companyUsers', 'companies'];
 
     /**
      * Dynamic attributes that are appended to object.
@@ -277,16 +277,59 @@ class User extends Authenticatable
     }
 
     /**
-     * Defines the relationship between the user and the companies they are associated with.
+     * Retrieves all CompanyUser pivot records associated with the user.
      *
-     * This method establishes a `HasMany` relationship, indicating that the user can be associated with multiple companies
-     * through the `CompanyUser` model.
+     * This method defines a one-to-many relationship between the User model and the CompanyUser model.
+     * It allows fetching all pivot records that link the user to various companies through the
+     * `company_users` pivot table using the `user_uuid` foreign key.
      *
-     * @return HasMany the relationship instance between the User and the CompanyUser model
+     * **Usage Example:**
+     * ```php
+     * $user = User::find($userId);
+     * $companyUsers = $user->companyUsers;
+     * foreach ($companyUsers as $companyUser) {
+     *     echo $companyUser->company->name;
+     * }
+     * ```
+     *
+     * @return HasMany the HasMany relationship instance
+     *
+     * @throws \LogicException if the relationship is improperly defined or the models do not exist
+     *
+     * @see CompanyUser
+     * @see Company
      */
-    public function companies(): HasMany
+    public function companyUsers(): HasMany
     {
         return $this->hasMany(CompanyUser::class, 'user_uuid');
+    }
+
+    /**
+     * Retrieves all companies associated with the user through the CompanyUser pivot table.
+     *
+     * This method defines a HasManyThrough relationship between the User model and the Company model
+     * via the CompanyUser pivot table. It allows fetching all companies that the user is associated with
+     * through their entries in the CompanyUser pivot.
+     *
+     * **Usage Example:**
+     * ```php
+     * $user = User::find($userId);
+     * $companies = $user->companies;
+     * foreach ($companies as $company) {
+     *     echo $company->name;
+     * }
+     * ```
+     *
+     * @return HasManyThrough the HasManyThrough relationship instance
+     *
+     * @throws \LogicException if the relationship is improperly defined or the models do not exist
+     *
+     * @see CompanyUser
+     * @see Company
+     */
+    public function companies(): HasManyThrough
+    {
+        return $this->hasManyThrough(Company::class, CompanyUser::class, 'company_uuid', 'uuid', 'uuid', 'user_uuid');
     }
 
     /**
@@ -328,9 +371,38 @@ class User extends Authenticatable
         return $this->hasManyThrough(Group::class, GroupUser::class, 'user_uuid', 'uuid', 'uuid', 'group_uuid');
     }
 
+    /**
+     * Retrieves the locale setting for the company.
+     *
+     * This method fetches the locale preference associated with the company using the company's UUID.
+     * It utilizes the `Setting::lookup` method to retrieve the locale value from the settings storage.
+     * If no locale is set for the company, it defaults to `'en-us'`.
+     *
+     * **Usage Example:**
+     * ```php
+     * try {
+     *     $company = Company::find($companyId);
+     *     $locale = $company->getLocale();
+     *     // $locale might return 'en-us' or any other locale set for the company
+     * } catch (\Exception $e) {
+     *     // Handle exception (e.g., log error, notify user)
+     *     Log::error('Failed to retrieve company locale: ' . $e->getMessage());
+     * }
+     * ```
+     *
+     * @return string The locale code for the company (e.g., 'en-us', 'fr-fr').
+     *
+     * @throws \Exception if there is an issue accessing the settings storage
+     *
+     * @see Setting::lookup()
+     */
     public function getLocale(): string
     {
-        return Setting::lookup('user.' . $this->uuid . '.locale', 'en-us');
+        try {
+            return Setting::lookup('user.' . $this->uuid . '.locale', 'en-us');
+        } catch (\Exception $e) {
+            throw new \Exception('Unable to retrieve user locale setting at this time.', 0, $e);
+        }
     }
 
     /**
@@ -365,7 +437,7 @@ class User extends Authenticatable
      */
     public function getCompanyUser(?Company $company = null): ?CompanyUser
     {
-        $this->loadMissing(['companyUser', 'companies']);
+        $this->loadMissing(['companyUser', 'companyUsers']);
         if ($this->companyUser) {
             return $this->companyUser;
         }
@@ -375,7 +447,7 @@ class User extends Authenticatable
             return null;
         }
 
-        $companyUser = $this->companies()->where('company_uuid', $companyUuid)->first();
+        $companyUser = $this->companyUsers()->where('company_uuid', $companyUuid)->first();
         if ($companyUser) {
             $this->setRelation('companyUser', $companyUser);
 
@@ -422,7 +494,7 @@ class User extends Authenticatable
      */
     public function setCompanyUserRelation(Company $company): void
     {
-        $companyUser = $this->companies()->where('company_uuid', $company->uuid)->first();
+        $companyUser = $this->companyUsers()->where('company_uuid', $company->uuid)->first();
         if ($companyUser) {
             $this->setRelation('companyUser', $companyUser);
         }
@@ -436,17 +508,18 @@ class User extends Authenticatable
      * and is not the company owner, they will be invited to join the company and the company owner
      * will be notified that a user has been created.
      *
-     * @param Company $company the company to assign the user to
+     * @param Company     $company the company to assign the user to
+     * @param string|null $role    The name or ID of the role to assign to the user. Defaults to the user's current role if null.
      *
      * @return self returns the current User instance
      */
-    public function assignCompany(Company $company): self
+    public function assignCompany(Company $company, string $role = 'Administrator'): self
     {
         $this->company_uuid = $company->uuid;
 
         // Create company user record
         if (CompanyUser::where(['company_uuid' => $company->uuid, 'user_uuid' => $this->uuid])->doesntExist()) {
-            $companyUser = $company->addUser($this);
+            $companyUser = $company->addUser($this, $role);
             $this->setRelation('companyUser', $companyUser);
         }
 
@@ -665,7 +738,7 @@ class User extends Authenticatable
     /**
      * Get the users's company name.
      */
-    public function getCompanyNameAttribute(): string
+    public function getCompanyNameAttribute(): ?string
     {
         return data_get($this, 'company.name');
     }
@@ -929,6 +1002,17 @@ class User extends Authenticatable
         }
 
         // Save the user's verification status
+        $this->save();
+
+        return $this;
+    }
+
+    /**
+     * Manually verify the user's email .
+     */
+    public function manualVerify(): self
+    {
+        $this->email_verified_at = Carbon::now();
         $this->save();
 
         return $this;

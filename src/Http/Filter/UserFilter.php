@@ -10,7 +10,7 @@ class UserFilter extends Filter
             function ($query) {
                 $query
                     ->whereHas(
-                        'companies',
+                        'companyUsers',
                         function ($query) {
                             $query->where('company_uuid', $this->session->get('company'));
                         }

@@ -202,6 +202,8 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 $router->fleetbaseRoutes('companies', null, ['middleware' => [Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]], function ($router, $controller) {
                                     $router->get('two-fa', $controller('getTwoFactorSettings'));
                                     $router->post('two-fa', $controller('saveTwoFactorSettings'));
+                                    $router->post('transfer-ownership', $controller('transferOwnership'));
+                                    $router->post('leave', $controller('leave'));
                                     $router->match(['get', 'post'], 'export', $controller('export'));
                                     $router->get('{id}/users', $controller('users'));
                                 });
@@ -210,6 +212,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     $router->match(['get', 'post'], 'export', $controller('export'));
                                     $router->patch('deactivate/{id}', $controller('deactivate'));
                                     $router->patch('activate/{id}', $controller('activate'));
+                                    $router->patch('verify/{id}', $controller('verify'));
                                     $router->delete('remove-from-company/{id}', $controller('removeFromCompany'));
                                     $router->delete('bulk-delete', $controller('bulkDelete'));
                                     $router->post('resend-invite', $controller('resendInvitation'));

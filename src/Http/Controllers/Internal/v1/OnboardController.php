@@ -71,7 +71,7 @@ class OnboardController extends Controller
         $company->setOwner($user)->save();
 
         // assign user to organization
-        $user->assignCompany($company);
+        $user->assignCompany($company, 'Administrator');
 
         // assign admin role
         $user->assignSingleRole('Administrator');

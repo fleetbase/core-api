@@ -79,11 +79,11 @@ class UserController extends FleetbaseController
                 $user->setUserType('user');
 
                 // Assign to user
-                $user->assignCompany($company);
+                $user->assignCompany($company, $request->input('user.role_uuid'));
 
                 // Assign role if set
-                if ($request->filled('user.role')) {
-                    $user->assignSingleRole($request->input('user.role'));
+                if ($request->filled('user.role_uuid')) {
+                    $user->assignSingleRole($request->input('user.role_uuid'));
                 }
 
                 // Sync Permissions
@@ -101,6 +101,8 @@ class UserController extends FleetbaseController
 
             return ['user' => new $this->resource($record)];
         } catch (\Exception $e) {
+            dd($e);
+
             return response()->error($e->getMessage());
         } catch (\Illuminate\Database\QueryException $e) {
             return response()->error($e->getMessage());
@@ -401,6 +403,33 @@ class UserController extends FleetbaseController
     }
 
     /**
+     * Verify a user manually.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function verify($id)
+    {
+        if (!$id) {
+            return response()->error('No user to activate', 401);
+        }
+
+        $user = User::where('uuid', $id)->first();
+
+        if (!$user) {
+            return response()->error('No user found', 401);
+        }
+
+        $user->manualVerify();
+        $user = $user->refresh();
+
+        return response()->json([
+            'message'           => 'User verified',
+            'email_verified_at' => $user->email_verified_at,
+            'status'            => 'ok',
+        ]);
+    }
+
+    /**
      * Removes this user from the current company.
      *
      * @return \Illuminate\Http\Response
@@ -426,13 +455,13 @@ class UserController extends FleetbaseController
         }
 
         /** @var \Illuminate\Support\Collection */
-        $userCompanies = $user->companies()->get();
+        $userCompanies = $user->companyUsers()->get();
 
         // only a member to one company then delete the user
         if ($userCompanies->count() === 1) {
             $user->delete();
         } else {
-            $user->companies()->where('company_uuid', $company->uuid)->delete();
+            $user->companyUsers()->where('company_uuid', $company->uuid)->delete();
 
             // trigger event user removed from company
             event(new UserRemovedFromCompany($user, $company));

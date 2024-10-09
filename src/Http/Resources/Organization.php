@@ -19,6 +19,7 @@ class Organization extends FleetbaseResource
         return [
             'id'                 => $this->when(Http::isInternalRequest(), $this->id, $this->public_id),
             'uuid'               => $this->when(Http::isInternalRequest(), $this->uuid),
+            'owner_uuid'         => $this->when(Http::isInternalRequest(), $this->owner_uuid),
             'public_id'          => $this->when(Http::isInternalRequest(), $this->public_id),
             'name'               => $this->name,
             'description'        => $this->description,
@@ -33,6 +34,16 @@ class Organization extends FleetbaseResource
             'owner'              => new User($this->owner),
             'slug'               => $this->slug,
             'status'             => $this->status,
+            'joined_at'          => $this->when(Http::isInternalRequest() && $request->session()->has('user'), function () {
+                if ($this->resource->joined_at) {
+                    return $this->resource->joined_at;
+                }
+
+                $currentCompanyUser = $this->resource->getCompanyUserPivot(session('user'));
+                if ($currentCompanyUser) {
+                    return $currentCompanyUser->created_at;
+                }
+            }),
             'updated_at'         => $this->updated_at,
             'created_at'         => $this->created_at,
         ];
