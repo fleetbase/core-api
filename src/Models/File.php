@@ -6,6 +6,7 @@ use Fleetbase\Casts\Json;
 use Fleetbase\Casts\PolymorphicType;
 use Fleetbase\Support\Utils;
 use Fleetbase\Traits\HasApiModelBehavior;
+use Fleetbase\Traits\HasMetaAttributes;
 use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\SendsWebhooks;
@@ -25,6 +26,7 @@ class File extends Model
     use HasUuid;
     use HasPublicId;
     use HasApiModelBehavior;
+    use HasMetaAttributes;
     use HasSlug;
     use LogsActivity;
     use SendsWebhooks;
@@ -140,7 +142,7 @@ class File extends Model
     public function getUrlAttribute()
     {
         $disk = $this->getDisk();
-        /** @var $filesystem \Illuminate\Support\Facades\Storage */
+        /** @var Storage $filesystem */
         $filesystem = $this->getFilesystem();
 
         if ($disk === 's3' || $disk === 'gcs') {
@@ -179,15 +181,62 @@ class File extends Model
     }
 
     /**
-     * Retrieves the MIME type of the file based on its extension.
+     * Retrieves the MIME type associated with the file.
      *
-     * @param string|null $extension optional extension to determine the MIME type; defaults to the instance's extension
+     * @param string|null $extension Optional file extension to determine the MIME type. If null, it will use the default extension.
      *
-     * @return string the MIME type of the file
+     * @return string|null the MIME type corresponding to the given extension, or null if not found
      */
-    public function getMimeType($extension = null)
+    public function getMimeType($extension = null): ?string
     {
-        return static::getFileMimeType($extension ?? $this->extension);
+        return static::getFileMimeType($extension);
+    }
+
+    /**
+     * Extracts the file extension from the original filename, considering known multi-part extensions.
+     *
+     * @return string|null The file extension, including multi-part extensions (e.g., 'tar.gz'), or null if none found.
+     */
+    public function getExtensionFromFilename(): ?string
+    {
+        return static::parseExtensionFromFilename($this->original_filename);
+    }
+
+    /**
+     * Parses the file extension from the given filename, accounting for known multi-part extensions.
+     *
+     * @param string $filename the filename from which to extract the extension
+     *
+     * @return string|null the file extension, including multi-part extensions if applicable
+     */
+    public static function parseExtensionFromFilename(string $filename): ?string
+    {
+        $knownExtensions = ['tar.gz', 'tar.bz2', 'tar.xz', 'tar.Z'];
+
+        foreach ($knownExtensions as $ext) {
+            if (substr($filename, -strlen($ext)) === $ext) {
+                return $ext;
+            }
+        }
+
+        // If no known multi-part extension is found, return the last extension
+        return pathinfo($filename, PATHINFO_EXTENSION);
+    }
+
+    /**
+     * Retrieves the file extension associated with the file, derived from the content type or original filename.
+     *
+     * @return string|null the file extension, or null if it cannot be determined
+     */
+    public function getExtension(): ?string
+    {
+        $mimeType = $this->content_type;
+        if (!$mimeType) {
+            $extensionFromFileName = $this->getExtensionFromFilename();
+            $mimeType              = static::getMimeTypeFromExtension($extensionFromFileName);
+        }
+
+        return $mimeType ? static::getExtensionFromMimeType($this->content_type) : $this->getExtensionFromFilename();
     }
 
     /**
@@ -195,15 +244,18 @@ class File extends Model
      *
      * @param string $mimeType the MIME type for which to find the corresponding file extension
      *
-     * @return string the file extension associated with the given MIME type
+     * @return string|null the file extension associated with the given MIME type
      */
-    public static function getExtensionFromMimeType($mimeType)
+    public static function getExtensionFromMimeType($mimeType): ?string
     {
         $mimes     = new MimeTypes();
         $extension = $mimes->getExtension($mimeType);
 
         if (!$extension) {
-            $extension = explode('/', $mimeType)[1];
+            $extensionSegments = explode('/', $mimeType);
+            if (count($extensionSegments) > 1) {
+                $extension = $extensionSegments[1];
+            }
         }
 
         return $extension;
@@ -214,9 +266,9 @@ class File extends Model
      *
      * @param string $extension the file extension for which to find the MIME type
      *
-     * @return string the MIME type corresponding to the given file extension
+     * @return string|null the MIME type corresponding to the given file extension, or null if not found
      */
-    public static function getMimeTypeFromExtension($extension)
+    public static function getMimeTypeFromExtension($extension): ?string
     {
         $mimes = new MimeTypes();
 
@@ -228,11 +280,37 @@ class File extends Model
      *
      * @param string $extension the file extension to look up
      *
-     * @return string the MIME type for the given extension
+     * @return string|null the MIME type for the given extension
      */
-    public static function getFileMimeType($extension)
+    public static function getFileMimeType($extension): ?string
     {
         return static::getMimeTypeFromExtension($extension);
+    }
+
+    /**
+     * Retrieves the MIME type from an uploaded file, attempting to determine it from the file's extension if necessary.
+     *
+     * @param UploadedFile $file the uploaded file from which to extract the MIME type
+     *
+     * @return string|null the MIME type of the uploaded file, or null if it cannot be determined
+     */
+    public static function getUploadedFileMimeType(UploadedFile $file): ?string
+    {
+        $filename        = $file->getClientOriginalName();
+        $extension       = $file->getClientOriginalExtension();
+        $parsedExtension = static::parseExtensionFromFilename($filename);
+        $mimeType        = $file->getMimeType();
+        if (!$mimeType) {
+            if ($parsedExtension) {
+                $mimeType = static::getFileMimeType($parsedExtension);
+            }
+
+            if (!$mimeType && $extension) {
+                $mimeType = static::getFileMimeType($extension);
+            }
+        }
+
+        return $mimeType;
     }
 
     /**
@@ -249,26 +327,20 @@ class File extends Model
      */
     public static function createFromUpload(UploadedFile $file, $path, $type = null, $size = null, $disk = null, $bucket = null): ?File
     {
-        $extension = $file->getClientOriginalExtension();
-
-        if (is_null($disk)) {
-            $disk = config('filesystems.default');
-        }
-
-        if (is_null($bucket)) {
-            $bucket = config('filesystems.disks.' . $disk . '.bucket', config('filesystems.disks.s3.bucket'));
-        }
+        $disk   = is_null($disk) ? config('filesystems.default') : $disk;
+        $bucket = is_null($bucket) ? config('filesystems.disks.' . $disk . '.bucket', config('filesystems.disks.s3.bucket')) : $bucket;
+        $size   = is_null($size) ? $file->getSize() : $size;
 
         $data = [
             'company_uuid'      => session('company'),
             'uploader_uuid'     => session('user'),
             'original_filename' => $file->getClientOriginalName(),
-            'content_type'      => static::getFileMimeType($extension),
+            'content_type'      => static::getUploadedFileMimeType($file),
             'disk'              => $disk,
             'path'              => $path,
             'bucket'            => $bucket,
             'type'              => $type,
-            'file_size'         => $size ?? $file->getSize(),
+            'file_size'         => $size,
         ];
 
         return static::create($data);
@@ -402,14 +474,13 @@ class File extends Model
      *
      * @return string the generated random file name
      */
-    public static function randomFileNameFromRequest($request, ?string $extension = 'png')
+    public static function randomFileNameFromRequest($request, string $filename = 'file', ?string $extension = null)
     {
         /** @var Request|\Fleetbase\Http\Requests\Internal\UploadFileRequest $request */
         /** @var \Illuminate\Http\File|Symfony\Component\HttpFoundation\File\File|\Symfony\Component\HttpFoundation\File\UploadedFile $file */
-        $file = $request->file;
-
-        if ($request->hasFile('file')) {
-            $extension = strtolower($file->getClientOriginalExtension());
+        if ($request->hasFile($filename)) {
+            $file      = $request->file($filename);
+            $extension = $extension ?? strtolower($file->getClientOriginalExtension());
             $extension = Str::startsWith($extension, '.') ? $extension : '.' . $extension;
             $sqids     = new \Sqids\Sqids();
 
