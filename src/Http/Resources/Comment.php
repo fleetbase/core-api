@@ -29,7 +29,7 @@ class Comment extends FleetbaseResource
             'meta'                  => $this->meta,
             'author'                => new Author($this->author),
             'replies'               => static::collection($this->replies),
-            'editable'              => $this->when(Http::isInternalRequest(), session('user') === $this->author_uuid),
+            'editable'              => $this->when(Http::isInternalRequest(), $request->hasSession() && session('user') === $this->author_uuid),
             'updated_at'            => $this->updated_at,
             'created_at'            => $this->created_at,
             'deleted_at'            => $this->deleted_at,

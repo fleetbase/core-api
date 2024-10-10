@@ -16,7 +16,7 @@ class ChatChannel extends FleetbaseResource
      */
     public function toArray($request)
     {
-        $user = Auth::getUserFromSession();
+        $user = $request->hasSession() ? Auth::getUserFromSession($request) : null;
 
         return [
             'id'                                 => $this->when(Http::isInternalRequest(), $this->id, $this->public_id),
@@ -28,7 +28,7 @@ class ChatChannel extends FleetbaseResource
             'name'                               => $this->name,
             'title'                              => $this->title,
             'last_message'                       => new ChatMessage($this->last_message),
-            'unread_count'                       => $this->getUnreadMessageCountForUser($user),
+            'unread_count'                       => $this->when($user, fn () => $this->getUnreadMessageCountForUser($user)),
             'slug'                               => $this->slug,
             'feed'                               => $this->resource_feed,
             'participants'                       => ChatParticipant::collection($this->participants),
