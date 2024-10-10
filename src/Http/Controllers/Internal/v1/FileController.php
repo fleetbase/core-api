@@ -38,13 +38,7 @@ class FileController extends FleetbaseController
 
         // Upload the file to storage disk
         try {
-            $path = $request->file->storeAs(
-                $path,
-                $fileName,
-                [
-                    'disk' => $disk,
-                ]
-            );
+            $path = $request->file->storeAs($path, $fileName, ['disk' => $disk]);
         } catch (\Throwable $e) {
             return response()->error($e->getMessage());
         }
