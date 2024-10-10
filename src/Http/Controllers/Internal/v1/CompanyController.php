@@ -234,13 +234,9 @@ class CompanyController extends FleetbaseController
      */
     public function leaveOrganization(Request $request)
     {
-        $companyId      = $request->input('company');
-        $currentUser    = $request->input('user', $request->user());
-
-        // If user id is passed
-        if (Str::isUuid($currentUser)) {
-            $currentUser = User::where('uuid', $currentUser)->first();
-        }
+        $companyId        = $request->input('company');
+        $currentUserId    = $request->input('user');
+        $currentUser      = Str::isUuid($currentUserId) ? User::where('uuid', $currentUserId)->first() : Auth::getUserFromSession($request);
 
         // If not current user - error
         if (!$currentUser) {
@@ -262,7 +258,7 @@ class CompanyController extends FleetbaseController
         $currentCompanyUser->delete();
 
         // Switch organization
-        $nextOrganization = $currentUser->companies()->where('uuid', '!=', $company->uuid)->first();
+        $nextOrganization = $currentUser->companies()->where('companies.uuid', '!=', $company->uuid)->first();
         if ($nextOrganization) {
             $currentUser->setCompany($nextOrganization);
         }

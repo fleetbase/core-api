@@ -203,7 +203,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     $router->get('two-fa', $controller('getTwoFactorSettings'));
                                     $router->post('two-fa', $controller('saveTwoFactorSettings'));
                                     $router->post('transfer-ownership', $controller('transferOwnership'));
-                                    $router->post('leave', $controller('leave'));
+                                    $router->post('leave', $controller('leaveOrganization'));
                                     $router->match(['get', 'post'], 'export', $controller('export'));
                                     $router->get('{id}/users', $controller('users'));
                                 });

@@ -34,7 +34,7 @@ class Organization extends FleetbaseResource
             'owner'              => new User($this->owner),
             'slug'               => $this->slug,
             'status'             => $this->status,
-            'joined_at'          => $this->when(Http::isInternalRequest() && $request->session()->has('user'), function () {
+            'joined_at'          => $this->when(Http::isInternalRequest() && $request->hasSession() && $request->session()->has('user'), function () {
                 if ($this->resource->joined_at) {
                     return $this->resource->joined_at;
                 }
