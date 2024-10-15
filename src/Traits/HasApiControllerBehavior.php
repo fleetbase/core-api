@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Traits;
 
+use Closure;
 use Fleetbase\Exceptions\FleetbaseRequestValidationException;
 use Fleetbase\Http\Requests\Internal\BulkDeleteRequest;
 use Fleetbase\Support\Http;
@@ -303,8 +304,9 @@ trait HasApiControllerBehavior
      */
     public function queryRecord(Request $request)
     {
-        $single = $request->boolean('single');
-        $data   = $this->model->queryFromRequest($request);
+        $single        = $request->boolean('single');
+        $queryCallback = $this->getControllerCallback('onQueryRecord');
+        $data          = $this->model->queryFromRequest($request, $queryCallback);
 
         if ($single) {
             $data = Arr::first($data);
@@ -391,8 +393,11 @@ trait HasApiControllerBehavior
     public function createRecord(Request $request)
     {
         try {
+            $onBeforeCallback = $this->getControllerCallback('onBeforeCreate');
+            $onAfterCallback  = $this->getControllerCallback('onAfterCreate');
+
             $this->validateRequest($request);
-            $record = $this->model->createRecordFromRequest($request);
+            $record = $this->model->createRecordFromRequest($request, $onBeforeCallback, $onAfterCallback);
 
             if (Http::isInternalRequest($request)) {
                 $this->resource::wrap($this->resourceSingularlName);
@@ -441,8 +446,11 @@ trait HasApiControllerBehavior
     public function updateRecord(Request $request, string $id)
     {
         try {
+            $onBeforeCallback = $this->getControllerCallback('onBeforeUpdate');
+            $onAfterCallback  = $this->getControllerCallback('onAfterUpdate');
+
             $this->validateRequest($request);
-            $record = $this->model->updateRecordFromRequest($request, $id);
+            $record = $this->model->updateRecordFromRequest($request, $id, $onBeforeCallback, $onAfterCallback);
 
             if (Http::isInternalRequest($request)) {
                 $this->resource::wrap($this->resourceSingularlName);
@@ -610,5 +618,27 @@ trait HasApiControllerBehavior
         $results = $this->model->count($request);
 
         return response()->json(['count' => $results]);
+    }
+
+    /**
+     * Retrieves a Closure for a specified method of the controller if it exists.
+     *
+     * This method checks if a method with the given name exists in the current controller instance.
+     * If the method exists, it returns a Closure that, when invoked, will call the specified method
+     * with any provided arguments. This allows for dynamic method invocation while ensuring the method's existence.
+     *
+     * @param string $name the name of the controller method to retrieve as a Closure
+     *
+     * @return \Closure|null a Closure that calls the specified method, or null if the method does not exist
+     */
+    private function getControllerCallback(string $name): ?\Closure
+    {
+        if (method_exists($this, $name)) {
+            return function (...$args) use ($name) {
+                return $this->{$name}(...$args);
+            };
+        }
+
+        return null;
     }
 }

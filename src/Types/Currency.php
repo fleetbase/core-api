@@ -353,6 +353,15 @@ class Currency implements \JsonSerializable
             'decimalSeparator'  => ',',
             'symbolPlacement'   => 'before',
         ],
+        'GEL' => [
+            'code'              => 'GEL',
+            'title'             => 'Georgian lari',
+            'symbol'            => '₾',
+            'precision'         => 2,
+            'thousandSeparator' => ',',
+            'decimalSeparator'  => '.',
+            'symbolPlacement'   => 'before',
+        ],
         'GHC' => [
             'code'              => 'GHC',
             'title'             => 'Ghana, Cedi',
