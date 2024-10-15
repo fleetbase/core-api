@@ -2492,4 +2492,74 @@ class Utils
             }
         }
     }
+
+    /**
+     * Converts the given input into an array.
+     *
+     * This method handles different types of inputs:
+     * - **Array:** Returns the array as is.
+     * - **String:** Splits the string into an array using common delimiters (comma or pipe).
+     * - **Object:** Converts the object into an associative array. If the object is traversable,
+     *   it uses the iterator; otherwise, it extracts public properties.
+     *
+     * @param array|string|object $target the input to convert to an array
+     *
+     * @return array the converted array
+     *
+     * @example
+     * // Example with an array:
+     * $result = arrayFrom([1, 2, 3]);
+     * // Result: [1, 2, 3]
+     * @example
+     * // Example with a string containing delimiters:
+     * $result = arrayFrom('apple, banana, cherry');
+     * // Result: ['apple', 'banana', 'cherry']
+     * @example
+     * // Example with a traversable object:
+     * $iterator = new ArrayIterator(['x' => 1, 'y' => 2]);
+     * $result = arrayFrom($iterator);
+     * // Result: ['x' => 1, 'y' => 2]
+     * @example
+     * // Example with a regular object:
+     * class Person {
+     *     public $name = 'John';
+     *     public $age = 30;
+     * }
+     * $person = new Person();
+     * $result = arrayFrom($person);
+     * // Result: ['name' => 'John', 'age' => 30]
+     */
+    public static function arrayFrom(array|string|object $target): array
+    {
+        if (is_array($target)) {
+            // If the target is already an array, return it as is.
+            return $target;
+        }
+
+        if (is_string($target)) {
+            // Define possible delimiters.
+            foreach ([',', '|'] as $delim) {
+                if (strpos($target, $delim) !== false) {
+                    // Split the string by the delimiter and trim each element.
+                    return array_map('trim', explode($delim, $target));
+                }
+            }
+
+            // If no delimiter is found, return the string as a single-element array.
+            return [$target];
+        }
+
+        if (is_object($target)) {
+            if ($target instanceof \Traversable) {
+                // If the object is traversable (like an iterator), convert it to an array.
+                return iterator_to_array($target);
+            } else {
+                // Get an associative array of the object's public properties.
+                return get_object_vars($target);
+            }
+        }
+
+        // If $target is none of the above types, return it as a single-element array.
+        return [$target];
+    }
 }
