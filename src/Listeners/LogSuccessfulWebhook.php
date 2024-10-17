@@ -57,8 +57,8 @@ class LogSuccessfulWebhook
         }
 
         // Check if it was a personal access token which made the request
-        if ($accessTokenId && PersonalAccessToken::where('id', $accessTokenId)->exists()) {
-            $data['access_token_id'] = $accessTokenId;
+        if ($accessTokenId && is_numeric($accessTokenId) && PersonalAccessToken::where('id', $accessTokenId)->exists()) {
+            $data['access_token_id'] = (int) $accessTokenId;
         }
 
         // Log webhook callback event
