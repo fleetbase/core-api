@@ -91,8 +91,8 @@ class LogApiRequest implements ShouldQueue
         }
 
         // Check if it was a personal access token which made the request
-        if ($apiCredential && PersonalAccessToken::where('id', $apiCredential)->exists()) {
-            $payload['access_token_id'] = $apiCredential;
+        if ($apiCredential && is_numeric($apiCredential) && PersonalAccessToken::where('id', $apiCredential)->exists()) {
+            $payload['access_token_id'] = (int) $apiCredential;
         }
 
         // Get request duration

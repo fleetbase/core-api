@@ -13,6 +13,7 @@ use Fleetbase\Webhook\WebhookCall;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\PersonalAccessToken;
 
@@ -47,20 +48,25 @@ class SendResourceLifecycleWebhook implements ShouldQueue
             'description'         => $this->getHumanReadableEventDescription($event),
         ];
 
+        // Get api credential from session
+        $apiCredential = session('api_credential');
+
         // Validate api credential, if not uuid then it could be internal
-        if (session('api_credential') && ApiCredential::where('uuid', session('api_credential'))->exists()) {
-            $eventData['api_credential_uuid'] = session('api_credential');
+        if ($apiCredential && Str::isUuid($apiCredential) && ApiCredential::where('uuid', session('api_credential'))->exists()) {
+            $eventData['api_credential_uuid'] = $apiCredential;
         }
 
         // Check if it was a personal access token which made the request
-        if (session('api_credential') && PersonalAccessToken::where('id', session('api_credential'))->exists()) {
-            $eventData['access_token_id'] = session('api_credential');
+        if ($apiCredential && is_numeric($apiCredential) && PersonalAccessToken::where('id', $apiCredential)->exists()) {
+            $eventData['access_token_id'] = (int) $apiCredential;
         }
 
         try {
             // log the api event
             $apiEvent = ApiEvent::create($eventData);
-        } catch (QueryException $e) {
+        } catch (\Exception|QueryException $e) {
+            Log::error($e->getMessage());
+
             return;
         }
 
@@ -110,7 +116,7 @@ class SendResourceLifecycleWebhook implements ShouldQueue
                     'api_event_uuid'      => $apiEvent->uuid,
                     'method'              => $request->getMethod(),
                     'status_code'         => $exception->getStatusCode(),
-                    'reason_phrase'       => $response->getReasonPhrase() ?? $exception->getMessage(),
+                    'reason_phrase'       => $exception->getMessage() ?? $response->getReasonPhrase(),
                     'duration'            => $durationStart->diffInSeconds(now()),
                     'url'                 => $request->getUri(),
                     'attempt'             => 1,
