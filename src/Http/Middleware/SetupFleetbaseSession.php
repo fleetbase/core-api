@@ -3,6 +3,7 @@
 namespace Fleetbase\Http\Middleware;
 
 use Fleetbase\Support\Auth;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class SetupFleetbaseSession
 {
@@ -13,8 +14,16 @@ class SetupFleetbaseSession
      */
     public function handle($request, \Closure $next)
     {
-        Auth::setSession($request->user());
+        $user = $request->user();
+        Auth::setSession($user);
         Auth::setSandboxSession($request);
+
+        if (method_exists($user, 'currentAccessToken')) {
+            $personalAccessToken = $user->currentAccessToken();
+            if ($personalAccessToken && $personalAccessToken instanceof PersonalAccessToken) {
+                Auth::setApiKey($personalAccessToken);
+            }
+        }
 
         return $next($request);
     }

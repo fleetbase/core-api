@@ -197,7 +197,7 @@ class ResourceLifecycleEvent implements ShouldBroadcastNow
     {
         $relationships = ['driverAssigned', 'customer', 'facilitator', 'vendor'];
         foreach ($relationships as $relationship) {
-            if ($model && isset($model->{Str::slug($relationship) . '_uuid'})) {
+            if ($model && isset($model->{Str::snake($relationship) . '_uuid'})) {
                 $channels[] = new Channel($relationship . '.' . $model->{$relationship . '_uuid'});
             }
             if ($model && isset($model->{$relationship})) {

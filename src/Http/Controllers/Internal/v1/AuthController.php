@@ -11,6 +11,7 @@ use Fleetbase\Http\Requests\LoginRequest;
 use Fleetbase\Http\Requests\SignUpRequest;
 use Fleetbase\Http\Requests\SwitchOrganizationRequest;
 use Fleetbase\Http\Resources\Organization;
+use Fleetbase\Mail\UserCredentialsMail;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\Invite;
@@ -23,6 +24,7 @@ use Fleetbase\Support\Utils;
 use Fleetbase\Twilio\Support\Laravel\Facade as Twilio;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\PersonalAccessToken;
@@ -624,5 +626,54 @@ class AuthController extends Controller
         }
 
         return response()->json(array_unique($services));
+    }
+
+    /**
+     * Change a user password.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function changeUserPassword(Request $request)
+    {
+        $user = Auth::getUserFromSession($request);
+        if (!$user) {
+            return response()->error('Not authorized to change user password.', 401);
+        }
+
+        $canChangePassword = $user->isAdmin() || $user->hasRole('Administrator') || $user->hasPermissionTo('iam change-password-for user');
+        if (!$canChangePassword) {
+            return response()->error('Not authorized to change user password.', 401);
+        }
+
+        // Get request input
+        $userId          = $request->input('user');
+        $password        = $request->input('password');
+        $confirmPassword = $request->input('password_confirmation');
+        $sendCredentials = $request->boolean('send_credentials');
+
+        if (!$userId) {
+            return response()->error('No user specified to change password for.');
+        }
+
+        if ($password !== $confirmPassword) {
+            return response()->error('Passwords do not match.');
+        }
+
+        $targetUser = User::where('uuid', $userId)->whereHas('anyCompanyUser', function ($query) {
+            $query->where('company_uuid', session('company'));
+        })->first();
+        if (!$targetUser) {
+            return response()->error('User not found to change password for.');
+        }
+
+        // Change password
+        $targetUser->changePassword($password);
+
+        // Send credentials to customer if opted
+        if ($sendCredentials) {
+            Mail::to($targetUser)->send(new UserCredentialsMail($password, $targetUser));
+        }
+
+        return response()->json(['status' => 'ok']);
     }
 }

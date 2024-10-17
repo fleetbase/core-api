@@ -5,6 +5,7 @@ namespace Fleetbase\Models;
 use Fleetbase\Casts\Json;
 use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\HasApiModelBehavior;
+use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\Searchable;
 
@@ -12,6 +13,7 @@ class WebhookRequestLog extends Model
 {
     use HasUuid;
     use HasApiModelBehavior;
+    use HasPublicId;
     use Searchable;
     use Filterable;
 
@@ -27,7 +29,7 @@ class WebhookRequestLog extends Model
      *
      * @var string
      */
-    protected $publicIdType = 'webhook';
+    protected $publicIdType = 'webhook_req';
 
     /**
      * The attributes that are mass assignable.
@@ -40,6 +42,7 @@ class WebhookRequestLog extends Model
         'company_uuid',
         'webhook_uuid',
         'api_credential_uuid',
+        'access_token_id',
         'api_event_uuid',
         'method',
         'status_code',
