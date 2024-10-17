@@ -104,10 +104,13 @@ class SendResourceLifecycleWebhook implements ShouldQueue
                     ->payload($event->data)
                     ->useSecret($apiSecret)
                     ->dispatch();
-            } catch (\Aws\Sqs\Exception\SqsException $exception) {
+            } catch (\Exception|\Aws\Sqs\Exception\SqsException $exception) {
                 // get webhook attempt request/response interfaces
                 $response = $exception->getResponse();
                 $request  = $exception->getRequest();
+
+                // Log error
+                Log::error($exception->getMessage());
 
                 // Prepare log data
                 $webhookRequestLogData = [
@@ -116,7 +119,7 @@ class SendResourceLifecycleWebhook implements ShouldQueue
                     'api_event_uuid'      => $apiEvent->uuid,
                     'method'              => $request->getMethod(),
                     'status_code'         => $exception->getStatusCode(),
-                    'reason_phrase'       => $exception->getMessage() ?? $response->getReasonPhrase(),
+                    'reason_phrase'       => $response->getReasonPhrase() ?? $exception->getMessage(),
                     'duration'            => $durationStart->diffInSeconds(now()),
                     'url'                 => $request->getUri(),
                     'attempt'             => 1,
