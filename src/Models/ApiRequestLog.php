@@ -40,6 +40,7 @@ class ApiRequestLog extends Model
         '_key',
         'company_uuid',
         'api_credential_uuid',
+        'access_token_id',
         'public_id',
         'method',
         'path',

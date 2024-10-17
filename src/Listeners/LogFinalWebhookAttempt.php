@@ -2,9 +2,11 @@
 
 namespace Fleetbase\Listeners;
 
+use Fleetbase\Models\ApiCredential;
 use Fleetbase\Models\WebhookRequestLog;
 use Fleetbase\Webhook\Events\FinalWebhookCallFailedEvent;
 use Illuminate\Support\Str;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class LogFinalWebhookAttempt
 {
@@ -29,6 +31,9 @@ class LogFinalWebhookAttempt
         // Get API credential
         $apiCredentialUuid = data_get($event, 'meta.api_credential_uuid');
 
+        // Get API Access Token
+        $accessTokenId = data_get($event, 'meta.access_token_id');
+
         // Prepare insert array
         $data = [
             '_key'                => data_get($event, 'meta.api_key'),
@@ -48,9 +53,14 @@ class LogFinalWebhookAttempt
             'sent_at'             => data_get($event, 'meta.sent_at'),
         ];
 
-        // Set api credential uuid
-        if ($apiCredentialUuid && Str::isUuid($apiCredentialUuid)) {
+        // Validate api credential, if not uuid then it could be internal
+        if ($apiCredentialUuid && Str::isUuid($apiCredentialUuid) && ApiCredential::where('uuid', $apiCredentialUuid)->exists()) {
             $data['api_credential_uuid'] = $apiCredentialUuid;
+        }
+
+        // Check if it was a personal access token which made the request
+        if ($accessTokenId && PersonalAccessToken::where('id', $accessTokenId)->exists()) {
+            $data['access_token_id'] = $accessTokenId;
         }
 
         // log webhook event

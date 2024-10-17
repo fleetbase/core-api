@@ -7,6 +7,7 @@ use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Models\Permission;
 use Fleetbase\Models\Policy;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 class RoleController extends FleetbaseController
 {
@@ -31,6 +32,12 @@ class RoleController extends FleetbaseController
      */
     public function createRecord(Request $request)
     {
+        // Disable ability to create any Administrator role
+        $roleName = strtolower($request->input('role.name', ''));
+        if ($roleName === 'administrator' || Str::startsWith($roleName, 'admin')) {
+            return response()->error('Creating a role with name "Administrator" or a role name that starts with "Admin" is prohibited, as the name is system reserved.');
+        }
+
         try {
             $record = $this->model->createRecordFromRequest($request, null, function ($request, &$role) {
                 // Sync Permissions

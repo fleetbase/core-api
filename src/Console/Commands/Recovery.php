@@ -2,11 +2,13 @@
 
 namespace Fleetbase\Console\Commands;
 
+use Fleetbase\Mail\UserCredentialsMail;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\Role;
 use Fleetbase\Models\User;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 
 /**
@@ -73,6 +75,8 @@ class Recovery extends Command
             'Set Role for User',
             'Assign User to Company',
             'Assign Owner to Company',
+            'Reset User Password',
+            'Set User as System Admin',
         ];
 
         $action   = $this->choice('Which recovery option would you like to perform?', $actions);
@@ -141,7 +145,7 @@ class Recovery extends Command
         }
 
         $roleName = $this->anticipate('Input the role you wish to set for this user', function ($input) {
-            $results = Role::where(DB::raw('lower(name)'), 'like', '%' . str_replace('.', '%', str_replace(',', '%', $input)) . '%')->get();
+            $results = Role::where(DB::raw('lower(name)'), 'like', '%' . str_replace('.', '%', str_replace(',', '%', $input)) . '%')->whereNull('company_uuid')->get();
 
             return $results->map(function ($role) {
                 return $role->name;
@@ -153,6 +157,105 @@ class Recovery extends Command
             try {
                 $companyUser->assignSingleRole($roleName);
                 $this->info('Role ' . $roleName . ' assigned to user (' . $user->name . ') for the company (' . $company->name . ')');
+            } catch (\Throwable $e) {
+                $this->error($e->getMessage());
+            }
+        }
+
+        $this->info('Done');
+    }
+
+    /**
+     * Promotes a user to a system administrator.
+     *
+     * This method assigns system administrator privileges to the specified user, granting them full access
+     * to the system, including sensitive configurations and secrets. If no user is provided, the method
+     * will prompt the administrator to select a user. A warning is displayed to inform about the implications
+     * of this action, and confirmation is required before proceeding.
+     *
+     * @param User|null $user The user to be promoted to system administrator. If null, the method will prompt for a user.
+     *
+     * @return void
+     *
+     * @throws \Exception if an error occurs while setting the user type
+     */
+    public function setUserAsSystemAdmin(?User $user = null)
+    {
+        $user = $user ? $user : $this->promptForUser();
+        if (!$user) {
+            return $this->error('No user selected or found to make system admin.');
+        }
+
+        // User name output
+        $usernameOutput = $user->name . ' (' . $user->email . ')';
+
+        $this->warn('WARNING: By making a user a system administrator they will gain complete system access rights, including sensitive configurations and secrets. Run this command at your own risk.');
+        $confirm = $this->confirm('Are you sure you want to make ' . $usernameOutput . ' a system administrator?');
+
+        if ($confirm) {
+            try {
+                $user->setType('admin');
+                $this->info('User ' . $usernameOutput . ' is now a system administrator.');
+            } catch (\Throwable $e) {
+                $this->error($e->getMessage());
+            }
+        }
+
+        $this->info('Done');
+    }
+
+    /**
+     * Resets the password of a specified user.
+     *
+     * This method allows an administrator to reset a user's password. If no user is provided, the method
+     * will prompt to select one. It ensures that the new password is confirmed correctly and provides
+     * options to retry the reset if the passwords do not match. Additionally, it offers the option to
+     * send the new password to the user's email address.
+     *
+     * @param User|null $user The user whose password is to be reset. If null, the method will prompt for a user.
+     *
+     * @return void
+     *
+     * @throws \Exception if an error occurs while changing the user's password or sending the email
+     */
+    public function resetUserPassword(?User $user = null)
+    {
+        $user = $user ? $user : $this->promptForUser();
+        if (!$user) {
+            return $this->error('No user selected or found to reset password for.');
+        }
+
+        // User name output
+        $usernameOutput = $user->name . ' (' . $user->email . ')';
+
+        // Inform
+        $this->info('Running password reset for user ' . $usernameOutput);
+
+        // Prompt for user password
+        $password        = $this->secret('Enter the a new password');
+        $confirmPassword = $this->secret('Confirm the new password');
+
+        // Validate
+        if ($password !== $confirmPassword) {
+            $this->error('Passwords do not match.');
+            $retry = $this->confirm('Would you like to continue password reset for the user ' . $usernameOutput . '?');
+            if ($retry) {
+                return $this->resetUserPassword($user);
+            }
+
+            return;
+        }
+
+        $confirm          = $this->confirm('Are you sure you want to reset the password');
+        $sendUserPassword = $this->confirm('Would you also like to send the users new password to their email (' . $user->email . ')?');
+
+        if ($confirm) {
+            try {
+                $user->changePassword($password);
+                if ($sendUserPassword) {
+                    Mail::to($user)->send(new UserCredentialsMail($password, $user));
+                }
+                $this->info('User ' . $usernameOutput . ' password was changed.');
             } catch (\Throwable $e) {
                 $this->error($e->getMessage());
             }
@@ -203,7 +306,7 @@ class Recovery extends Command
         }
 
         $roleName = $this->anticipate('Input the role you wish to set for this user', function ($input) {
-            $results = Role::where(DB::raw('lower(name)'), 'like', '%' . str_replace('.', '%', str_replace(',', '%', $input)) . '%')->get();
+            $results = Role::where(DB::raw('lower(name)'), 'like', '%' . str_replace('.', '%', str_replace(',', '%', $input)) . '%')->whereNull('company_uuid')->get();
 
             return $results->map(function ($role) {
                 return $role->name;

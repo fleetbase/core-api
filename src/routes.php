@@ -140,6 +140,12 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                         $router->group(
                             ['middleware' => ['fleetbase.protected']],
                             function ($router) {
+                                $router->group(
+                                    ['prefix' => 'auth'],
+                                    function ($router) {
+                                        $router->post('change-user-password', 'AuthController@changeUserPassword');
+                                    }
+                                );
                                 $router->fleetbaseRoutes(
                                     'api-credentials',
                                     function ($router, $controller) {

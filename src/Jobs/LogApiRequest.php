@@ -15,6 +15,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
+use Laravel\Sanctum\PersonalAccessToken;
 use Spatie\ResponseCache\Facades\ResponseCache;
 
 class LogApiRequest implements ShouldQueue
@@ -81,11 +82,17 @@ class LogApiRequest implements ShouldQueue
             $related[] = Utils::get($content, 'id');
         }
 
+        // Get api credential from session
+        $apiCredential = session('api_credential');
+
         // Validate api credential, if not uuid then it could be internal
-        if (ApiCredential::where('uuid', session('api_credential'))->exists()) {
-            // Need to add a `api_credentail_type` field and morph -- in later versions
-            // As could be `PersonalAccessToken` `ApiCredential` and eventually `NavigatorAppToken`
-            $payload['api_credential_uuid'] = session('api_credential');
+        if ($apiCredential && Str::isUuid($apiCredential) && ApiCredential::where('uuid', session('api_credential'))->exists()) {
+            $payload['api_credential_uuid'] = $apiCredential;
+        }
+
+        // Check if it was a personal access token which made the request
+        if ($apiCredential && PersonalAccessToken::where('id', $apiCredential)->exists()) {
+            $payload['access_token_id'] = $apiCredential;
         }
 
         // Get request duration

@@ -88,11 +88,9 @@ class Auth extends Authentication
     /**
      * Set session variables for api credentials being used.
      *
-     * @param ApiCredential $apiCredential
-     *
      * @return bool
      */
-    public static function setApiKey($apiCredential)
+    public static function setApiKey(ApiCredential|PersonalAccessToken $apiCredential)
     {
         // If sanctum token indicate in session
         if ($apiCredential instanceof PersonalAccessToken) {

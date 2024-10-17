@@ -43,7 +43,7 @@ class ApiEvent extends Model
      *
      * @var array
      */
-    protected $fillable = ['_key', 'company_uuid', 'api_credential_uuid', 'event', 'source', 'data', 'description', 'method'];
+    protected $fillable = ['_key', 'company_uuid', 'api_credential_uuid', 'access_token_id', 'event', 'source', 'data', 'description', 'method'];
 
     /**
      * The attributes that should be cast to native types.
