@@ -119,7 +119,7 @@ class SendResourceLifecycleWebhook implements ShouldQueue
                     'api_event_uuid'      => $apiEvent->uuid,
                     'method'              => $request->getMethod(),
                     'status_code'         => $exception->getStatusCode(),
-                    'reason_phrase'       => $response->getReasonPhrase() ?? $exception->getMessage(),
+                    'reason_phrase'       => $response->getReasonPhrase(),
                     'duration'            => $durationStart->diffInSeconds(now()),
                     'url'                 => $request->getUri(),
                     'attempt'             => 1,
@@ -127,7 +127,8 @@ class SendResourceLifecycleWebhook implements ShouldQueue
                     'status'              => 'failed',
                     'headers'             => $request->getHeaders(),
                     'meta'                => [
-                        'exception' => get_class($exception),
+                        'exception'         => get_class($exception),
+                        'exception_message' => $exception->getMessage(),
                     ],
                     'sent_at' => $durationStart,
                 ];
