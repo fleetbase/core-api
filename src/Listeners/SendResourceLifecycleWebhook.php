@@ -134,13 +134,13 @@ class SendResourceLifecycleWebhook implements ShouldQueue
                 ];
 
                 // Validate api credential, if not uuid then it could be internal
-                if (session('api_credential') && Str::isUuid(session('api_credential')) && ApiCredential::where('uuid', session('api_credential'))->exists()) {
-                    $webhookRequestLogData['api_credential_uuid'] = session('api_credential');
+                if (isset($eventData['api_credential_uuid'])) {
+                    $webhookRequestLogData['api_credential_uuid'] = $eventData['api_credential_uuid'];
                 }
 
                 // Check if it was a personal access token which made the request
-                if (session('api_credential') && PersonalAccessToken::where('id', session('api_credential'))->exists()) {
-                    $webhookRequestLogData['access_token_id'] = session('api_credential');
+                if (isset($eventData['access_token_id'])) {
+                    $webhookRequestLogData['access_token_id'] = $eventData['access_token_id'];
                 }
 
                 // log webhook error in logs
