@@ -4,7 +4,7 @@ return [
     /*
      *  The default queue that should be used to send webhook requests.
      */
-    'queue' => 'default',
+    'queue' => env('WEBHOOK_SERVER_QUEUE'),
 
     /*
      * The default http verb to use.
