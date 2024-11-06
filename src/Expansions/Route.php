@@ -37,6 +37,7 @@ class Route implements Expansion
          * @return PendingResourceRegistration
          */
         return function (string $name, $controller = null, $options = [], ?\Closure $callback = null) {
+            /** @var \Illuminate\Routing\Router $this */
             if (is_callable($controller) && $callback === null) {
                 $callback   = $controller;
                 $controller = null;
@@ -51,9 +52,6 @@ class Route implements Expansion
                 $controller = Str::studly(Str::singular($name)) . 'Controller';
             }
 
-            /**
-             * @var \Illuminate\Routing\Router $this
-             */
             if ($this->container && $this->container->bound(RESTRegistrar::class)) {
                 $registrar = $this->container->make(RESTRegistrar::class);
             } else {
@@ -67,6 +65,7 @@ class Route implements Expansion
     public function fleetbaseRoutes()
     {
         return function (string $name, callable|array|null $registerFn = null, $options = [], $controller = null) {
+            /** @var \Illuminate\Routing\Router $this */
             if (is_array($registerFn) && !empty($registerFn) && empty($options)) {
                 $options = $registerFn;
             }
@@ -89,13 +88,12 @@ class Route implements Expansion
                 $options['controller'] = $controller;
             }
 
-            // if (!isset($options['prefix'])) {
-            //     $options['prefix'] = $name;
-            // }
-
             $make = function (string $routeName) use ($controller) {
                 return $controller . '@' . $routeName;
             };
+
+            // Add groupstack to options
+            $options['groupStack'] = $this->getGroupStack();
 
             $register = function ($router) use ($name, $registerFn, $make, $controller, $options) {
                 if (is_callable($registerFn)) {
@@ -110,9 +108,6 @@ class Route implements Expansion
                 $router->fleetbaseRestRoutes($name, $controller, $options);
             };
 
-            /*
-             * @var \Illuminate\Routing\Router $this
-             */
             return $this->group($options, $register);
         };
     }
@@ -120,9 +115,7 @@ class Route implements Expansion
     public function fleetbaseAuthRoutes()
     {
         return function (?callable $registerFn = null, ?callable $registerProtectedFn = null) {
-            /*
-             * @var \Illuminate\Routing\Router $this
-             */
+            /** @var \Illuminate\Routing\Router $this */
             return $this->group(
                 ['prefix' => 'auth'],
                 function ($router) use ($registerFn, $registerProtectedFn) {
