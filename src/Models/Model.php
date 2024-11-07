@@ -8,7 +8,6 @@ use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\HasCacheableAttributes;
 use Fleetbase\Traits\Insertable;
 use Fleetbase\Traits\Searchable;
-use GeneaLabs\LaravelModelCaching\Traits\Cachable;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -19,9 +18,7 @@ class Model extends EloquentModel
     use ClearsHttpCache;
     use Insertable;
     use Filterable;
-    use Expandable, Cachable {
-        Expandable::__call insteadof Cachable;
-    }
+    use Expandable;
 
     /**
      * Create a new instance of the model.

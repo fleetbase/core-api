@@ -10,6 +10,7 @@ use Fleetbase\Notifications\TestPushNotification;
 use Fleetbase\Support\Utils;
 use Illuminate\Http\Request;
 use Illuminate\Notifications\AnonymousNotifiable;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
@@ -206,10 +207,14 @@ class SettingController extends Controller
      */
     public function getMailConfig(AdminRequest $request)
     {
-        $mailer     = config('mail.default');
-        $from       = config('mail.from');
-        $mailers    = array_keys(config('mail.mailers', []));
-        $smtpConfig = config('mail.mailers.smtp');
+        $mailer         = config('mail.default');
+        $from           = config('mail.from');
+        $mailers        = Arr::except(array_keys(config('mail.mailers', [])), ['log', 'array', 'failover']);
+        $smtpConfig     = config('mail.mailers.smtp');
+        $mailgunConfig  = config('services.mailgun');
+        $postmarkConfig = config('services.postmark');
+        $sendgridConfig = config('services.sendgrid');
+        $resendConfig   = config('services.resend');
 
         $config = [
             'mailer'      => $mailer,
@@ -226,6 +231,22 @@ class SettingController extends Controller
             $config['smtp' . ucfirst($key)] = $value;
         }
 
+        foreach ($mailgunConfig as $key => $value) {
+            $config['mailgun' . ucfirst($key)] = $value;
+        }
+
+        foreach ($postmarkConfig as $key => $value) {
+            $config['postmark' . ucfirst($key)] = $value;
+        }
+
+        foreach ($sendgridConfig as $key => $value) {
+            $config['sendgrid' . ucfirst($key)] = $value;
+        }
+
+        foreach ($resendConfig as $key => $value) {
+            $config['resend' . ucfirst($key)] = $value;
+        }
+
         return response()->json($config);
     }
 
@@ -236,13 +257,21 @@ class SettingController extends Controller
      */
     public function saveMailConfig(AdminRequest $request)
     {
-        $mailer = $request->input('mailer', 'smtp');
-        $from   = $request->input('from', []);
-        $smtp   = $request->input('smtp', []);
+        $mailer     = $request->input('mailer', 'smtp');
+        $from       = $request->array('from', []);
+        $smtp       = $request->array('smtp');
+        $mailgun    = $request->array('mailgun');
+        $postmark   = $request->array('postmark');
+        $sendgrid   = $request->array('sendgrid');
+        $resend     = $request->array('resend');
 
         Setting::configureSystem('mail.mailer', $mailer);
         Setting::configureSystem('mail.from', $from);
         Setting::configureSystem('mail.smtp', array_merge(['transport' => 'smtp'], $smtp));
+        Setting::configureSystem('services.mailgun', $mailgun);
+        Setting::configureSystem('services.postmark', $postmark);
+        Setting::configureSystem('services.sendgrid', $sendgrid);
+        Setting::configureSystem('services.resend', $resend);
 
         return response()->json(['status' => 'OK']);
     }
@@ -268,16 +297,37 @@ class SettingController extends Controller
                 'name'    => 'Fleetbase',
             ]
         );
-        $smtp    = $request->input('smtp', []);
-        $user    = $request->user();
-        $message = 'Mail configuration is successful, check your inbox for the test email to confirm.';
-        $status  = 'success';
+        $smtp       = $request->input('smtp', []);
+        $mailgun    = $request->array('mailgun');
+        $postmark   = $request->array('postmark');
+        $sendgrid   = $request->array('sendgrid');
+        $resend     = $request->array('resend');
+        $user       = $request->user();
+        $message    = 'Mail configuration is successful, check your inbox for the test email to confirm.';
+        $status     = 'success';
 
         // set config values from input
         config(['mail.default' => $mailer, 'mail.from' => $from, 'mail.mailers.smtp' => array_merge(['transport' => 'smtp'], $smtp)]);
 
+        // set mailer configs
+        if ($mailer === 'mailgun') {
+            config(['services.mailgun' => $mailgun]);
+        }
+
+        if ($mailer === 'postmark') {
+            config(['services.postmark' => $postmark]);
+        }
+
+        if ($mailer === 'sendgrid') {
+            config(['services.sendgrid' => $sendgrid]);
+        }
+
+        if ($mailer === 'resend') {
+            config(['services.resend' => $resend]);
+        }
+
         try {
-            Mail::send(new \Fleetbase\Mail\TestMail($user));
+            Mail::send(new \Fleetbase\Mail\TestMail($user, $mailer));
         } catch (\Aws\Ses\Exception\SesException|\Exception $e) {
             $message = $e->getMessage();
             $status  = 'error';

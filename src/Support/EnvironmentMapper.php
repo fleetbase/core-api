@@ -46,6 +46,12 @@ class EnvironmentMapper
         'GOOGLE_CLOUD_STORAGE_API_URI'         => 'filesystem.gcs.storage_api_uri',
         'SENTRY_DSN'                           => 'services.sentry.dsn',
         'IPINFO_API_KEY'                       => 'services.ipinfo.api_key',
+        'MAILGUN_DOMAIN'                       => 'services.mailgun.domain',
+        'MAILGUN_SECRET'                       => 'services.mailgun.secret',
+        'MAILGUN_ENDPOINT'                     => 'services.mailgun.endpoint',
+        'POSTMARK_TOKEN'                       => 'services.postmark.token',
+        'SENDGRID_API_KEY'                     => 'services.sendgrid.api_key',
+        'RESEND_KEY'                           => 'services.resend.key',
     ];
 
     /**
@@ -86,6 +92,10 @@ class EnvironmentMapper
         ['settingsKey' => 'services.twilio', 'configKey' => 'twilio.twilio.connections.twilio'],
         ['settingsKey' => 'services.ipinfo', 'configKey' => 'services.ipinfo'],
         ['settingsKey' => 'services.ipinfo', 'configKey' => 'fleetbase.services.ipinfo'],
+        ['settingsKey' => 'services.mailgun', 'configKey' => 'services.mailgun'],
+        ['settingsKey' => 'services.postmark', 'configKey' => 'services.postmark'],
+        ['settingsKey' => 'services.sendgrid', 'configKey' => 'services.sendgrid'],
+        ['settingsKey' => 'services.resend', 'configKey' => 'services.resend'],
         ['settingsKey' => 'services.sentry.dsn', 'configKey' => 'sentry.dsn'],
         ['settingsKey' => 'broadcasting.apn', 'configKey' => 'broadcasting.connections.apn'],
         ['settingsKey' => 'firebase.app', 'configKey' => 'firebase.projects.app'],

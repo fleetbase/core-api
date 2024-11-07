@@ -27,11 +27,17 @@ class TestMail extends Mailable implements ShouldQueue
     public User $user;
 
     /**
+     * The mailer used to send the email.
+     */
+    public string $sendingMailer;
+
+    /**
      * Creates an instance of the TestMail.
      */
-    public function __construct(User $user)
+    public function __construct(User $user, string $sendingMailer = 'smtp')
     {
-        $this->user = $user;
+        $this->user          = $user;
+        $this->sendingMailer = $sendingMailer;
     }
 
     /**
@@ -54,6 +60,7 @@ class TestMail extends Mailable implements ShouldQueue
             markdown: 'fleetbase::mail.test',
             with: [
                 'user'        => $this->user,
+                'mailer'      => $this->sendingMailer,
                 'currentHour' => now()->hour,
             ]
         );

@@ -22,7 +22,6 @@
         "fleetbase/twilio": "^5.0.1",
         "aws/aws-sdk-php-laravel": "^3.7",
         "fleetbase/laravel-mysql-spatial": "^1.0.2",
-        "genealabs/laravel-model-caching": "dev-fix/handle-datetime-values",
         "giggsey/libphonenumber-for-php": "^8.13",
         "guzzlehttp/guzzle": "^7.4",
         "hammerstone/fast-paginate": "^1.0",
@@ -60,12 +59,6 @@
         "phpstan/phpstan": "^1.10.38",
         "symfony/var-dumper": "^5.4.29"
     },
-    "repositories": [
-        {
-            "type": "vcs",
-            "url": "https://github.com/fleetbase/laravel-model-caching"
-        }
-    ],
     "autoload": {
         "psr-4": {
             "Fleetbase\\": "src/",

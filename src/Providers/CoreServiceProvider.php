@@ -106,7 +106,6 @@ class CoreServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__ . '/../../config/excel.php', 'excel');
         $this->mergeConfigFrom(__DIR__ . '/../../config/sentry.php', 'sentry');
         $this->mergeConfigFrom(__DIR__ . '/../../config/laravel-mysql-s3-backup.php', 'laravel-mysql-s3-backup');
-        $this->mergeConfigFrom(__DIR__ . '/../../config/laravel-model-caching.php', 'laravel-model-caching');
         $this->mergeConfigFrom(__DIR__ . '/../../config/responsecache.php', 'responsecache');
     }
 

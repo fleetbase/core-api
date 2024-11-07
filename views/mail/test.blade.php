@@ -9,5 +9,7 @@
 @endif
 </h2>
 
-🎉 This is a test email from Fleetbase to confirm that your mail configuration works.
+<p>🎉 This is a test email from Fleetbase to confirm that your mail configuration works.</p>
+<p>Test Email sent using Mailer: {{ Str::title($mailer) }}</p>
+<p>Environment: {{ app()->environment() }}</p>
 </x-mail-layout>
