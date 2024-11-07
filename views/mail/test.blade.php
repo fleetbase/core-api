@@ -10,6 +10,16 @@
 </h2>
 
 <p>🎉 This is a test email from Fleetbase to confirm that your mail configuration works.</p>
-<p>Test Email sent using Mailer: {{ Str::title($mailer) }}</p>
-<p>Environment: {{ app()->environment() }}</p>
+<table>
+    <tbody>
+        <tr>
+            <td><strong>MAILER:</strong></td>
+            <td>{{ strtoupper($mailer) }}</td>
+        </tr>
+        <tr>
+            <td><strong>ENVIRONMENT:</strong></td>
+            <td>{{ strtoupper(app()->environment()) }}</td>
+        </tr>
+    </tbody>
+</table>
 </x-mail-layout>
