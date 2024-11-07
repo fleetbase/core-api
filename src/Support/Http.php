@@ -137,7 +137,7 @@ class Http extends HttpClient
 
     public static function action(?string $verb = null)
     {
-        $verb   = $verb ?? $_SERVER['REQUEST_METHOD'];
+        $verb   = $verb ? $verb : (isset($_SERVER['REQUEST_METHOD']) ? $_SERVER['REQUEST_METHOD'] : null);
         $action = Str::lower($verb);
 
         switch ($verb) {

@@ -3,6 +3,8 @@
 namespace Fleetbase\Routing;
 
 use Illuminate\Routing\ResourceRegistrar;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Str;
 
 class RESTRegistrar extends ResourceRegistrar
 {
@@ -11,7 +13,7 @@ class RESTRegistrar extends ResourceRegistrar
      *
      * @var string[]
      */
-    protected $resourceDefaults = ['query', 'find', 'create', 'update', 'delete', 'options'];
+    protected $resourceDefaults = ['query', 'find', 'create', 'update', 'delete'];
 
     /**
      * Build a set of prefixed resource routes.
@@ -47,11 +49,15 @@ class RESTRegistrar extends ResourceRegistrar
      */
     protected function addResourceQuery($name, $id, $controller, $options)
     {
+        $name = $this->getShallowName($name, $options);
+
         $uri = $this->getResourceUri($name);
 
         $action = $this->getResourceAction($name, $controller, 'queryRecord', $options);
 
-        return $this->router->get($uri, $action);
+        $uniqueName = $this->getUniqueRouteName(['query', 'get'], $name, $options);
+
+        return $this->router->get($uri, $action)->name($uniqueName);
     }
 
     /**
@@ -74,7 +80,9 @@ class RESTRegistrar extends ResourceRegistrar
 
         $action = $this->getResourceAction($name, $controller, 'findRecord', $options);
 
-        return $this->router->get($uri, $action);
+        $uniqueName = $this->getUniqueRouteName(['find', 'get'], $name, $options);
+
+        return $this->router->get($uri, $action)->name($uniqueName);
     }
 
     /**
@@ -91,11 +99,15 @@ class RESTRegistrar extends ResourceRegistrar
      */
     protected function addResourceCreate($name, $id, $controller, $options)
     {
+        $name = $this->getShallowName($name, $options);
+
         $uri = $this->getResourceUri($name);
 
         $action = $this->getResourceAction($name, $controller, 'createRecord', $options);
 
-        return $this->router->post($uri, $action);
+        $uniqueName = $this->getUniqueRouteName(['create', 'post'], $name, $options);
+
+        return $this->router->post($uri, $action)->name($uniqueName);
     }
 
     /**
@@ -118,7 +130,9 @@ class RESTRegistrar extends ResourceRegistrar
 
         $action = $this->getResourceAction($name, $controller, 'updateRecord', $options);
 
-        return $this->router->match(['PUT', 'PATCH'], $uri, $action);
+        $uniqueName = $this->getUniqueRouteName(['update', 'put.patch'], $name, $options);
+
+        return $this->router->match(['PUT', 'PATCH'], $uri, $action)->name($uniqueName);
     }
 
     /**
@@ -141,30 +155,36 @@ class RESTRegistrar extends ResourceRegistrar
 
         $action = $this->getResourceAction($name, $controller, 'deleteRecord', $options);
 
-        return $this->router->delete($uri, $action);
+        $uniqueName = $this->getUniqueRouteName(['delete', 'delete'], $name, $options);
+
+        return $this->router->delete($uri, $action)->name($uniqueName);
     }
 
     /**
-     * Add the query method for a resourceful route.
+     * Generate a unique route name based on the group namespace, base name, and additional name segments.
      *
-     * OPTIONS /resource
+     * This function constructs a unique route name by combining the namespace from the last group stack
+     * (if available) with the specified base route name and any additional segments provided.
+     * It formats the namespace as a lowercase, hyphen-separated string, which is prepended to the route name.
      *
-     * @param string $name
-     * @param string $id
-     * @param string $controller
-     * @param array  $options
+     * This approach ensures route name uniqueness within different route groups and allows for
+     * safe route caching when identical route names are used across multiple namespaces or prefixes.
      *
-     * @return \Illuminate\Routing\Route
+     * @param array  $append  Additional segments to append to the route name, often representing
+     *                        specific actions (e.g., ['query', 'find']).
+     * @param string $name    the base name of the route, typically representing the resource name
+     * @param array  $options optional settings that may contain 'groupStack', from which the
+     *                        namespace of the last group is extracted if available
+     *
+     * @return string a dot-separated string representing the unique route name
      */
-    protected function addResourceOptions($name, $id, $controller, $options)
+    protected function getUniqueRouteName(array $append, string $name, array $options = []): string
     {
-        $uri         = $this->getResourceUri($name);
-        $resourceUri = $this->getResourceUri($name) . '/{' . $id . '}';
+        $lastGroupStack          = is_array($options) && isset($options['groupStack']) ? Arr::last($options['groupStack']) : null;
+        $lastGroupStackNamespace = empty($lastGroupStack) ? null : $lastGroupStack['namespace'];
+        $groupPrefix             = $lastGroupStackNamespace ? strtolower(Str::replace('\\', '-', $lastGroupStackNamespace)) : null;
+        $nameStack               = array_filter([$groupPrefix, $name, ...$append], fn ($segment) => !empty($segment));
 
-        $action = $this->getResourceAction($name, $controller, 'options', $options);
-
-        $this->router->options($resourceUri, $action);
-
-        return $this->router->options($uri, $action);
+        return implode('.', $nameStack);
     }
 }
