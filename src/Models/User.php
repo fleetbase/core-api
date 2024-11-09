@@ -21,6 +21,7 @@ use Fleetbase\Traits\ProxiesAuthorizationMethods;
 use Fleetbase\Traits\Searchable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasTimestamps;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
@@ -1106,6 +1107,11 @@ class User extends Authenticatable
             return false;
         }
 
+        // if no email cant send invite
+        if (!$this->email) {
+            return false;
+        }
+
         // make sure user isn't already invited
         $isAlreadyInvited = Invite::isAlreadySentToJoinCompany($this, $company);
         if ($isAlreadyInvited) {
@@ -1349,5 +1355,22 @@ class User extends Authenticatable
         }
 
         return null;
+    }
+
+    public function syncProperty(string $property, Model $model): bool
+    {
+        $synced = false;
+
+        if ($this->isFillable($property) && !$this->{$property} && $model->{$property}) {
+            $this->updateQuietly([$property => $model->{$property}]);
+            $synced = true;
+        }
+
+        if ($model->isFillable($property) && !$model->{$property} && $this->{$property}) {
+            $model->updateQuietly([$property => $this->{$property}]);
+            $synced = true;
+        }
+
+        return $synced;
     }
 }

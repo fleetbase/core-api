@@ -77,7 +77,7 @@ class Auth extends Authentication
             return true;
         }
 
-        session(['company' => $user->company_uuid, 'user' => $user->uuid, 'is_admin' => $user->isAdmin()]);
+        session(['company' => $user->company_uuid, 'user' => $user->uuid, 'is_admin' => $user->isAdmin(), 'is_customer' => $user->isType('customer'), 'is_driver' => $user->isType('driver')]);
         if ($login) {
             Authentication::login($user);
         }
