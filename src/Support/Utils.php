@@ -5,6 +5,7 @@ namespace Fleetbase\Support;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\File;
 use Fleetbase\Models\Model;
+use Fleetbase\Types\Currency;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -636,16 +637,22 @@ class Utils
     /**
      * Returns the uuid for a table with where hook.
      *
-     * @param string|array   $table
      * @param array|callable $where
      */
-    public static function getUuid($table, $where = []): ?string
+    public static function getUuid(string|array $table, array $where = [], array $options = []): string|array|null
     {
         if (is_array($table)) {
             foreach ($table as $t) {
                 $uuid = static::getUuid($t, $where);
 
                 if ($uuid) {
+                    if (isset($options['full']) && $options['full'] === true) {
+                        return [
+                            'uuid'  => $uuid,
+                            'table' => $t,
+                        ];
+                    }
+
                     return $uuid;
                 }
             }
@@ -1037,10 +1044,10 @@ class Utils
      *
      * @param string countryName
      */
-    public static function getCountryCodeByName(?string $countryName): ?string
+    public static function getCountryCodeByName(?string $countryName, ?string $defaultValue = null): ?string
     {
         if (static::isEmpty($countryName) || !is_string($countryName)) {
-            return null;
+            return $defaultValue;
         }
 
         $countries = new \PragmaRX\Countries\Package\Countries();
@@ -1069,7 +1076,34 @@ class Utils
             }
         }
 
-        return static::get($data, 'iso2') ?? null;
+        return static::get($data, 'iso2', $defaultValue);
+    }
+
+    public static function getCountryCodeByCurrency(?string $currencyCode, ?string $defaultValue = null): ?string
+    {
+        if (static::isEmpty($currencyCode) || !is_string($currencyCode)) {
+            return $defaultValue;
+        }
+
+        $countries = new \PragmaRX\Countries\Package\Countries();
+        $countries = $countries
+            ->all()
+            ->map(function ($country) {
+                return [
+                    'name'     => static::get($country, 'name.common'),
+                    'iso2'     => static::get($country, 'cca2'),
+                    'currency' => static::get($country, 'currencies.0'),
+                ];
+            })
+            ->values()
+            ->toArray();
+        $countries = collect($countries);
+
+        $data = $countries->first(function ($country) use ($currencyCode) {
+            return strtolower($country['currency']) === strtolower($currencyCode);
+        });
+
+        return static::get($data, 'iso2', $defaultValue);
     }
 
     /**
@@ -2561,5 +2595,43 @@ class Utils
 
         // If $target is none of the above types, return it as a single-element array.
         return [$target];
+    }
+
+    /**
+     * Formats the given amount for Stripe by adjusting it based on the currency's requirements.
+     *
+     * This function accounts for Stripe's list of zero-decimal currencies, as well as currencies
+     * not explicitly handled by Stripe, using the precision defined in the Currency class.
+     * For zero-decimal currencies, the amount is returned as-is. For other currencies, the amount
+     * is scaled based on their precision (e.g., multiplied by 100 for two-decimal currencies).
+     *
+     * @param int    $amount   The amount to be formatted, already in the smallest currency unit (e.g., cents for USD).
+     * @param string $currency The currency code (ISO 4217 format, e.g., 'USD', 'MNT', 'JPY').
+     *
+     * @return int the formatted amount in the smallest currency unit, scaled as needed
+     *
+     * @throws \InvalidArgumentException if the currency code is invalid or not supported by the Currency class
+     */
+    public static function formatAmountForStripe($amount, $currency): int
+    {
+        // List of zero-decimal currencies, including MNT as a workaround
+        $zeroDecimalCurrencies = [
+            'BIF', 'CLP', 'DJF', 'GNF', 'JPY', 'KMF', 'KRW', 'MGA', 'PYG',
+            'RWF', 'UGX', 'VND', 'VUV', 'XAF', 'XOF', 'XPF',
+        ];
+
+        // If the currency is zero-decimal, return the amount as is
+        if (in_array(strtoupper($currency), $zeroDecimalCurrencies)) {
+            return (int) $amount;
+        }
+
+        // Otherwise, scale the amount based on the currency precision
+        $currency  = new Currency($currency);
+        $precision = $currency->getPrecision() ?? 2;
+        if ($precision === 0) {
+            $amount = (int) $amount * 100;
+        }
+
+        return (int) $amount;
     }
 }

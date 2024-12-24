@@ -32,8 +32,25 @@ class Money implements CastsAttributes
         if ($value === null) {
             return 0;
         }
-        $value = $this->removeCurrencySymbols($value);
-        $value = $this->removeSpecialCharactersExceptDotAndComma($value);
+        $value = static::removeCurrencySymbols($value);
+        $value = static::removeSpecialCharactersExceptDotAndComma($value);
+        if (is_float($value) || Str::contains($value, '.')) {
+            $value = number_format((float) $value, 2, '.', '');
+        }
+
+        return Utils::numbersOnly($value);
+    }
+
+    /**
+     * Apply the case.
+     */
+    public static function apply($value): int
+    {
+        if ($value === null) {
+            return 0;
+        }
+        $value = static::removeCurrencySymbols($value);
+        $value = static::removeSpecialCharactersExceptDotAndComma($value);
         if (is_float($value) || Str::contains($value, '.')) {
             $value = number_format((float) $value, 2, '.', '');
         }
@@ -58,7 +75,7 @@ class Money implements CastsAttributes
      * $cleanPrice = removeCurrencySymbols($price);
      * // $cleanPrice will be "123.45"
      */
-    private function removeCurrencySymbols($string)
+    public static function removeCurrencySymbols($string)
     {
         $currencySymbols = '/[\$€£¥₹¢฿₽₪₩₮]/';
         $cleanString     = preg_replace($currencySymbols, '', $string);
@@ -87,7 +104,7 @@ class Money implements CastsAttributes
      * $cleanPrice = removeSpecialCharactersExceptDotAndComma($price);
      * // $cleanPrice will be "1,234.56"
      */
-    public function removeSpecialCharactersExceptDotAndComma($string)
+    public static function removeSpecialCharactersExceptDotAndComma($string)
     {
         $cleanString = preg_replace('/[^\d.,]/', '', $string);
 

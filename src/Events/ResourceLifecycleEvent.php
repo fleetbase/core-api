@@ -14,6 +14,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class ResourceLifecycleEvent implements ShouldBroadcastNow
@@ -93,6 +94,33 @@ class ResourceLifecycleEvent implements ShouldBroadcastNow
         $this->data                = $this->getEventData();
     }
 
+    private function getInternalEventData(): array
+    {
+        return [
+            'modelUuid'            => $this->modelUuid,
+            'modelClassNamespace'  => $this->modelClassNamespace,
+            'modelClassName'       => $this->modelClassName,
+            'modelHumanName'       => $this->modelHumanName,
+            'modelRecordName'      => $this->modelRecordName,
+            'modelName'            => $this->modelName,
+            'namespace'            => $this->namespace,
+            'userSession'          => $this->userSession,
+            'companySession'       => $this->companySession,
+            'eventName'            => $this->eventName,
+            'sentAt'               => $this->sentAt,
+            'version'              => $this->version,
+            'requestMethod'        => $this->requestMethod,
+            'eventId'              => $this->eventId,
+            'apiVersion'           => $this->apiVersion,
+            'apiCredential'        => $this->apiCredential,
+            'apiSecret'            => $this->apiSecret,
+            'apiKey'               => $this->apiKey,
+            'apiEnvironment'       => $this->apiEnvironment,
+            'isSandbox'            => $this->isSandbox,
+            'data'                 => $this->data,
+        ];
+    }
+
     /**
      * The event's broadcast name.
      *
@@ -121,6 +149,11 @@ class ResourceLifecycleEvent implements ShouldBroadcastNow
     public function broadcastOn()
     {
         $model              = $this->getModelRecord();
+        if (!$model) {
+            Log::error('Unable to resolve a model to broadcast for', $this->getInternalEventData());
+
+            return [];
+        }
         $channels           = $this->initializeChannels($model);
         $this->addModelSpecificChannels($model, $channels);
         $this->addCompanySpecificChannels($model, $channels);
@@ -307,6 +340,12 @@ class ResourceLifecycleEvent implements ShouldBroadcastNow
     public function getEventData()
     {
         $model               = $this->getModelRecord();
+        if (!$model) {
+            Log::error('Unable to resolve a model to get event data for', $this->getInternalEventData());
+
+            return [];
+        }
+
         $resource            = $this->getModelResource($model, $this->namespace, $this->version);
         $resourceData        = [];
         $keepRelations       = ['chat_message'];
@@ -343,7 +382,7 @@ class ResourceLifecycleEvent implements ShouldBroadcastNow
      *
      * @throws \Exception if the model class specified by $namespace does not exist or cannot be instantiated
      */
-    public function getModelRecord(): EloquentModel
+    public function getModelRecord(): ?EloquentModel
     {
         $namespace = $this->modelClassNamespace;
 

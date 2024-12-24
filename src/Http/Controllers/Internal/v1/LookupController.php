@@ -168,7 +168,7 @@ class LookupController extends Controller
     public function country($code, Request $request)
     {
         $simple  = $request->boolean('simple', true);
-        $country = Country::search($code)->first();
+        $country = Country::getByIso2($code);
 
         if ($simple && $country) {
             $country = $country->simple();
