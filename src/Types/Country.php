@@ -252,6 +252,16 @@ class Country implements \JsonSerializable
     }
 
     /**
+     * Get a country instance by ISO2 code.
+     *
+     * @return Country
+     */
+    public static function getByIso2(string $code)
+    {
+        return static::all()->where('cca2', strtoupper($code))->first();
+    }
+
+    /**
      * Find a country by it's currency code.
      *
      * @param string $currency
