@@ -67,7 +67,7 @@ trait HasOptionsAttributes
     public function updateOption($key, $value)
     {
         $options       = $this->getAllOptions();
-        $options[$key] = $value;
+        data_set($options, $key, $value);
 
         $this->setAttribute('options', $options);
 

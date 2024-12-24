@@ -21,7 +21,12 @@ class Find
     public static function httpResourceForModel(Model $model, ?string $namespace = null, ?int $version = 1): ?string
     {
         $resourceNamespace = null;
-        $defaultResourceNS = '\\Fleetbase\\Http\\Resources\\';
+        $defaultResourceNS = $coreResourceNS = '\\Fleetbase\\Http\\Resources\\';
+        $packageName       = static::getModelPackage($model);
+        if ($packageName) {
+            $defaultResourceNS = '\\Fleetbase\\' . $packageName . '\\Http\\Resources\\';
+        }
+
         $baseNamespace     = $namespace ? $namespace . '\\Http\\Resources\\' : $defaultResourceNS;
         $modelName         = Utils::classBasename($model);
 
@@ -55,7 +60,7 @@ class Find
                 throw new \Exception('Missing resource');
             }
         } catch (\Error|\Exception $e) {
-            $resourceNamespace = $defaultResourceNS . 'FleetbaseResource';
+            $resourceNamespace = $coreResourceNS . 'FleetbaseResource';
         }
 
         return $resourceNamespace;
@@ -173,6 +178,17 @@ class Find
 
         if (Utils::classExists($filterNamespace)) {
             return $filterNamespace;
+        }
+
+        return null;
+    }
+
+    public static function getModelPackage(Model $model): ?string
+    {
+        $fullClassName         = get_class($model);
+        $fullClassNameSegments = explode('\\', $fullClassName);
+        if ($fullClassNameSegments[1] !== 'Models') {
+            return $fullClassNameSegments[1];
         }
 
         return null;
