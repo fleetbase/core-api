@@ -27,6 +27,8 @@ class Organization extends FleetbaseResource
             'type'               => $this->when(Http::isInternalRequest(), $this->type),
             'users_count'        => $this->when(Http::isInternalRequest(), $this->companyUsers()->count()),
             'timezone'           => $this->timezone,
+            'country'            => $this->country,
+            'currency'           => $this->currency,
             'logo_url'           => $this->logo_url,
             'backdrop_url'       => $this->backdrop_url,
             'branding'           => Setting::getBranding(),
