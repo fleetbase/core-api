@@ -19,7 +19,7 @@ abstract class WebhookCallEvent
         public ?string $errorType,
         public ?string $errorMessage,
         public string $uuid,
-        public ?TransferStats $transferStats
+        public ?TransferStats $transferStats,
     ) {
     }
 }

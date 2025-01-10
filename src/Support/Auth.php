@@ -429,7 +429,7 @@ class Auth extends Authentication
      * on a query based on the user's context or permissions.
      *
      * @param \Illuminate\Database\Eloquent\Builder $builder the query builder instance to which the directives will be applied
-     * @param \Illuminate\Http\Request|null         $request An optional HTTP request instance. If not provided, the current request is used.
+     * @param Request|null                          $request An optional HTTP request instance. If not provided, the current request is used.
      *
      * @return \Illuminate\Database\Eloquent\Builder the query builder with the applied directives
      */

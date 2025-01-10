@@ -73,6 +73,8 @@ class CoreServiceProvider extends ServiceProvider
         \Fleetbase\Console\Commands\SyncSandbox::class,
         \Fleetbase\Console\Commands\CreatePermissions::class,
         \Fleetbase\Console\Commands\FixUserCompanies::class,
+        \Fleetbase\Console\Commands\PurgeApiLogs::class,
+        \Fleetbase\Console\Commands\PurgeWebhookLogs::class,
         \Fleetbase\Console\Commands\BackupDatabase\MysqlS3Backup::class,
     ];
 

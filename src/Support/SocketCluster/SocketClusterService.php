@@ -28,43 +28,31 @@ class SocketClusterService
 
     /**
      * Indicates whether the message was sent.
-     *
-     * @var ?bool
      */
     protected ?bool $sent = null;
 
     /**
      * The response received, if any.
-     *
-     * @var ?string
      */
     protected ?string $response = null;
 
     /**
      * Error message, if any.
-     *
-     * @var ?string
      */
     protected ?string $error = null;
 
     /**
      * Indicates whether the handshake was sent.
-     *
-     * @var ?bool
      */
     protected ?bool $handshakeSent = null;
 
     /**
      * The handshake response received, if any.
-     *
-     * @var ?string
      */
     protected ?string $handshakeResponse = null;
 
     /**
      * Handshake error message, if any.
-     *
-     * @var ?string
      */
     protected ?string $handshakeError = null;
 
@@ -218,8 +206,6 @@ class SocketClusterService
 
     /**
      * Get the error message, if any.
-     *
-     * @return ?string
      */
     public function error(): ?string
     {
@@ -228,8 +214,6 @@ class SocketClusterService
 
     /**
      * Get the response received, if any.
-     *
-     * @return ?string
      */
     public function response(): ?string
     {

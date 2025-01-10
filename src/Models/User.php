@@ -975,7 +975,7 @@ class User extends Authenticatable
     /**
      * Verify the user's email or phone based on the verification code.
      *
-     * @param string|\Fleetbase\Models\VerificationCode $code the verification code or its model instance
+     * @param string|VerificationCode $code the verification code or its model instance
      *
      * @throws InvalidVerificationCodeException
      */
@@ -1022,7 +1022,7 @@ class User extends Authenticatable
     /**
      * Get the date and time when the user was verified.
      *
-     * @return \Illuminate\Support\Carbon|null the date and time of verification, or null if not verified
+     * @return Carbon|null the date and time of verification, or null if not verified
      */
     public function getDateVerified(): ?Carbon
     {
@@ -1308,7 +1308,7 @@ class User extends Authenticatable
      * It then delegates the role assignment to the `assignRole` method on the `CompanyUser` model,
      * which is responsible for managing roles within the context of a specific company.
      *
-     * @param string|\Fleetbase\Models\Role $role the role instance or role name to be assigned
+     * @param string|Role $role the role instance or role name to be assigned
      *
      * @return CompanyUser returns the current CompanyUser instance
      *
