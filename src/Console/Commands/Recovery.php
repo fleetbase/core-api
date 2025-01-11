@@ -112,8 +112,8 @@ class Recovery extends Command
      * php artisan fleetbase:recovery
      * ```
      *
-     * @param \Fleetbase\Models\User|null    $user    The user instance. Defaults to null, prompting the owner to select a user.
-     * @param \Fleetbase\Models\Company|null $company The company instance. Defaults to null, prompting the owner to select a company.
+     * @param User|null    $user    The user instance. Defaults to null, prompting the owner to select a user.
+     * @param Company|null $company The company instance. Defaults to null, prompting the owner to select a company.
      *
      * @return void
      *
@@ -282,8 +282,8 @@ class Recovery extends Command
      * php artisan fleetbase:recovery
      * ```
      *
-     * @param \Fleetbase\Models\User|null    $user    The user instance. Defaults to null, prompting the owner to select a user.
-     * @param \Fleetbase\Models\Company|null $company The company instance. Defaults to null, prompting the owner to select a company.
+     * @param User|null    $user    The user instance. Defaults to null, prompting the owner to select a user.
+     * @param Company|null $company The company instance. Defaults to null, prompting the owner to select a company.
      *
      * @return void
      *
@@ -344,8 +344,8 @@ class Recovery extends Command
      * php artisan fleetbase:recovery
      * ```
      *
-     * @param \Fleetbase\Models\User|null    $user    The user instance. Defaults to null, prompting the owner to select a user.
-     * @param \Fleetbase\Models\Company|null $company The company instance. Defaults to null, prompting the owner to select a company.
+     * @param User|null    $user    The user instance. Defaults to null, prompting the owner to select a user.
+     * @param Company|null $company The company instance. Defaults to null, prompting the owner to select a company.
      *
      * @return void
      *
@@ -401,7 +401,7 @@ class Recovery extends Command
      *
      * @param string $prompt The prompt message for user input. Defaults to 'Find user by searching for name, email or ID'.
      *
-     * @return \Fleetbase\Models\User|null the selected user instance or null if no user is selected
+     * @return User|null the selected user instance or null if no user is selected
      *
      * @throws \Exception if an error occurs while retrieving the user
      *
@@ -475,7 +475,7 @@ class Recovery extends Command
      *
      * @param string $prompt The prompt message for company search. Defaults to 'Find company by searching for name or ID'.
      *
-     * @return \Fleetbase\Models\Company|null the selected company instance or null if no company is selected
+     * @return Company|null the selected company instance or null if no company is selected
      *
      * @throws \Exception if an error occurs while retrieving the company
      *
@@ -537,7 +537,7 @@ class Recovery extends Command
      * @param User   $user   the user instance whose associated companies are to be listed
      * @param string $prompt The prompt message for company selection. Defaults to 'Select the users company'.
      *
-     * @return \Fleetbase\Models\Company|null the selected company instance or null if no company is selected
+     * @return Company|null the selected company instance or null if no company is selected
      *
      * @throws \Exception if an error occurs while retrieving the user's companies
      *

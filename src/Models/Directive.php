@@ -7,7 +7,6 @@ use Fleetbase\Support\DirectiveParser;
 use Fleetbase\Traits\HasUuid;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
-use Illuminate\Support\Facades\Crypt;
 
 class Directive extends Model
 {
@@ -80,12 +79,18 @@ class Directive extends Model
     }
 
     /**
-     * Create a unique key based on the rules.
+     * Encode the directive rules as a referencable key.
      */
     public static function createKey(array $rules = []): string
     {
-        $ruleString = implode(':', $rules);
+        return base64_encode(implode(':', $rules));
+    }
 
-        return Crypt::encryptString($ruleString);
+    /**
+     * Decode the directive key.
+     */
+    public static function decodeKey(string $key): array
+    {
+        return explode(':', base64_decode($key));
     }
 }

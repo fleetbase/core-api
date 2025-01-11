@@ -3,6 +3,7 @@
 namespace Fleetbase\Http\Resources;
 
 use Fleetbase\Support\Http;
+use Fleetbase\Support\ResourceTransformerRegistry;
 
 class User extends FleetbaseResource
 {
@@ -15,7 +16,7 @@ class User extends FleetbaseResource
      */
     public function toArray($request)
     {
-        return [
+        $data = [
             'id'                                                      => $this->when(Http::isInternalRequest(), $this->id, $this->public_id),
             'uuid'                                                    => $this->when(Http::isInternalRequest(), $this->uuid),
             'company_uuid'                                            => $this->when(Http::isInternalRequest(), $this->company_uuid),
@@ -48,6 +49,8 @@ class User extends FleetbaseResource
             'updated_at'                                              => $this->updated_at,
             'created_at'                                              => $this->created_at,
         ];
+
+        return ResourceTransformerRegistry::transform($this->resource, $data);
     }
 
     /**

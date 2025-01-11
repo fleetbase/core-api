@@ -101,8 +101,6 @@ class UserController extends FleetbaseController
 
             return ['user' => new $this->resource($record)];
         } catch (\Exception $e) {
-            dd($e);
-
             return response()->error($e->getMessage());
         } catch (\Illuminate\Database\QueryException $e) {
             return response()->error($e->getMessage());
