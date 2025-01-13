@@ -3,6 +3,7 @@
 namespace Fleetbase\Traits;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 
 trait PurgeCommand
@@ -15,7 +16,18 @@ trait PurgeCommand
     protected function backupAndDelete(string $modelClass, string $tableName, $cutoffDate, string $path = 'backups'): void
     {
         // Fetch records older than the cutoff date
-        $records = $modelClass::where('created_at', '<', $cutoffDate)->withTrashed()->get();
+        $query = $modelClass::where('created_at', '<', $cutoffDate);
+
+        // Include trashed if possible
+        if (Schema::hasColumn($tableName, 'deleted_at')) {
+            $query->where(function ($query) {
+                $query->whereNull('deleted_at');
+                $query->orWhereNotNull('deleted_at');
+            });
+        }
+
+        // Get records
+        $records = $query->get();
 
         if ($records->isEmpty()) {
             $this->info("No records to purge from {$tableName}.");
@@ -55,8 +67,8 @@ trait PurgeCommand
         $this->info("Purged records from {$tableName}.");
 
         // Reset auto-increment index
-        $this->resetTableIndex($tableName);
-        $this->info("Reset auto-increment index for {$tableName}.");
+        // $this->resetTableIndex($tableName);
+        // $this->info("Reset auto-increment index for {$tableName}.");
     }
 
     /**

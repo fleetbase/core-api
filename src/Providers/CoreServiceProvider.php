@@ -75,6 +75,8 @@ class CoreServiceProvider extends ServiceProvider
         \Fleetbase\Console\Commands\FixUserCompanies::class,
         \Fleetbase\Console\Commands\PurgeApiLogs::class,
         \Fleetbase\Console\Commands\PurgeWebhookLogs::class,
+        \Fleetbase\Console\Commands\PurgeActivityLogs::class,
+        \Fleetbase\Console\Commands\PurgeScheduledTaskLogs::class,
         \Fleetbase\Console\Commands\BackupDatabase\MysqlS3Backup::class,
     ];
 
@@ -126,6 +128,10 @@ class CoreServiceProvider extends ServiceProvider
         $this->scheduleCommands(function ($schedule) {
             $schedule->command('cache:prune-stale-tags')->hourly();
             $schedule->command('model:prune', ['--model' => MonitoredScheduledTaskLogItem::class])->daily();
+            $schedule->command('purge:api-logs --no-interaction')->daily();
+            $schedule->command('purge:webhook-logs --no-interaction')->daily();
+            $schedule->command('purge:activity-logs --no-interaction')->daily();
+            $schedule->command('purge:scheduled-task-logs --no-interaction')->daily();
         });
         $this->registerObservers();
         $this->registerExpansionsFrom();
