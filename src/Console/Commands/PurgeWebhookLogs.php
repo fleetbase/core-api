@@ -16,7 +16,7 @@ class PurgeWebhookLogs extends Command
      * @var string
      */
     protected $signature = 'purge:webhook-logs 
-                            {--days=30 : The number of days to preserve logs (default: 30)}';
+                            {--days=30 : The number of days to preserve logs (default: 30)} {--force : Force the command to run without confirmation}';
 
     /**
      * The console command description.

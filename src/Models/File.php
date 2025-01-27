@@ -13,6 +13,7 @@ use Fleetbase\Traits\SendsWebhooks;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Mimey\MimeTypes;
@@ -145,8 +146,21 @@ class File extends Model
         /** @var Storage $filesystem */
         $filesystem = $this->getFilesystem();
 
+        $cacheKey      = "file_url_{$this->uuid}";
+        $bufferTime    = 5; // Buffer time in minutes
+        $urlExpiration = 120; // URL expiration time in minutes (2 hours)
+
         if ($disk === 's3' || $disk === 'gcs') {
-            $url = $filesystem->temporaryUrl($this->path, now()->addMinutes(30));
+            // Check if the URL is already cached
+            if (Cache::has($cacheKey)) {
+                return Cache::get($cacheKey);
+            }
+
+            // Generate a new temporary URL
+            $url = $filesystem->temporaryUrl($this->path, now()->addMinutes($urlExpiration));
+
+            // Cache the URL with a reduced expiration time for buffer
+            Cache::put($cacheKey, $url, now()->addMinutes($urlExpiration - $bufferTime));
         } else {
             $url = $filesystem->url($this->path);
         }
