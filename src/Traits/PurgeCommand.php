@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\Storage;
 
 trait PurgeCommand
 {
+    use ForcesCommands;
+
     /**
      * Backup and delete records for a given model and table.
      *
@@ -40,7 +42,7 @@ trait PurgeCommand
         $lastRecordDate  = $records->max('created_at');
         $this->info("Found {$records->count()} records in {$tableName} from {$firstRecordDate} to {$lastRecordDate}.");
 
-        if (!$this->confirm("Do you want to permanently delete these records from {$tableName}?")) {
+        if (!$this->confirmOrForce("Do you want to permanently delete these records from {$tableName}?")) {
             $this->warn("Skipped purging {$tableName}.");
 
             return;

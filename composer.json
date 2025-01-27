@@ -1,6 +1,6 @@
 {
     "name": "fleetbase/core-api",
-    "version": "1.5.23",
+    "version": "1.5.24",
     "description": "Core Framework and Resources for Fleetbase API",
     "keywords": [
         "fleetbase",
@@ -19,10 +19,11 @@
     ],
     "require": {
         "php": "^8.0",
-        "fleetbase/twilio": "^5.0.1",
         "aws/aws-sdk-php-laravel": "^3.7",
         "fleetbase/laravel-mysql-spatial": "^1.0.2",
+        "fleetbase/twilio": "^5.0.1",
         "giggsey/libphonenumber-for-php": "^8.13",
+        "google/apiclient": "^2.18",
         "guzzlehttp/guzzle": "^7.4",
         "hammerstone/fast-paginate": "^1.0",
         "illuminate/broadcasting": "^9.0|^10.0",
@@ -38,6 +39,8 @@
         "laravel-notification-channels/fcm": "^4.1",
         "laravel-notification-channels/twilio": "^3.3",
         "laravel/sanctum": "3.2.4",
+        "lcobucci/clock": "^3.3",
+        "lcobucci/jwt": "^5.4",
         "maatwebsite/excel": "^3.1",
         "phpoffice/phpspreadsheet": "^1.28",
         "phrity/websocket": "^1.7",

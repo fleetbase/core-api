@@ -262,6 +262,7 @@ trait HasApiModelBehavior
         try {
             $record->update($input);
         } catch (\Exception $e) {
+            dd($e);
             throw new \Exception('Failed to update ' . $this->getApiHumanReadableName());
         }
 
@@ -419,6 +420,10 @@ trait HasApiModelBehavior
 
         foreach ($attributes as $attr => $key) {
             if ((!empty($only) && !in_array($attr, $only)) || isset($target[$attr])) {
+                continue;
+            }
+
+            if ($this->isSessionAgnosticColumn($attr)) {
                 continue;
             }
 

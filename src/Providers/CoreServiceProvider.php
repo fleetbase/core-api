@@ -128,10 +128,10 @@ class CoreServiceProvider extends ServiceProvider
         $this->scheduleCommands(function ($schedule) {
             $schedule->command('cache:prune-stale-tags')->hourly();
             $schedule->command('model:prune', ['--model' => MonitoredScheduledTaskLogItem::class])->daily();
-            $schedule->command('purge:api-logs --no-interaction')->daily();
-            $schedule->command('purge:webhook-logs --no-interaction')->daily();
-            $schedule->command('purge:activity-logs --no-interaction')->daily();
-            $schedule->command('purge:scheduled-task-logs --no-interaction')->daily();
+            $schedule->command('purge:api-logs --force --no-interaction')->daily();
+            $schedule->command('purge:webhook-logs --force --no-interaction')->daily();
+            $schedule->command('purge:activity-logs --force --no-interaction')->daily();
+            $schedule->command('purge:scheduled-task-logs --force --no-interaction')->daily();
         });
         $this->registerObservers();
         $this->registerExpansionsFrom();
