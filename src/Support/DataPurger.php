@@ -114,22 +114,41 @@ class DataPurger
      */
     protected static function deleteRelatedRecords(array $relatedRecords, bool $verbose = false)
     {
+        $processedTables = [];
+
         foreach ($relatedRecords as $table => $primaryKeys) {
             $columns = Schema::getColumnListing($table);
 
             foreach ($columns as $column) {
-                if (self::isForeignKey($column, $table)) {
-                    // Find dependent records
-                    $dependentRecords = DB::table($table)
-                        ->whereIn($column, $primaryKeys)
-                        ->pluck(self::getPrimaryKey($columns))
-                        ->toArray();
+                foreach (Schema::getAllTables() as $relatedTable) {
+                    $relatedTableName = array_values((array) $relatedTable)[0];
 
-                    if (!empty($dependentRecords)) {
-                        DB::table($table)->whereIn($column, $primaryKeys)->delete();
+                    // Skip system tables
+                    if (Str::startsWith($relatedTableName, ['registry_', 'billing_'])) {
+                        continue;
+                    }
 
-                        if ($verbose) {
-                            echo 'Deleted ' . count($dependentRecords) . " dependent records from {$table} where {$column} matched deleted primary keys.\n";
+                    if (in_array($relatedTableName, $processedTables)) {
+                        continue; // Skip already processed tables
+                    }
+
+                    $relatedColumns = Schema::getColumnListing($relatedTableName);
+                    foreach ($relatedColumns as $relatedColumn) {
+                        if (self::isForeignKey($relatedColumn, $table)) {
+                            // Find dependent records
+                            $dependentRecords = DB::table($relatedTableName)
+                                ->whereIn($relatedColumn, $primaryKeys)
+                                ->pluck(self::getPrimaryKey($relatedColumns))
+                                ->toArray();
+
+                            if (!empty($dependentRecords)) {
+                                DB::table($relatedTableName)->whereIn($relatedColumn, $primaryKeys)->delete();
+                                $processedTables[] = $relatedTableName;
+
+                                if ($verbose) {
+                                    echo 'Deleted ' . count($dependentRecords) . " dependent records from {$relatedTableName} where {$relatedColumn} matched deleted primary keys.\n";
+                                }
+                            }
                         }
                     }
                 }

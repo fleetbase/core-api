@@ -83,7 +83,7 @@ class SqlDumper
                         $valuesList  = implode(', ', $values);
                         $dump .= "INSERT INTO `{$tableName}` ({$columnsList}) VALUES ({$valuesList});\n";
 
-                        // Store primary keys of these records
+                        // ✅ Store primary keys to track dependencies
                         $primaryKey = self::getPrimaryKey($columns);
                         if ($primaryKey && isset($record->{$primaryKey})) {
                             $relatedRecords[$tableName][] = $record->{$primaryKey};
@@ -116,6 +116,12 @@ class SqlDumper
                                 $columnsList = implode(', ', array_keys((array) $record));
                                 $valuesList  = implode(', ', $values);
                                 $dump .= "INSERT INTO `{$tableName}` ({$columnsList}) VALUES ({$valuesList});\n";
+
+                                // ✅ Track additional primary keys for deeper dependencies
+                                $primaryKey = self::getPrimaryKey($columns);
+                                if ($primaryKey && isset($record->{$primaryKey})) {
+                                    $relatedRecords[$tableName][] = $record->{$primaryKey};
+                                }
                             }
                             $dump .= "\n";
                         }
