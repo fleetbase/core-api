@@ -37,7 +37,7 @@ class SqlDumper
     }
 
     /**
-     * Generates the SQL dump string for the company data.
+     * Generates the SQL dump string for the company data, including foreign key relationships.
      *
      * @param \Fleetbase\Models\Company $company
      *
@@ -58,34 +58,104 @@ class SqlDumper
             $tables   = Schema::getAllTables();
             $dbPrefix = DB::getTablePrefix();
 
+            // Store related records by their primary keys
+            $relatedRecords = [];
+
+            foreach ($tables as $table) {
+                $tableName = $table->{"{$dbPrefix}Tables_in_" . $config['database']};
+                if (in_array($tableName, ['activity', 'api_events', 'api_request_logs', 'webhook_request_logs', 'carts'])) {
+                    continue;
+                }
+
+                $columns   = Schema::getColumnListing($tableName);
+                if (in_array('company_uuid', $columns)) {
+                    // Get records related to the company
+                    $records = DB::table($tableName)->where('company_uuid', $companyUuid)->get();
+
+                    if ($records->isEmpty()) {
+                        continue;
+                    }
+
+                    $dump .= "-- Dumping data for table `{$tableName}`\n";
+                    foreach ($records as $record) {
+                        $values      = self::formatRecordValues((array) $record);
+                        $columnsList = implode(', ', array_keys((array) $record));
+                        $valuesList  = implode(', ', $values);
+                        $dump .= "INSERT INTO `{$tableName}` ({$columnsList}) VALUES ({$valuesList});\n";
+
+                        // Store primary keys of these records
+                        $primaryKey = self::getPrimaryKey($columns);
+                        if ($primaryKey && isset($record->{$primaryKey})) {
+                            $relatedRecords[$tableName][] = $record->{$primaryKey};
+                        }
+                    }
+                    $dump .= "\n";
+                }
+            }
+
+            // Handle dependent records based on foreign keys
             foreach ($tables as $table) {
                 $tableName = $table->{"{$dbPrefix}Tables_in_" . $config['database']};
                 $columns   = Schema::getColumnListing($tableName);
 
-                if (!in_array('company_uuid', $columns)) {
-                    continue;
+                foreach ($columns as $column) {
+                    foreach ($relatedRecords as $relatedTable => $primaryKeys) {
+                        if (self::isForeignKey($column, $relatedTable)) {
+                            // Fetch dependent records where the column value matches primary keys
+                            $records = DB::table($tableName)
+                                ->whereIn($column, $primaryKeys)
+                                ->get();
+
+                            if ($records->isEmpty()) {
+                                continue;
+                            }
+
+                            $dump .= "-- Dumping dependent data for table `{$tableName}` (linked to `{$relatedTable}` via `{$column}`)\n";
+                            foreach ($records as $record) {
+                                $values      = self::formatRecordValues((array) $record);
+                                $columnsList = implode(', ', array_keys((array) $record));
+                                $valuesList  = implode(', ', $values);
+                                $dump .= "INSERT INTO `{$tableName}` ({$columnsList}) VALUES ({$valuesList});\n";
+                            }
+                            $dump .= "\n";
+                        }
+                    }
                 }
-
-                $records = DB::table($tableName)->where('company_uuid', $companyUuid)->get();
-
-                if ($records->isEmpty()) {
-                    continue;
-                }
-
-                $dump .= "-- Dumping data for table `{$tableName}`\n";
-                foreach ($records as $record) {
-                    $values = array_map(function ($value) {
-                        return is_null($value) ? 'NULL' : "'" . addslashes($value) . "'";
-                    }, (array) $record);
-
-                    $columnsList = implode(', ', array_keys((array) $record));
-                    $valuesList  = implode(', ', $values);
-                    $dump .= "INSERT INTO `{$tableName}` ({$columnsList}) VALUES ({$valuesList});\n";
-                }
-                $dump .= "\n";
             }
         }
 
         return $dump;
+    }
+
+    /**
+     * Determines the primary key of a table (prioritizing `uuid`, falling back to `id`).
+     *
+     * @return string|null
+     */
+    protected static function getPrimaryKey(array $columns)
+    {
+        return in_array('uuid', $columns) ? 'uuid' : (in_array('id', $columns) ? 'id' : null);
+    }
+
+    /**
+     * Checks if a column is likely a foreign key referencing another table.
+     *
+     * @return bool
+     */
+    protected static function isForeignKey(string $column, string $relatedTable)
+    {
+        return str_ends_with($column, '_id') || str_ends_with($column, '_uuid') || strpos($column, $relatedTable) !== false;
+    }
+
+    /**
+     * Formats record values for SQL insertion.
+     *
+     * @return array
+     */
+    protected static function formatRecordValues(array $record)
+    {
+        return array_map(function ($value) {
+            return is_null($value) ? 'NULL' : "'" . addslashes($value) . "'";
+        }, $record);
     }
 }
