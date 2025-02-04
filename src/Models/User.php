@@ -16,6 +16,7 @@ use Fleetbase\Traits\HasCacheableAttributes;
 use Fleetbase\Traits\HasMetaAttributes;
 use Fleetbase\Traits\HasPresence;
 use Fleetbase\Traits\HasPublicId;
+use Fleetbase\Traits\HasSessionAttributes;
 use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\ProxiesAuthorizationMethods;
 use Fleetbase\Traits\Searchable;
@@ -62,6 +63,7 @@ class User extends Authenticatable
     }
     use Filterable;
     use ClearsHttpCache;
+    use HasSessionAttributes;
 
     /**
      * The database connection to use.

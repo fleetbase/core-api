@@ -6,6 +6,7 @@ use Fleetbase\Traits\ClearsHttpCache;
 use Fleetbase\Traits\Expandable;
 use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\HasCacheableAttributes;
+use Fleetbase\Traits\HasSessionAttributes;
 use Fleetbase\Traits\Insertable;
 use Fleetbase\Traits\Searchable;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
@@ -19,15 +20,7 @@ class Model extends EloquentModel
     use Insertable;
     use Filterable;
     use Expandable;
-
-    /**
-     * An array of column names that are not affected or automatically updated
-     * based on the current user's session. These columns remain consistent
-     * regardless of the user's session context.
-     *
-     * @var array
-     */
-    protected $sessionAgnosticColumns = [];
+    use HasSessionAttributes;
 
     /**
      * Create a new instance of the model.
@@ -162,33 +155,5 @@ class Model extends EloquentModel
         }
 
         return $filterNamespace;
-    }
-
-    /**
-     * Get the session-agnostic columns for the model.
-     */
-    public function getSessionAgnosticColumns(): array
-    {
-        return $this->sessionAgnosticColumns;
-    }
-
-    /**
-     * Set the session-agnostic columns for the model.
-     *
-     * @return $this
-     */
-    public function setSessionAgnosticColumns(array $columns): self
-    {
-        $this->sessionAgnosticColumns = $columns;
-
-        return $this;
-    }
-
-    /**
-     * Determine if a column is session-agnostic.
-     */
-    public function isSessionAgnosticColumn(string $column): bool
-    {
-        return in_array($column, $this->sessionAgnosticColumns, true);
     }
 }
