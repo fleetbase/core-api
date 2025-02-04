@@ -258,11 +258,9 @@ trait HasApiModelBehavior
 
         // Remove ID's and timestamps from input
         $input = Arr::except($input, ['uuid', 'public_id', 'deleted_at', 'updated_at', 'created_at']);
-
         try {
             $record->update($input);
         } catch (\Exception $e) {
-            dd($e);
             throw new \Exception('Failed to update ' . $this->getApiHumanReadableName());
         }
 
