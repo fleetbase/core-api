@@ -85,6 +85,7 @@ class DataPurger
 
         // Reset to the original default connection
         DB::setDefaultConnection($defaultConnection);
+        DB::statement('SET FOREIGN_KEY_CHECKS=0;');
 
         // Delete the company record itself
         if ($deletePermanently) {
@@ -98,12 +99,21 @@ class DataPurger
                 }
             }
         } else {
-            $company->delete(); // Soft delete
+            try {
+                $company->delete(); // Soft delete
+            } catch (\Exception $e) {
+                echo $e->getMessage();
+                DB::statement('SET FOREIGN_KEY_CHECKS=1;');
+
+                return;
+            }
 
             if ($verbose) {
                 echo "Soft deleted company record for UUID {$companyUuid}.\n";
             }
         }
+
+        DB::statement('SET FOREIGN_KEY_CHECKS=1;');
     }
 
     /**
