@@ -77,6 +77,7 @@ class CoreServiceProvider extends ServiceProvider
         \Fleetbase\Console\Commands\PurgeWebhookLogs::class,
         \Fleetbase\Console\Commands\PurgeActivityLogs::class,
         \Fleetbase\Console\Commands\PurgeScheduledTaskLogs::class,
+        \Fleetbase\Console\Commands\PurgeOrphanedModelRecords::class,
         \Fleetbase\Console\Commands\BackupDatabase\MysqlS3Backup::class,
     ];
 
