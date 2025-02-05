@@ -8,6 +8,8 @@ use Illuminate\Support\Str;
 
 class DataPurger
 {
+    protected static array $skipColumns = ['registry_', 'billing_', 'model_has', 'role_has', 'monitored_scheduled_task_log_items'];
+
     /**
      * Delete all data related to a company, including foreign key relationships.
      *
@@ -43,7 +45,7 @@ class DataPurger
                     $columns   = Schema::getColumnListing($tableName);
 
                     // Skip system tables
-                    if (Str::startsWith($tableName, ['registry_', 'billing_'])) {
+                    if (Str::startsWith($tableName, static::$skipColumns)) {
                         continue;
                     }
 
@@ -134,7 +136,7 @@ class DataPurger
                     $relatedTableName = array_values((array) $relatedTable)[0];
 
                     // Skip system tables
-                    if (Str::startsWith($relatedTableName, ['registry_', 'billing_'])) {
+                    if (Str::startsWith($relatedTableName, static::$skipColumns)) {
                         continue;
                     }
 
@@ -143,12 +145,22 @@ class DataPurger
                     }
 
                     $relatedColumns = Schema::getColumnListing($relatedTableName);
+                    if (empty($relatedColumns)) {
+                        echo "Skipping {$relatedTableName} because no columns were found.\n";
+                        continue;
+                    }
+
+                    $primaryKey = self::getPrimaryKey($relatedColumns);
+                    if (!$primaryKey) {
+                        echo "Warning: No primary key found for table {$relatedTableName}\n";
+                        continue; // Skip this iteration to avoid errors
+                    }
+
                     foreach ($relatedColumns as $relatedColumn) {
                         if (self::isForeignKey($relatedColumn, $table)) {
-                            // Find dependent records
                             $dependentRecords = DB::table($relatedTableName)
                                 ->whereIn($relatedColumn, $primaryKeys)
-                                ->pluck(self::getPrimaryKey($relatedColumns))
+                                ->pluck($primaryKey)
                                 ->toArray();
 
                             if (!empty($dependentRecords)) {
@@ -173,7 +185,13 @@ class DataPurger
      */
     protected static function getPrimaryKey(array $columns)
     {
-        return in_array('uuid', $columns) ? 'uuid' : (in_array('id', $columns) ? 'id' : null);
+        $primaryKey = in_array('uuid', $columns) ? 'uuid' : (in_array('id', $columns) ? 'id' : null);
+
+        if (!$primaryKey) {
+            echo 'Warning: Could not determine primary key from columns: ' . implode(',', $columns) . "\n";
+        }
+
+        return $primaryKey;
     }
 
     /**
