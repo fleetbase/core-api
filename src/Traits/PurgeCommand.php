@@ -51,7 +51,7 @@ trait PurgeCommand
         $this->info("Backing up {$records->count()} records from {$tableName}...");
 
         // Create SQL dump
-        $sqlDumpFileName = str_replace([' '], '_', "{$tableName}_backup_{$firstRecordDate}_to_{$lastRecordDate}_created_{$currentDate}.sql");
+        $sqlDumpFileName = str_replace([' ', ':'], '_', "{$tableName}_backup_{$firstRecordDate}_to_{$lastRecordDate}_created_{$currentDate}.sql");
         $localPath       = storage_path("app/tmp/{$sqlDumpFileName}");
         $remotePath      = "{$path}/{$sqlDumpFileName}";
         $backupData      = $records->map(function ($record) {
