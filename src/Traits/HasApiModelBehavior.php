@@ -114,6 +114,9 @@ trait HasApiModelBehavior
 
         if (intval($limit) > 0) {
             $builder->limit($limit);
+        } elseif ($limit === -1) {
+            $limit = 999999999;
+            $builder->limit($limit);
         }
 
         // if queryCallback is supplied
@@ -125,10 +128,6 @@ trait HasApiModelBehavior
         // Utils::sqlDump($builder);
 
         if (Http::isInternalRequest($request)) {
-            if ($limit === -1) {
-                $limit = 999999999;
-            }
-
             return $builder->fastPaginate($limit, $columns);
         }
 

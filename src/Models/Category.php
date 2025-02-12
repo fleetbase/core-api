@@ -40,7 +40,7 @@ class Category extends Model
      *
      * @var array
      */
-    protected $searchableColumns = ['name'];
+    protected $searchableColumns = ['name', 'tags', 'description'];
 
     /**
      * The attributes that are mass assignable.
