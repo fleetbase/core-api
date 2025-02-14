@@ -79,7 +79,7 @@ class SocketClusterMessage extends Message
      *
      * @return string the created payload as a JSON string
      */
-    public static function createSocketClusterPayload(array $data = [], $channel, int $cid = 1, $event = self::PUBLISH_EVENT)
+    public static function createSocketClusterPayload(array $data, $channel, int $cid = 1, $event = self::PUBLISH_EVENT)
     {
         if ($channel instanceof Channel) {
             $channel = $channel->__toString();
