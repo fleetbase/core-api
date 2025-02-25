@@ -2634,4 +2634,10 @@ class Utils
 
         return (int) $amount;
     }
+
+    public static function formatPhoneNumber(string $phone): string
+    {
+        // Remove dashes and spaces
+        return str_replace(['-', ' '], '', $phone);
+    }
 }

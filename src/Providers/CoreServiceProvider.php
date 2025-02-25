@@ -6,7 +6,6 @@ use Fleetbase\Support\EnvironmentMapper;
 use Fleetbase\Support\NotificationRegistry;
 use Fleetbase\Support\Utils;
 use Illuminate\Console\Scheduling\Schedule;
-use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\ServiceProvider;
@@ -37,6 +36,7 @@ class CoreServiceProvider extends ServiceProvider
      */
     public $globalMiddlewares = [
         \Fleetbase\Http\Middleware\RequestTimer::class,
+        \Fleetbase\Http\Middleware\ResetJsonResourceWrap::class,
     ];
 
     /**
@@ -132,8 +132,6 @@ class CoreServiceProvider extends ServiceProvider
      */
     public function boot()
     {
-        JsonResource::withoutWrapping();
-
         $this->__hotfixCommonmarkDeprecation();
         $this->registerCommands();
         $this->scheduleCommands(function ($schedule) {
