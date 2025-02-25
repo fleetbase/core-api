@@ -31,6 +31,15 @@ class CoreServiceProvider extends ServiceProvider
     ];
 
     /**
+     * The global middlewares to be registered with the service provider.
+     *
+     * @var array
+     */
+    public $globalMiddlewares = [
+        \Fleetbase\Http\Middleware\RequestTimer::class,
+    ];
+
+    /**
      * The middleware groups registered with the service provider.
      *
      * @var array
@@ -64,6 +73,7 @@ class CoreServiceProvider extends ServiceProvider
      */
     public $commands = [
         \Fleetbase\Console\Commands\Recovery::class,
+        \Fleetbase\Console\Commands\QueueStatusCommand::class,
         \Fleetbase\Console\Commands\AssignAdminRoles::class,
         \Fleetbase\Console\Commands\ForceResetDatabase::class,
         \Fleetbase\Console\Commands\CreateDatabase::class,
@@ -260,6 +270,14 @@ class CoreServiceProvider extends ServiceProvider
      */
     public function registerMiddleware(): void
     {
+        // Global middlewares
+        if ($this->globalMiddlewares) {
+            $kernel = $this->app->make(\Illuminate\Contracts\Http\Kernel::class);
+            foreach ($this->globalMiddlewares as $middleware) {
+                $kernel->pushMiddleware($middleware);
+            }
+        }
+
         foreach ($this->middleware as $group => $middlewares) {
             foreach ($middlewares as $middleware) {
                 $this->app->router->pushMiddlewareToGroup($group, $middleware);

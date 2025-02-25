@@ -5,6 +5,7 @@ namespace Fleetbase\Http\Controllers;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Foundation\Bus\DispatchesJobs;
 use Illuminate\Foundation\Validation\ValidatesRequests;
+use Illuminate\Http\Request;
 use Illuminate\Routing\Controller as BaseController;
 
 class Controller extends BaseController
@@ -16,12 +17,13 @@ class Controller extends BaseController
     /**
      * Welcome message only.
      */
-    public function hello()
+    public function hello(Request $request)
     {
         return response()->json(
             [
                 'message' => 'Fleetbase API',
                 'version' => config('fleetbase.api.version'),
+                'ms'      => microtime(true) - $request->attributes->get('request_start_time'),
             ]
         );
     }
@@ -29,11 +31,11 @@ class Controller extends BaseController
     /**
      * Response time only.
      */
-    public function time()
+    public function time(Request $request)
     {
         return response()->json(
             [
-                'ms' => microtime(true) - LARAVEL_START,
+                'ms' => microtime(true) - $request->attributes->get('request_start_time'),
             ]
         );
     }
@@ -41,8 +43,11 @@ class Controller extends BaseController
     /**
      * Use this route for arbitrary testing.
      */
-    public function test()
+    public function test(Request $request)
     {
-        return response()->json(['status' => 'ok']);
+        return response()->json([
+            'status' => 'ok',
+            'ms'     => microtime(true) - $request->attributes->get('request_start_time'),
+        ]);
     }
 }

@@ -776,17 +776,21 @@ class User extends Authenticatable
     /**
      * Checks if the user is NOT admin.
      */
-    public function isType(string $type): bool
+    public function isType(string|array $type): bool
     {
+        if (is_array($type)) {
+            return in_array($this->type, $type);
+        }
+
         return $this->type === $type;
     }
 
     /**
      * Checks if the user is NOT admin.
      */
-    public function isNotType(string $type): bool
+    public function isNotType(string|array $type): bool
     {
-        return $this->type !== $type;
+        return !$this->isType($type);
     }
 
     /**

@@ -143,6 +143,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 $router->group(
                                     ['prefix' => 'auth'],
                                     function ($router) {
+                                        $router->get('organizations', 'AuthController@getUserOrganizations');
                                         $router->post('change-user-password', 'AuthController@changeUserPassword');
                                         $router->post('impersonate', 'AuthController@impersonate');
                                         $router->delete('impersonate', 'AuthController@endImpersonation');

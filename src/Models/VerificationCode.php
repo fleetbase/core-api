@@ -4,6 +4,7 @@ namespace Fleetbase\Models;
 
 use Fleetbase\Casts\Json;
 use Fleetbase\Mail\VerificationMail;
+use Fleetbase\Support\Utils;
 use Fleetbase\Traits\Expirable;
 use Fleetbase\Traits\HasMetaAttributes;
 use Fleetbase\Traits\HasSubject;
@@ -128,8 +129,8 @@ class VerificationCode extends Model
                 $options['subject'] = $mailableSubject($verificationCode);
             }
 
-            // See if content passed
-            $content = data_get($options, 'content');
+            // See if content or messageCallback passed
+            $content = Utils::or($options, ['content', 'messageCallback']);
             if (is_callable($content)) {
                 $content = $content($verificationCode);
             }
