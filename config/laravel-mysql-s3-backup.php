@@ -14,8 +14,6 @@ $s3Config = [
 if (env('APP_ENV') === 'local' || env('APP_ENV') === 'development') {
     $s3Config['key'] = env('AWS_ACCESS_KEY_ID');
     $s3Config['secret'] = env('AWS_SECRET_ACCESS_KEY');
-} else {
-    $s3Config['credentials'] = $provider;
 }
 
 return [
