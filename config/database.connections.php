@@ -18,20 +18,6 @@ if ($databaseUrl = getenv('DATABASE_URL')) {
     $database = substr($url['path'], 1);
 }
 
-$redis_host = env('REDIS_HOST', '127.0.0.1');
-$redis_database = env('REDIS_DATABASE', '0');
-$redis_password = env('REDIS_PASSWORD', null);
-
-if ($cacheUrl = getenv('CACHE_URL')) {
-    $url = Utils::parseUrl($cacheUrl);
-
-    $redis_host = $url['host'];
-    if (isset($url['pass'])) {
-        $redis_password = $url['pass'];
-    }
-    $redis_database = isset($url['path']) ? substr($url['path'], 1) : 'cache';
-}
-
 $mysql_options = [];
 
 if (env('APP_ENV') === 'local') {

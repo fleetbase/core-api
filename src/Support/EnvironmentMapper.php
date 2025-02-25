@@ -138,7 +138,7 @@ class EnvironmentMapper
         $environmentVariables = static::getSettableEnvironmentVairables();
         foreach ($environmentVariables as $variable => $configPath) {
             $value = Setting::system($configPath);
-            if ($value && is_string($value)) {
+            if ($value && is_string($value) && !empty($value)) {
                 putenv($variable . '="' . $value . '"');
             }
         }
@@ -161,7 +161,6 @@ class EnvironmentMapper
         }
 
         static::setEnvironmentVariables();
-
         foreach (static::$settings as $setting) {
             $settingsKey = $setting['settingsKey'];
             $configKey   = $setting['configKey'];
@@ -191,6 +190,11 @@ class EnvironmentMapper
         }
 
         $value = Setting::system($settingsKey);
+        // Merge config values for array instead of complete overwrite
+        if (is_array($value) && is_array(config($configKey))) {
+            $value = array_merge(config($configKey), array_filter($value));
+        }
+
         if ($value) {
             // Fetch the current config array
             $config = config()->all();

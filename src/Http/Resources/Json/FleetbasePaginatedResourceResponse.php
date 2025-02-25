@@ -28,8 +28,14 @@ class FleetbasePaginatedResourceResponse extends PaginatedResourceResponse
         return $default;
     }
 
-    protected function meta($paginated)
+    /**
+     * Fixes pagination with additional attributes.
+     *
+     * @param array $paginated
+     */
+    protected function meta($paginated): array
     {
+        $request  = request();
         $metaData = parent::meta($paginated);
 
         return [
@@ -39,7 +45,7 @@ class FleetbasePaginatedResourceResponse extends PaginatedResourceResponse
             'last_page'    => $metaData['last_page'] ?? null,
             'from'         => $metaData['from'] ?? null,
             'to'           => $metaData['to'] ?? null,
-            'time'         => round((microtime(true) - LARAVEL_START) * 1000),
+            'time'         => round((microtime(true) - $request->attributes->get('request_start_time')) * 1000),
         ];
     }
 }

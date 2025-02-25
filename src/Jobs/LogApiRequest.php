@@ -96,7 +96,7 @@ class LogApiRequest implements ShouldQueue
         }
 
         // Get request duration
-        $duration = round(microtime(true) - LARAVEL_START, 13);
+        $duration = round(microtime(true) - $request->attributes->get('request_start_time'), 13);
 
         // Finalize payload
         $payload = array_merge($payload, [
