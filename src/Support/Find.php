@@ -20,6 +20,13 @@ class Find
      */
     public static function httpResourceForModel(Model $model, ?string $namespace = null, ?int $version = 1): ?string
     {
+        // Create a unique cache key based on the model, namespace, and version.
+        $cacheKey     = md5(get_class($model) . '|' . ($namespace ?? '') . '|' . $version);
+        static $cache = [];
+        if (isset($cache[$cacheKey])) {
+            return $cache[$cacheKey];
+        }
+
         $resourceNamespace = null;
         $defaultResourceNS = $coreResourceNS = '\\Fleetbase\\Http\\Resources\\';
         $packageName       = static::getModelPackage($model);
@@ -27,8 +34,8 @@ class Find
             $defaultResourceNS = '\\Fleetbase\\' . $packageName . '\\Http\\Resources\\';
         }
 
-        $baseNamespace     = $namespace ? $namespace . '\\Http\\Resources\\' : $defaultResourceNS;
-        $modelName         = Utils::classBasename($model);
+        $baseNamespace = $namespace ? $namespace . '\\Http\\Resources\\' : $defaultResourceNS;
+        $modelName     = Utils::classBasename($model);
 
         if (method_exists($model, 'getResource')) {
             $resourceNamespace = $model->getResource();
@@ -43,13 +50,12 @@ class Find
 
             $resourceNamespace = $baseNamespace . "v{$version}\\" . $modelName;
 
-            // if internal request but no internal resource has been declared
-            // fallback to the public resource
+            // Fallback to public resource if internal version isn’t found.
             if (!Utils::classExists($resourceNamespace)) {
                 $resourceNamespace = str_replace('Internal\\', '', $resourceNamespace);
             }
 
-            // if no versioned base resource fallback to base namespace for resource
+            // Fallback to non-versioned namespace.
             if (!Utils::classExists($resourceNamespace)) {
                 $resourceNamespace = str_replace("v{$version}\\", '', $resourceNamespace);
             }
@@ -63,7 +69,10 @@ class Find
             $resourceNamespace = $coreResourceNS . 'FleetbaseResource';
         }
 
-        return $resourceNamespace;
+        // Cache the resolved class name.
+        $cache[$cacheKey] = $resourceNamespace;
+
+        return $cache[$cacheKey];
     }
 
     /**
@@ -79,6 +88,14 @@ class Find
      */
     public static function httpRequestForModel(Model $model, ?string $namespace = null, ?int $version = 1): ?string
     {
+        // Create a unique cache key based on parameters.
+        $cacheKey = md5(get_class($model) . '|' . ($namespace ?? '') . '|' . $version . '|' . Http::action());
+
+        static $cache = [];
+        if (isset($cache[$cacheKey])) {
+            return $cache[$cacheKey];
+        }
+
         $requestNamespace = null;
         $defaultRequestNS = '\\Fleetbase\\Http\\Requests\\';
         $requestNS        = $baseNamespace = $namespace ? $namespace . '\\Http\\Requests\\' : $defaultRequestNS;
@@ -94,20 +111,14 @@ class Find
 
         if (!Utils::classExists($requestNamespace)) {
             $internal = Http::isInternalRequest();
-
             if ($internal) {
                 $baseNamespace .= 'Internal\\';
             }
-
             $requestNamespace = $baseNamespace . "v{$version}\\" . $modelName;
 
-            // if internal request but no internal resource has been declared
-            // fallback to the public resource
             if (!Utils::classExists($requestNamespace)) {
                 $requestNamespace = str_replace('Internal\\', '', $requestNamespace);
             }
-
-            // if no versioned base resource fallback to base namespace for resource
             if (!Utils::classExists($requestNamespace)) {
                 $requestNamespace = str_replace("v{$version}\\", '', $requestNamespace);
             }
@@ -120,6 +131,9 @@ class Find
         } catch (\Error|\Exception $e) {
             $requestNamespace = $defaultRequestNS . 'FleetbaseRequest';
         }
+
+        // Store the resolved value in the cache.
+        $cache[$cacheKey] = $requestNamespace;
 
         return $requestNamespace;
     }
@@ -137,6 +151,13 @@ class Find
      */
     public static function httpFilterForModel(Model $model, ?string $namespace = null, ?int $version = 1): ?string
     {
+        // Create a unique cache key based on the model, namespace, version, and a filter flag.
+        $cacheKey     = md5(get_class($model) . '|' . ($namespace ?? '') . '|' . $version . '|filter');
+        static $cache = [];
+        if (isset($cache[$cacheKey])) {
+            return $cache[$cacheKey];
+        }
+
         $namespaceSegments = explode('Models', get_class($model));
         $baseNS            = '\\' . rtrim($namespaceSegments[0], '\\');
         $filterNamespace   = null;
@@ -152,35 +173,25 @@ class Find
             $filterNamespace = $filterNs . Str::studly(ucfirst($modelName) . 'Filter');
         }
 
-        if (Utils::classExists($filterNamespace)) {
-            return $filterNamespace;
-        } else {
-            $internal = Http::isInternalRequest();
-
+        if (!Utils::classExists($filterNamespace)) {
+            $internal      = Http::isInternalRequest();
             $baseNamespace = $filterNs;
             if ($internal) {
                 $baseNamespace = $filterNs . 'Internal\\';
             }
-
             $filterNamespace = $baseNamespace . "v{$version}\\" . $modelName;
 
-            // if internal request but no internal resource has been declared
-            // fallback to the public resource
             if (!Utils::classExists($filterNamespace)) {
                 $filterNamespace = str_replace('Internal\\', '', $filterNamespace);
             }
-
-            // if no versioned base resource fallback to base namespace for resource
             if (!Utils::classExists($filterNamespace)) {
                 $filterNamespace = str_replace("v{$version}\\", '', $filterNamespace);
             }
         }
 
-        if (Utils::classExists($filterNamespace)) {
-            return $filterNamespace;
-        }
+        $cache[$cacheKey] = Utils::classExists($filterNamespace) ? $filterNamespace : null;
 
-        return null;
+        return $cache[$cacheKey];
     }
 
     public static function getModelPackage(Model $model): ?string
