@@ -24,7 +24,7 @@ class ChatChannel extends FleetbaseResource
             'public_id'                          => $this->when(Http::isInternalRequest(), $this->public_id),
             'company_uuid'                       => $this->when(Http::isInternalRequest(), $this->company_uuid),
             'created_by_uuid'                    => $this->when(Http::isInternalRequest(), $this->created_by_uuid),
-            'created_by'                         => $this->when(Http::isInternalRequest(), $this->createdBy ? $this->createdBy->public_id : null),
+            'created_by'                         => $this->when(Http::isPublicRequest(), fn () => $this->createdBy ? $this->createdBy->public_id : null),
             'name'                               => $this->name,
             'title'                              => $this->title,
             'last_message'                       => new ChatMessage($this->last_message),

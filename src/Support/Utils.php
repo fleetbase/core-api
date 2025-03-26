@@ -1011,6 +1011,30 @@ class Utils
     }
 
     /**
+     * Checks if string is base64 encoded.
+     *
+     * @param Base64 data string $string
+     *
+     * @return bool
+     */
+    public static function isBase64String($string)
+    {
+        if (!is_string($string) || trim($string) === '') {
+            return false;
+        }
+
+        // Check if string matches Base64 pattern
+        if (!preg_match('/^[a-zA-Z0-9\/\r\n+]*={0,2}$/', $string)) {
+            return false;
+        }
+
+        // Decode and check if it encodes back correctly
+        $decoded = base64_decode($string, true);
+
+        return $decoded !== false && base64_encode($decoded) === $string;
+    }
+
+    /**
      * Checks if target is iterable and gets the count.
      *
      * @param mixed target

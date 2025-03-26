@@ -28,14 +28,27 @@ class ChatChannelController extends Controller
     public function create(CreateChatChannelRequest $request)
     {
         // get request input
-        $input = $request->only(['name']);
+        $name         = $request->input('name');
+        $participants = $request->array('participants');
 
         // create the chat channel
         $chatChannel = ChatChannel::create([
             'company_uuid'    => session('company'),
             'created_by_uuid' => session('user'),
-            'name'            => strtoupper($input['name']),
+            'name'            => $name,
         ]);
+
+        // If participants provided add them
+        foreach ($participants as $userId) {
+            $user = User::where('public_id', $userId)->first();
+            if ($user) {
+                ChatParticipant::create([
+                    'company_uuid'      => session('company'),
+                    'user_uuid'         => $user->uuid,
+                    'chat_channel_uuid' => $chatChannel->uuid,
+                ]);
+            }
+        }
 
         // response the driver resource
         return new ChatChannelResource($chatChannel);
@@ -134,20 +147,23 @@ class ChatChannelController extends Controller
     }
 
     /**
-     * Query for Fleetbase Chat Channel resources.
+     * Query for available chat participants.
      *
      * @return \Fleetbase\Http\Resources\ChatChannelCollection
      */
-    public function getAvailablePartificants($id)
+    public function getAvailablePartificants(Request $request)
     {
-        $chatChannel = ChatChannel::findRecordOrFail($id);
-        $users       = User::where('company_uuid', session('company'))->get();
+        $chatChannelId = $request->input('channel');
+        $chatChannel   = $chatChannelId ? ChatChannel::where('public_id', $chatChannelId)->first() : null;
+        $users         = User::where('company_uuid', session('company'))->get();
 
-        $users->filter(function ($user) use ($chatChannel) {
-            $isPartificant = $chatChannel->participants->firstWhere('user_uuid', $user->uuid);
+        if ($chatChannel) {
+            $users = $users->filter(function ($user) use ($chatChannel) {
+                $isParticipant = $chatChannel->participants->firstWhere('user_uuid', $user->uuid);
 
-            return !$isPartificant;
-        });
+                return !$isParticipant;
+            });
+        }
 
         return UserResource::collection($users);
     }

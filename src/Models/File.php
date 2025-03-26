@@ -360,6 +360,42 @@ class File extends Model
         return static::create($data);
     }
 
+    public static function createFromBase64(string $base64, ?string $fileName = null, string $path = 'uploads', ?string $type = 'image', ?string $contentType = 'image/png', ?int $size = null, ?string $disk = null, ?string $bucket = null): bool|File
+    {
+        $disk     = is_null($disk) ? config('filesystems.default') : $disk;
+        $bucket   = is_null($bucket) ? config('filesystems.disks.' . $disk . '.bucket', config('filesystems.disks.s3.bucket')) : $bucket;
+        $size     = is_null($size) ? Utils::getBase64ImageSize($base64) : $size;
+        $fileName = is_null($fileName) ? static::randomFileName() : $fileName;
+
+        // Correct $path for uploads
+        if (Str::startsWith($path, 'uploads') && $disk === 'uploads') {
+            $path = str_replace('uploads/', '', $path);
+        }
+
+        // Set the full file path
+        $fullPath = $path . '/' . $fileName;
+        $uploaded = Storage::disk($disk)->put($fullPath, base64_decode($base64));
+        if (!$uploaded) {
+            return false;
+        }
+
+        // Prepare file data
+        $data = [
+            'company_uuid'      => session('company'),
+            'uploader_uuid'     => session('user'),
+            'disk'              => $disk,
+            'original_filename' => basename($fullPath),
+            'extension'         => 'png',
+            'content_type'      => $contentType,
+            'path'              => $fullPath,
+            'bucket'            => $bucket,
+            'type'              => $type,
+            'size'              => $size,
+        ];
+
+        return static::create($data);
+    }
+
     /**
      * Retrieves the hash name of the file based on its path.
      *
