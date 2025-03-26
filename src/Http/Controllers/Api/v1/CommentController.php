@@ -92,7 +92,7 @@ class CommentController extends Controller
         } catch (ModelNotFoundException $exception) {
             return response()->json(
                 [
-                    'error' => 'Chat channel resource not found.',
+                    'error' => 'Comment resource not found.',
                 ],
                 404
             );
@@ -122,9 +122,9 @@ class CommentController extends Controller
     }
 
     /**
-     * Finds a single Fleetbase Chat Channel resources.
+     * Finds a single Fleetbase Comment resources.
      *
-     * @return \Fleetbase\Http\Resources\ChatChannelCollection
+     * @return \Fleetbase\Http\Resources\CommentCollection
      */
     public function find($id)
     {
@@ -132,7 +132,7 @@ class CommentController extends Controller
         try {
             $comment = Comment::findRecordOrFail($id);
         } catch (ModelNotFoundException $exception) {
-            return response()->apiError('Chat channel resource not found.', 404);
+            return response()->apiError('Comment resource not found.', 404);
         } catch (\Throwable $e) {
             return response()->apiError('Uknown error occured trying to find the comment.', 404);
         }
@@ -152,7 +152,7 @@ class CommentController extends Controller
         try {
             $comment = Comment::findRecordOrFail($id);
         } catch (ModelNotFoundException $exception) {
-            return response()->apiError('Chat channel resource not found.', 404);
+            return response()->apiError('Comment resource not found.', 404);
         } catch (\Throwable $e) {
             return response()->apiError('Uknown error occured trying to find the comment.', 404);
         }
