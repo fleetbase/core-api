@@ -2,14 +2,12 @@
 
 namespace Fleetbase\Notifications;
 
+use Fleetbase\Support\PushNotification;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Carbon;
 use NotificationChannels\Apn\ApnChannel;
-use NotificationChannels\Apn\ApnMessage;
 use NotificationChannels\Fcm\FcmChannel;
-use NotificationChannels\Fcm\FcmMessage;
-use NotificationChannels\Fcm\Resources\Notification as FcmNotification;
 
 /**
  * Class TestPushNotification.
@@ -70,26 +68,7 @@ class TestPushNotification extends Notification
      */
     public function toFcm($notifiable)
     {
-        return (new FcmMessage(notification: new FcmNotification(
-            title: $this->title,
-            body: $this->message,
-        )))
-        ->data($this->data)
-        ->custom([
-            'android' => [
-                'notification' => [
-                    'color' => '#4391EA',
-                ],
-                'fcm_options' => [
-                    'analytics_label' => 'analytics',
-                ],
-            ],
-            'apns' => [
-                'fcm_options' => [
-                    'analytics_label' => 'analytics',
-                ],
-            ],
-        ]);
+        return PushNotification::createFcmMessage($this->title, $this->message, $this->data);
     }
 
     /**
@@ -99,15 +78,6 @@ class TestPushNotification extends Notification
      */
     public function toApn($notifiable)
     {
-        $message = ApnMessage::create()
-            ->badge(1)
-            ->title($this->title)
-            ->body($this->message);
-
-        foreach ($this->data as $key => $value) {
-            $message->custom($key, $value);
-        }
-
-        return $message;
+        return PushNotification::createApnMessage($this->title, $this->message, $this->data, 'test_push_notification');
     }
 }

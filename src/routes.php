@@ -53,6 +53,9 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                 $router->group(
                     ['prefix' => 'chat-channels'],
                     function ($router) {
+                        $router->get('available-participants', 'ChatChannelController@getAvailablePartificants');
+                        $router->post('{id}/send-message', 'ChatChannelController@sendMessage');
+                        $router->delete('delete-message/{messageId}', 'ChatChannelController@deleteMessage');
                         $router->post('/', 'ChatChannelController@create');
                         $router->put('{id}', 'ChatChannelController@update');
                         $router->get('/', 'ChatChannelController@query');
@@ -60,9 +63,16 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                         $router->delete('{id}', 'ChatChannelController@delete');
                         $router->post('{id}/add-participant', 'ChatChannelController@addParticipant');
                         $router->delete('remove-participant/{participantId}', 'ChatChannelController@removeParticipant');
-                        $router->get('{id}/available-participants', 'ChatChannelController@getAvailablePartificants');
-                        $router->post('{id}/send-message', 'ChatChannelController@sendMessage');
-                        $router->delete('delete-message/{messageId}', 'ChatChannelController@deleteMessage');
+                    }
+                );
+                $router->group(
+                    ['prefix' => 'comments'],
+                    function ($router) {
+                        $router->post('/', 'CommentController@create');
+                        $router->put('{id}', 'CommentController@update');
+                        $router->get('/', 'CommentController@query');
+                        $router->get('{id}', 'CommentController@find');
+                        $router->delete('{id}', 'CommentController@delete');
                     }
                 );
             });

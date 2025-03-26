@@ -3,6 +3,7 @@
 namespace Fleetbase\Http\Middleware;
 
 use Fleetbase\Jobs\LogApiRequest;
+use Fleetbase\Support\Http;
 use Fleetbase\Traits\CustomMiddleware;
 
 class LogApiRequests
@@ -23,8 +24,10 @@ class LogApiRequests
         // get the response
         $response = $next($request);
 
-        // log api request
-        $this->logApiRequest($request, $response);
+        // Only log public api request - do not log internal requests
+        if (Http::isPublicRequest($request)) {
+            $this->logApiRequest($request, $response);
+        }
 
         return $response;
     }

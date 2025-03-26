@@ -17,6 +17,14 @@ class CommentFilter extends Filter
         $this->queryForInternal();
     }
 
+    public function subject(string $id)
+    {
+        $this->builder->whereHas('subject', function ($query) use ($id) {
+            $query->where('uuid', $id);
+            $query->orWhere('public_id', $id);
+        });
+    }
+
     public function parent(string $id)
     {
         if (Str::isUuid($id)) {

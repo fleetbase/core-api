@@ -47,7 +47,7 @@ class ChatMessage extends Model
      */
     public function sender()
     {
-        return $this->belongsTo(ChatParticipant::class, 'sender_uuid', 'uuid');
+        return $this->belongsTo(ChatParticipant::class, 'sender_uuid', 'uuid')->withTrashed();
     }
 
     /**
