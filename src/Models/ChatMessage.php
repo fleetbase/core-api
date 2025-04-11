@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Models;
 
+use Fleetbase\Notifications\ChatMessageReceived;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasUuid;
@@ -72,5 +73,33 @@ class ChatMessage extends Model
     public function receipts()
     {
         return $this->hasMany(ChatReceipt::class, 'chat_message_uuid', 'uuid')->whereHas('participant');
+    }
+
+    /**
+     * Notify all participants in the chat channel (excluding the sender) of a new chat message.
+     *
+     * This method iterates through all chat participants, filters out the sender,
+     * and sends a `ChatMessageReceived` notification to each recipient.
+     */
+    public function notifyParticipants(): void
+    {
+        $this->loadMissing('chatChannel');
+        if (!$this->chatChannel) {
+            // Fail silently
+            return;
+        }
+
+        if (!$this->chatChannel->relationLoaded('participants')) {
+            $this->chatChannel->load('participants.user');
+        }
+
+        $recipients = $this->chatChannel->participants
+            ->filter(function ($participant) {
+                return $participant->uuid !== $this->sender_uuid && $participant->user;
+            });
+
+        foreach ($recipients as $recipient) {
+            $recipient->user->notify(new ChatMessageReceived($this, $recipient));
+        }
     }
 }

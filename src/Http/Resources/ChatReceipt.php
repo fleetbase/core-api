@@ -16,12 +16,12 @@ class ChatReceipt extends FleetbaseResource
     public function toArray($request)
     {
         return [
-            'id'                                           => $this->when(Http::isInternalRequest(), $this->id, $this->public_id),
+            'id'                                           => $this->when(Http::isInternalRequest(), $this->id),
             'uuid'                                         => $this->when(Http::isInternalRequest(), $this->uuid),
             'chat_message_uuid'                            => $this->when(Http::isInternalRequest(), $this->chat_message_uuid),
-            'chat_message'                                 => $this->when(Http::isInternalRequest(), $this->chatMessage->public_id),
+            'chat_message'                                 => $this->when(Http::isPublicRequest(), $this->chatMessage->public_id),
             'participant_uuid'                             => $this->when(Http::isInternalRequest(), $this->participant_uuid),
-            'participant'                                  => $this->when(Http::isInternalRequest(), $this->participant->public_id),
+            'participant'                                  => $this->when(Http::isPublicRequest(), $this->participant->public_id),
             'participant_name'                             => $this->participant_name,
             'read_at'                                      => $this->read_at,
             'updated_at'                                   => $this->updated_at,

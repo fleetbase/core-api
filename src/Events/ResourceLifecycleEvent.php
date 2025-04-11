@@ -269,6 +269,7 @@ class ResourceLifecycleEvent implements ShouldBroadcastNow
         if ($publicId && Utils::isPublicId($publicId)) {
             $channels[] = new Channel('chat.' . $publicId);
         }
+
         if ($uuid && Str::isUuid($uuid)) {
             $channels[] = new Channel('chat.' . $uuid);
         }

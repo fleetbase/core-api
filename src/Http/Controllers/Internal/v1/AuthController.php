@@ -575,24 +575,28 @@ class AuthController extends Controller
      */
     public function joinOrganization(JoinOrganizationRequest $request)
     {
-        $company = Company::where('public_id', $request->input('next'))->first();
-        $user    = $request->user();
+        try {
+            $company = Company::where('public_id', $request->input('next'))->first();
+            $user    = Auth::getUserFromSession($request);
 
-        // Make sure user has been invited to join organizations
-        $isAlreadyInvited = Invite::isAlreadySentToJoinCompany($user, $company);
-        if (!$isAlreadyInvited) {
-            return response()->error('User has not been invited to join this organization.');
+            // Make sure user has been invited to join organizations
+            $isAlreadyInvited = Invite::isAlreadySentToJoinCompany($user, $company);
+            if (!$isAlreadyInvited) {
+                return response()->error('User has not been invited to join this organization.');
+            }
+
+            // Make sure user isn't already a member of this organization
+            if ($company->uuid === $user->company_uuid) {
+                return response()->error('User is already a member of this organization.');
+            }
+
+            $company->assignUser($user);
+            Auth::setSession($user);
+
+            return response()->json(['status' => 'ok']);
+        } catch (\Exception $e) {
+            return response()->error(app()->hasDebugModeEnabled() ? $e->getMessage() : 'Unable to join organization.');
         }
-
-        // Make sure user isn't already a member of this organization
-        if ($company->uuid === $user->company_uuid) {
-            return response()->error('User is already a member of this organization.');
-        }
-
-        $company->assignUser($user);
-        Auth::setSession($user);
-
-        return response()->json(['status' => 'ok']);
     }
 
     /**
