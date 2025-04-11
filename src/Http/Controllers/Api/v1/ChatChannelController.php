@@ -8,12 +8,14 @@ use Fleetbase\Http\Requests\UpdateChatChannelRequest;
 use Fleetbase\Http\Resources\ChatChannel as ChatChannelResource;
 use Fleetbase\Http\Resources\ChatMessage as ChatMessageResource;
 use Fleetbase\Http\Resources\ChatParticipant as ChatParticipantResource;
+use Fleetbase\Http\Resources\ChatReceipt as ChatReceiptResource;
 use Fleetbase\Http\Resources\DeletedResource;
 use Fleetbase\Http\Resources\User as UserResource;
 use Fleetbase\Models\ChatAttachment;
 use Fleetbase\Models\ChatChannel;
 use Fleetbase\Models\ChatMessage;
 use Fleetbase\Models\ChatParticipant;
+use Fleetbase\Models\ChatReceipt;
 use Fleetbase\Models\File;
 use Fleetbase\Models\User;
 use Illuminate\Http\Request;
@@ -271,7 +273,7 @@ class ChatChannelController extends Controller
 
         // Get the message contents and attachment file id
         $content          = $request->input('content');
-        $attachmentFileId = $request->input('file');
+        $attachments      = $request->array('files');
 
         // Create chat message
         $chatMessage = ChatMessage::create([
@@ -282,31 +284,31 @@ class ChatChannelController extends Controller
         ]);
 
         // If has attachment create chat attachment
-        if ($attachmentFileId) {
-            // Find for the file sent as attachment
-            try {
-                $file = File::findRecordOrFail($attachmentFileId);
-            } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $exception) {
-                // Delete message as it failed to send
-                $chatMessage->delete();
+        if ($attachments) {
+            foreach ($attachments as $attachmentFileId) {
+                // Find for the file sent as attachment
+                try {
+                    $file = File::findRecordOrFail($attachmentFileId);
+                } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $exception) {
+                    // Delete message as it failed to send
+                    $chatMessage->delete();
 
-                return response()->json(
-                    [
-                        'error' => 'File not sent as attachment not found.',
-                    ],
-                    422
-                );
+                    return response()->apiError('Attachment file not found.');
+                }
+
+                $chatAttachment = ChatAttachment::create([
+                    'company_uuid'      => session('company'),
+                    'chat_channel_uuid' => $chatChannel->uuid,
+                    'chat_message_uuid' => $chatMessage->uuid,
+                    'sender_uuid'       => $sender->uuid,
+                    'file_uuid'         => $file->uuid,
+                ]);
+                $chatMessage->attachments->push($chatAttachment);
             }
-
-            $chatAttachment = ChatAttachment::create([
-                'company_uuid'      => session('company'),
-                'chat_channel_uuid' => $chatChannel->uuid,
-                'chat_message_uuid' => $chatMessage->uuid,
-                'sender_uuid'       => $sender->uuid,
-                'file_uuid'         => $file->uuid,
-            ]);
-            $chatMessage->attachments->push($chatAttachment);
         }
+
+        // Notify participants
+        $chatMessage->notifyParticipants();
 
         return new ChatMessageResource($chatMessage);
     }
@@ -314,25 +316,73 @@ class ChatChannelController extends Controller
     /**
      * Deletes a message from a chat channel.
      *
+     * @param string $chatMessageId The chat message being read
+     *
      * @return DeletedResource
      */
-    public function deleteMessage($messageId)
+    public function deleteMessage($chatMessageId)
     {
         // Find the chat message from the public id
         try {
-            $chatMessage = ChatMessage::findRecordOrFail($messageId);
+            $chatMessage = ChatMessage::findRecordOrFail($chatMessageId);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $exception) {
-            return response()->json(
-                [
-                    'error' => 'Chat message resource not found.',
-                ],
-                422
-            );
+            return response()->apiError('Chat message resource not found.', 404);
         }
 
         // Delete the chat message
         $chatMessage->delete();
 
         return new DeletedResource($chatMessage);
+    }
+
+    /**
+     * Create a read receipt for a given chat message and participant.
+     *
+     * This method checks if a read receipt already exists for the specified message and participant
+     * within the current company context. If it does not exist, it creates a new read receipt.
+     *
+     * @param string  $chatMessageId The chat message being read
+     * @param Request $request       the HTTP request instance containing `participant` public ID
+     *
+     * @return \Illuminate\Http\Response|\App\Http\Resources\ChatReceiptResource
+     */
+    public function createReadReceipt($chatMessageId, Request $request)
+    {
+        $chatParticipantId = $request->input('participant');
+        $companyUuid       = session('company');
+
+        // Load models
+        $chatMessage     = ChatMessage::where('public_id', $chatMessageId)->first();
+        $chatParticipant = ChatParticipant::where('public_id', $chatParticipantId)->first();
+
+        // Guard clauses for invalid references
+        if (!$chatMessage || !$chatParticipant) {
+            return response()->apiError('Invalid message or participant reference.', 404);
+        }
+
+        // Check for existing receipt
+        $existingChatReceipt = ChatReceipt::where('company_uuid', $companyUuid)
+            ->where('chat_message_uuid', $chatMessage->uuid)
+            ->where('participant_uuid', $chatParticipant->uuid)
+            ->first();
+
+        if ($existingChatReceipt) {
+            return new ChatReceiptResource($existingChatReceipt);
+        }
+
+        // Create new receipt
+        try {
+            $chatReceipt = ChatReceipt::create([
+                'company_uuid'       => $companyUuid,
+                'chat_message_uuid'  => $chatMessage->uuid,
+                'participant_uuid'   => $chatParticipant->uuid,
+            ]);
+
+            return new ChatReceiptResource($chatReceipt);
+        } catch (\Exception $e) {
+            $message = app()->hasDebugModeEnabled() ? $e->getMessage() : 'Unable to create read receipt.';
+
+            return response()->apiError($message);
+        }
     }
 }

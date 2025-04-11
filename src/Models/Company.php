@@ -445,7 +445,7 @@ class Company extends Model
      *
      * @return CompanyUser the CompanyUser instance representing the association between the user and the company
      */
-    public function assignUser(User $user, ?string $role = null): CompanyUser
+    public function assignUser(User $user, string $role = 'Administrator'): CompanyUser
     {
         $companyUser = $this->addUser($user, $role);
         $user->assignCompany($this);

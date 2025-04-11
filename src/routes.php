@@ -55,7 +55,8 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                     function ($router) {
                         $router->get('available-participants', 'ChatChannelController@getAvailablePartificants');
                         $router->post('{id}/send-message', 'ChatChannelController@sendMessage');
-                        $router->delete('delete-message/{messageId}', 'ChatChannelController@deleteMessage');
+                        $router->delete('delete-message/{chatMessageId}', 'ChatChannelController@deleteMessage');
+                        $router->post('read-message/{chatMessageId}', 'ChatChannelController@createReadReceipt');
                         $router->post('/', 'ChatChannelController@create');
                         $router->put('{id}', 'ChatChannelController@update');
                         $router->get('/', 'ChatChannelController@query');

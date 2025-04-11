@@ -39,6 +39,9 @@ class ChatMessageController extends FleetbaseController
                 }
             });
 
+            // Notify participants
+            $record->notifyParticipants();
+
             return ['chatMessage' => new $this->resource($record)];
         } catch (\Exception $e) {
             return response()->error($e->getMessage());
