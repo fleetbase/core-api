@@ -96,7 +96,9 @@ class PushNotification
         // Always unsetset apn `private_key_path` and `private_key_file`
         unset($config['private_key_path'], $config['private_key_file']);
 
-        return new PushOkClient(PuskOkToken::create($config));
+        $isProductionEnv = Utils::castBoolean(data_get($config, 'production', app()->isProduction()));
+
+        return new PushOkClient(PuskOkToken::create($config), $isProductionEnv);
     }
 
     public static function configureFcmClient()
