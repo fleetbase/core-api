@@ -3,6 +3,7 @@
 namespace Fleetbase\Support;
 
 use Fleetbase\Models\Setting;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
@@ -161,10 +162,23 @@ class NotificationRegistry
 
         // iterate through each notifiable types and get records
         foreach (static::$notifiables as $notifiableClass) {
+            // If dynamic create a string representation
+            if (Str::startsWith($notifiableClass, 'dynamic:')) {
+                $dynamicNotifiable = str_replace('dynamic:', '', $notifiableClass);
+                $notifiables[] = [
+                    'label'      => 'Dynamic: ' . Str::title($dynamicNotifiable),
+                    'key'        => $dynamicNotifiable,
+                    'primaryKey' => 'uuid',
+                    'definition' => $notifiableClass,
+                    'value'      => $notifiableClass,
+                ];
+                continue;
+            }
+
             $notifiableModel = app($notifiableClass);
             $type            = class_basename($notifiableClass);
 
-            if ($notifiableModel && $notifiableModel instanceof \Illuminate\Database\Eloquent\Model) {
+            if ($notifiableModel && $notifiableModel instanceof Model) {
                 $table            = $notifiableModel->getTable();
                 $modelClass       = get_class($notifiableModel);
                 $hasCompanyColumn = Schema::hasColumn($table, 'company_uuid');
@@ -246,7 +260,7 @@ class NotificationRegistry
 
             if (is_array($notifiables)) {
                 foreach ($notifiables as $notifiable) {
-                    $notifiableModel = static::resolveNotifiable($notifiable);
+                    $notifiableModel = static::resolveNotifiable($notifiable, ...$params);
 
                     // if has multiple notifiables
                     if (isset($notifiableModel->containsMultipleNotifiables) && is_string($notifiableModel->containsMultipleNotifiables)) {
@@ -332,16 +346,34 @@ class NotificationRegistry
      *
      * @return \Illuminate\Database\Eloquent\Model|null the Eloquent model or null if it cannot be resolved
      */
-    protected static function resolveNotifiable(array $notifiableObject): ?\Illuminate\Database\Eloquent\Model
+    protected static function resolveNotifiable(array $notifiableObject, $subject): ?Model
     {
         $definition = data_get($notifiableObject, 'definition');
         $primaryKey = data_get($notifiableObject, 'primaryKey');
         $key        = data_get($notifiableObject, 'key');
 
+        // Handle dynamic subject resolution
+        if (Str::startsWith($definition, 'dynamic:')) {
+            $property = str_replace('dynamic:', '', $definition);
+            if ($subject instanceof Model) {
+                if (method_exists($subject, 'resolveDynamicNotifiable')) {
+                    $modelInstance = $subject->resolveDynamicNotifiable($property);
+                } else {
+                    $modelInstance = $subject->{$property};
+                }
+                
+                if ($modelInstance instanceof Model) {
+                    return $modelInstance;
+                }
+            }
+
+            return null;
+        }
+
         // resolve the notifiable
         $modelInstance = app($definition);
 
-        if ($modelInstance instanceof \Illuminate\Database\Eloquent\Model) {
+        if ($modelInstance instanceof Model) {
             return $modelInstance->where($primaryKey, $key)->first();
         }
 
