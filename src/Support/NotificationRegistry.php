@@ -165,7 +165,7 @@ class NotificationRegistry
             // If dynamic create a string representation
             if (Str::startsWith($notifiableClass, 'dynamic:')) {
                 $dynamicNotifiable = str_replace('dynamic:', '', $notifiableClass);
-                $notifiables[] = [
+                $notifiables[]     = [
                     'label'      => 'Dynamic: ' . Str::title($dynamicNotifiable),
                     'key'        => $dynamicNotifiable,
                     'primaryKey' => 'uuid',
@@ -344,7 +344,7 @@ class NotificationRegistry
      *
      * @param array $notifiableObject an associative array containing the definition and primary key to resolve the notifiable object
      *
-     * @return \Illuminate\Database\Eloquent\Model|null the Eloquent model or null if it cannot be resolved
+     * @return Model|null the Eloquent model or null if it cannot be resolved
      */
     protected static function resolveNotifiable(array $notifiableObject, $subject): ?Model
     {
@@ -361,7 +361,7 @@ class NotificationRegistry
                 } else {
                     $modelInstance = $subject->{$property};
                 }
-                
+
                 if ($modelInstance instanceof Model) {
                     return $modelInstance;
                 }

@@ -4,7 +4,6 @@ namespace Fleetbase\Auth;
 
 use Google_Client as GoogleClient;
 use GuzzleHttp\Client as GuzzleClient;
-use Illuminate\Support\Facades\Log;
 
 class GoogleVerifier
 {
@@ -29,7 +28,7 @@ class GoogleVerifier
 
             return null;
         } catch (\Exception $e) {
-            Log::error('Google ID Token verification failed: ' . $e->getMessage());
+            logger()->error('Google ID Token verification failed: ' . $e->getMessage());
 
             return null;
         }

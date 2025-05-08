@@ -2588,8 +2588,13 @@ class Utils
      * $result = arrayFrom($person);
      * // Result: ['name' => 'John', 'age' => 30]
      */
-    public static function arrayFrom(array|string|object $target): array
+    public static function arrayFrom(array|string|object|null $target): array
     {
+        // if target is null return empty array
+        if (is_null($target)) {
+            return [];
+        }
+
         if (is_array($target)) {
             // If the target is already an array, return it as is.
             return $target;
