@@ -7,7 +7,8 @@ $database = env('DB_DATABASE', 'fleetbase');
 $username = env('DB_USERNAME', 'fleetbase');
 $password = env('DB_PASSWORD', '');
 
-if ($databaseUrl = getenv('DATABASE_URL')) {
+$databaseUrl = getenv('DATABASE_URL');
+if (!empty($databaseUrl)) {
     $url = Utils::parseUrl($databaseUrl);
 
     $host = $url['host'];

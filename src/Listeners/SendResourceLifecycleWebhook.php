@@ -13,7 +13,6 @@ use Fleetbase\Webhook\WebhookCall;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\PersonalAccessToken;
 
@@ -65,7 +64,7 @@ class SendResourceLifecycleWebhook implements ShouldQueue
             // log the api event
             $apiEvent = ApiEvent::create($eventData);
         } catch (\Exception|QueryException $e) {
-            Log::error($e->getMessage());
+            logger()->error($e->getMessage());
 
             return;
         }
@@ -110,7 +109,7 @@ class SendResourceLifecycleWebhook implements ShouldQueue
                 $request  = $exception->getRequest();
 
                 // Log error
-                Log::error($exception->getMessage());
+                logger()->error($exception->getMessage());
 
                 // Prepare log data
                 $webhookRequestLogData = [

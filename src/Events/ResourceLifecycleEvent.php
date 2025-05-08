@@ -14,7 +14,6 @@ use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class ResourceLifecycleEvent implements ShouldBroadcastNow
@@ -150,7 +149,7 @@ class ResourceLifecycleEvent implements ShouldBroadcastNow
     {
         $model              = $this->getModelRecord();
         if (!$model) {
-            Log::error('Unable to resolve a model to broadcast for', $this->getInternalEventData());
+            logger()->error('Unable to resolve a model to broadcast for', $this->getInternalEventData());
 
             return [];
         }
@@ -342,7 +341,7 @@ class ResourceLifecycleEvent implements ShouldBroadcastNow
     {
         $model               = $this->getModelRecord();
         if (!$model) {
-            Log::error('Unable to resolve a model to get event data for', $this->getInternalEventData());
+            logger()->error('Unable to resolve a model to get event data for', $this->getInternalEventData());
 
             return [];
         }

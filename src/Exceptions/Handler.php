@@ -5,7 +5,6 @@ namespace Fleetbase\Exceptions;
 use Fleetbase\Support\Utils;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
-use Illuminate\Support\Facades\Log;
 
 class Handler extends ExceptionHandler
 {
@@ -62,7 +61,7 @@ class Handler extends ExceptionHandler
     public function report(\Throwable $exception)
     {
         // Log to CloudWatch
-        Log::error($this->getCloudwatchLoggableException($exception));
+        logger()->error($this->getCloudwatchLoggableException($exception));
 
         parent::report($exception);
     }
