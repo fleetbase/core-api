@@ -52,7 +52,7 @@ class Category extends FleetbaseResource
             'parent'        => $this->when($request->boolean('with_parent') && !$withoutParent, new Category($this->parentCategory, ['without_subcategories' => true])),
             'tags'          => $this->tags ?? [],
             'translations'  => $this->translations ?? [],
-            'meta'          => $this->meta ?? [],
+            'meta'          => data_get($this, 'meta', Utils::createObject()),
             'subcategories' => $this->when($request->has('with_subcategories') && !$withoutSubcategories, $this->subCategories->mapInto(Category::class)),
             'for'           => $this->for,
             'order'         => $this->order,

@@ -3,6 +3,7 @@
 namespace Fleetbase\Http\Resources;
 
 use Fleetbase\Support\Http;
+use Fleetbase\Support\Utils;
 
 class File extends FleetbaseResource
 {
@@ -27,7 +28,7 @@ class File extends FleetbaseResource
             'file_size'                  => $this->file_size,
             'caption'                    => $this->caption,
             'type'                       => $this->type,
-            'meta'                       => data_get($this, 'meta', []),
+            'meta'                       => data_get($this, 'meta', Utils::createObject()),
             'updated_at'                 => $this->updated_at,
             'created_at'                 => $this->created_at,
         ];
