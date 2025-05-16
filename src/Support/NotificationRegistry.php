@@ -66,6 +66,14 @@ class NotificationRegistry
     }
 
     /**
+     * Get all registered notifications for a specified package.
+     */
+    public static function getNotificationsByPackage(string $package): array
+    {
+        return collect(static::$notifications)->where('package', $package)->values()->all();
+    }
+
+    /**
      * Register a notifiable.
      *
      * @param string|array $notifiableClass the class of the notifiable
@@ -243,7 +251,7 @@ class NotificationRegistry
         }
 
         // resolve settings for notification
-        $notificationSettings = Setting::lookup('notification_settings');
+        $notificationSettings = Setting::lookupCompany('notification_settings');
 
         // Get the notification class definition
         $definition = static::findNotificationRegistrationByDefinition($notificationClass);

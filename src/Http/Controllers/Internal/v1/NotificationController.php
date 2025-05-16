@@ -118,9 +118,14 @@ class NotificationController extends FleetbaseController
      */
     public function registry()
     {
-        return response()->json(NotificationRegistry::$notifications);
+        return response()->json(NotificationRegistry::getNotificationsByPackage('core'));
     }
 
+    /**
+     * Get list of all valid notifiables.
+     *
+     * @return \Illuminate\Http\JsonResponse The JSON response
+     */
     public function notifiables()
     {
         return response()->json(NotificationRegistry::getNotifiables());
@@ -141,7 +146,8 @@ class NotificationController extends FleetbaseController
         if (!is_array($notificationSettings)) {
             throw new \Exception('Invalid notification settings data.');
         }
-        Setting::configure('notification_settings', $notificationSettings);
+        $currentNotificationSettings = Setting::lookupCompany('notification_settings');
+        Setting::configureCompany('notification_settings', array_merge($currentNotificationSettings, $notificationSettings));
 
         return response()->json([
             'status'  => 'ok',
@@ -156,7 +162,7 @@ class NotificationController extends FleetbaseController
      */
     public function getSettings()
     {
-        $notificationSettings = Setting::lookup('notification_settings');
+        $notificationSettings = Setting::lookupCompany('notification_settings');
 
         return response()->json([
             'status'               => 'ok',

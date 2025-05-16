@@ -7,7 +7,7 @@ use Fleetbase\Support\Resolve;
 use Fleetbase\Support\Utils;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -16,7 +16,7 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
-class ResourceLifecycleEvent implements ShouldBroadcastNow
+class ResourceLifecycleEvent implements ShouldBroadcast
 {
     use Dispatchable;
     use InteractsWithSockets;
@@ -122,30 +122,24 @@ class ResourceLifecycleEvent implements ShouldBroadcastNow
 
     /**
      * The event's broadcast name.
-     *
-     * @return string
      */
-    public function broadcastAs()
+    public function broadcastAs(): string
     {
         return $this->modelName . '.' . $this->eventName;
     }
 
     /**
      * Get the data to broadcast.
-     *
-     * @return array
      */
-    public function broadcastWith()
+    public function broadcastWith(): array
     {
         return $this->getEventData();
     }
 
     /**
      * Get the channels the event should broadcast on.
-     *
-     * @return Channel|array
      */
-    public function broadcastOn()
+    public function broadcastOn(): array|Channel
     {
         $model              = $this->getModelRecord();
         if (!$model) {
@@ -170,7 +164,7 @@ class ResourceLifecycleEvent implements ShouldBroadcastNow
      *
      * @return array initialized channels array
      */
-    protected function initializeChannels($model)
+    protected function initializeChannels($model): array
     {
         $companySession = session('company', $model->company_uuid);
 
@@ -283,7 +277,7 @@ class ResourceLifecycleEvent implements ShouldBroadcastNow
      *
      * @return string|null the chat channel's public ID, or null if it cannot be determined
      */
-    protected function getChatChannelPublicId($model)
+    protected function getChatChannelPublicId($model): ?string
     {
         if ($this->modelName === 'chat_channel') {
             return $model->public_id;
@@ -301,7 +295,7 @@ class ResourceLifecycleEvent implements ShouldBroadcastNow
      *
      * @return string|null the chat channel's UUID, or null if it cannot be determined
      */
-    protected function getChatChannelUuid($model)
+    protected function getChatChannelUuid($model): ?string
     {
         if ($this->modelName === 'chat_channel') {
             return $model->uuid;
@@ -337,7 +331,7 @@ class ResourceLifecycleEvent implements ShouldBroadcastNow
      *               This array includes fields like 'id' for the event ID, 'api_version', 'event' for the event type,
      *               'created_at' for the timestamp, and 'data' containing the transformed model information.
      */
-    public function getEventData()
+    public function getEventData(): array
     {
         $model               = $this->getModelRecord();
         if (!$model) {

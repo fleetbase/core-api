@@ -4,6 +4,7 @@ namespace Fleetbase\Http\Resources;
 
 use Fleetbase\Support\Auth;
 use Fleetbase\Support\Http;
+use Fleetbase\Support\Utils;
 
 class ChatChannel extends FleetbaseResource
 {
@@ -32,7 +33,7 @@ class ChatChannel extends FleetbaseResource
             'slug'                               => $this->slug,
             'feed'                               => $this->resource_feed,
             'participants'                       => ChatParticipant::collection($this->participants),
-            'meta'                               => $this->meta,
+            'meta'                               => data_get($this, 'meta', Utils::createObject()),
             'updated_at'                         => $this->updated_at,
             'created_at'                         => $this->created_at,
             'deleted_at'                         => $this->deleted_at,

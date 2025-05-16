@@ -3,6 +3,7 @@
 namespace Fleetbase\Http\Resources;
 
 use Fleetbase\Support\Http;
+use Fleetbase\Support\Utils;
 
 class Comment extends FleetbaseResource
 {
@@ -26,7 +27,7 @@ class Comment extends FleetbaseResource
             'subject_type'          => $this->when(Http::isInternalRequest(), $this->subject_type),
             'content'               => $this->content,
             'tags'                  => $this->tags,
-            'meta'                  => $this->meta,
+            'meta'                  => data_get($this, 'meta', Utils::createObject()),
             'author'                => new Author($this->author),
             'replies'               => static::collection($this->replies),
             'editable'              => $request->hasSession() && session('user') === $this->author_uuid,
