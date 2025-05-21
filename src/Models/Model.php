@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Models;
 
+use Fleetbase\Support\Auth;
 use Fleetbase\Traits\ClearsHttpCache;
 use Fleetbase\Traits\Expandable;
 use Fleetbase\Traits\Filterable;
@@ -155,5 +156,15 @@ class Model extends EloquentModel
         }
 
         return $filterNamespace;
+    }
+
+    /**
+     * Serialize datetime columns using the users timezone.
+     */
+    protected function serializeDate(\DateTimeInterface $date): string
+    {
+        $tz = Auth::getUserTimezone();
+
+        return \Carbon\Carbon::instance($date)->timezone($tz)->format($this->dateFormat ?: 'Y-m-d H:i:s');
     }
 }

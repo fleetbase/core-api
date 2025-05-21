@@ -4,6 +4,7 @@ namespace Fleetbase\Providers;
 
 use Fleetbase\Support\EnvironmentMapper;
 use Fleetbase\Support\NotificationRegistry;
+use Fleetbase\Support\Telemetry;
 use Fleetbase\Support\Utils;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Arr;
@@ -85,6 +86,7 @@ class CoreServiceProvider extends ServiceProvider
         \Fleetbase\Console\Commands\PurgeScheduledTaskLogs::class,
         \Fleetbase\Console\Commands\PurgeOrphanedModelRecords::class,
         \Fleetbase\Console\Commands\BackupDatabase\MysqlS3Backup::class,
+        \Fleetbase\Console\Commands\TelemetryPing::class,
     ];
 
     /**
@@ -128,6 +130,8 @@ class CoreServiceProvider extends ServiceProvider
      */
     public function boot()
     {
+        Telemetry::ping();
+
         $this->__hotfixCommonmarkDeprecation();
         $this->registerCommands();
         $this->scheduleCommands(function ($schedule) {
@@ -137,6 +141,7 @@ class CoreServiceProvider extends ServiceProvider
             $schedule->command('purge:webhook-logs --force --no-interaction')->daily();
             $schedule->command('purge:activity-logs --force --no-interaction')->daily();
             $schedule->command('purge:scheduled-task-logs --force --no-interaction')->daily();
+            $schedule->command('telemetry:ping')->daily();
         });
         $this->registerObservers();
         $this->registerExpansionsFrom();

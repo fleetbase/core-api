@@ -112,6 +112,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                         $router->group(
                             ['prefix' => 'lookup'],
                             function ($router) {
+                                $router->get('timezones', 'LookupController@timezones');
                                 $router->get('whois', 'LookupController@whois');
                                 $router->get('currencies', 'LookupController@currencies');
                                 $router->get('countries', 'LookupController@countries');
