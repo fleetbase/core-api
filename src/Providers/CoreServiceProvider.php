@@ -130,8 +130,6 @@ class CoreServiceProvider extends ServiceProvider
      */
     public function boot()
     {
-        Telemetry::ping();
-
         $this->__hotfixCommonmarkDeprecation();
         $this->registerCommands();
         $this->scheduleCommands(function ($schedule) {
@@ -152,6 +150,7 @@ class CoreServiceProvider extends ServiceProvider
         $this->loadViewsFrom(__DIR__ . '/../../views', 'fleetbase');
         $this->registerCustomBladeComponents();
         $this->mergeConfigFromSettings();
+        $this->pingTelemetry();        
     }
 
     /**
@@ -391,5 +390,19 @@ class CoreServiceProvider extends ServiceProvider
                 @trigger_error(($package || $version ? "Since $package $version: " : '') . ($args ? vsprintf($message, $args) : $message), \E_USER_DEPRECATED);
             }
         }
+    }
+
+    /**
+     * Sends telemetry ping.
+     *
+     * @return void
+     */
+    public function pingTelemetry()
+    {
+        if (app()->runningInConsole() || env('CI')) {
+            return;
+        }
+
+        return Telemetry::ping();
     }
 }
