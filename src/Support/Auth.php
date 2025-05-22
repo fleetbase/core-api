@@ -519,4 +519,32 @@ class Auth extends Authentication
     {
         return !static::can($permission);
     }
+
+    /**
+     * Get the timezone for the current user or their company, falling back to application default.
+     *
+     * Determines the timezone in the following order:
+     *   1. The authenticated user's timezone (if set).
+     *   2. The user's company's timezone (if set).
+     *   3. The application default timezone (config('app.timezone') or 'Asia/Singapore').
+     *
+     * @param Request|null $request optional request instance for session lookup
+     */
+    public static function getUserTimezone(?Request $request = null): string
+    {
+        // Try user-specific timezone
+        $user = static::getUserFromSession($request);
+        if ($user && !empty($user->timezone)) {
+            return $user->timezone;
+        }
+
+        // Try company-specific timezone
+        $company = $user ? static::getCompanySessionForUser($user) : null;
+        if ($company && !empty($company->timezone)) {
+            return $company->timezone;
+        }
+
+        // Fallback to application default
+        return config('app.timezone', 'Asia/Singapore');
+    }
 }

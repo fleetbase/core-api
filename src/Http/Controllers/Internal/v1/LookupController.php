@@ -207,4 +207,16 @@ class LookupController extends Controller
 
         return response()->json($posts);
     }
+
+    /**
+     * Get a list of all timezones.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function timezones()
+    {
+        $timezones = \DateTimeZone::listIdentifiers();
+
+        return response()->json($timezones);
+    }
 }

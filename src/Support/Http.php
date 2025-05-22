@@ -106,7 +106,7 @@ class Http extends HttpClient
      *
      * @param string $ip
      *
-     * @return stdClass
+     * @return stdClass|array
      */
     public static function lookupIp($ip = null)
     {

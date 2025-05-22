@@ -262,6 +262,9 @@ class NotificationRegistry
         // get the notification settings for this $notificationClass
         $settings = data_get($notificationSettings, $notificationSettingsKey, []);
 
+        // Prevent duplicate notifications by tracking whose already notified
+        $notified = [];
+
         // if we have the settings resolve the notifiables
         if ($settings) {
             $notifiables = data_get($settings, 'notifiables', []);
@@ -277,7 +280,13 @@ class NotificationRegistry
 
                         // notifiy each
                         foreach ($multipleNotifiables as $singleNotifiable) {
+                            $notifiableId = data_get($singleNotifiable, 'uuid');
+                            if (in_array($notifiableId, $notified)) {
+                                continue;
+                            }
+
                             $singleNotifiable->notify(new $notificationClass(...$params));
+                            $notified[] = $notifiableId;
                         }
 
                         // continue
@@ -285,7 +294,13 @@ class NotificationRegistry
                     }
 
                     if ($notifiableModel) {
+                        $notifiableId = data_get($notifiableModel, 'uuid');
+                        if (in_array($notifiableId, $notified)) {
+                            continue;
+                        }
+
                         $notifiableModel->notify(new $notificationClass(...$params));
+                        $notified[] = $notifiableId;
                     }
                 }
             }

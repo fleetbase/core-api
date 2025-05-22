@@ -5,9 +5,10 @@
  * Fleetbase Core API Configuration
  * -------------------------------------------
  */
+
 return [
     'api' => [
-        'version' => '1.0.0',
+        'version' => 'v1',
         'routing' => [
             'prefix' => env('API_PREFIX'),
             'internal_prefix' => env('INTERNAL_API_PREFIX', 'int')
@@ -31,5 +32,7 @@ return [
     'branding' => [
         'logo_url' => 'https://flb-assets.s3.ap-southeast-1.amazonaws.com/static/fleetbase-logo.png',
         'icon_url' => 'https://flb-assets.s3.ap-southeast-1.amazonaws.com/static/fleetbase-icon.png'
-    ]
+    ],
+    'version' => env('FLEETBASE_VERSION', '0.7.1'),
+    'instance_id' => env('FLEETBASE_INSTANCE_ID') ?? (file_exists(base_path('.fleetbase-id')) ? trim(file_get_contents(base_path('.fleetbase-id'))) : null)
 ];
