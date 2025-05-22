@@ -56,6 +56,7 @@ class Telemetry
                     'fleetbase.api:' . config('app.url'),
                     'fleetbase.console:' . config('fleetbase.console.host'),
                     'fleetbase.app_name:' . config('app.name'),
+                    'fleetbase.version:' . config('fleetbase.version'),
                     'php.version:' . PHP_VERSION,
                     'laravel.version:' . app()->version(),
                     'env:' . app()->environment(),

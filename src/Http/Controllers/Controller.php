@@ -23,6 +23,7 @@ class Controller extends BaseController
             [
                 'message' => 'Fleetbase API',
                 'version' => config('fleetbase.api.version'),
+                'fleetbase' => config('fleetbase.version'),
                 'ms'      => microtime(true) - $request->attributes->get('request_start_time'),
             ]
         );

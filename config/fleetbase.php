@@ -8,7 +8,7 @@
 
 return [
     'api' => [
-        'version' => '1.0.0',
+        'version' => 'v1',
         'routing' => [
             'prefix' => env('API_PREFIX'),
             'internal_prefix' => env('INTERNAL_API_PREFIX', 'int')
