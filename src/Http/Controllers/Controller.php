@@ -21,10 +21,10 @@ class Controller extends BaseController
     {
         return response()->json(
             [
-                'message' => 'Fleetbase API',
-                'version' => config('fleetbase.api.version'),
+                'message'   => 'Fleetbase API',
+                'version'   => config('fleetbase.api.version'),
                 'fleetbase' => config('fleetbase.version'),
-                'ms'      => microtime(true) - $request->attributes->get('request_start_time'),
+                'ms'        => microtime(true) - $request->attributes->get('request_start_time'),
             ]
         );
     }
