@@ -184,7 +184,7 @@ class Auth extends Authentication
         }
 
         if (!$company) {
-            $companyId = request()->or(['company', 'company_uuid']);
+            $companyId = request()->input('company') ?? request()->input('company_uuid');
             if ($companyId) {
                 $company = Company::select($select)->where(function ($query) use ($companyId) {
                     $query->where('uuid', $companyId);

@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Support;
 
+use Fleetbase\Models\Company;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -44,38 +45,39 @@ class Telemetry
 
         try {
             $ipinfo = self::getIpInfo();
+            $tags = [
+                'fleetbase.instance_id:' . self::getInstanceId(),
+                'fleetbase.company:' . self::getCompanyName(),
+                'fleetbase.version:' . self::getVersion(),
+                'fleetbase.domain:' . request()->getHost(),
+                'fleetbase.api:' . config('app.url'),
+                'fleetbase.console:' . config('fleetbase.console.host'),
+                'fleetbase.app_name:' . config('app.name'),
+                'fleetbase.version:' . config('fleetbase.version'),
+                'php.version:' . PHP_VERSION,
+                'laravel.version:' . app()->version(),
+                'env:' . app()->environment(),
+                'timezone:' . data_get($ipinfo, 'time_zone.name', 'unknown'),
+                'region:' . data_get($ipinfo, 'region', 'unknown'),
+                'country:' . data_get($ipinfo, 'country_name', 'unknown'),
+                'country_code:' . data_get($ipinfo, 'country_code', 'unknown'),
+                'installation_type:' . self::getInstallationType(),
+                'users.count:' . self::countUsers(),
+                'companies.count:' . self::countCompanies(),
+                'orders.count:' . self::countOrders(),
+                'source.modified:' . (self::isSourceModified() ? 'true' : 'false'),
+                'source.commit_hash:' . self::getCurrentCommitHash(),
+                'source.main_hash:' . self::getOfficialRepoCommitHash(),
+            ];
 
             $defaultPayload = [
                 'title' => 'Fleetbase Instance Telemetry',
                 'text'  => 'Periodic instance telemetry from Fleetbase',
-                'tags'  => [
-                    'fleetbase.instance_id:' . self::getInstanceId(),
-                    'fleetbase.company:' . self::getCompanyName(),
-                    'fleetbase.version:' . self::getVersion(),
-                    'fleetbase.domain:' . request()->getHost(),
-                    'fleetbase.api:' . config('app.url'),
-                    'fleetbase.console:' . config('fleetbase.console.host'),
-                    'fleetbase.app_name:' . config('app.name'),
-                    'fleetbase.version:' . config('fleetbase.version'),
-                    'php.version:' . PHP_VERSION,
-                    'laravel.version:' . app()->version(),
-                    'env:' . app()->environment(),
-                    'timezone:' . data_get($ipinfo, 'time_zone.name', 'unknown'),
-                    'region:' . data_get($ipinfo, 'region', 'unknown'),
-                    'country:' . data_get($ipinfo, 'country_name', 'unknown'),
-                    'country_code:' . data_get($ipinfo, 'country_code', 'unknown'),
-                    'installation_type:' . self::getInstallationType(),
-                    'users.count:' . self::countUsers(),
-                    'companies.count:' . self::countCompanies(),
-                    'source.modified:' . (self::isSourceModified() ? 'true' : 'false'),
-                    'source.commit_hash:' . self::getCurrentCommitHash(),
-                    'source.main_hash:' . self::getOfficialRepoCommitHash(),
-                ],
+                'tags'  => $tags,
                 'alert_type' => 'info',
             ];
 
             $response = Http::timeout(5)->post(self::$endpoint, array_merge($defaultPayload, $payload));
-
             if ($response->successful()) {
                 return true;
             }
@@ -100,14 +102,19 @@ class Telemetry
      */
     public static function ping(): void
     {
-        if (app()->environment('production')) {
-            $lastPing = Cache::get('telemetry:last_ping');
+        Cache::remember(
+            'telemetry:last_ping',
+            now()->addHours(24),
+            function () {
+                try {
+                    static::send();
+                } catch (\Throwable $e) {
+                    Log::warning('[Telemetry] Send failed: ' . $e->getMessage());
+                }
 
-            if (!$lastPing || now()->diffInHours($lastPing) >= 24) {
-                static::send();
-                Cache::put('telemetry:last_ping', now(), now()->addHours(25));
+                return now()->toDateTimeString();
             }
-        }
+        );
     }
 
     /**
@@ -124,6 +131,10 @@ class Telemetry
     protected static function getCompanyName(): string
     {
         $company = Auth::getCompany();
+        if (!$company) {
+            // default to first company
+            $company = Company::first();
+        }
 
         return $company ? $company->name : 'unknown';
     }
@@ -182,6 +193,14 @@ class Telemetry
     public static function countCompanies(): int
     {
         return DB::table('companies')->count();
+    }
+
+    /**
+     * Count the number of orders in the system.
+     */
+    public static function countOrders(): int
+    {
+        return DB::table('orders')->count();
     }
 
     /**
