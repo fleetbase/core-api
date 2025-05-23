@@ -131,7 +131,7 @@ class EnvironmentMapper
      */
     public static function setEnvironmentVariables(): void
     {
-        if (Setting::doesntHaveConnection()) {
+        if (Setting::doesntHaveConnection() || env('CI')) {
             return;
         }
 

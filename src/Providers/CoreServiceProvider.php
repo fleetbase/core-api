@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Providers;
 
+use Fleetbase\Models\Setting;
 use Fleetbase\Support\EnvironmentMapper;
 use Fleetbase\Support\NotificationRegistry;
 use Fleetbase\Support\Telemetry;
@@ -399,7 +400,7 @@ class CoreServiceProvider extends ServiceProvider
      */
     public function pingTelemetry()
     {
-        if (app()->runningInConsole() || env('CI')) {
+        if (app()->runningInConsole() || env('CI') || Setting::doesntHaveConnection()) {
             return;
         }
 
