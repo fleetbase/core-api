@@ -4,61 +4,58 @@ namespace Fleetbase\Console\Commands;
 
 use Fleetbase\Support\Utils;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Artisan;
+use Symfony\Component\Console\Style\SymfonyStyle;
 
 class SeedDatabase extends Command
 {
-    /**
-     * The name and signature of the console command.
-     *
-     * @var string
-     */
-    protected $signature = 'fleetbase:seed {--class}';
+    protected $signature = 'fleetbase:seed {--class=}';
+    protected $description = 'Run Fleetbase seeders';
 
-    /**
-     * The console command description.
-     *
-     * @var string
-     */
-    protected $description = 'Run the Fleetbase seeder';
-
-    /**
-     * Execute the console command.
-     *
-     * @return int
-     */
-    public function handle()
+    public function handle(): int
     {
-        $class = $this->option('class');
+        $seederClass = $this->option('class');
 
-        if ($class) {
-            Artisan::call(
-                'db:seed',
-                [
-                    '--class' => 'Fleetbase\\Seeders\\' . $class,
-                ]
-            );
-            $this->info('Fleetbase ' . $class . ' Seeder was run Successfully!');
-        } else {
-            Artisan::call(
-                'db:seed',
-                [
-                    '--class' => 'Fleetbase\\Seeders\\FleetbaseSeeder',
-                ]
-            );
-
-            // seed for extensions
-            $extensionSeeders = Utils::getSeedersFromExtensions();
-            foreach ($extensionSeeders as $seeder) {
-                // Manually include the seeder file
-                require_once $seeder['path'];
-
-                // Instantiate the seeder class and run it
-                $seederInstance = new $seeder['class']();
-                $seederInstance->run();
-            }
-
-            $this->info('Fleetbase Seeders were run Successfully!');
+        if ($seederClass) {
+            return $this->runSeeder("Fleetbase\\Seeders\\{$seederClass}");
         }
+
+        $io = new SymfonyStyle($this->input, $this->output);
+
+        $this->components->info('Running Fleetbase core seeder…');
+        $this->runSeeder('Fleetbase\\Seeders\\FleetbaseSeeder');
+
+        $extensionSeeders = Utils::getSeedersFromExtensions();
+
+        if (empty($extensionSeeders)) {
+            $this->components->warn('No extension seeders found.');
+            return self::SUCCESS;
+        }
+
+        $io->newLine();
+        $io->text('Running extension seeders:');
+        $bar = $io->createProgressBar(count($extensionSeeders));
+        $bar->setFormat(' %current%/%max% [%bar%] %message%');
+        $bar->start();
+
+        foreach ($extensionSeeders as $seed) {
+            $bar->setMessage($seed['class']);
+            require_once $seed['path'];
+            (new $seed['class']())->run();
+            $bar->advance();
+        }
+
+        $bar->finish();
+        $io->newLine(2);
+        $this->components->info('All seeders completed.');
+
+        return self::SUCCESS;
+    }
+
+    protected function runSeeder(string $class): int
+    {
+        return (int) $this->call('db:seed', [
+            '--class' => $class,
+            '--force' => true,
+        ]);
     }
 }
