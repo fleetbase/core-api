@@ -151,7 +151,7 @@ class CoreServiceProvider extends ServiceProvider
         $this->loadViewsFrom(__DIR__ . '/../../views', 'fleetbase');
         $this->registerCustomBladeComponents();
         $this->mergeConfigFromSettings();
-        $this->pingTelemetry();        
+        $this->pingTelemetry();
     }
 
     /**

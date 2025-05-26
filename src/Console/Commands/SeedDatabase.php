@@ -8,7 +8,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 
 class SeedDatabase extends Command
 {
-    protected $signature = 'fleetbase:seed {--class=}';
+    protected $signature   = 'fleetbase:seed {--class=}';
     protected $description = 'Run Fleetbase seeders';
 
     public function handle(): int
@@ -28,6 +28,7 @@ class SeedDatabase extends Command
 
         if (empty($extensionSeeders)) {
             $this->components->warn('No extension seeders found.');
+
             return self::SUCCESS;
         }
 

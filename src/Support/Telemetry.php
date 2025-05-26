@@ -45,7 +45,7 @@ class Telemetry
 
         try {
             $ipinfo = self::getIpInfo();
-            $tags = [
+            $tags   = [
                 'fleetbase.instance_id:' . self::getInstanceId(),
                 'fleetbase.company:' . self::getCompanyName(),
                 'fleetbase.version:' . self::getVersion(),
@@ -71,9 +71,9 @@ class Telemetry
             ];
 
             $defaultPayload = [
-                'title' => 'Fleetbase Instance Telemetry',
-                'text'  => 'Periodic instance telemetry from Fleetbase',
-                'tags'  => $tags,
+                'title'      => 'Fleetbase Instance Telemetry',
+                'text'       => 'Periodic instance telemetry from Fleetbase',
+                'tags'       => $tags,
                 'alert_type' => 'info',
             ];
 

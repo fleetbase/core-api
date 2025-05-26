@@ -146,7 +146,7 @@ class NotificationController extends FleetbaseController
         if (!is_array($notificationSettings)) {
             throw new \Exception('Invalid notification settings data.');
         }
-        $currentNotificationSettings = Setting::lookupCompany('notification_settings');
+        $currentNotificationSettings = Setting::lookupCompany('notification_settings', []);
         Setting::configureCompany('notification_settings', array_merge($currentNotificationSettings, $notificationSettings));
 
         return response()->json([
