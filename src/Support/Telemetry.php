@@ -228,22 +228,7 @@ class Telemetry
      */
     public static function getCurrentCommitHash(): ?string
     {
-        try {
-            $hash = trim(shell_exec('git rev-parse HEAD'));
-
-            if (preg_match('/^[a-f0-9]{40}$/', $hash)) {
-                return $hash;
-            }
-        } catch (\Throwable $e) {
-            Log::error('[Telemetry] Git hash lookup failed.', ['error' => $e->getMessage()]);
-        }
-
-        // Fallback: maybe allow CURRENT_HASH file in rare non-git builds
-        $path = base_path('../CURRENT_HASH');
-        if (file_exists($path)) {
-            return trim(file_get_contents($path));
-        }
-
+        // @todo Implement a method to get current git hash
         return null;
     }
 

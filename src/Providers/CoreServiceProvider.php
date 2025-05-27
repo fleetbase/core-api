@@ -39,6 +39,7 @@ class CoreServiceProvider extends ServiceProvider
     public $globalMiddlewares = [
         \Fleetbase\Http\Middleware\RequestTimer::class,
         \Fleetbase\Http\Middleware\ResetJsonResourceWrap::class,
+        \Fleetbase\Http\Middleware\MergeConfigFromSettings::class,
     ];
 
     /**
@@ -181,7 +182,7 @@ class CoreServiceProvider extends ServiceProvider
      */
     public function mergeConfigFromSettings()
     {
-        EnvironmentMapper::mergeConfigFromSettings();
+        EnvironmentMapper::mergeConfigFromSettingsOptimized();
     }
 
     /**

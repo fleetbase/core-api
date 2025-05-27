@@ -4,6 +4,7 @@ namespace Fleetbase\Support;
 
 use Fleetbase\Models\Setting;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Str;
 
 /**
  * The EnvironmentMapper class is responsible for mapping system settings stored in the database
@@ -214,6 +215,109 @@ class EnvironmentMapper
     {
         if (empty(config('mail.from.address'))) {
             config()->set('mail.from.address', Utils::getDefaultMailFromAddress());
+        }
+    }
+
+    /**
+     * Optimized merge of database settings into application config.
+     *
+     * Batch-fetches all relevant setting records in one query, builds
+     * a combined config payload, and applies it with a single config() call.
+     */
+    public static function mergeConfigFromSettingsOptimized(): void
+    {
+        if (Setting::doesntHaveConnection()) {
+            return;
+        }
+
+        // Build DB keys for env vars (prefixed with 'system.')
+        $envDbKeys = array_map(fn ($path) => Str::startsWith($path, 'system.')
+            ? $path
+            : 'system.' . $path, array_values(static::$environmentVariables)
+        );
+
+        // Build DB keys for settings (use first two segments for nested keys)
+        $settingDbKeys = array_map(function ($map) {
+            $key      = $map['settingsKey'];
+            $segments = explode('.', $key);
+            if (count($segments) >= 3) {
+                return 'system.' . $segments[0] . '.' . $segments[1];
+            }
+
+            return Str::startsWith($key, 'system.')
+                ? $key
+                : 'system.' . $key;
+        }, static::$settings);
+
+        // Unique list of keys to fetch
+        $fetchKeys = array_unique(array_merge($envDbKeys, $settingDbKeys));
+
+        // Fetch all values in one query
+        $dbSettings = Setting::whereIn('key', $fetchKeys)
+            ->pluck('value', 'key')
+            ->all();
+
+        // Apply environment variables
+        static::setEnvironmentVariablesOptimized($dbSettings);
+
+        // Build new config payload
+        $newConfig = [];
+        foreach (static::$settings as $map) {
+            $settingsKey = $map['settingsKey'];
+            $configKey   = $map['configKey'];
+            $segments    = explode('.', $settingsKey);
+
+            // Determine the DB key we fetched
+            $dbKey = count($segments) >= 3
+                ? 'system.' . $segments[0] . '.' . $segments[1]
+                : 'system.' . $settingsKey;
+
+            if (!isset($dbSettings[$dbKey])) {
+                continue;
+            }
+
+            $rawValue = $dbSettings[$dbKey];
+
+            // Extract nested subkey if needed
+            $value = count($segments) >= 3
+                ? data_get($rawValue, implode('.', array_slice($segments, 2)))
+                : $rawValue;
+
+            // Merge arrays rather than overwrite
+            if (is_array($value) && is_array(config($configKey))) {
+                $value = array_merge(config($configKey), array_filter($value));
+            }
+
+            $newConfig[$configKey] = $value;
+        }
+
+        // Apply all config changes at once
+        if (!empty($newConfig)) {
+            config($newConfig);
+        }
+
+        // Ensure default mail 'from' fallback
+        static::setDefaultMailFrom();
+    }
+
+    /**
+     * Sets environment variables using pre-fetched DB settings.
+     *
+     * @param array<string,mixed> $dbSettings Map of DB key => raw value
+     */
+    protected static function setEnvironmentVariablesOptimized(array $dbSettings): void
+    {
+        foreach (static::$environmentVariables as $envVar => $configPath) {
+            $dbKey = Str::startsWith($configPath, 'system.')
+                ? $configPath
+                : 'system.' . $configPath;
+
+            if (empty(env($envVar)) && isset($dbSettings[$dbKey])) {
+                $value = $dbSettings[$dbKey];
+                if (is_string($value) && $value !== '') {
+                    putenv(sprintf('%s="%s"', $envVar, addcslashes($value, '"')));
+                }
+            }
         }
     }
 }
