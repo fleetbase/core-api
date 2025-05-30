@@ -854,6 +854,9 @@ class SettingController extends Controller
         );
     }
 
+    /**
+     * Refresh config cache.
+     */
     private function refreshConfigCache()
     {
         try {
