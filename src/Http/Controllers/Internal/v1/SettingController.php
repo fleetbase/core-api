@@ -11,6 +11,8 @@ use Fleetbase\Support\Utils;
 use Illuminate\Http\Request;
 use Illuminate\Notifications\AnonymousNotifiable;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
@@ -94,6 +96,9 @@ class SettingController extends Controller
         Setting::configureSystem('filesystem.driver', $driver);
         Setting::configureSystem('filesystem.gcs', $gcs);
         Setting::configureSystem('filesystem.s3', array_merge(config('filesystems.disks.s3', []), $s3));
+
+        // Refresh config
+        $this->refreshConfigCache();
 
         return response()->json(['status' => 'OK']);
     }
@@ -273,6 +278,9 @@ class SettingController extends Controller
         Setting::configureSystem('services.sendgrid', $sendgrid);
         Setting::configureSystem('services.resend', $resend);
 
+        // Refresh config
+        $this->refreshConfigCache();
+
         return response()->json(['status' => 'OK']);
     }
 
@@ -379,6 +387,9 @@ class SettingController extends Controller
         Setting::configureSystem('queue.sqs', array_merge(config('queue.connections.sqs'), $sqs));
         Setting::configureSystem('queue.beanstalkd', array_merge(config('queue.connections.beanstalkd'), $beanstalkd));
 
+        // Refresh config
+        $this->refreshConfigCache();
+
         return response()->json(['status' => 'OK']);
     }
 
@@ -471,6 +482,9 @@ class SettingController extends Controller
         Setting::configureSystem('services.twilio', array_merge(config('services.twilio', []), $twilio));
         Setting::configureSystem('services.sentry', array_merge(config('sentry', []), $sentry));
 
+        // Refresh config
+        $this->refreshConfigCache();
+
         return response()->json(['status' => 'OK']);
     }
 
@@ -519,6 +533,9 @@ class SettingController extends Controller
 
         Setting::configureSystem('broadcasting.apn', array_merge(config('broadcasting.connections.apn', []), $apn));
         Setting::configureSystem('firebase.app', array_merge(config('firebase.projects.app', []), $firebase));
+
+        // Refresh config
+        $this->refreshConfigCache();
 
         return response()->json(['status' => 'OK']);
     }
@@ -835,5 +852,18 @@ class SettingController extends Controller
                 'response' => $response,
             ]
         );
+    }
+
+    /**
+     * Refresh config cache.
+     */
+    private function refreshConfigCache()
+    {
+        try {
+            Artisan::call('config:clear');
+            Artisan::call('config:cache');
+        } catch (\Exception $e) {
+            Log::error('Failed to refresh config cache.', ['error' => $e->getMessage()]);
+        }
     }
 }
