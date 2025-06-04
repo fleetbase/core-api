@@ -470,6 +470,8 @@ class Setting extends EloquentModel
         if (count($keySegments) >= 3 && $keySegments[0] === 'company' && Str::isUuid($keySegments[1])) {
             return Company::where('uuid', $keySegments[1])->first();
         }
+
+        return null;
     }
 
     public function getUser(): ?User
@@ -478,5 +480,7 @@ class Setting extends EloquentModel
         if (count($keySegments) >= 3 && $keySegments[0] === 'user' && Str::isUuid($keySegments[1])) {
             return User::where('uuid', $keySegments[1])->first();
         }
+
+        return null;
     }
 }

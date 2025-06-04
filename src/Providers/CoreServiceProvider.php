@@ -341,6 +341,11 @@ class CoreServiceProvider extends ServiceProvider
      */
     public function scheduleCommands(?callable $callback = null): void
     {
+        // Skip everything in CI / PHPUnit / pest
+        if (app()->environment(['testing', 'ci']) || env('CI') || Setting::doesntHaveConnection()) {
+            return;
+        }
+
         $this->app->booted(function () use ($callback) {
             $schedule = $this->app->make(Schedule::class);
 
