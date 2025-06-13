@@ -74,6 +74,15 @@ class Currency implements \JsonSerializable
      * @var array
      */
     private static $currencies = [
+        'DZD' => [
+                'code'              => 'DZD',
+                'title'             => 'Algerian Dinar',
+                'symbol'            => 'د.ج',
+                'precision'         => 0,
+                'thousandSeparator' => ' ',
+                'decimalSeparator'  => ',',
+                'symbolPlacement'   => 'before',
+            ],
         'ARS' => [
             'code'              => 'ARS',
             'title'             => 'Argentine Peso',
