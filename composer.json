@@ -1,6 +1,6 @@
 {
     "name": "fleetbase/core-api",
-    "version": "1.6.12",
+    "version": "1.6.13",
     "description": "Core Framework and Resources for Fleetbase API",
     "keywords": [
         "fleetbase",
@@ -21,6 +21,7 @@
         "php": "^8.0",
         "aws/aws-sdk-php-laravel": "^3.7",
         "fleetbase/laravel-mysql-spatial": "^1.0.2",
+        "fleetbase/countries": "^0.8.3",
         "fleetbase/twilio": "^5.0.1",
         "giggsey/libphonenumber-for-php": "^8.13",
         "google/apiclient": "^2.18",
@@ -44,7 +45,6 @@
         "maatwebsite/excel": "^3.1",
         "phpoffice/phpspreadsheet": "^1.28",
         "phrity/websocket": "^1.7",
-        "pragmarx/countries": "^0.8.2",
         "sentry/sentry-laravel": "*",
         "spatie/laravel-activitylog": "^4.7",
         "spatie/laravel-google-cloud-storage": "^2.2",
