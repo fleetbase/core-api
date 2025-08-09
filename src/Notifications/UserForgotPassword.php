@@ -28,10 +28,10 @@ class UserForgotPassword extends Notification implements ShouldQueue
      *
      * @return void
      */
-    public function __construct(?VerificationCode $verificationCode)
+    public function __construct(?VerificationCode $verificationCode, ?string $url = null)
     {
         $this->verificationCode = $verificationCode;
-        $this->url              = Utils::consoleUrl('auth/reset-password/' . $verificationCode->uuid, ['code' => $verificationCode->code]);
+        $this->url              = $url ?? Utils::consoleUrl('auth/reset-password/' . $verificationCode->uuid, ['code' => $verificationCode->code]);
     }
 
     /**
