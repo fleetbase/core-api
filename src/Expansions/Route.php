@@ -4,8 +4,11 @@ namespace Fleetbase\Expansions;
 
 use Closure;
 use Fleetbase\Build\Expansion;
+use Fleetbase\Http\Controllers\Internal\v1\AuthController;
+use Fleetbase\Http\Middleware\ThrottleRequests;
 use Fleetbase\Routing\RESTRegistrar;
 use Illuminate\Routing\PendingResourceRegistration;
+use Illuminate\Routing\Router;
 use Illuminate\Support\Str;
 
 class Route implements Expansion
@@ -37,7 +40,7 @@ class Route implements Expansion
          * @return PendingResourceRegistration
          */
         return function (string $name, $controller = null, $options = [], ?\Closure $callback = null) {
-            /** @var \Illuminate\Routing\Router $this */
+            /** @var Router $this */
             if (is_callable($controller) && $callback === null) {
                 $callback   = $controller;
                 $controller = null;
@@ -65,7 +68,7 @@ class Route implements Expansion
     public function fleetbaseRoutes()
     {
         return function (string $name, callable|array|null $registerFn = null, $options = [], $controller = null) {
-            /** @var \Illuminate\Routing\Router $this */
+            /** @var Router $this */
             if (is_array($registerFn) && !empty($registerFn) && empty($options)) {
                 $options = $registerFn;
             }
@@ -112,50 +115,44 @@ class Route implements Expansion
         };
     }
 
-    public function fleetbaseAuthRoutes()
+    public function fleetbaseAuthRoutes(): \Closure
     {
-        return function (?callable $registerFn = null, ?callable $registerProtectedFn = null) {
-            /** @var \Illuminate\Routing\Router $this */
-            return $this->group(
-                ['prefix' => 'auth'],
-                function ($router) use ($registerFn, $registerProtectedFn) {
-                    $router->group(
-                        ['middleware' => ['throttle:10,1', \Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]],
-                        function ($router) use ($registerFn) {
-                            $router->post('login', 'AuthController@login');
-                            $router->post('sign-up', 'AuthController@signUp');
-                            $router->post('logout', 'AuthController@logout');
-                            $router->post('get-magic-reset-link', 'AuthController@createPasswordReset');
-                            $router->post('reset-password', 'AuthController@resetPassword');
-                            $router->post('create-verification-session', 'AuthController@createVerificationSession');
-                            $router->post('validate-verification-session', 'AuthController@validateVerificationSession');
-                            $router->post('send-verification-email', 'AuthController@sendVerificationEmail');
-                            $router->post('verify-email', 'AuthController@verifyEmail');
-                            $router->get('validate-verification', 'AuthController@validateVerificationCode');
+        return function (?string $authControllerClass = null, ?callable $registerFn = null, ?callable $registerProtectedFn = null) {
+            $authControllerClass ??= AuthController::class;
+            /** @var Router $this */
+            $this->group(['prefix' => 'auth'], function (Router $router) use ($authControllerClass, $registerFn, $registerProtectedFn) {
+                // Public auth routes with throttle
+                $router->group(['middleware' => [ThrottleRequests::class]], function (Router $router) use ($authControllerClass, $registerFn) {
+                    $router->post('login', [$authControllerClass, 'login']);
+                    $router->post('sign-up', [$authControllerClass, 'signUp']);
+                    $router->post('logout', [$authControllerClass, 'logout']);
+                    $router->post('get-magic-reset-link', [$authControllerClass, 'createPasswordReset']);
+                    $router->post('reset-password', [$authControllerClass, 'resetPassword']);
+                    $router->post('create-verification-session', [$authControllerClass, 'createVerificationSession']);
+                    $router->post('validate-verification-session', [$authControllerClass, 'validateVerificationSession']);
+                    $router->post('send-verification-email', [$authControllerClass, 'sendVerificationEmail']);
+                    $router->post('verify-email', [$authControllerClass, 'verifyEmail']);
+                    $router->get('validate-verification', [$authControllerClass, 'validateVerificationCode']);
 
-                            if (is_callable($registerFn)) {
-                                $registerFn($router);
-                            }
-                        }
-                    );
+                    if (is_callable($registerFn)) {
+                        $registerFn($router);
+                    }
+                });
 
-                    $router->group(
-                        ['middleware' => ['fleetbase.protected', \Spatie\ResponseCache\Middlewares\DoNotCacheResponse::class]],
-                        function ($router) use ($registerProtectedFn) {
-                            $router->post('switch-organization', 'AuthController@switchOrganization');
-                            $router->post('join-organization', 'AuthController@joinOrganization');
-                            $router->post('create-organization', 'AuthController@createOrganization');
-                            $router->get('session', 'AuthController@session');
-                            $router->get('organizations', 'AuthController@getUserOrganizations');
-                            $router->get('services', 'AuthController@services');
+                // Protected auth routes
+                $router->group(['middleware' => ['fleetbase.protected']], function (Router $router) use ($authControllerClass, $registerProtectedFn) {
+                    $router->post('switch-organization', [$authControllerClass, 'switchOrganization']);
+                    $router->post('join-organization', [$authControllerClass, 'joinOrganization']);
+                    $router->post('create-organization', [$authControllerClass, 'createOrganization']);
+                    $router->get('session', [$authControllerClass, 'session']);
+                    $router->get('organizations', [$authControllerClass, 'getUserOrganizations']);
+                    $router->get('services', [$authControllerClass, 'services']);
 
-                            if (is_callable($registerProtectedFn)) {
-                                $registerProtectedFn($router);
-                            }
-                        }
-                    );
-                }
-            );
+                    if (is_callable($registerProtectedFn)) {
+                        $registerProtectedFn($router);
+                    }
+                });
+            });
         };
     }
 

@@ -57,7 +57,7 @@ class CoreServiceProvider extends ServiceProvider
             \Fleetbase\Http\Middleware\TrackPresence::class,
         ],
         'fleetbase.api' => [
-            'throttle:80,1',
+            \Fleetbase\Http\Middleware\ThrottleRequests::class,
             \Illuminate\Session\Middleware\StartSession::class,
             \Fleetbase\Http\Middleware\AuthenticateOnceWithBasicAuth::class,
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
