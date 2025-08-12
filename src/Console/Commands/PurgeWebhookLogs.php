@@ -5,47 +5,33 @@ namespace Fleetbase\Console\Commands;
 use Fleetbase\Models\WebhookRequestLog;
 use Fleetbase\Traits\PurgeCommand;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Schema;
 
 class PurgeWebhookLogs extends Command
 {
     use PurgeCommand;
 
-    /**
-     * The name and signature of the console command.
-     *
-     * @var string
-     */
-    protected $signature = 'purge:webhook-logs 
-                            {--days=30 : The number of days to preserve logs (default: 30)} {--force : Force the command to run without confirmation}';
+    protected $signature = 'purge:webhook-logs
+                            {--days=30 : Only purge records older than this many days}
+                            {--disk= : Filesystem disk for backups; defaults to app default}
+                            {--force : Do not ask for interactive confirmation}
+                            {--skip-backup : Skip creating a backup and delete immediately}';
 
-    /**
-     * The console command description.
-     *
-     * @var string
-     */
-    protected $description = 'Purges Webhook logs older than the specified number of days, with an option to back up records before deletion.';
+    protected $description = 'Purge webhook request logs.';
 
-    /**
-     * Execute the console command.
-     */
-    public function handle(): void
+    public function handle(): int
     {
-        // Determine the number of days to preserve
-        $days = (int) $this->option('days');
-        if ($days <= 0) {
-            $this->error('The number of days must be a positive integer.');
+        $days  = (int) $this->option('days') ?: 30;
+        $disk  = $this->option('disk');
+        $model = new WebhookRequestLog();
 
-            return;
+        $query = $model->newQuery();
+        if (Schema::hasColumn($model->getTable(), 'created_at')) {
+            $query->where('created_at', '<', now()->subDays($days));
         }
 
-        $this->info("Purging Webhook logs older than {$days} days...");
+        $this->runPurge($query, $model, $disk, 'backups/webhook-logs');
 
-        // Calculate the cutoff date
-        $cutoffDate = now()->subDays($days);
-
-        // Backup and purge logs
-        $this->backupAndDelete(WebhookRequestLog::class, 'webhook_request_logs', $cutoffDate, 'backups/webhook-logs');
-
-        $this->info('Purge completed successfully.');
+        return Command::SUCCESS;
     }
 }
