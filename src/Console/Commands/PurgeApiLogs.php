@@ -6,48 +6,41 @@ use Fleetbase\Models\ApiEvent;
 use Fleetbase\Models\ApiRequestLog;
 use Fleetbase\Traits\PurgeCommand;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Schema;
 
 class PurgeApiLogs extends Command
 {
     use PurgeCommand;
 
-    /**
-     * The name and signature of the console command.
-     *
-     * @var string
-     */
-    protected $signature = 'purge:api-logs 
-                            {--days=30 : The number of days to preserve logs (default: 30)} {--force : Force the command to run without confirmation}';
+    protected $signature = 'purge:api-logs
+                            {--days=30}
+                            {--disk=}
+                            {--force}
+                            {--skip-backup}';
 
-    /**
-     * The console command description.
-     *
-     * @var string
-     */
-    protected $description = 'Purges API logs and events older than the specified number of days, with an option to back up records before deletion.';
+    protected $description = 'Purge API request logs and API events.';
 
-    /**
-     * Execute the console command.
-     */
-    public function handle(): void
+    public function handle(): int
     {
-        // Determine the number of days to preserve
-        $days = (int) $this->option('days');
-        if ($days <= 0) {
-            $this->error('The number of days must be a positive integer.');
+        $days = (int) $this->option('days') ?: 30;
+        $disk = $this->option('disk');
 
-            return;
+        // ApiRequestLog
+        $reqModel = new ApiRequestLog();
+        $reqQuery = $reqModel->newQuery();
+        if (Schema::hasColumn($reqModel->getTable(), 'created_at')) {
+            $reqQuery->where('created_at', '<', now()->subDays($days));
         }
+        $this->runPurge($reqQuery, $reqModel, $disk, 'backups/api-logs/requests');
 
-        $this->info("Purging API logs and events older than {$days} days...");
+        // ApiEvent
+        $evtModel = new ApiEvent();
+        $evtQuery = $evtModel->newQuery();
+        if (Schema::hasColumn($evtModel->getTable(), 'created_at')) {
+            $evtQuery->where('created_at', '<', now()->subDays($days));
+        }
+        $this->runPurge($evtQuery, $evtModel, $disk, 'backups/api-logs/events');
 
-        // Calculate the cutoff date
-        $cutoffDate = now()->subDays($days);
-
-        // Backup and purge logs
-        $this->backupAndDelete(ApiRequestLog::class, 'api_request_logs', $cutoffDate, 'backups/api-logs');
-        $this->backupAndDelete(ApiEvent::class, 'api_events', $cutoffDate, 'backups/api-events');
-
-        $this->info('Purge completed successfully.');
+        return Command::SUCCESS;
     }
 }

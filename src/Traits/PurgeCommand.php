@@ -2,6 +2,9 @@
 
 namespace Fleetbase\Traits;
 
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
@@ -11,104 +14,185 @@ trait PurgeCommand
     use ForcesCommands;
 
     /**
-     * Backup and delete records for a given model and table.
-     *
-     * @param \Illuminate\Support\Carbon $cutoffDate
+     * True if caller passed --skip-backup on the command.
      */
-    protected function backupAndDelete(string $modelClass, string $tableName, $cutoffDate, string $path = 'backups'): void
+    protected function shouldSkipBackup(): bool
     {
-        // Fetch records older than the cutoff date
-        $query = $modelClass::where('created_at', '<', $cutoffDate);
+        return method_exists($this, 'option') && (bool) $this->option('skip-backup');
+    }
 
-        // Include trashed if possible
-        if (Schema::hasColumn($tableName, 'deleted_at')) {
-            $query->where(function ($query) {
-                $query->whereNull('deleted_at');
-                $query->orWhereNotNull('deleted_at');
-            });
-        }
+    /**
+     * Build a clear confirmation line that respects --skip-backup.
+     */
+    protected function confirmDeleteLine(string $tableName): string
+    {
+        return $this->shouldSkipBackup()
+            ? "Permanently delete selected records from {$tableName} WITHOUT BACKUP?"
+            : "Do you want to permanently delete the selected records from {$tableName}?";
+    }
 
-        // Get records
-        $records = $query->get();
+    /**
+     * Pick the disk to use: explicit wins, else app default.
+     */
+    protected function resolveBackupDisk(?string $diskFromOption): string
+    {
+        return $diskFromOption ?: (string) config('filesystems.default', 'local');
+    }
 
+    /**
+     * Write a simple SQL INSERT dump to $fileName for the given rows.
+     */
+    protected function writeSqlDump(string $tableName, Collection $records, string $fileName): void
+    {
         if ($records->isEmpty()) {
-            $this->info("No records to purge from {$tableName}.");
+            file_put_contents($fileName, "-- empty set\n");
 
             return;
         }
 
-        $currentDate     = now()->toDateTimeString();
-        $firstRecordDate = $records->min('created_at');
-        $lastRecordDate  = $records->max('created_at');
-        $this->info("Found {$records->count()} records in {$tableName} from {$firstRecordDate} to {$lastRecordDate}.");
+        $columns = array_keys($records->first());
+        $quoted  = array_map(fn ($c) => '`' . str_replace('`', '``', $c) . '`', $columns);
 
-        if (!$this->confirmOrForce("Do you want to permanently delete these records from {$tableName}?")) {
-            $this->warn("Skipped purging {$tableName}.");
-
-            return;
+        // Start file (create/overwrite once)
+        if (!file_exists($fileName)) {
+            @mkdir(dirname($fileName), 0775, true);
+            file_put_contents($fileName, "-- Dump of {$tableName}\n");
         }
 
-        $this->info("Backing up {$records->count()} records from {$tableName}...");
+        $dump  = "INSERT INTO `{$tableName}` (" . implode(', ', $quoted) . ")\nVALUES\n";
 
-        // Create SQL dump
-        $sqlDumpFileName = str_replace([' ', ':'], '_', "{$tableName}_backup_{$firstRecordDate}_to_{$lastRecordDate}_created_{$currentDate}.sql");
-        $localPath       = storage_path("app/tmp/{$sqlDumpFileName}");
-        $remotePath      = "{$path}/{$sqlDumpFileName}";
-        $backupData      = $records->map(function ($record) {
-            return (array) $record->getAttributes();
-        })->toArray();
+        $rows = [];
+        foreach ($records as $row) {
+            $vals = [];
+            foreach ($columns as $col) {
+                $val = $row[$col] ?? null;
+                if ($val === null) {
+                    $vals[] = 'NULL';
+                } elseif (is_numeric($val) && !preg_match('/^0[0-9]/', (string) $val)) {
+                    $vals[] = (string) $val;
+                } else {
+                    $vals[] = "'" . str_replace("'", "''", (string) $val) . "'";
+                }
+            }
+            $rows[] = '(' . implode(', ', $vals) . ')';
+        }
 
-        $this->createSqlDump($tableName, $backupData, $localPath);
-
-        // Upload to default filesystem
-        Storage::put($remotePath, file_get_contents($localPath));
-        $this->info("Backup saved to storage as {$sqlDumpFileName}.");
-
-        // Delete records
-        $this->hardDelete($tableName, $cutoffDate);
-        $this->info("Purged records from {$tableName}.");
-
-        // Reset auto-increment index
-        // $this->resetTableIndex($tableName);
-        // $this->info("Reset auto-increment index for {$tableName}.");
+        $dump .= implode(",\n", $rows) . ";\n";
+        file_put_contents($fileName, $dump, FILE_APPEND);
     }
 
     /**
-     * Hard delete records from the table.
-     *
-     * @param \Illuminate\Support\Carbon $cutoffDate
-     */
-    protected function hardDelete(string $tableName, $cutoffDate): void
-    {
-        DB::table($tableName)->where('created_at', '<', $cutoffDate)->delete();
-    }
-
-    /**
-     * Create an SQL dump for the given records.
-     */
-    protected function createSqlDump(string $tableName, array $data, string $fileName): void
-    {
-        $dump = "INSERT INTO `{$tableName}` (" . implode(', ', array_keys($data[0])) . ") VALUES\n";
-
-        $values = array_map(function ($record) {
-            $escapedValues = array_map(function ($value) {
-                return is_null($value) ? 'NULL' : "'" . addslashes($value) . "'";
-            }, array_values($record));
-
-            return '(' . implode(', ', $escapedValues) . ')';
-        }, $data);
-
-        $dump .= implode(",\n", $values) . ";\n";
-
-        file_put_contents($fileName, $dump);
-    }
-
-    /**
-     * Reset the auto-increment index for a given table.
+     * Reset AUTO_INCREMENT when an integer id exists.
      */
     protected function resetTableIndex(string $tableName): void
     {
+        if (!Schema::hasColumn($tableName, 'id')) {
+            return;
+        }
+
         $table = DB::getTablePrefix() . $tableName;
-        DB::statement("ALTER TABLE `{$table}` AUTO_INCREMENT = 1;");
+        try {
+            DB::statement("ALTER TABLE `{$table}` AUTO_INCREMENT = 1;");
+        } catch (\Throwable $e) {
+            // ignore non‑MySQL / non‑int PK cases
+        }
+    }
+
+    /**
+     * Decide which key to chunk by.
+     */
+    protected function detectPrimaryKey(string $tableName, ?Model $model = null): ?string
+    {
+        // prefer model key if present
+        if ($model && $model->getKeyName()) {
+            return $model->getKeyName();
+        }
+        $cols = Schema::getColumnListing($tableName);
+
+        return in_array('uuid', $cols, true) ? 'uuid' : (in_array('id', $cols, true) ? 'id' : null);
+    }
+
+    /**
+     * Standard purge flow: confirm -> (optional backup) -> delete -> reset index.
+     *
+     * @param Builder     $baseQuery  already-filtered query for rows to purge
+     * @param Model       $model      model instance for table/meta
+     * @param string|null $diskOption --disk option value; null means use app default
+     * @param string      $backupPath destination path prefix on chosen disk
+     *
+     * @return int rows deleted
+     */
+    protected function runPurge(Builder $baseQuery, Model $model, ?string $diskOption = null, string $backupPath = 'backups'): int
+    {
+        $tableName = $model->getTable();
+        $count     = (clone $baseQuery)->count();
+
+        if ($count === 0) {
+            $this->info("No records to purge from {$tableName}.");
+
+            return 0;
+        }
+
+        if (!$this->confirmOrForce($this->confirmDeleteLine($tableName))) {
+            $this->warn("Skipped purging {$tableName}.");
+
+            return 0;
+        }
+
+        // ===== BACKUP (only if NOT skipped) =====
+        if (!$this->shouldSkipBackup()) {
+            $disk     = $this->resolveBackupDisk($diskOption);
+            $tmpName  = str_replace([' ', ':'], '_', "{$tableName}_" . now()->format('Y-m-d_H-i-s') . '.sql');
+            $localTmp = storage_path("app/tmp/{$tmpName}");
+            $this->info("Backing up {$count} records from {$tableName} to '{$disk}:{$backupPath}/{$tmpName}'...");
+
+            $buffer = collect();
+
+            // stream rows to file in chunks
+            (clone $baseQuery)->orderBy($this->detectPrimaryKey($tableName, $model) ?? 'created_at')->chunk(1000, function ($chunk) use (&$buffer, $tableName, $localTmp) {
+                $buffer = $buffer->concat($chunk->map(fn ($m) => $m->getAttributes()));
+                if ($buffer->count() >= 5000) {
+                    $this->writeSqlDump($tableName, $buffer, $localTmp);
+                    $buffer = collect();
+                }
+            });
+            if ($buffer->count() > 0) {
+                $this->writeSqlDump($tableName, $buffer, $localTmp);
+            }
+
+            // upload and done
+            $remote = trim($backupPath, '/') . "/{$tmpName}";
+            Storage::disk($disk)->put($remote, file_get_contents($localTmp));
+            $this->info('Backup uploaded.');
+        } else {
+            $this->warn('Skipping backup as --skip-backup was provided.');
+        }
+
+        // ===== DELETE =====
+        $this->info("Deleting {$count} records from {$tableName}...");
+        $deleted  = 0;
+        $pkColumn = $this->detectPrimaryKey($tableName, $model);
+
+        if ($pkColumn) {
+            (clone $baseQuery)->orderBy($pkColumn)->chunkById(1000, function ($chunk) use (&$deleted, $pkColumn, $tableName) {
+                $ids = $chunk->pluck($pkColumn)->all();
+                if (!empty($ids)) {
+                    DB::table($tableName)->whereIn($pkColumn, $ids)->delete();
+                    $deleted += count($ids);
+                }
+            }, $pkColumn);
+        } else {
+            (clone $baseQuery)->chunk(1000, function ($chunk) use (&$deleted) {
+                foreach ($chunk as $m) {
+                    $m->delete();
+                    $deleted++;
+                }
+            });
+        }
+
+        $this->resetTableIndex($tableName);
+        $this->info("Purge completed. Deleted: {$deleted}");
+
+        return $deleted;
     }
 }
