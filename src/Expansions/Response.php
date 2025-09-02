@@ -5,7 +5,10 @@ namespace Fleetbase\Expansions;
 use CompressJson\Core\Compressor;
 use Fleetbase\Build\Expansion;
 use Fleetbase\Support\Auth;
+use Fleetbase\Support\Http;
+use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Support\MessageBag;
+use Illuminate\Validation\ValidationException;
 
 class Response implements Expansion
 {
@@ -82,6 +85,40 @@ class Response implements Expansion
                 ],
                 $statusCode
             );
+        };
+    }
+
+    /**
+     * Handles validation errors correctly.
+     *
+     * @return Closure
+     */
+    public function validationError()
+    {
+        return function (Validator $validator) {
+            $errors = $validator->errors();
+
+            if (Http::isInternalRequest()) {
+                $response = [
+                    'errors' => [$errors->first()],
+                ];
+
+                // if more than one error display the others
+                if ($errors->count() > 1) {
+                    $response['errors'] = collect($errors->all())
+                        ->values()
+                        ->toArray();
+                }
+            } else {
+                $response = ['error' => $errors->first()];
+                if ($errors->count() > 1) {
+                    $response['errors'] = collect($errors->all())
+                        ->values()
+                        ->toArray();
+                }
+            }
+
+            throw new ValidationException($validator, response()->json($response, 422));
         };
     }
 
