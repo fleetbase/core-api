@@ -43,4 +43,12 @@ class CategoryFilter extends Filter
             );
         }
     }
+
+    public function for($for)
+    {
+        $for = Utils::arrayFrom($for);
+        if ($for) {
+            $this->builder->whereIn('for', $for);
+        }
+    }
 }

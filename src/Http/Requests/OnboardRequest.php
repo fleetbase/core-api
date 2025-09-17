@@ -34,12 +34,12 @@ class OnboardRequest extends FleetbaseRequest
     public function rules()
     {
         return [
-            'name'                  => ['required', 'min:2', 'regex:/^[a-zA-ZÀ-ÿ\'\-\. ]+$/u', new ExcludeWords($this->excludedWords)],
+            'name'                  => ['required', 'min:2', 'max:50', 'regex:/^(?!.*\b[a-z0-9]+(?:\.[a-z0-9]+){1,}\b)[a-zA-ZÀ-ÿ\'\-\s\.]+$/u', new ExcludeWords($this->excludedWords)],
             'email'                 => ['required', 'email', Rule::unique('users', 'email')->whereNull('deleted_at'), new EmailDomainExcluded()],
             'phone'                 => ['required', new ValidPhoneNumber(), Rule::unique('users', 'phone')->whereNull('deleted_at')],
-            'password'              => ['required', 'confirmed', 'min:4', 'max:24'],
-            'password_confirmation' => ['required', 'min:4', 'max:24'],
-            'organization_name'     => ['required', 'min:4', new ExcludeWords($this->excludedWords)],
+            'password'              => ['required', 'confirmed', 'min:4', 'max:64'],
+            'password_confirmation' => ['required', 'min:4', 'max:64'],
+            'organization_name'     => ['required', 'min:4', 'max:100', 'regex:/^(?!.*\b[a-z0-9]+(?:\.[a-z0-9]+){1,}\b)[a-zA-ZÀ-ÿ0-9\'\-\s\.]+$/u', new ExcludeWords($this->excludedWords)],
         ];
     }
 

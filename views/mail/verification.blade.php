@@ -1,11 +1,11 @@
 <x-mail-layout>
 <h2 style="font-size: 18px; font-weight: 600;">
 @if($currentHour < 12)
-    Good Morning, {{ $user->name }}!
+    Good Morning, {{ \Fleetbase\Support\Utils::delinkify($user->name) }}!
 @elseif($currentHour < 18)
-    Good Afternoon, {{ $user->name }}!
+    Good Afternoon, {{ \Fleetbase\Support\Utils::delinkify($user->name) }}!
 @else
-    Good Evening, {{ $user->name }}!
+    Good Evening, {{ \Fleetbase\Support\Utils::delinkify($user->name) }}!
 @endif
 </h2>
 
