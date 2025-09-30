@@ -50,7 +50,7 @@ class Money implements CastsAttributes
         if ($value === null) {
             return 0;
         }
-        
+
         $value = static::removeCurrencySymbols($value);
         $value = static::removeSpecialCharactersExceptDotAndComma($value);
         // if (is_float($value) || Str::contains($value, '.')) {

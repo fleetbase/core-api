@@ -2,536 +2,611 @@
 
 namespace Fleetbase\Models;
 
+use Carbon\Carbon;
 use Fleetbase\Casts\Json;
+use Fleetbase\Support\Reporting\ReportQueryConverter;
+use Fleetbase\Support\Reporting\ReportSchemaRegistry;
+use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\HasApiModelBehavior;
-use Fleetbase\Traits\HasMetaAttributes;
 use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\Searchable;
-use Fleetbase\Traits\TracksApiCredential;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Spatie\Activitylog\LogOptions;
-use Spatie\Activitylog\Traits\LogsActivity;
-use Spatie\Sluggable\HasSlug;
-use Spatie\Sluggable\SlugOptions;
+use Illuminate\Support\Facades\Cache;
 
-/**
- * Class Report.
- *
- * Captures time-bounded summaries and analytics over various entities in the system.
- * Reports can cover utilization, safety, fuel consumption, compliance, and other metrics.
- * This model belongs to the Core API.
- */
 class Report extends Model
 {
     use HasUuid;
     use HasPublicId;
-    use TracksApiCredential;
-    use HasApiModelBehavior;
-    use HasSlug;
-    use LogsActivity;
-    use HasMetaAttributes;
-    use Searchable;
     use SoftDeletes;
+    use Searchable;
+    use Filterable;
+    use HasApiModelBehavior;
 
     /**
      * The database table used by the model.
-     *
-     * @var string
      */
     protected $table = 'reports';
 
     /**
      * The type of public Id to generate.
-     *
-     * @var string
      */
     protected $publicIdType = 'report';
 
     /**
-     * The attributes that can be queried.
-     *
-     * @var array
-     */
-    protected $searchableColumns = ['type', 'title', 'body', 'public_id'];
-
-    /**
-     * The attributes that can be used for filtering.
-     *
-     * @var array
-     */
-    protected $filterParams = ['type', 'status', 'subject_type'];
-
-    /**
      * The attributes that are mass assignable.
-     *
-     * @var array
      */
     protected $fillable = [
+        'uuid',
+        'public_id',
         'company_uuid',
-        'type',
-        'title',
-        'subject_type',
+        'category_uuid',
+        'created_by_uuid',
+        'updated_by_uuid',
         'subject_uuid',
+        'subject_type',
+        'title',
+        'description',
         'period_start',
         'period_end',
-        'data',
-        'body',
-        'status',
-        'slug',
-    ];
-
-    /**
-     * Dynamic attributes that are appended to object.
-     *
-     * @var array
-     */
-    protected $appends = [
-        'subject_name',
-        'period_duration_days',
+        'result_columns',
+        'last_executed_at',
+        'execution_time',
+        'row_count',
+        'is_scheduled',
+        'schedule_config',
+        'export_formats',
         'is_generated',
         'generation_progress',
-        'summary_stats',
+        'options',
+        'tags',
+        'query_config',
+        'result_columns',
+        'data',
+        'meta',
+        'status',
+        'type',
     ];
-
-    /**
-     * The attributes excluded from the model's JSON form.
-     *
-     * @var array
-     */
-    protected $hidden = ['subject'];
 
     /**
      * The attributes that should be cast to native types.
-     *
-     * @var array
      */
     protected $casts = [
-        'period_start' => 'datetime',
-        'period_end'   => 'datetime',
-        'data'         => Json::class,
+        'query_config'              => Json::class,
+        'meta'                      => Json::class,
+        'options'                   => Json::class,
+        'result_columns'            => Json::class,
+        'data'                      => Json::class,
+        'tags'                      => Json::class,
+        'schedule_config'           => Json::class,
+        'is_generated'              => 'boolean',
+        'is_scheduled'              => 'boolean',
+        'period_start'              => 'datetime',
+        'period_end'                => 'datetime',
+        'last_executed_at'          => 'datetime',
     ];
 
     /**
-     * Properties which activity needs to be logged.
-     *
-     * @var array
+     * The attributes that should be hidden for serialization.
      */
-    protected static $logAttributes = '*';
+    protected $hidden = [];
 
     /**
-     * Do not log empty changed.
-     *
-     * @var bool
+     * The attributes that are searchable.
      */
-    protected static $submitEmptyLogs = false;
+    protected $searchableColumns = ['title', 'description', 'category'];
 
     /**
-     * The name of the subject to log.
-     *
-     * @var string
+     * The attributes that are filterable.
      */
-    protected static $logName = 'report';
+    protected $filterableColumns = ['category', 'status', 'is_scheduled', 'is_public', 'created_by_uuid'];
 
     /**
-     * Get the options for generating the slug.
+     * Dynamic relationships.
      */
-    public function getSlugOptions(): SlugOptions
+    public function company()
     {
-        return SlugOptions::create()
-            ->generateSlugsFrom(['title', 'type'])
-            ->saveSlugsTo('slug');
+        return $this->belongsTo(Company::class, 'company_uuid');
+    }
+
+    public function createdBy()
+    {
+        return $this->belongsTo(User::class, 'created_by_uuid');
+    }
+
+    public function executions()
+    {
+        return $this->hasMany(ReportExecution::class, 'report_uuid');
+    }
+
+    public function auditLogs()
+    {
+        return $this->hasMany(ReportAuditLog::class, 'report_uuid');
     }
 
     /**
-     * Get the activity log options for the model.
+     * Get available tables for reporting.
      */
-    public function getActivitylogOptions(): LogOptions
+    public static function getAvailableTables(string $extension = 'core', ?string $category = null): array
     {
-        return LogOptions::defaults()->logAll();
-    }
+        $registry = app(ReportSchemaRegistry::class);
 
-    public function createdBy(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'created_by_uuid', 'uuid');
-    }
-
-    public function updatedBy(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'updated_by_uuid', 'uuid');
-    }
-
-    public function subject(): MorphTo
-    {
-        return $this->morphTo();
+        return $registry->getAvailableTables($extension, $category);
     }
 
     /**
-     * Get the subject name.
+     * Get columns for a specific table.
      */
-    public function getSubjectNameAttribute(): ?string
+    public static function getTableColumns(string $tableName): array
     {
-        if ($this->subject) {
-            return $this->subject->name ?? $this->subject->display_name ?? null;
+        $registry = app(ReportSchemaRegistry::class);
+
+        return $registry->getTableColumns($tableName);
+    }
+
+    /**
+     * Get table relationships.
+     */
+    public static function getTableRelationships(string $tableName): array
+    {
+        $registry = app(ReportSchemaRegistry::class);
+
+        return $registry->getTableRelationships($tableName);
+    }
+
+    /**
+     * Get table schema including columns and relationships.
+     */
+    public static function getTableSchema(string $tableName): array
+    {
+        $registry = app(ReportSchemaRegistry::class);
+
+        return $registry->getTableSchema($tableName);
+    }
+
+    /**
+     * Execute the report query using the new schema format.
+     */
+    public function execute(array $options = []): array
+    {
+        $startTime = microtime(true);
+
+        try {
+            // Validate query configuration
+            $this->validateQueryConfig();
+
+            // Get the query converter
+            $registry  = app(ReportSchemaRegistry::class);
+            $converter = new ReportQueryConverter($registry, $this->query_config);
+
+            // Execute the query
+            $result = $converter->execute();
+
+            if (!$result['success']) {
+                throw new \Exception($result['error']);
+            }
+
+            // Calculate execution time
+            $executionTime = $result['meta']['execution_time_ms'];
+
+            // Update execution statistics
+            $this->updateExecutionStats($executionTime, $result['meta']['total_rows']);
+
+            // Cache results if configured
+            if (config('reports.cache_results', true)) {
+                $this->cacheResults($result['data'], $result['columns'], $executionTime);
+            }
+
+            // Log execution
+            $this->logExecution($executionTime, $result['meta']['total_rows']);
+
+            return [
+                'success' => true,
+                'results' => $result['data'],
+                'columns' => $result['columns'],
+                'meta'    => [
+                    'execution_time'   => $executionTime,
+                    'total_rows'       => $result['meta']['total_rows'],
+                    'query_sql'        => $result['meta']['query_sql'],
+                    'selected_columns' => $result['meta']['selected_columns'],
+                    'joined_tables'    => $result['meta']['joined_tables'],
+                    'query_config'     => $this->query_config,
+                ],
+            ];
+        } catch (\Exception $e) {
+            // Log error
+            $executionTime = round((microtime(true) - $startTime) * 1000, 2);
+            $this->logExecution($executionTime, 0, $e->getMessage());
+
+            return [
+                'success' => false,
+                'error'   => $e->getMessage(),
+                'meta'    => [
+                    'execution_time' => $executionTime,
+                ],
+            ];
+        }
+    }
+
+    /**
+     * Export report results in specified format.
+     */
+    public function export(string $format = 'csv', array $options = []): array
+    {
+        try {
+            // Validate query configuration
+            $this->validateQueryConfig();
+
+            // Get the query converter
+            $registry  = app(ReportSchemaRegistry::class);
+            $converter = new ReportQueryConverter($registry, $this->query_config);
+
+            // Export the data
+            $result = $converter->export($format);
+
+            // Log export
+            $this->logExport($format, $result['rows'] ?? 0);
+
+            return $result;
+        } catch (\Exception $e) {
+            return [
+                'success' => false,
+                'error'   => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Validate the new query configuration format.
+     */
+    protected function validateQueryConfig(): void
+    {
+        if (!$this->query_config) {
+            throw new \InvalidArgumentException('Query configuration is required');
         }
 
-        return null;
-    }
-
-    /**
-     * Get the period duration in days.
-     */
-    public function getPeriodDurationDaysAttribute(): ?int
-    {
-        if ($this->period_start && $this->period_end) {
-            return $this->period_start->diffInDays($this->period_end);
+        // Validate required structure
+        $required = ['table', 'columns'];
+        foreach ($required as $key) {
+            if (!isset($this->query_config[$key])) {
+                throw new \InvalidArgumentException("Query configuration missing required key: {$key}");
+            }
         }
 
-        return null;
-    }
+        // Validate table structure
+        if (!isset($this->query_config['table']['name'])) {
+            throw new \InvalidArgumentException('Table name is required in query configuration');
+        }
 
-    /**
-     * Check if the report has been generated.
-     */
-    public function getIsGeneratedAttribute(): bool
-    {
-        return $this->status === 'complete';
-    }
-
-    /**
-     * Get the generation progress percentage.
-     */
-    public function getGenerationProgressAttribute(): float
-    {
-        switch ($this->status) {
-            case 'pending':
-                return 0.0;
-            case 'generating':
-                return 50.0;
-            case 'complete':
-                return 100.0;
-            case 'failed':
-                return 0.0;
-            default:
-                return 0.0;
+        // Validate columns structure
+        if (empty($this->query_config['columns'])) {
+            throw new \InvalidArgumentException('At least one column must be selected');
         }
     }
 
     /**
-     * Get summary statistics from the report data.
+     * Get query complexity based on new schema.
      */
-    public function getSummaryStatsAttribute(): array
+    public function getQueryComplexity(): string
     {
-        $data = $this->data ?? [];
+        if (!$this->query_config) {
+            return 'invalid';
+        }
 
-        if (empty($data)) {
+        $complexity = 'simple';
+
+        // Check for joins
+        if (isset($this->query_config['joins']) && !empty($this->query_config['joins'])) {
+            $complexity = 'moderate';
+        }
+
+        // Check for conditions
+        if (isset($this->query_config['conditions']) && !empty($this->query_config['conditions'])) {
+            if ($complexity === 'moderate') {
+                $complexity = 'complex';
+            } else {
+                $complexity = 'moderate';
+            }
+        }
+
+        // Check for grouping
+        if (isset($this->query_config['groupBy']) && !empty($this->query_config['groupBy'])) {
+            $complexity = 'complex';
+        }
+
+        // Check for many columns
+        if (count($this->query_config['columns']) > 10) {
+            $complexity = 'complex';
+        }
+
+        return $complexity;
+    }
+
+    /**
+     * Get selected columns count including joins.
+     */
+    public function getSelectedColumnsCount(): int
+    {
+        $count = count($this->query_config['columns'] ?? []);
+
+        // Add joined columns
+        if (isset($this->query_config['joins'])) {
+            foreach ($this->query_config['joins'] as $join) {
+                $count += count($join['selectedColumns'] ?? []);
+            }
+        }
+
+        return $count;
+    }
+
+    /**
+     * Get source table information.
+     */
+    public function getSourceTable(): array
+    {
+        return $this->query_config['table'] ?? [];
+    }
+
+    /**
+     * Check if report has filters.
+     */
+    public function hasFilters(): bool
+    {
+        return isset($this->query_config['conditions']) && !empty($this->query_config['conditions']);
+    }
+
+    /**
+     * Check if report has joins.
+     */
+    public function hasJoins(): bool
+    {
+        return isset($this->query_config['joins']) && !empty($this->query_config['joins']);
+    }
+
+    /**
+     * Check if report has grouping.
+     */
+    public function hasGrouping(): bool
+    {
+        return isset($this->query_config['groupBy']) && !empty($this->query_config['groupBy']);
+    }
+
+    /**
+     * Check if report has sorting.
+     */
+    public function hasSorting(): bool
+    {
+        return isset($this->query_config['sortBy']) && !empty($this->query_config['sortBy']);
+    }
+
+    /**
+     * Get filters summary.
+     */
+    public function getFiltersSummary(): array
+    {
+        if (!$this->hasFilters()) {
             return [];
         }
 
-        // Extract common summary statistics
         $summary = [];
-
-        if (isset($data['summary'])) {
-            $summary = $data['summary'];
-        } else {
-            // Generate basic summary from data
-            if (isset($data['metrics'])) {
-                $metrics                  = $data['metrics'];
-                $summary['total_records'] = count($metrics);
-
-                // Calculate basic stats for numeric values
-                foreach ($metrics as $key => $values) {
-                    if (is_array($values) && !empty($values)) {
-                        $numericValues = array_filter($values, 'is_numeric');
-                        if (!empty($numericValues)) {
-                            $summary[$key] = [
-                                'count' => count($numericValues),
-                                'sum'   => array_sum($numericValues),
-                                'avg'   => array_sum($numericValues) / count($numericValues),
-                                'min'   => min($numericValues),
-                                'max'   => max($numericValues),
-                            ];
-                        }
-                    }
-                }
-            }
+        foreach ($this->query_config['conditions'] as $condition) {
+            $summary[] = [
+                'field'    => $condition['field']['label'] ?? $condition['field']['name'],
+                'operator' => $condition['operator']['label'] ?? $condition['operator']['value'],
+                'value'    => $condition['value'],
+            ];
         }
 
         return $summary;
     }
 
     /**
-     * Scope to get reports by type.
-     *
-     * @param \Illuminate\Database\Eloquent\Builder $query
-     *
-     * @return \Illuminate\Database\Eloquent\Builder
+     * Get joins summary.
      */
-    public function scopeByType($query, string $type)
+    public function getJoinsSummary(): array
     {
-        return $query->where('type', $type);
+        if (!$this->hasJoins()) {
+            return [];
+        }
+
+        $summary = [];
+        foreach ($this->query_config['joins'] as $join) {
+            $summary[] = [
+                'table'         => $join['table'],
+                'label'         => $join['label'],
+                'type'          => strtoupper($join['type']),
+                'columns_count' => count($join['selectedColumns'] ?? []),
+            ];
+        }
+
+        return $summary;
     }
 
     /**
-     * Scope to get reports by status.
-     *
-     * @param \Illuminate\Database\Eloquent\Builder $query
-     *
-     * @return \Illuminate\Database\Eloquent\Builder
+     * Update execution statistics.
      */
-    public function scopeByStatus($query, string $status)
+    protected function updateExecutionStats(float $executionTime, int $resultCount): void
     {
-        return $query->where('status', $status);
+        $this->execution_count = ($this->execution_count ?? 0) + 1;
+
+        // Calculate new average execution time
+        if ($this->average_execution_time) {
+            $this->average_execution_time = (($this->average_execution_time * ($this->execution_count - 1)) + $executionTime) / $this->execution_count;
+        } else {
+            $this->average_execution_time = $executionTime;
+        }
+
+        $this->last_result_count = $resultCount;
+        $this->last_executed_at  = now();
+
+        $this->save();
     }
 
     /**
-     * Scope to get completed reports.
-     *
-     * @param \Illuminate\Database\Eloquent\Builder $query
-     *
-     * @return \Illuminate\Database\Eloquent\Builder
+     * Cache query results.
      */
-    public function scopeCompleted($query)
+    protected function cacheResults(array $results, array $columns, float $executionTime): void
     {
-        return $query->where('status', 'complete');
-    }
-
-    /**
-     * Scope to get reports for a specific period.
-     *
-     * @param \Illuminate\Database\Eloquent\Builder $query
-     *
-     * @return \Illuminate\Database\Eloquent\Builder
-     */
-    public function scopeForPeriod($query, \DateTime $start, \DateTime $end)
-    {
-        return $query->where('period_start', '>=', $start)
-                    ->where('period_end', '<=', $end);
-    }
-
-    /**
-     * Start generating the report.
-     */
-    public function startGeneration(): bool
-    {
-        if ($this->status !== 'pending') {
-            return false;
-        }
-
-        $updated = $this->update(['status' => 'generating']);
-
-        if ($updated) {
-            activity('report_generation_started')
-                ->performedOn($this)
-                ->log('Report generation started');
-        }
-
-        return $updated;
-    }
-
-    /**
-     * Mark the report as completed.
-     */
-    public function markAsCompleted(array $data = [], ?string $body = null): bool
-    {
-        if ($this->status === 'complete') {
-            return false;
-        }
-
-        $updateData = ['status' => 'complete'];
-
-        if (!empty($data)) {
-            $updateData['data'] = $data;
-        }
-
-        if ($body) {
-            $updateData['body'] = $body;
-        }
-
-        $updated = $this->update($updateData);
-
-        if ($updated) {
-            activity('report_generation_completed')
-                ->performedOn($this)
-                ->withProperties([
-                    'data_size'   => count($data),
-                    'body_length' => strlen($body ?? ''),
-                ])
-                ->log('Report generation completed');
-        }
-
-        return $updated;
-    }
-
-    /**
-     * Mark the report as failed.
-     */
-    public function markAsFailed(?string $error = null): bool
-    {
-        $updateData = ['status' => 'failed'];
-
-        if ($error) {
-            $data               = $this->data ?? [];
-            $data['error']      = $error;
-            $updateData['data'] = $data;
-        }
-
-        $updated = $this->update($updateData);
-
-        if ($updated) {
-            activity('report_generation_failed')
-                ->performedOn($this)
-                ->withProperties(['error' => $error])
-                ->log('Report generation failed');
-        }
-
-        return $updated;
-    }
-
-    /**
-     * Get a specific metric from the report data.
-     */
-    public function getMetric(string $metric, $default = null)
-    {
-        $data = $this->data ?? [];
-
-        // Support dot notation for nested metrics
-        $keys  = explode('.', $metric);
-        $value = $data;
-
-        foreach ($keys as $key) {
-            if (is_array($value) && isset($value[$key])) {
-                $value = $value[$key];
-            } else {
-                return $default;
-            }
-        }
-
-        return $value;
-    }
-
-    /**
-     * Set a specific metric in the report data.
-     */
-    public function setMetric(string $metric, $value): bool
-    {
-        $data = $this->data ?? [];
-
-        // Support dot notation for nested metrics
-        $keys    = explode('.', $metric);
-        $current = &$data;
-
-        foreach ($keys as $i => $key) {
-            if ($i === count($keys) - 1) {
-                $current[$key] = $value;
-            } else {
-                if (!isset($current[$key]) || !is_array($current[$key])) {
-                    $current[$key] = [];
-                }
-                $current = &$current[$key];
-            }
-        }
-
-        return $this->update(['data' => $data]);
-    }
-
-    /**
-     * Export the report data in a specific format.
-     *
-     * @return array|string
-     */
-    public function export(string $format = 'json')
-    {
-        $exportData = [
-            'report_id' => $this->public_id,
-            'title'     => $this->title,
-            'type'      => $this->type,
-            'period'    => [
-                'start'         => $this->period_start?->toISOString(),
-                'end'           => $this->period_end?->toISOString(),
-                'duration_days' => $this->period_duration_days,
-            ],
-            'subject' => [
-                'type' => $this->subject_type,
-                'name' => $this->subject_name,
-            ],
-            'generated_at' => $this->updated_at?->toISOString(),
-            'data'         => $this->data,
-            'summary'      => $this->summary_stats,
+        $cacheKey  = "report_results_{$this->uuid}";
+        $cacheData = [
+            'results'        => $results,
+            'columns'        => $columns,
+            'execution_time' => $executionTime,
+            'cached_at'      => now()->toISOString(),
         ];
 
-        switch ($format) {
-            case 'csv':
-                // Convert to CSV format (simplified)
-                return $this->convertToCsv($exportData);
-            case 'xml':
-                // Convert to XML format (simplified)
-                return $this->convertToXml($exportData);
-            case 'json':
-            default:
-                return $exportData;
-        }
+        // Cache for configured time (default 1 hour)
+        $cacheTtl = config('reports.cache_ttl', 3600);
+        Cache::put($cacheKey, $cacheData, $cacheTtl);
     }
 
     /**
-     * Convert data to CSV format.
+     * Get cached results.
      */
-    protected function convertToCsv(array $data): string
+    public function getCachedResults(): ?array
     {
-        // This is a simplified CSV conversion
-        // In a real implementation, you'd want more sophisticated CSV handling
-        $csv = "Report: {$data['title']}\n";
-        $csv .= "Type: {$data['type']}\n";
-        $csv .= "Period: {$data['period']['start']} to {$data['period']['end']}\n\n";
+        $cacheKey = "report_results_{$this->uuid}";
 
-        if (isset($data['summary']) && is_array($data['summary'])) {
-            $csv .= "Summary:\n";
-            foreach ($data['summary'] as $key => $value) {
-                $csv .= "{$key}," . (is_array($value) ? json_encode($value) : $value) . "\n";
+        return Cache::get($cacheKey);
+    }
+
+    /**
+     * Clear cached results.
+     */
+    public function clearCache(): void
+    {
+        $cacheKey = "report_results_{$this->uuid}";
+        Cache::forget($cacheKey);
+    }
+
+    /**
+     * Log report execution.
+     */
+    protected function logExecution(float $executionTime, int $resultCount, ?string $error = null): void
+    {
+        $this->executions()->create([
+            'executed_at'    => now(),
+            'execution_time' => $executionTime,
+            'result_count'   => $resultCount,
+            'error_message'  => $error,
+            'query_config'   => $this->query_config,
+        ]);
+    }
+
+    /**
+     * Log report export.
+     */
+    protected function logExport(string $format, int $rowCount): void
+    {
+        $this->auditLogs()->create([
+            'action'  => 'export',
+            'details' => [
+                'format'      => $format,
+                'row_count'   => $rowCount,
+                'exported_at' => now()->toISOString(),
+            ],
+        ]);
+    }
+
+    /**
+     * Get report performance metrics.
+     */
+    public function getPerformanceMetrics(): array
+    {
+        return [
+            'execution_count'        => $this->execution_count ?? 0,
+            'average_execution_time' => $this->average_execution_time ?? 0,
+            'last_result_count'      => $this->last_result_count ?? 0,
+            'last_executed_at'       => $this->last_executed_at?->toISOString(),
+            'complexity'             => $this->getQueryComplexity(),
+            'selected_columns_count' => $this->getSelectedColumnsCount(),
+            'has_joins'              => $this->hasJoins(),
+            'has_filters'            => $this->hasFilters(),
+            'has_grouping'           => $this->hasGrouping(),
+            'has_sorting'            => $this->hasSorting(),
+        ];
+    }
+
+    /**
+     * Clone report with new configuration.
+     */
+    public function cloneWithConfig(array $newQueryConfig, ?string $newTitle = null): self
+    {
+        $clone                         = $this->replicate();
+        $clone->query_config           = $newQueryConfig;
+        $clone->title                  = $newTitle ?? ($this->title . ' (Copy)');
+        $clone->execution_count        = 0;
+        $clone->average_execution_time = null;
+        $clone->last_result_count      = null;
+        $clone->last_executed_at       = null;
+        $clone->save();
+
+        return $clone;
+    }
+
+    /**
+     * Schedule report execution.
+     */
+    public function schedule(string $frequency, string $time, string $timezone = 'UTC'): void
+    {
+        $this->update([
+            'is_scheduled'       => true,
+            'schedule_frequency' => $frequency,
+            'schedule_time'      => $time,
+            'schedule_timezone'  => $timezone,
+            'next_scheduled_run' => $this->calculateNextRun($frequency, $time, $timezone),
+        ]);
+    }
+
+    /**
+     * Calculate next scheduled run time.
+     */
+    protected function calculateNextRun(string $frequency, string $time, string $timezone): Carbon
+    {
+        $now = Carbon::now($timezone);
+
+        switch ($frequency) {
+            case 'daily':
+                $next = $now->copy()->setTimeFromTimeString($time);
+                if ($next->isPast()) {
+                    $next->addDay();
+                }
+                break;
+            case 'weekly':
+                $next = $now->copy()->next(Carbon::MONDAY)->setTimeFromTimeString($time);
+                break;
+            case 'monthly':
+                $next = $now->copy()->startOfMonth()->addMonth()->setTimeFromTimeString($time);
+                break;
+            default:
+                $next = $now->copy()->addHour();
+                break;
+        }
+
+        return $next->utc();
+    }
+
+    /**
+     * Get auto-join columns from query config.
+     */
+    public function getAutoJoinColumns(): array
+    {
+        $autoJoinColumns = [];
+
+        foreach ($this->query_config['columns'] ?? [] as $column) {
+            if (isset($column['auto_join_path'])) {
+                $autoJoinColumns[] = $column;
             }
         }
 
-        return $csv;
+        return $autoJoinColumns;
     }
 
     /**
-     * Convert data to XML format.
+     * Check if report uses auto-joins.
      */
-    protected function convertToXml(array $data): string
+    public function hasAutoJoins(): bool
     {
-        // This is a simplified XML conversion
-        $xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
-        $xml .= "<report>\n";
-        $xml .= "  <title>{$data['title']}</title>\n";
-        $xml .= "  <type>{$data['type']}</type>\n";
-        $xml .= "  <period>\n";
-        $xml .= "    <start>{$data['period']['start']}</start>\n";
-        $xml .= "    <end>{$data['period']['end']}</end>\n";
-        $xml .= "  </period>\n";
-        $xml .= '  <data>' . json_encode($data['data']) . "</data>\n";
-        $xml .= "</report>\n";
-
-        return $xml;
-    }
-
-    /**
-     * Schedule a recurring report.
-     */
-    public function scheduleRecurring(string $frequency, array $options = []): bool
-    {
-        // This would integrate with a job scheduling system
-        // For now, just log the scheduling attempt
-
-        activity('report_scheduled')
-            ->performedOn($this)
-            ->withProperties([
-                'frequency' => $frequency,
-                'options'   => $options,
-            ])
-            ->log("Report scheduled for recurring generation ({$frequency})");
-
-        return true;
+        return !empty($this->getAutoJoinColumns());
     }
 }
