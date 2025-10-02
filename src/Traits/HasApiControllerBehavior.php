@@ -284,9 +284,11 @@ trait HasApiControllerBehavior
      */
     public function validateRequest(Request $request)
     {
+        $input = $this->model?->getApiPayloadFromRequest($request) ?? [];
+
         if (Utils::classExists($this->request)) {
             $formRequest = new $this->request($request->all());
-            $validator   = Validator::make($request->all(), $formRequest->rules(), $formRequest->messages());
+            $validator   = Validator::make($input, $formRequest->rules(), $formRequest->messages());
 
             if ($validator->fails()) {
                 throw new FleetbaseRequestValidationException($validator->errors());
@@ -300,7 +302,7 @@ trait HasApiControllerBehavior
             $rules              = $createRequest->rules();
 
             // Run validator
-            $validator = Validator::make($request->all(), $rules);
+            $validator = Validator::make($input, $rules);
 
             if ($validator->fails()) {
                 throw new FleetbaseRequestValidationException($validator->errors());
@@ -314,7 +316,7 @@ trait HasApiControllerBehavior
             $rules              = $updateRequest->rules();
 
             // Run validator
-            $validator = Validator::make($request->all(), $rules);
+            $validator = Validator::make($input, $rules);
 
             if ($validator->fails()) {
                 throw new FleetbaseRequestValidationException($validator->errors());
