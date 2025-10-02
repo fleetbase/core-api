@@ -439,7 +439,7 @@ trait HasApiControllerBehavior
     {
         try {
             $onBeforeCallback = $this->getControllerCallback('onBeforeCreate');
-            $onAfterCallback  = $this->getControllerCallback('onAfterCreate');
+            $onAfterCallback  = $this->getControllerCallback('onAfterCreate') ?? $this->getControllerCallback('afterSave');
 
             $this->validateRequest($request);
             $record = $this->model->createRecordFromRequest($request, $onBeforeCallback, $onAfterCallback);
@@ -492,7 +492,7 @@ trait HasApiControllerBehavior
     {
         try {
             $onBeforeCallback = $this->getControllerCallback('onBeforeUpdate');
-            $onAfterCallback  = $this->getControllerCallback('onAfterUpdate');
+            $onAfterCallback  = $this->getControllerCallback('onAfterUpdate') ?? $this->getControllerCallback('afterSave');
 
             $this->validateRequest($request);
             $record = $this->model->updateRecordFromRequest($request, $id, $onBeforeCallback, $onAfterCallback);
