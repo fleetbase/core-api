@@ -86,21 +86,25 @@ class ReportSchemaRegistry
         $tables = [];
 
         foreach ($this->tables as $table) {
-            if ($extension !== $table->getExtension()) continue;
-            if (!is_null($category) && $category !== $table->getCategory()) continue;
+            if ($extension !== $table->getExtension()) {
+                continue;
+            }
+            if (!is_null($category) && $category !== $table->getCategory()) {
+                continue;
+            }
             $tables[] = [
-                'name'                => $table->getName(),
-                'label'               => $table->getLabel(),
-                'description'         => $table->getDescription(),
-                'category'            => $table->getCategory(),
+                'name'                 => $table->getName(),
+                'label'                => $table->getLabel(),
+                'description'          => $table->getDescription(),
+                'category'             => $table->getCategory(),
                 'extension'            => $table->getExtension(),
-                'columns'             => $this->getTableColumns($table->getName()),
-                'relationships'       => $this->getTableRelationships($table->getName()),
-                'auto_join_columns'   => $this->getAutoJoinColumns($table->getName()),
-                'supports_aggregates' => $table->getSupportsAggregates(),
-                'max_rows'            => $table->getMaxRows(),
-                'has_auto_joins'      => !empty($table->getAutoJoinRelationships()),
-                'has_manual_joins'    => !empty($table->getManualJoinRelationships()),
+                'columns'              => $this->getTableColumns($table->getName()),
+                'relationships'        => $this->getTableRelationships($table->getName()),
+                'auto_join_columns'    => $this->getAutoJoinColumns($table->getName()),
+                'supports_aggregates'  => $table->getSupportsAggregates(),
+                'max_rows'             => $table->getMaxRows(),
+                'has_auto_joins'       => !empty($table->getAutoJoinRelationships()),
+                'has_manual_joins'     => !empty($table->getManualJoinRelationships()),
             ];
         }
 

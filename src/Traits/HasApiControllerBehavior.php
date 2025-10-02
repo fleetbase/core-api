@@ -4,6 +4,7 @@ namespace Fleetbase\Traits;
 
 use Closure;
 use Fleetbase\Exceptions\FleetbaseRequestValidationException;
+use Fleetbase\Http\Requests\FleetbaseRequest;
 use Fleetbase\Http\Requests\Internal\BulkDeleteRequest;
 use Fleetbase\Support\Http;
 use Fleetbase\Support\Resolve;
@@ -80,6 +81,22 @@ trait HasApiControllerBehavior
      * @var Request
      */
     public $compressJson = false;
+
+    /**
+     * The request class to be used for create operations on this resource.
+     *
+     * This can be set to a specific FleetbaseRequest instance or remain null
+     * if no create request validation is required.
+     */
+    protected ?FleetbaseRequest $createRequest = null;
+
+    /**
+     * The request class to be used for update operations on this resource.
+     *
+     * This can be set to a specific FleetbaseRequest instance or remain null
+     * if no update request validation is required.
+     */
+    protected ?FleetbaseRequest $updateRequest = null;
 
     /**
      * Determines the action to perform based on the HTTP verb.
@@ -220,7 +237,7 @@ trait HasApiControllerBehavior
      *
      * @param \Fleetbase\Models\Model $model
      *
-     * @return \Fleetbase\Http\Requests\FleetbaseRequest
+     * @return FleetbaseRequest
      */
     public function getApiRequestForModel(Model $model, ?string $namespace = null)
     {
@@ -270,6 +287,34 @@ trait HasApiControllerBehavior
         if (Utils::classExists($this->request)) {
             $formRequest = new $this->request($request->all());
             $validator   = Validator::make($request->all(), $formRequest->rules(), $formRequest->messages());
+
+            if ($validator->fails()) {
+                throw new FleetbaseRequestValidationException($validator->errors());
+            }
+        }
+
+        // Specific validators
+        if ($this->hasCreateRequest() && $request->isMethod('POST')) {
+            $createRequestClass = $this->getCreateRequest();
+            $createRequest      = $createRequestClass::createFrom($request);
+            $rules              = $createRequest->rules();
+
+            // Run validator
+            $validator = Validator::make($request->all(), $rules);
+
+            if ($validator->fails()) {
+                throw new FleetbaseRequestValidationException($validator->errors());
+            }
+        }
+
+        // Specific validators
+        if ($this->hasUpdateRequest() && $request->isMethod('PUT')) {
+            $updateRequestClass = $this->getUpdateRequest();
+            $updateRequest      = $updateRequestClass::createFrom($request);
+            $rules              = $updateRequest->rules();
+
+            // Run validator
+            $validator = Validator::make($request->all(), $rules);
 
             if ($validator->fails()) {
                 throw new FleetbaseRequestValidationException($validator->errors());
@@ -406,12 +451,12 @@ trait HasApiControllerBehavior
             }
 
             return new $this->resource($record);
-        } catch (\Exception $e) {
-            return response()->error($e->getMessage());
         } catch (QueryException $e) {
-            return response()->error($e->getMessage());
+            return response()->error(env('DEBUG') ? $e->getMessage() : 'Error occurred while trying to create a ' . $this->resourceSingularlName);
         } catch (FleetbaseRequestValidationException $e) {
             return response()->error($e->getErrors());
+        } catch (\Exception $e) {
+            return response()->error($e->getMessage());
         }
     }
 
@@ -459,12 +504,12 @@ trait HasApiControllerBehavior
             }
 
             return new $this->resource($record);
-        } catch (\Exception $e) {
-            return response()->error($e->getMessage());
         } catch (QueryException $e) {
-            return response()->error($e->getMessage());
+            return response()->error(env('DEBUG') ? $e->getMessage() : 'Error occurred while trying to update a ' . $this->resourceSingularlName);
         } catch (FleetbaseRequestValidationException $e) {
             return response()->error($e->getErrors());
+        } catch (\Exception $e) {
+            return response()->error($e->getMessage());
         }
     }
 
@@ -640,5 +685,41 @@ trait HasApiControllerBehavior
         }
 
         return null;
+    }
+
+    /**
+     * Get the configured update request class for this resource, if any.
+     */
+    public function getUpdateRequest(): ?FleetbaseRequest
+    {
+        return $this->updateRequest;
+    }
+
+    /**
+     * Get the configured create request class for this resource, if any.
+     */
+    public function getCreateRequest(): ?FleetbaseRequest
+    {
+        return $this->createRequest;
+    }
+
+    /**
+     * Determine if this resource has an update request class defined.
+     *
+     * @return bool true if an update request is set and is a FleetbaseRequest instance
+     */
+    public function hasUpdateRequest(): bool
+    {
+        return $this->getUpdateRequest() instanceof FleetbaseRequest;
+    }
+
+    /**
+     * Determine if this resource has a create request class defined.
+     *
+     * @return bool true if a create request is set and is a FleetbaseRequest instance
+     */
+    public function hasCreateRequest(): bool
+    {
+        return $this->getCreateRequest() instanceof FleetbaseRequest;
     }
 }

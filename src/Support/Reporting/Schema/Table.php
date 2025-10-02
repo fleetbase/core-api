@@ -8,19 +8,19 @@ class Table
 {
     protected string $name;
     protected string $label;
-    protected ?string $description     = null;
-    protected ?string $category        = null;
+    protected ?string $description      = null;
+    protected ?string $category         = null;
     protected ?string $extension        = null;
-    protected array $columns           = [];
-    protected array $computedColumns   = [];
-    protected array $relationships     = [];
-    protected array $excludedColumns   = [];
-    protected bool $supportsAggregates = true;
-    protected ?int $maxRows            = null;
-    protected bool $cacheable          = true;
-    protected int $cacheTtl            = 3600;
-    protected array $permissions       = [];
-    protected array $meta              = [];
+    protected array $columns            = [];
+    protected array $computedColumns    = [];
+    protected array $relationships      = [];
+    protected array $excludedColumns    = [];
+    protected bool $supportsAggregates  = true;
+    protected ?int $maxRows             = null;
+    protected bool $cacheable           = true;
+    protected int $cacheTtl             = 3600;
+    protected array $permissions        = [];
+    protected array $meta               = [];
 
     public function __construct(string $name)
     {
@@ -427,23 +427,23 @@ class Table
     public function toArray(): array
     {
         return [
-            'name'                      => $this->name,
-            'label'                     => $this->label,
-            'description'               => $this->description,
-            'category'                  => $this->category,
+            'name'                       => $this->name,
+            'label'                      => $this->label,
+            'description'                => $this->description,
+            'category'                   => $this->category,
             'extension'                  => $this->extension,
-            'columns'                   => array_map(fn ($column) => $column->toArray(), $this->getVisibleColumns()),
-            'computed_columns'          => array_map(fn ($column) => $column->toArray(), $this->computedColumns),
-            'relationships'             => array_map(fn ($rel) => $rel->toArray(), $this->relationships),
-            'auto_join_relationships'   => array_map(fn ($rel) => $rel->toArray(), $this->getAutoJoinRelationships()),
-            'manual_join_relationships' => array_map(fn ($rel) => $rel->toArray(), $this->getManualJoinRelationships()),
-            'excluded_columns'          => $this->excludedColumns,
-            'supports_aggregates'       => $this->supportsAggregates,
-            'max_rows'                  => $this->maxRows,
-            'cacheable'                 => $this->cacheable,
-            'cache_ttl'                 => $this->cacheTtl,
-            'permissions'               => $this->permissions,
-            'meta'                      => $this->meta,
+            'columns'                    => array_map(fn ($column) => $column->toArray(), $this->getVisibleColumns()),
+            'computed_columns'           => array_map(fn ($column) => $column->toArray(), $this->computedColumns),
+            'relationships'              => array_map(fn ($rel) => $rel->toArray(), $this->relationships),
+            'auto_join_relationships'    => array_map(fn ($rel) => $rel->toArray(), $this->getAutoJoinRelationships()),
+            'manual_join_relationships'  => array_map(fn ($rel) => $rel->toArray(), $this->getManualJoinRelationships()),
+            'excluded_columns'           => $this->excludedColumns,
+            'supports_aggregates'        => $this->supportsAggregates,
+            'max_rows'                   => $this->maxRows,
+            'cacheable'                  => $this->cacheable,
+            'cache_ttl'                  => $this->cacheTtl,
+            'permissions'                => $this->permissions,
+            'meta'                       => $this->meta,
         ];
     }
 

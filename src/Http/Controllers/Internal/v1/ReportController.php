@@ -37,7 +37,7 @@ class ReportController extends FleetbaseController
     public function getTables(Request $request): JsonResponse
     {
         $extension = $request->input('extension', 'core');
-        $category = $request->input('category');
+        $category  = $request->input('category');
 
         try {
             $tables = Report::getAvailableTables($extension, $category);
