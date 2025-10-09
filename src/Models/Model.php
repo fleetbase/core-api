@@ -11,6 +11,7 @@ use Fleetbase\Traits\Insertable;
 use Fleetbase\Traits\Searchable;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Str;
 
 class Model extends EloquentModel
 {
@@ -21,6 +22,13 @@ class Model extends EloquentModel
     use Filterable;
     use Expandable;
     use HasSessionAttributes;
+
+    /**
+     * Column names used for identifier lookups.
+     * Override in child models if your schema differs.
+     */
+    public const UUID_COLUMN      = 'uuid';
+    public const PUBLIC_ID_COLUMN = 'public_id';
 
     /**
      * Create a new instance of the model.
@@ -155,5 +163,73 @@ class Model extends EloquentModel
         }
 
         return $filterNamespace;
+    }
+
+    /**
+     * Find a model by either UUID or public_id.
+     *
+     * Looks up by {@see static::UUID_COLUMN} when the identifier is a valid UUID,
+     * otherwise falls back to {@see static::PUBLIC_ID_COLUMN}.
+     *
+     * @param  self|string|null $identifier  The UUID/public_id string, or a model instance (returned as-is).
+     * @param  array            $with        Relationships to eager load.
+     * @param  array            $columns     Columns to select (default ['*']).
+     * @param  bool             $withTrashed Include soft-deleted rows when the model uses SoftDeletes.
+     *
+     * @return static|null The found model instance or null if none match.
+     */
+    public static function findById(self|string|null $identifier, array $with = [], array $columns = ['*'], bool $withTrashed = false): ?self
+    {
+        if ($identifier instanceof self) {
+            return $identifier;
+        }
+
+        if ($identifier === null || $identifier === '') {
+            return null;
+        }
+
+        /** @var Builder $query */
+        $query = static::query()->with($with)->select($columns);
+
+        // Include soft-deleted rows if requested and supported.
+        if ($withTrashed && in_array(SoftDeletes::class, class_uses_recursive(static::class), true)) {
+            $query->withTrashed();
+        }
+
+        $column = Str::isUuid($identifier) ? static::UUID_COLUMN : static::PUBLIC_ID_COLUMN;
+
+        return $query->where($column, $identifier)->first();
+    }
+
+    /**
+     * Find a model by UUID or public_id, or throw a 404-style exception.
+     *
+     * Behaves like {@see findById()} but throws a ModelNotFoundException when not found.
+     *
+     * @param  self|string|null $identifier  The UUID/public_id string, or a model instance (returned as-is).
+     * @param  array            $with        Relationships to eager load.
+     * @param  array            $columns     Columns to select (default ['*']).
+     * @param  bool             $withTrashed Include soft-deleted rows when the model uses SoftDeletes.
+     *
+     * @throws \Illuminate\Database\Eloquent\ModelNotFoundException
+     *
+     * @return static
+     */
+    public static function findByIdOrFail(self|string|null $identifier, array $with = [], array $columns = ['*'], bool $withTrashed = false): self
+    {
+        // Fast path if already a model instance
+        if ($identifier instanceof self) {
+            return $identifier;
+        }
+
+        $result = static::findById($identifier, $with, $columns, $withTrashed);
+
+        if ($result === null) {
+            /** @var class-string<static> $cls */
+            $cls = static::class;
+            throw (new static)->newModelQuery()->getModel()->newQuery()->getModel()::query()->getModel()::query()->getModelNotFoundException($cls, [$identifier]);
+        }
+
+        return $result;
     }
 }

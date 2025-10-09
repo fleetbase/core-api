@@ -170,7 +170,7 @@ class Policy extends Model implements PolicyContract
      *
      * @throws \Fleetbase\Exceptions\PolicyDoesNotExist
      */
-    public static function findById(string $id, $guardName): self
+    public static function findByIdentifier(string $id, $guardName): self
     {
         return static::where(['id' => $id, 'guard_name' => $guardName])->first();
     }

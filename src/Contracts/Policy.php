@@ -31,7 +31,7 @@ interface Policy
      *
      * @throws \Fleetbase\Exceptions\PolicyDoesNotExist
      */
-    public static function findById(string $id, $guardName): self;
+    public static function findByIdentifier(string $id, $guardName): self;
 
     /**
      * Find or create a policy by its name and guard name.

@@ -359,7 +359,7 @@ trait HasApiControllerBehavior
             $data = Arr::first($data);
 
             if (!$data) {
-                return response()->error(Str::title($this->resourceSingularlName) . ' not found', 404);
+                return response()->error($this->getHumanReadableResourceName() . ' not found', 404);
             }
 
             if (Http::isInternalRequest($request)) {
@@ -410,7 +410,7 @@ trait HasApiControllerBehavior
             return [$this->resourceSingularlName => new $this->resource($record)];
         }
 
-        return response()->error(Str::title($this->resourceSingularlName) . ' not found', 404);
+        return response()->error($this->getHumanReadableResourceName() . ' not found', 404);
     }
 
     /**
@@ -454,11 +454,12 @@ trait HasApiControllerBehavior
 
             return new $this->resource($record);
         } catch (QueryException $e) {
-            return response()->error(env('DEBUG') ? $e->getMessage() : 'Error occurred while trying to create a ' . $this->resourceSingularlName);
+            dd($e);
+            return response()->error(env('DEBUG') ? $e->getMessage() : 'Error occurred while trying to create a ' . $this->getHumanReadableResourceName());
         } catch (FleetbaseRequestValidationException $e) {
             return response()->error($e->getErrors());
         } catch (\Exception $e) {
-            return response()->error($e->getMessage());
+            return response()->error(env('DEBUG') ? $e->getMessage() : 'Error occurred while trying to create a ' . $this->getHumanReadableResourceName());
         }
     }
 
@@ -507,11 +508,11 @@ trait HasApiControllerBehavior
 
             return new $this->resource($record);
         } catch (QueryException $e) {
-            return response()->error(env('DEBUG') ? $e->getMessage() : 'Error occurred while trying to update a ' . $this->resourceSingularlName);
+            return response()->error(env('DEBUG') ? $e->getMessage() : 'Error occurred while trying to update a ' . $this->getHumanReadableResourceName());
         } catch (FleetbaseRequestValidationException $e) {
             return response()->error($e->getErrors());
         } catch (\Exception $e) {
-            return response()->error($e->getMessage());
+            return response()->error(env('DEBUG') ? $e->getMessage() : 'Error occurred while trying to update a ' . $this->getHumanReadableResourceName());
         }
     }
 
@@ -561,7 +562,7 @@ trait HasApiControllerBehavior
             return response()->json(
                 [
                     'status'  => 'success',
-                    'message' => Str::title($this->resourceSingularlName) . ' deleted',
+                    'message' => $this->getHumanReadableResourceName() . ' deleted',
                     'data'    => new $this->resource($dataModel),
                 ]
             );
@@ -570,7 +571,7 @@ trait HasApiControllerBehavior
         return response()->json(
             [
                 'status'  => 'failed',
-                'message' => Str::title($this->resourceSingularlName) . ' not found',
+                'message' => $this->getHumanReadableResourceName() . ' not found',
             ],
             404
         );
@@ -723,5 +724,10 @@ trait HasApiControllerBehavior
     public function hasCreateRequest(): bool
     {
         return $this->getCreateRequest() instanceof FleetbaseRequest;
+    }
+
+    public function getHumanReadableResourceName():string
+    {
+        return Str::title(str_replace(['_', '-'], ' ', $this->resourceSingularlName));
     }
 }

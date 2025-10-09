@@ -24,7 +24,7 @@ class CreateCategoryRequest extends FleetbaseRequest
     public function rules()
     {
         return [
-            'category.name' => 'required|min:3',
+            'name' => 'required|min:3',
         ];
     }
 
@@ -36,8 +36,8 @@ class CreateCategoryRequest extends FleetbaseRequest
     public function messages()
     {
         return [
-            'category.name.required' => 'The category name is required.',
-            'category.name.min'      => 'The category name must be at least 3 characters.',
+            'name.required' => 'The category name is required.',
+            'name.min'      => 'The category name must be at least 3 characters.',
         ];
     }
 }

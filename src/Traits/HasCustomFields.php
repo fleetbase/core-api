@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Fleetbase\Support\Http;
 
 /**
  * Trait HasCustomFields.
@@ -25,6 +26,9 @@ trait HasCustomFields
 
     /** @var array<string,mixed> */
     protected array $customFieldValuesCache = [];
+
+    /** @var array<string> preserved keys */
+    private const RESERVED_CF_KEYS = ['custom_fields', 'custom_field_values'];
 
     /**
      * Custom field definitions attached directly to this subject.
@@ -248,6 +252,26 @@ trait HasCustomFields
     {
         $inserts = $this->getCustomFieldValues(true);
 
+        // Check for collisions and rename them with a leading underscore
+        foreach (self::RESERVED_CF_KEYS as $reserved) {
+            if (array_key_exists($reserved, $inserts)) {
+                $inserts['_' . $reserved] = $inserts[$reserved];
+                unset($inserts[$reserved]);
+            }
+        }
+
+        // Context: internal/public
+        $isInternal = Http::isInternalRequest();
+        $isPublic   = Http::isPublicRequest();
+        
+        if ($isInternal) {
+            $this->loadMissing('customFieldValues.customField');
+            $inserts['custom_field_values'] = $this->customFieldValues;
+        }
+        if ($isPublic) {
+            $inserts['custom_fields'] = $this->getCustomFieldKeys();
+        }
+
         if ($position === 'start') {
             return $inserts + $attributes; // preserve keys
         }
@@ -440,231 +464,181 @@ trait HasCustomFields
     }
 
     /**
-     * Sync custom field values from a frontend payload.
+     * Synchronize custom field values for the current model instance.
      *
-     * Payload format: array of objects with keys:
-     * - custom_field_uuid (string, required)
-     * - value (mixed)
-     * - value_type (string|null) e.g., 'text', 'date', 'file', etc.
+     * Behavior:
+     * - If a payload row contains a `uuid`, that exact CustomFieldValue record is updated.
+     * - If no `uuid` is provided, the record is updated or created based on
+     *   (`custom_field_uuid`, `subject_uuid`) uniqueness.
+     * - If `treat_null_as_delete` is true and a payload value is null, the corresponding
+     *   record is deleted.
+     * - If `delete_missing` is true, any existing custom field values not present in
+     *   the incoming payload are deleted.
+     * - Ensures the model’s `customFieldValues` relation is refreshed at the end so
+     *   subsequent API responses return updated values.
      *
      * Options:
-     * - delete_missing (bool)    : if true, delete existing values not present in payload (default: false)
-     * - persist (bool)           : if true, actually save to DB (default: true)
-     * - strategy (string)        : 'record' | 'upsert' (default: 'record')
-     * - treat_null_as_delete (bool): if true, entries with value === null will delete that value (default: false)
+     * - `persist` (bool, default true): if false, no DB writes are performed and only a dry-run
+     *   summary of intended changes is returned.
+     * - `treat_null_as_delete` (bool, default false): if true, null values in the payload delete
+     *   the corresponding record.
+     * - `delete_missing` (bool, default false): if true, values not present in the payload are deleted.
      *
-     * Returns: ['created' => int, 'updated' => int, 'deleted' => int, 'skipped' => int]
+     * @param  array  $payload  Array of field values in the shape:
+     *     [
+     *         'uuid'             => (string|null) existing value UUID,
+     *         'custom_field_uuid'=> (string) required,
+     *         'value'            => (mixed) value to store,
+     *         'value_type'       => (string|null),
+     *     ]
+     * @param  array  $options  Options to control persistence and delete behavior.
+     *
+     * @return array Summary of operations performed:
+     *     [
+     *         'created' => (int) number of new values inserted,
+     *         'updated' => (int) number of existing values updated,
+     *         'deleted' => (int) number of values deleted,
+     *         'skipped' => (int) number of rows skipped,
+     *     ]
+     *
+     * @throws \Throwable if a database transaction fails.
      */
     public function syncCustomFieldValues(array $payload, array $options = []): array
     {
         /** @var Model $this */
         $opts = array_merge([
             'delete_missing'       => false,
-            'persist'              => true,
-            'strategy'             => 'upsert', // or 'record'
             'treat_null_as_delete' => false,
+            'persist'              => true,
         ], $options);
 
-        // Normalize/validate entries
-        $items = [];
-        foreach ($payload as $i => $row) {
-            $uuid = Arr::get($row, 'custom_field_uuid');
-            if (!is_string($uuid) || $uuid === '') {
-                // skip invalid row
+        $subjectUuid = (string) $this->getAttribute('uuid');
+        $companyUuid = $this->getAttribute('company_uuid') ?? session('company');
+        $subjectType = (string) $this->getMorphClass();
+
+        $created = $updated = $deleted = $skipped = 0;
+
+        // normalize incoming; keep track of which field UUIDs we touched
+        $incoming = [];
+        foreach ($payload as $row) {
+            $fieldUuid = Arr::get($row, 'custom_field_uuid');
+            if (!is_string($fieldUuid) || $fieldUuid === '') {
+                $skipped++;
                 continue;
             }
-
-            $items[$uuid] = [
-                'custom_field_uuid' => $uuid,
-                'value'             => Arr::get($row, 'value'),
-                'value_type'        => Arr::get($row, 'value_type', null),
-            ];
+            $incoming[] = $fieldUuid;
         }
-
-        if (empty($items)) {
-            // nothing to do; optionally delete all if asked
-            $deleted = 0;
-            if ($opts['delete_missing'] && $opts['persist']) {
-                $deleted = (int) $this->customFieldValues()->delete();
-            }
-            $this->customFieldValuesCache = [];
-
-            return ['created' => 0, 'updated' => 0, 'deleted' => $deleted, 'skipped' => 0];
-        }
-
-        // Load existing values once
-        $this->loadMissing('customFieldValues');
-        $existing = $this->customFieldValues->keyBy('custom_field_uuid');
-
-        $created = 0;
-        $updated = 0;
-        $deleted = 0;
-        $skipped = 0;
 
         if (!$opts['persist']) {
-            // Dry-run summary only (no DB writes)
-            foreach ($items as $uuid => $row) {
-                $current = $existing->get($uuid);
-                if ($opts['treat_null_as_delete'] && $row['value'] === null) {
-                    if ($current) {
+            // dry-run: just report intent (very lightweight)
+            return ['created' => 0, 'updated' => 0, 'deleted' => 0, 'skipped' => $skipped];
+        }
+
+        DB::transaction(function () use (
+            $payload, $opts, $subjectUuid, $companyUuid, $subjectType,
+            &$created, &$updated, &$deleted, &$skipped
+        ) {
+            // cache existing values for this subject, keyed by both uuid and custom_field_uuid
+            $existing = $this->customFieldValues()->get();
+            $byUuid   = $existing->keyBy('uuid');
+            $byField  = $existing->keyBy('custom_field_uuid');
+
+            foreach ($payload as $row) {
+                $valUuid   = Arr::get($row, 'uuid');
+                $fieldUuid = Arr::get($row, 'custom_field_uuid');
+                $value     = Arr::get($row, 'value');
+                $valueType = Arr::get($row, 'value_type');
+
+                if (!is_string($fieldUuid) || $fieldUuid === '') {
+                    $skipped++;
+                    continue;
+                }
+
+                // delete if requested and value is null
+                if ($opts['treat_null_as_delete'] && $value === null) {
+                    $target = $valUuid ? $byUuid->get($valUuid) : $byField->get($fieldUuid);
+                    if ($target) {
+                        $target->delete();
                         $deleted++;
+                        $byUuid->forget($target->uuid);
+                        $byField->forget($fieldUuid);
                     } else {
                         $skipped++;
                     }
                     continue;
                 }
-                if ($current) {
-                    $changed = ($current->value !== $row['value']) || ($current->value_type !== ($row['value_type'] ?? null));
-                    $changed ? $updated++ : $skipped++;
+
+                if ($valUuid && ($target = $byUuid->get($valUuid))) {
+                    // UPDATE by row UUID
+                    $changed = ($target->value !== $value) || ($target->value_type !== $valueType);
+                    if ($changed) {
+                        $target->fill([
+                            'value'      => $value,
+                            'value_type' => $valueType,
+                        ]);
+                        $target->company_uuid = $companyUuid ?? $target->company_uuid;
+                        $target->subject_type = $subjectType;
+                        method_exists($target, 'saveQuietly') ? $target->saveQuietly() : $target->save();
+                        $updated++;
+                    } else {
+                        $skipped++;
+                    }
+                    // keep maps fresh
+                    $byField->put($fieldUuid, $target);
+                    continue;
+                }
+
+                // No UUID match: UPDATE/CREATE by (custom_field_uuid, subject_uuid)
+                $target = $byField->get($fieldUuid);
+                if ($target) {
+                    $changed = ($target->value !== $value) || ($target->value_type !== $valueType);
+                    if ($changed) {
+                        $target->fill([
+                            'value'      => $value,
+                            'value_type' => $valueType,
+                        ]);
+                        $target->company_uuid = $companyUuid ?? $target->company_uuid;
+                        $target->subject_type = $subjectType;
+                        method_exists($target, 'saveQuietly') ? $target->saveQuietly() : $target->save();
+                        $updated++;
+                    } else {
+                        $skipped++;
+                    }
                 } else {
+                    // CREATE
+                    $new = $this->customFieldValues()->make([
+                        'custom_field_uuid' => $fieldUuid,
+                        'subject_uuid'      => $subjectUuid,
+                        'subject_type'      => $subjectType,
+                        'company_uuid'      => $companyUuid,
+                        'value'             => $value,
+                        'value_type'        => $valueType,
+                    ]);
+                    $new->forceFill(['uuid' => CustomFieldValue::generateUuid()]);
+                    method_exists($new, 'saveQuietly') ? $new->saveQuietly() : $new->save();
                     $created++;
+                    $byUuid->put($new->uuid, $new);
+                    $byField->put($fieldUuid, $new);
                 }
             }
 
             if ($opts['delete_missing']) {
-                $incoming = array_keys($items);
-                $toDelete = $existing->keys()->diff($incoming);
-                $deleted += $toDelete->count();
-            }
-
-            return compact('created', 'updated', 'deleted', 'skipped');
-        }
-
-        // Persisting changes
-        return DB::transaction(function () use (&$existing, $items, $opts, &$created, &$updated, &$deleted, &$skipped) {
-            if ($opts['strategy'] === 'upsert') {
-                // ---------- Fast batch path (no per-record events) ----------
-                $now     = now();
-                $rows    = [];
-                $uuid    = (string) $this->getAttribute('uuid');
-                $ctype   = (string) $this->getMorphClass();
-                $company = $this->getAttribute('company_uuid') ?? session('company');
-
-                foreach ($items as $fieldUuid => $row) {
-                    if ($opts['treat_null_as_delete'] && $row['value'] === null) {
-                        // delete nulls if present
-                        if ($existing->has($fieldUuid)) {
-                            $this->customFieldValues()
-                                 ->where('custom_field_uuid', $fieldUuid)
-                                 ->delete();
-                            $deleted++;
-                            $existing->forget($fieldUuid);
-                        } else {
-                            $skipped++;
-                        }
-                        continue;
-                    }
-
-                    $rows[] = [
-                        'custom_field_uuid' => $fieldUuid,
-                        'subject_uuid'      => $uuid,
-                        'subject_type'      => $ctype,
-                        'company_uuid'      => $company,
-                        'value'             => $row['value'],
-                        'value_type'        => $row['value_type'] ?? null,
-                        'created_at'        => $now,
-                        'updated_at'        => $now,
-                    ];
-                }
-
-                if (!empty($rows)) {
-                    // (custom_field_uuid, subject_uuid) considered unique key for a subject
-                    CustomFieldValue::query()->upsert(
-                        $rows,
-                        ['custom_field_uuid', 'subject_uuid'],
-                        ['value', 'value_type', 'company_uuid', 'subject_type', 'updated_at']
-                    );
-
-                    // We don’t know exact split of created vs updated; approximate using existing keys
-                    foreach ($rows as $r) {
-                        if ($existing->has($r['custom_field_uuid'])) {
-                            $updated++;
-                        } else {
-                            $created++;
-                        }
-                    }
-                }
-
-                if ($opts['delete_missing']) {
-                    $incoming = array_keys($items);
-                    $toDelete = $existing->keys()->diff($incoming);
-                    if ($toDelete->isNotEmpty()) {
-                        $deleted += (int) $this->customFieldValues()
-                            ->whereIn('custom_field_uuid', $toDelete->all())
-                            ->delete();
-                    }
-                }
-            } else {
-                // ---------- Per-record path (fires model events) ----------
-                foreach ($items as $fieldUuid => $row) {
-                    $current = $existing->get($fieldUuid);
-
-                    // Delete if null and configured
-                    if ($opts['treat_null_as_delete'] && $row['value'] === null) {
-                        if ($current) {
-                            $deleted += (int) $current->delete();
-                            $existing->forget($fieldUuid);
-                        } else {
-                            $skipped++;
-                        }
-                        continue;
-                    }
-
-                    if ($current) {
-                        $changed = false;
-
-                        if ($current->value !== $row['value']) {
-                            $current->value = $row['value'];
-                            $changed        = true;
-                        }
-
-                        $nextType = $row['value_type'] ?? null;
-                        if ($current->value_type !== $nextType) {
-                            $current->value_type = $nextType;
-                            $changed             = true;
-                        }
-
-                        if ($changed) {
-                            $current->company_uuid = $this->getAttribute('company_uuid') ?? $current->company_uuid;
-                            method_exists($current, 'saveQuietly') ? $current->saveQuietly() : $current->save();
-                            $updated++;
-                        } else {
-                            $skipped++;
-                        }
-                    } else {
-                        /** @var CustomFieldValue $new */
-                        $new = $this->customFieldValues()->make([
-                            'custom_field_uuid' => $fieldUuid,
-                            'value'             => $row['value'],
-                            'value_type'        => $row['value_type'] ?? null,
-                        ]);
-                        $new->subject_type = (string) $this->getMorphClass();
-                        $new->company_uuid = $this->getAttribute('company_uuid') ?? session('company');
-
-                        method_exists($new, 'saveQuietly') ? $new->saveQuietly() : $new->save();
-                        $existing->put($fieldUuid, $new);
-                        $created++;
-                    }
-                }
-
-                if ($opts['delete_missing']) {
-                    $incoming = array_keys($items);
-                    $toDelete = $existing->keys()->diff($incoming);
-
-                    foreach ($toDelete as $fieldUuid) {
-                        $victim = $existing->get($fieldUuid);
-                        if ($victim) {
-                            $deleted += (int) $victim->delete();
-                            $existing->forget($fieldUuid);
-                        }
+                $incomingFields = collect($payload)->pluck('custom_field_uuid')->filter()->unique();
+                $toDelete = $byField->keys()->diff($incomingFields);
+                foreach ($toDelete as $fieldUuid) {
+                    if ($victim = $byField->get($fieldUuid)) {
+                        $victim->delete();
+                        $deleted++;
                     }
                 }
             }
-
-            // Bust value cache
-            $this->customFieldValuesCache = [];
-
-            return compact('created', 'updated', 'deleted', 'skipped');
         });
+
+        // always refresh relation so responses reflect latest DB values
+        $this->unsetRelation('customFieldValues');
+        $this->load('customFieldValues');
+        $this->customFieldValuesCache = [];
+
+        return compact('created', 'updated', 'deleted', 'skipped');
     }
 }
