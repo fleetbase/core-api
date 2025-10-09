@@ -40,7 +40,7 @@
         "laravel-notification-channels/fcm": "^4.1",
         "laravel-notification-channels/twilio": "^3.3",
         "laravel/sanctum": "3.2.4",
-        "lcobucci/clock": "^3.3",
+        "lcobucci/clock": "3.3.1",
         "lcobucci/jwt": "^5.4",
         "maatwebsite/excel": "^3.1",
         "phpoffice/phpspreadsheet": "^1.28",
