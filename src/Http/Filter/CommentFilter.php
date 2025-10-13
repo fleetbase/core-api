@@ -25,6 +25,11 @@ class CommentFilter extends Filter
         });
     }
 
+    public function subjectUuid(string $id)
+    {
+        $this->builder->where('subject_uuid', $id);
+    }
+
     public function parent(string $id)
     {
         if (Str::isUuid($id)) {
