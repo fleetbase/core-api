@@ -208,6 +208,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     $router->get('enforce', $controller('shouldEnforce'));
                                 }
                                 );
+                                $router->fleetbaseRoutes('activities');
                                 $router->fleetbaseRoutes('api-events');
                                 $router->fleetbaseRoutes('api-request-logs');
                                 $router->fleetbaseRoutes(

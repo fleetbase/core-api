@@ -455,6 +455,7 @@ trait HasApiControllerBehavior
             return new $this->resource($record);
         } catch (QueryException $e) {
             dd($e);
+
             return response()->error(env('DEBUG') ? $e->getMessage() : 'Error occurred while trying to create a ' . $this->getHumanReadableResourceName());
         } catch (FleetbaseRequestValidationException $e) {
             return response()->error($e->getErrors());
@@ -726,7 +727,7 @@ trait HasApiControllerBehavior
         return $this->getCreateRequest() instanceof FleetbaseRequest;
     }
 
-    public function getHumanReadableResourceName():string
+    public function getHumanReadableResourceName(): string
     {
         return Str::title(str_replace(['_', '-'], ' ', $this->resourceSingularlName));
     }

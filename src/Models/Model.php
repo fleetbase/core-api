@@ -171,12 +171,12 @@ class Model extends EloquentModel
      * Looks up by {@see static::UUID_COLUMN} when the identifier is a valid UUID,
      * otherwise falls back to {@see static::PUBLIC_ID_COLUMN}.
      *
-     * @param  self|string|null $identifier  The UUID/public_id string, or a model instance (returned as-is).
-     * @param  array            $with        Relationships to eager load.
-     * @param  array            $columns     Columns to select (default ['*']).
-     * @param  bool             $withTrashed Include soft-deleted rows when the model uses SoftDeletes.
+     * @param self|string|null $identifier  the UUID/public_id string, or a model instance (returned as-is)
+     * @param array            $with        relationships to eager load
+     * @param array            $columns     columns to select (default ['*'])
+     * @param bool             $withTrashed include soft-deleted rows when the model uses SoftDeletes
      *
-     * @return static|null The found model instance or null if none match.
+     * @return static|null the found model instance or null if none match
      */
     public static function findById(self|string|null $identifier, array $with = [], array $columns = ['*'], bool $withTrashed = false): ?self
     {
@@ -206,14 +206,14 @@ class Model extends EloquentModel
      *
      * Behaves like {@see findById()} but throws a ModelNotFoundException when not found.
      *
-     * @param  self|string|null $identifier  The UUID/public_id string, or a model instance (returned as-is).
-     * @param  array            $with        Relationships to eager load.
-     * @param  array            $columns     Columns to select (default ['*']).
-     * @param  bool             $withTrashed Include soft-deleted rows when the model uses SoftDeletes.
-     *
-     * @throws \Illuminate\Database\Eloquent\ModelNotFoundException
+     * @param self|string|null $identifier  the UUID/public_id string, or a model instance (returned as-is)
+     * @param array            $with        relationships to eager load
+     * @param array            $columns     columns to select (default ['*'])
+     * @param bool             $withTrashed include soft-deleted rows when the model uses SoftDeletes
      *
      * @return static
+     *
+     * @throws \Illuminate\Database\Eloquent\ModelNotFoundException
      */
     public static function findByIdOrFail(self|string|null $identifier, array $with = [], array $columns = ['*'], bool $withTrashed = false): self
     {
@@ -227,7 +227,7 @@ class Model extends EloquentModel
         if ($result === null) {
             /** @var class-string<static> $cls */
             $cls = static::class;
-            throw (new static)->newModelQuery()->getModel()->newQuery()->getModel()::query()->getModel()::query()->getModelNotFoundException($cls, [$identifier]);
+            throw (new static())->newModelQuery()->getModel()->newQuery()->getModel()::query()->getModel()::query()->getModelNotFoundException($cls, [$identifier]);
         }
 
         return $result;

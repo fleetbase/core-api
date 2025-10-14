@@ -4,12 +4,12 @@ namespace Fleetbase\Traits;
 
 use Fleetbase\Models\CustomField;
 use Fleetbase\Models\CustomFieldValue;
+use Fleetbase\Support\Http;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use Fleetbase\Support\Http;
 
 /**
  * Trait HasCustomFields.
@@ -263,7 +263,7 @@ trait HasCustomFields
         // Context: internal/public
         $isInternal = Http::isInternalRequest();
         $isPublic   = Http::isPublicRequest();
-        
+
         if ($isInternal) {
             $this->loadMissing('customFieldValues.customField');
             $inserts['custom_field_values'] = $this->customFieldValues;
@@ -484,24 +484,24 @@ trait HasCustomFields
      *   the corresponding record.
      * - `delete_missing` (bool, default false): if true, values not present in the payload are deleted.
      *
-     * @param  array  $payload  Array of field values in the shape:
-     *     [
-     *         'uuid'             => (string|null) existing value UUID,
-     *         'custom_field_uuid'=> (string) required,
-     *         'value'            => (mixed) value to store,
-     *         'value_type'       => (string|null),
-     *     ]
-     * @param  array  $options  Options to control persistence and delete behavior.
+     * @param array $payload Array of field values in the shape:
+     *                       [
+     *                       'uuid'             => (string|null) existing value UUID,
+     *                       'custom_field_uuid'=> (string) required,
+     *                       'value'            => (mixed) value to store,
+     *                       'value_type'       => (string|null),
+     *                       ]
+     * @param array $options options to control persistence and delete behavior
      *
      * @return array Summary of operations performed:
-     *     [
-     *         'created' => (int) number of new values inserted,
-     *         'updated' => (int) number of existing values updated,
-     *         'deleted' => (int) number of values deleted,
-     *         'skipped' => (int) number of rows skipped,
-     *     ]
+     *               [
+     *               'created' => (int) number of new values inserted,
+     *               'updated' => (int) number of existing values updated,
+     *               'deleted' => (int) number of values deleted,
+     *               'skipped' => (int) number of rows skipped,
+     *               ]
      *
-     * @throws \Throwable if a database transaction fails.
+     * @throws \Throwable if a database transaction fails
      */
     public function syncCustomFieldValues(array $payload, array $options = []): array
     {
@@ -624,7 +624,7 @@ trait HasCustomFields
 
             if ($opts['delete_missing']) {
                 $incomingFields = collect($payload)->pluck('custom_field_uuid')->filter()->unique();
-                $toDelete = $byField->keys()->diff($incomingFields);
+                $toDelete       = $byField->keys()->diff($incomingFields);
                 foreach ($toDelete as $fieldUuid) {
                     if ($victim = $byField->get($fieldUuid)) {
                         $victim->delete();
