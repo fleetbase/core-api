@@ -4,8 +4,11 @@ namespace Fleetbase\Traits;
 
 use Fleetbase\Models\CustomField;
 use Fleetbase\Models\CustomFieldValue;
+use Fleetbase\Support\Http;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /**
@@ -23,6 +26,9 @@ trait HasCustomFields
 
     /** @var array<string,mixed> */
     protected array $customFieldValuesCache = [];
+
+    /** @var array<string> preserved keys */
+    private const RESERVED_CF_KEYS = ['custom_fields', 'custom_field_values'];
 
     /**
      * Custom field definitions attached directly to this subject.
@@ -246,6 +252,26 @@ trait HasCustomFields
     {
         $inserts = $this->getCustomFieldValues(true);
 
+        // Check for collisions and rename them with a leading underscore
+        foreach (self::RESERVED_CF_KEYS as $reserved) {
+            if (array_key_exists($reserved, $inserts)) {
+                $inserts['_' . $reserved] = $inserts[$reserved];
+                unset($inserts[$reserved]);
+            }
+        }
+
+        // Context: internal/public
+        $isInternal = Http::isInternalRequest();
+        $isPublic   = Http::isPublicRequest();
+
+        if ($isInternal) {
+            $this->loadMissing('customFieldValues.customField');
+            $inserts['custom_field_values'] = $this->customFieldValues;
+        }
+        if ($isPublic) {
+            $inserts['custom_fields'] = $this->getCustomFieldKeys();
+        }
+
         if ($position === 'start') {
             return $inserts + $attributes; // preserve keys
         }
@@ -435,5 +461,184 @@ trait HasCustomFields
         $right = array_slice($base, $pos, null, true);
 
         return $left + $inserts + $right;
+    }
+
+    /**
+     * Synchronize custom field values for the current model instance.
+     *
+     * Behavior:
+     * - If a payload row contains a `uuid`, that exact CustomFieldValue record is updated.
+     * - If no `uuid` is provided, the record is updated or created based on
+     *   (`custom_field_uuid`, `subject_uuid`) uniqueness.
+     * - If `treat_null_as_delete` is true and a payload value is null, the corresponding
+     *   record is deleted.
+     * - If `delete_missing` is true, any existing custom field values not present in
+     *   the incoming payload are deleted.
+     * - Ensures the model’s `customFieldValues` relation is refreshed at the end so
+     *   subsequent API responses return updated values.
+     *
+     * Options:
+     * - `persist` (bool, default true): if false, no DB writes are performed and only a dry-run
+     *   summary of intended changes is returned.
+     * - `treat_null_as_delete` (bool, default false): if true, null values in the payload delete
+     *   the corresponding record.
+     * - `delete_missing` (bool, default false): if true, values not present in the payload are deleted.
+     *
+     * @param array $payload Array of field values in the shape:
+     *                       [
+     *                       'uuid'             => (string|null) existing value UUID,
+     *                       'custom_field_uuid'=> (string) required,
+     *                       'value'            => (mixed) value to store,
+     *                       'value_type'       => (string|null),
+     *                       ]
+     * @param array $options options to control persistence and delete behavior
+     *
+     * @return array Summary of operations performed:
+     *               [
+     *               'created' => (int) number of new values inserted,
+     *               'updated' => (int) number of existing values updated,
+     *               'deleted' => (int) number of values deleted,
+     *               'skipped' => (int) number of rows skipped,
+     *               ]
+     *
+     * @throws \Throwable if a database transaction fails
+     */
+    public function syncCustomFieldValues(array $payload, array $options = []): array
+    {
+        /** @var Model $this */
+        $opts = array_merge([
+            'delete_missing'       => false,
+            'treat_null_as_delete' => false,
+            'persist'              => true,
+        ], $options);
+
+        $subjectUuid = (string) $this->getAttribute('uuid');
+        $companyUuid = $this->getAttribute('company_uuid') ?? session('company');
+        $subjectType = (string) $this->getMorphClass();
+
+        $created = $updated = $deleted = $skipped = 0;
+
+        // normalize incoming; keep track of which field UUIDs we touched
+        $incoming = [];
+        foreach ($payload as $row) {
+            $fieldUuid = Arr::get($row, 'custom_field_uuid');
+            if (!is_string($fieldUuid) || $fieldUuid === '') {
+                $skipped++;
+                continue;
+            }
+            $incoming[] = $fieldUuid;
+        }
+
+        if (!$opts['persist']) {
+            // dry-run: just report intent (very lightweight)
+            return ['created' => 0, 'updated' => 0, 'deleted' => 0, 'skipped' => $skipped];
+        }
+
+        DB::transaction(function () use (
+            $payload, $opts, $subjectUuid, $companyUuid, $subjectType,
+            &$created, &$updated, &$deleted, &$skipped
+        ) {
+            // cache existing values for this subject, keyed by both uuid and custom_field_uuid
+            $existing = $this->customFieldValues()->get();
+            $byUuid   = $existing->keyBy('uuid');
+            $byField  = $existing->keyBy('custom_field_uuid');
+
+            foreach ($payload as $row) {
+                $valUuid   = Arr::get($row, 'uuid');
+                $fieldUuid = Arr::get($row, 'custom_field_uuid');
+                $value     = Arr::get($row, 'value');
+                $valueType = Arr::get($row, 'value_type');
+
+                if (!is_string($fieldUuid) || $fieldUuid === '') {
+                    $skipped++;
+                    continue;
+                }
+
+                // delete if requested and value is null
+                if ($opts['treat_null_as_delete'] && $value === null) {
+                    $target = $valUuid ? $byUuid->get($valUuid) : $byField->get($fieldUuid);
+                    if ($target) {
+                        $target->delete();
+                        $deleted++;
+                        $byUuid->forget($target->uuid);
+                        $byField->forget($fieldUuid);
+                    } else {
+                        $skipped++;
+                    }
+                    continue;
+                }
+
+                if ($valUuid && ($target = $byUuid->get($valUuid))) {
+                    // UPDATE by row UUID
+                    $changed = ($target->value !== $value) || ($target->value_type !== $valueType);
+                    if ($changed) {
+                        $target->fill([
+                            'value'      => $value,
+                            'value_type' => $valueType,
+                        ]);
+                        $target->company_uuid = $companyUuid ?? $target->company_uuid;
+                        $target->subject_type = $subjectType;
+                        method_exists($target, 'saveQuietly') ? $target->saveQuietly() : $target->save();
+                        $updated++;
+                    } else {
+                        $skipped++;
+                    }
+                    // keep maps fresh
+                    $byField->put($fieldUuid, $target);
+                    continue;
+                }
+
+                // No UUID match: UPDATE/CREATE by (custom_field_uuid, subject_uuid)
+                $target = $byField->get($fieldUuid);
+                if ($target) {
+                    $changed = ($target->value !== $value) || ($target->value_type !== $valueType);
+                    if ($changed) {
+                        $target->fill([
+                            'value'      => $value,
+                            'value_type' => $valueType,
+                        ]);
+                        $target->company_uuid = $companyUuid ?? $target->company_uuid;
+                        $target->subject_type = $subjectType;
+                        method_exists($target, 'saveQuietly') ? $target->saveQuietly() : $target->save();
+                        $updated++;
+                    } else {
+                        $skipped++;
+                    }
+                } else {
+                    // CREATE
+                    $new = $this->customFieldValues()->make([
+                        'custom_field_uuid' => $fieldUuid,
+                        'subject_uuid'      => $subjectUuid,
+                        'subject_type'      => $subjectType,
+                        'company_uuid'      => $companyUuid,
+                        'value'             => $value,
+                        'value_type'        => $valueType,
+                    ]);
+                    $new->forceFill(['uuid' => CustomFieldValue::generateUuid()]);
+                    method_exists($new, 'saveQuietly') ? $new->saveQuietly() : $new->save();
+                    $created++;
+                    $byUuid->put($new->uuid, $new);
+                    $byField->put($fieldUuid, $new);
+                }
+            }
+
+            if ($opts['delete_missing']) {
+                $incomingFields = collect($payload)->pluck('custom_field_uuid')->filter()->unique();
+                $toDelete       = $byField->keys()->diff($incomingFields);
+                foreach ($toDelete as $fieldUuid) {
+                    if ($victim = $byField->get($fieldUuid)) {
+                        $victim->delete();
+                        $deleted++;
+                    }
+                }
+            }
+        });
+
+        // always refresh relation so responses reflect latest DB values
+        $this->unsetRelation('customFieldValues');
+        $this->load('customFieldValues');
+        $this->customFieldValuesCache = [];
+
+        return compact('created', 'updated', 'deleted', 'skipped');
     }
 }

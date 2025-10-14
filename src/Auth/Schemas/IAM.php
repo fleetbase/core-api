@@ -44,6 +44,10 @@ class IAM
             'name'    => 'policy',
             'actions' => ['export'],
         ],
+        [
+            'name'    => 'report',
+            'actions' => ['export', 'execute'],
+        ],
     ];
 
     /**

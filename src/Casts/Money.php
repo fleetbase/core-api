@@ -32,11 +32,12 @@ class Money implements CastsAttributes
         if ($value === null) {
             return 0;
         }
+
         $value = static::removeCurrencySymbols($value);
         $value = static::removeSpecialCharactersExceptDotAndComma($value);
-        if (is_float($value) || Str::contains($value, '.')) {
-            $value = number_format((float) $value, 2, '.', '');
-        }
+        // if (is_float($value) || Str::contains($value, '.')) {
+        //     $value = number_format((float) $value, 2, '.', '');
+        // }
 
         return Utils::numbersOnly($value);
     }
@@ -49,11 +50,12 @@ class Money implements CastsAttributes
         if ($value === null) {
             return 0;
         }
+
         $value = static::removeCurrencySymbols($value);
         $value = static::removeSpecialCharactersExceptDotAndComma($value);
-        if (is_float($value) || Str::contains($value, '.')) {
-            $value = number_format((float) $value, 2, '.', '');
-        }
+        // if (is_float($value) || Str::contains($value, '.')) {
+        //     $value = number_format((float) $value, 2, '.', '');
+        // }
 
         return Utils::numbersOnly($value);
     }

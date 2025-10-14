@@ -17,15 +17,40 @@ class Http extends HttpClient
             return false;
         }
 
-        $action    = data_get($route, 'action');
-        $namespace = data_get($action, 'namespace');
+        $action    = data_get($route, 'action', []);
+        $namespace = (string) data_get($action, 'namespace', '');
 
-        return Str::contains($namespace, 'Internal') || Str::contains($route->uri(), '/int/');
+        // Normalize URI and split segments
+        $uri       = ltrim((string) $route->uri(), '/');
+        $segments  = explode('/', $uri);
+
+        // Consider any route whose first segment is "int" as internal
+        if (!empty($segments) && $segments[0] === 'int') {
+            return true;
+        }
+
+        // Also catch nested internal namespaces like "storefront/int/v1/..."
+        if (in_array('int', $segments, true)) {
+            return true;
+        }
+
+        // Fallback to namespace heuristic (older apps may still use it)
+        return Str::contains($namespace, 'Internal');
     }
 
     public static function isPublicRequest(?Request $request = null): bool
     {
-        return !static::isInternalRequest($request);
+        $request = $request ?? request();
+        $route   = $request->route();
+
+        if ($route === null) {
+            return false;
+        }
+
+        $uri = ltrim((string) $route->uri(), '/');
+
+        // Only log true public API: starts with "v1/"
+        return Str::startsWith($uri, 'v1/');
     }
 
     /**

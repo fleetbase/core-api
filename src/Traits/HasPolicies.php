@@ -69,7 +69,7 @@ trait HasPolicies
                 return $role;
             }
 
-            $method = is_numeric($role) ? 'findById' : 'findByName';
+            $method = is_numeric($role) ? 'findByIdentifier' : 'findByName';
             $guard  = $guard ?: $this->getDefaultGuardName();
 
             return $this->getPolicyClass()->{$method}($role, $guard);
@@ -260,7 +260,7 @@ trait HasPolicies
         $policyClass = $this->getPolicyClass();
 
         if (Str::isUuid($policy)) {
-            return $policyClass->findById($policy, $this->getDefaultGuardName());
+            return $policyClass->findByIdentifier($policy, $this->getDefaultGuardName());
         }
 
         if (is_string($policy)) {

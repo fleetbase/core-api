@@ -264,11 +264,9 @@ class Utils
     /**
      * Creates an object from an array.
      *
-     * @param array $attributes
-     *
-     * @return stdObject
+     * @return stdClass
      */
-    public static function createObject($attributes = [])
+    public static function createObject(array $attributes = []): \stdClass
     {
         return (object) $attributes;
     }
@@ -2669,5 +2667,29 @@ class Utils
     {
         // Remove dashes and spaces
         return str_replace(['-', ' '], '', $phone);
+    }
+
+    public static function delinkify(string $text): string
+    {
+        // Break common autolink patterns by inserting zero-width space
+        // between parts that would form a URL or email
+        $patterns = [
+            // simple domain.tld
+            '/([A-Za-z0-9])(\.)([A-Za-z]{2,24})(\b)/u',
+            // http(s)://
+            '/(https?:\/\/)/i',
+            // www.
+            '/\b(www\.)/i',
+            // email user@domain
+            '/(@)/',
+        ];
+        $repl = [
+            '$1&#8203;$2&#8203;$3$4', // a&#8203;.&#8203;tld
+            '$1&#8203;',             // h&#8203;ttp://
+            '$1&#8203;',             // w&#8203;ww.
+            '&#8203;$1',              // user&#8203;@domain
+        ];
+
+        return preg_replace($patterns, $repl, e($text)); // e() = HTML-escape
     }
 }

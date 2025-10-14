@@ -208,6 +208,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     $router->get('enforce', $controller('shouldEnforce'));
                                 }
                                 );
+                                $router->fleetbaseRoutes('activities');
                                 $router->fleetbaseRoutes('api-events');
                                 $router->fleetbaseRoutes('api-request-logs');
                                 $router->fleetbaseRoutes(
@@ -287,6 +288,20 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     $router->post('reset-default', $controller('resetDefaultDashboard'));
                                 });
                                 $router->fleetbaseRoutes('dashboard-widgets');
+                                $router->fleetbaseRoutes('reports', function ($router, $controller) {
+                                    $router->get('tables', $controller('getTables'));
+                                    $router->get('tables/{table}/schema', $controller('getTableSchema'));
+                                    $router->get('tables/{table}/columns', $controller('getTableColumns'));
+                                    $router->get('tables/{table}/relationships', $controller('getTableRelationships'));
+                                    $router->post('validate-query', $controller('validateQuery'));
+                                    $router->post('execute-query', $controller('executeQuery'));
+                                    $router->post('analyze-query', $controller('analyzeQuery'));
+                                    $router->post('export-query', $controller('exportQuery'));
+                                    $router->get('query-recommendations', $controller('getQueryRecommendations'));
+                                    $router->get('export-formats', $controller('getExportFormats'));
+                                    $router->post('{id}/execute', $controller('execute'));
+                                    $router->post('{id}/export', $controller('export'));
+                                });
                             }
                         );
                     }
