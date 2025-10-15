@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Support\Reporting;
 
+use Fleetbase\Support\Utils;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -35,8 +36,12 @@ class ReportQueryConverter
             // Build the query
             $query = $this->buildQuery();
 
+            // Dump query
+            // Utils::sqlDump($query);
+
             // Execute and get results
             $results = $query->get()->toArray();
+            // dd($results);
 
             // Process results
             $processedResults = $this->processResults($results);
@@ -85,6 +90,9 @@ class ReportQueryConverter
         // Start with base query
         $query = DB::table($tableName);
 
+        // Always scope by company
+        $this->applyCompanyScope($query);
+
         // Process auto-joins first (based on selected columns)
         $this->processAutoJoins($query, $tableName);
 
@@ -109,6 +117,42 @@ class ReportQueryConverter
         return $query;
     }
 
+    protected function applyCompanyScope(Builder $query): void
+    {
+        $rootTable = $this->queryConfig['table']['name'];
+        $uuid      = $this->resolveCompanyUuid();
+
+        if (!$uuid) {
+            throw new \RuntimeException('No active company in session; cannot scope report by company_uuid.');
+        }
+
+        $query->where("{$rootTable}.company_uuid", $uuid);
+    }
+
+    protected function resolveCompanyUuid(): ?string
+    {
+        $c = session('company');
+
+        if (!$c) {
+            return null;
+        }
+
+        if (is_string($c)) {
+            return $c;
+        }
+
+        if (is_object($c)) {
+            // Common patterns: Model { uuid }, { company_uuid }, { id }
+            return $c->uuid ?? $c->company_uuid ?? $c->id ?? null;
+        }
+
+        if (is_array($c)) {
+            return $c['uuid'] ?? $c['company_uuid'] ?? $c['id'] ?? null;
+        }
+
+        return null;
+    }
+
     /**
      * Process auto-joins based on selected columns.
      */
@@ -117,32 +161,30 @@ class ReportQueryConverter
         $table         = $this->registry->getTable($tableName);
         $autoJoinPaths = [];
 
-        // Collect auto-join paths from selected columns
         foreach ($this->queryConfig['columns'] ?? [] as $column) {
-            if (isset($column['auto_join_path'])) {
+            if (!empty($column['auto_join_path'])) {
+                // already provided by your registry as full path like "payload.pickup"
                 $autoJoinPaths[] = $column['auto_join_path'];
             } elseif (Str::contains($column['name'], '.')) {
-                // Extract auto-join path from column name
+                // take all but the final segment as the relationship path
                 $parts = explode('.', $column['name']);
                 if (count($parts) >= 2) {
-                    $relationshipName = $parts[0];
-                    $relationship     = $table->getRelationship($relationshipName);
-                    if ($relationship && $relationship->isAutoJoin()) {
-                        $autoJoinPaths[] = $relationshipName;
-                    }
+                    $relPath         = implode('.', array_slice($parts, 0, -1));
+                    $autoJoinPaths[] = $relPath;
                 }
             }
         }
 
-        // Also check conditions for auto-join paths
         $this->collectAutoJoinPathsFromConditions($this->queryConfig['conditions'] ?? [], $autoJoinPaths);
+        $this->collectAutoJoinPathsFromGroupBy($this->queryConfig['groupBy'] ?? [], $autoJoinPaths);
+        $this->collectAutoJoinPathsFromSortBy($this->queryConfig['sortBy'] ?? [], $autoJoinPaths);
 
-        // Remove duplicates
-        $autoJoinPaths = array_unique($autoJoinPaths);
+        // dedupe and sort shortest->longest so parent joins first
+        $autoJoinPaths = array_values(array_unique($autoJoinPaths));
+        usort($autoJoinPaths, fn ($a, $b) => substr_count($a, '.') <=> substr_count($b, '.'));
 
-        // Apply auto-joins
         foreach ($autoJoinPaths as $path) {
-            $this->applyAutoJoin($query, $tableName, $path);
+            $this->applyAutoJoinPath($query, $tableName, $path);
         }
     }
 
@@ -153,17 +195,154 @@ class ReportQueryConverter
     {
         foreach ($conditions as $condition) {
             if (isset($condition['conditions'])) {
-                // Nested conditions
                 $this->collectAutoJoinPathsFromConditions($condition['conditions'], $autoJoinPaths);
-            } elseif (isset($condition['field']['auto_join_path'])) {
+            } elseif (!empty($condition['field']['auto_join_path'])) {
                 $autoJoinPaths[] = $condition['field']['auto_join_path'];
-            } elseif (isset($condition['field']['name']) && Str::contains($condition['field']['name'], '.')) {
+            } elseif (!empty($condition['field']['name']) && Str::contains($condition['field']['name'], '.')) {
                 $parts = explode('.', $condition['field']['name']);
                 if (count($parts) >= 2) {
-                    $autoJoinPaths[] = $parts[0];
+                    $autoJoinPaths[] = implode('.', array_slice($parts, 0, -1));
                 }
             }
         }
+    }
+
+    protected function collectAutoJoinPathsFromGroupBy(array $groupBy, array &$autoJoinPaths): void
+    {
+        foreach ($groupBy as $g) {
+            if (!empty($g['name']) && str_contains($g['name'], '.')) {
+                $parts = explode('.', $g['name']);
+                if (count($parts) >= 2) {
+                    $autoJoinPaths[] = implode('.', array_slice($parts, 0, -1));
+                }
+            }
+            if (!empty($g['aggregateBy']['name']) && str_contains($g['aggregateBy']['name'], '.')) {
+                $parts = explode('.', $g['aggregateBy']['name']);
+                if (count($parts) >= 2) {
+                    $autoJoinPaths[] = implode('.', array_slice($parts, 0, -1));
+                }
+            }
+        }
+    }
+
+    protected function collectAutoJoinPathsFromSortBy(array $sortBy, array &$autoJoinPaths): void
+    {
+        foreach ($sortBy as $s) {
+            if (!empty($s['column']['name']) && str_contains($s['column']['name'], '.')) {
+                $parts = explode('.', $s['column']['name']);
+                if (count($parts) >= 2) {
+                    $autoJoinPaths[] = implode('.', array_slice($parts, 0, -1));
+                }
+            }
+        }
+    }
+
+    protected function applyAutoJoinPath(Builder $query, string $rootTable, string $fullPath): void
+    {
+        // Already joined?
+        if (isset($this->joinAliases[$fullPath])) {
+            return;
+        }
+
+        $segments = explode('.', $fullPath);
+
+        $currentTableOrAlias = $rootTable;
+        $currentCtx          = $this->registry->getTable($rootTable);
+        $cumulative          = [];
+
+        foreach ($segments as $i => $segment) {
+            $cumulative[] = $segment;
+            $path         = implode('.', $cumulative);
+
+            // Skip if this hop already joined
+            if (isset($this->joinAliases[$path])) {
+                $currentTableOrAlias = $this->joinAliases[$path];
+                // move context to the relationship at this hop
+                $currentCtx = $this->getChildContext($currentCtx, $segment);
+                continue;
+            }
+
+            // Find relationship for this segment in the current context
+            $relationship = $this->getRelationshipFromContext($currentCtx, $segment);
+            if (!$relationship || !$relationship->isAutoJoin()) {
+                // stop if not auto-joinable
+                return;
+            }
+
+            // Alias: orders_payload or orders_payload_pickup
+            $alias = $this->generateAliasChain($rootTable, $cumulative);
+
+            // Join type from schema ("left", "right", "inner") – default "left"
+            $joinType = $relationship->getType() ?: 'left';
+
+            // Join: {current}.{localKey} = {alias}.{foreignKey}
+            $query->join(
+                "{$relationship->getTable()} as {$alias}",
+                "{$currentTableOrAlias}.{$relationship->getLocalKey()}",
+                '=',
+                "{$alias}.{$relationship->getForeignKey()}",
+                $joinType
+            );
+
+            // record
+            $this->autoJoins[] = [
+                'path'        => $path,
+                'table'       => $relationship->getTable(),
+                'alias'       => $alias,
+                'type'        => $joinType,
+                'local_key'   => $relationship->getLocalKey(),
+                'foreign_key' => $relationship->getForeignKey(),
+            ];
+            $this->joinAliases[$path] = $alias;
+
+            // advance context
+            $currentTableOrAlias = $alias;
+            $currentCtx          = $this->getChildContext($currentCtx, $segment);
+        }
+    }
+
+    /** Resolve relationship object by name from either a Table or a Relationship context. */
+    protected function getRelationshipFromContext($ctx, string $name)
+    {
+        if (method_exists($ctx, 'getRelationship')) {
+            return $ctx->getRelationship($name);
+        }
+        if (method_exists($ctx, 'getAutoJoinRelationships')) {
+            foreach ($ctx->getAutoJoinRelationships() as $rel) {
+                if ($rel->getName() === $name) {
+                    return $rel;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /** Move to child context after taking a relationship hop. */
+    protected function getChildContext($ctx, string $name)
+    {
+        return $this->getRelationshipFromContext($ctx, $name);
+    }
+
+    /** Alias for a chain: orders + ['payload','pickup'] → "orders_payload_pickup" */
+    protected function generateAliasChain(string $root, array $segments): string
+    {
+        return $root . '_' . implode('_', $segments);
+    }
+
+    /** Map "payload.pickup.street1" → ["orders_payload_pickup", "street1"] */
+    protected function resolveAliasAndColumn(string $rootTable, string $columnPath): array
+    {
+        $parts = explode('.', $columnPath);
+        if (count($parts) === 1) {
+            return [$rootTable, $parts[0]];
+        }
+
+        $col          = array_pop($parts);           // "street1"
+        $relPath      = implode('.', $parts);        // "payload.pickup"
+        $alias        = $this->joinAliases[$relPath] ?? null;
+
+        return [$alias ?: $rootTable, $alias ? $col : $columnPath];
     }
 
     /**
@@ -248,37 +427,25 @@ class ReportQueryConverter
      */
     protected function buildSelectClause(Builder $query): void
     {
-        $selectColumns = [];
-        $tableName     = $this->queryConfig['table']['name'];
+        $selects   = [];
+        $rootTable = $this->queryConfig['table']['name'];
 
         foreach ($this->queryConfig['columns'] ?? [] as $column) {
-            $columnName  = $column['name'];
-            $columnAlias = $column['alias'] ?? $columnName;
+            $name  = $column['name'];
+            // Optional: normalize aliases to avoid dots in JSON keys
+            $alias = $column['alias'] ?? str_replace('.', '_', $name);
 
-            if (Str::contains($columnName, '.')) {
-                // Handle auto-join or manual join columns
-                $parts             = explode('.', $columnName, 2);
-                $relationshipName  = $parts[0];
-                $relatedColumnName = $parts[1];
-
-                if (isset($this->joinAliases[$relationshipName])) {
-                    $alias           = $this->joinAliases[$relationshipName];
-                    $selectColumns[] = "{$alias}.{$relatedColumnName} as `{$columnAlias}`";
-                } else {
-                    // Fallback to direct column reference
-                    $selectColumns[] = "{$columnName} as `{$columnAlias}`";
-                }
-            } else {
-                // Direct table column
-                $selectColumns[] = "{$tableName}.{$columnName} as `{$columnAlias}`";
-            }
+            [$tblAlias, $col] = $this->resolveAliasAndColumn($rootTable, $name);
+            $selects[]        = "{$tblAlias}.{$col} as `{$alias}`";
         }
 
+        // NOTE: nothing to add in addForeignKeyColumns() right now (safe to keep as-is)
         // Always include foreign key columns for joins (but don't select them)
-        $this->addForeignKeyColumns($query, $tableName);
+        // $this->addForeignKeyColumns($query, $rootTable);
 
-        if (!empty($selectColumns)) {
-            $query->select(DB::raw(implode(', ', $selectColumns)));
+        if (!empty($selects)) {
+            // Use selectRaw to pass the comma-joined expression list
+            $query->selectRaw(implode(', ', $selects));
         }
     }
 
@@ -338,18 +505,8 @@ class ReportQueryConverter
         $tableName = $this->queryConfig['table']['name'];
 
         // Handle auto-join columns in conditions
-        if (Str::contains($field, '.')) {
-            $parts             = explode('.', $field, 2);
-            $relationshipName  = $parts[0];
-            $relatedColumnName = $parts[1];
-
-            if (isset($this->joinAliases[$relationshipName])) {
-                $alias = $this->joinAliases[$relationshipName];
-                $field = "{$alias}.{$relatedColumnName}";
-            }
-        } else {
-            $field = "{$tableName}.{$field}";
-        }
+        [$tblAlias, $col] = $this->resolveAliasAndColumn($tableName, $field);
+        $field            = "{$tblAlias}.{$col}";
 
         // Apply the condition based on operator
         switch ($operator) {
@@ -398,30 +555,16 @@ class ReportQueryConverter
             return;
         }
 
-        $groupByColumns = [];
-        $tableName      = $this->queryConfig['table']['name'];
+        $rootTable = $this->queryConfig['table']['name'];
+        $groupBy   = [];
 
-        foreach ($this->queryConfig['groupBy'] as $groupBy) {
-            $columnName = $groupBy['name'];
-
-            if (Str::contains($columnName, '.')) {
-                $parts             = explode('.', $columnName, 2);
-                $relationshipName  = $parts[0];
-                $relatedColumnName = $parts[1];
-
-                if (isset($this->joinAliases[$relationshipName])) {
-                    $alias            = $this->joinAliases[$relationshipName];
-                    $groupByColumns[] = "{$alias}.{$relatedColumnName}";
-                } else {
-                    $groupByColumns[] = $columnName;
-                }
-            } else {
-                $groupByColumns[] = "{$tableName}.{$columnName}";
-            }
+        foreach ($this->queryConfig['groupBy'] as $g) {
+            [$tblAlias, $col] = $this->resolveAliasAndColumn($rootTable, $g['name']);
+            $groupBy[]        = "{$tblAlias}.{$col}";
         }
 
-        if (!empty($groupByColumns)) {
-            $query->groupBy($groupByColumns);
+        if ($groupBy) {
+            $query->groupBy($groupBy);
         }
     }
 
@@ -434,26 +577,12 @@ class ReportQueryConverter
             return;
         }
 
-        $tableName = $this->queryConfig['table']['name'];
+        $rootTable = $this->queryConfig['table']['name'];
 
-        foreach ($this->queryConfig['sortBy'] as $sortBy) {
-            $columnName = $sortBy['column']['name'];
-            $direction  = $sortBy['direction']['value'] ?? 'asc';
-
-            if (Str::contains($columnName, '.')) {
-                $parts             = explode('.', $columnName, 2);
-                $relationshipName  = $parts[0];
-                $relatedColumnName = $parts[1];
-
-                if (isset($this->joinAliases[$relationshipName])) {
-                    $alias = $this->joinAliases[$relationshipName];
-                    $query->orderBy("{$alias}.{$relatedColumnName}", $direction);
-                } else {
-                    $query->orderBy($columnName, $direction);
-                }
-            } else {
-                $query->orderBy("{$tableName}.{$columnName}", $direction);
-            }
+        foreach ($this->queryConfig['sortBy'] as $s) {
+            $dir              = $s['direction']['value'] ?? 'asc';
+            [$tblAlias, $col] = $this->resolveAliasAndColumn($rootTable, $s['column']['name']);
+            $query->orderBy("{$tblAlias}.{$col}", $dir);
         }
     }
 
@@ -490,10 +619,11 @@ class ReportQueryConverter
 
         foreach ($this->queryConfig['columns'] ?? [] as $column) {
             $columns[] = [
-                'name'           => $column['name'],
-                'label'          => $column['label'] ?? $column['name'],
-                'type'           => $column['type'] ?? 'string',
-                'auto_join_path' => $column['auto_join_path'] ?? null,
+                'name'                  => Str::snake(str_replace('.', '_', $column['name'])),
+                'column_name'           => $column['name'],
+                'label'                 => $column['label'] ?? $column['name'],
+                'type'                  => $column['type'] ?? 'string',
+                'auto_join_path'        => $column['auto_join_path'] ?? null,
             ];
         }
 

@@ -309,6 +309,26 @@ class Relationship
     }
 
     /**
+     * Get auto-join relationships.
+     */
+    public function getAutoJoinRelationships(): array
+    {
+        return array_filter($this->nestedRelationships, function ($relationship) {
+            return $relationship->isAutoJoin();
+        });
+    }
+
+    /**
+     * Get manual join relationships (non-auto-join).
+     */
+    public function getManualJoinRelationships(): array
+    {
+        return array_filter($this->nestedRelationships, function ($relationship) {
+            return !$relationship->isAutoJoin();
+        });
+    }
+
+    /**
      * Check if this relationship has nested relationships.
      */
     public function hasNestedRelationships(): bool

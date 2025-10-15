@@ -5,6 +5,7 @@ namespace Fleetbase\Providers;
 use Fleetbase\Models\Setting;
 use Fleetbase\Support\EnvironmentMapper;
 use Fleetbase\Support\NotificationRegistry;
+use Fleetbase\Support\Reporting\ReportSchemaRegistry;
 use Fleetbase\Support\Telemetry;
 use Fleetbase\Support\Utils;
 use Illuminate\Console\Scheduling\Schedule;
@@ -123,6 +124,11 @@ class CoreServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__ . '/../../config/sentry.php', 'sentry');
         $this->mergeConfigFrom(__DIR__ . '/../../config/laravel-mysql-s3-backup.php', 'laravel-mysql-s3-backup');
         $this->mergeConfigFrom(__DIR__ . '/../../config/responsecache.php', 'responsecache');
+
+        // setup report schema registry
+        $this->app->singleton(ReportSchemaRegistry::class, function () {
+            return new ReportSchemaRegistry();
+        });
     }
 
     /**
