@@ -4,10 +4,18 @@ namespace Fleetbase\Http\Resources;
 
 use Fleetbase\Support\Http;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 
 class FleetbaseResource extends JsonResource
 {
+    /**
+     * List of attributes to exclude from the final array.
+     *
+     * @var array
+     */
+    protected array $excluded = [];
+
     /**
      * Transform the resource into an array.
      *
@@ -17,9 +25,10 @@ class FleetbaseResource extends JsonResource
      */
     public function toArray($request)
     {
-        $resource = parent::toArray($request);
+        $data = parent::toArray($request);
+        $data = $this->filterExcluded($data);
 
-        return $resource;
+        return $data;
     }
 
     /**
@@ -64,5 +73,37 @@ class FleetbaseResource extends JsonResource
         }
 
         return $internalIds;
+    }
+
+    /**
+     * Exclude one or more keys from serialization.
+     *
+     * @param  array|string  $keys
+     * @return static
+     */
+    public function without(array|string $keys): static
+    {
+        $clone = clone $this;
+        $clone->excluded = array_merge($this->excluded, (array) $keys);
+
+        return $clone;
+    }
+
+    /**
+     * Remove excluded keys recursively.
+     */
+    protected function filterExcluded(array $data): array
+    {
+        foreach ($this->excluded as $key) {
+            Arr::forget($data, $key);
+        }
+
+        foreach ($data as $k => $v) {
+            if (is_array($v)) {
+                $data[$k] = $this->filterExcluded($v);
+            }
+        }
+
+        return $data;
     }
 }
