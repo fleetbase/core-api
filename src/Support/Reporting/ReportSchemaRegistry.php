@@ -108,7 +108,7 @@ class ReportSchemaRegistry
             ];
         }
 
-        if ($this->cacheEnabled) {
+        if ($this->cacheEnabled && !empty($tables)) {
             Cache::put($cacheKey, $tables, $this->cacheTtl);
         }
 
@@ -143,12 +143,10 @@ class ReportSchemaRegistry
 
         // Add auto-join columns with path information
         foreach ($table->getAutoJoinRelationships() as $relationship) {
-            foreach ($relationship->getAllAvailableColumns() as $column) {
-                $columnArray                       = $column->toArray();
-                $columnArray['auto_join_path']     = $relationship->getName();
-                $columnArray['relationship_label'] = $relationship->getLabel();
-                $columns[]                         = $columnArray;
-            }
+            $columns = array_merge(
+                $columns,
+                $this->flattenRelationshipColumns($relationship, $relationship->getName(), [$relationship->getLabel()])
+            );
         }
 
         if ($this->cacheEnabled) {
@@ -156,6 +154,76 @@ class ReportSchemaRegistry
         }
 
         return $columns;
+    }
+
+    /**
+     * Recursively flatten relationship columns with full path and contextual labels.
+     *
+     * Example:
+     *   payload.pickup.street1 → label "Pickup Street 1"
+     *   payload.dropoff.city   → label "Dropoff City"
+     */
+    private function flattenRelationshipColumns($relationship, string $path, array $labelTrail): array
+    {
+        $out = [];
+
+        $shortPrefix = $this->shortRelationshipLabel(end($labelTrail)); // "Pickup Location" → "Pickup"
+
+        // Columns directly on this relationship
+        foreach ($relationship->getColumns() as $column) {
+            $arr = $column->toArray();
+
+            // Ensure the machine name carries the full path (so filters/queries work unambiguously)
+            $arr['name'] = "{$path}.{$column->getName()}";
+
+            // Human label with context
+            // e.g., "Pickup Street 1" or "Dropoff City"
+            $arr['label'] = trim($shortPrefix . ' ' . $arr['label']);
+
+            // Useful metadata
+            $arr['auto_join_path']      = $path;            // e.g., "payload.pickup"
+            $arr['relationship_labels'] = $labelTrail;      // e.g., ["Order Payload", "Pickup Location"]
+
+            $out[] = $arr;
+        }
+
+        // Recurse into nested auto-join relationships (payload -> pickup/dropoff)
+        foreach ($relationship->getAutoJoinRelationships() as $child) {
+            $childPath   = "{$path}.{$child->getName()}";
+            $childLabels = array_merge($labelTrail, [$child->getLabel()]);
+
+            $out = array_merge($out, $this->flattenRelationshipColumns($child, $childPath, $childLabels));
+        }
+
+        return $out;
+    }
+
+    /**
+     * Normalize relationship label into a short prefix for columns.
+     * Examples:
+     *   "Pickup Location"  → "Pickup"
+     *   "Dropoff Location" → "Dropoff"
+     *   "Order Payload"    → "Payload".
+     */
+    private function shortRelationshipLabel(string $label): string
+    {
+        // Remove common suffixes like "Location"
+        $label = preg_replace('/\s+Location$/i', '', $label);
+
+        // If the label has multiple words, prefer the first ("Pickup Location" → "Pickup")
+        // But for "Order Payload" we prefer the last ("Payload") so nested pickup/dropoff can still prepend naturally
+        $parts = preg_split('/\s+/', trim($label));
+        if (!$parts || count($parts) === 0) {
+            return trim($label);
+        }
+
+        // Special case: if it contains "Payload", keep "Payload"
+        if (stripos($label, 'payload') !== false) {
+            return 'Payload';
+        }
+
+        // Default: first word
+        return $parts[0];
     }
 
     /**
@@ -186,7 +254,7 @@ class ReportSchemaRegistry
             $relationships[]                                = $relationshipArray;
         }
 
-        if ($this->cacheEnabled) {
+        if ($this->cacheEnabled && !empty($relationships)) {
             Cache::put($cacheKey, $relationships, $this->cacheTtl);
         }
 
@@ -224,37 +292,77 @@ class ReportSchemaRegistry
     /**
      * Check if a column is allowed for a table.
      */
-    public function isColumnAllowed(string $tableName, string $columnName): bool
+    // In ReportSchemaRegistry
+
+    public function isColumnAllowed(string $tableName, string $columnPath): bool
     {
-        $table = $this->getTable($tableName);
+        // no dot → direct column on the main table
+        if (strpos($columnPath, '.') === false) {
+            $table = $this->getTable($tableName);
+
+            return $table ? $table->isColumnAllowed($columnPath) : false;
+        }
+
+        $segments = explode('.', $columnPath);
+        $finalCol = array_pop($segments); // e.g. "street1"
+        $table    = $this->getTable($tableName);
+
         if (!$table) {
             return false;
         }
 
-        // Check if it's a direct column
-        if ($table->isColumnAllowed($columnName)) {
-            return true;
+        // Walk relationships: e.g. ["payload","pickup"]
+        $relationship = null;
+
+        foreach ($segments as $idx => $seg) {
+            // First hop: find relationship on the table
+            if ($idx === 0) {
+                $relationship = $table->getRelationship($seg);
+            } else {
+                // Next hops: find on the previous relationship
+                $relationship = $this->getChildRelationship($relationship, $seg);
+            }
+
+            if (!$relationship || !$relationship->isAutoJoin()) {
+                return false;
+            }
         }
 
-        // Check if it's an auto-join column (format: relationship.column)
-        if (Str::contains($columnName, '.')) {
-            $parts             = explode('.', $columnName, 2);
-            $relationshipName  = $parts[0];
-            $relatedColumnName = $parts[1];
+        // At this point $relationship is the LAST relationship in the chain (e.g., "pickup")
+        // Check if the final column exists on that relationship.
+        foreach ($relationship->getColumns() as $col) {
+            if ($col->getName() === $finalCol) {
+                return true;
+            }
+        }
 
-            $relationship = $table->getRelationship($relationshipName);
-            if ($relationship && $relationship->isAutoJoin()) {
-                // Check if the column exists in the relationship
-                foreach ($relationship->getAllAvailableColumns() as $column) {
-                    if ($column->getName() === $relatedColumnName
-                        || $column->getName() === $columnName) {
-                        return true;
-                    }
+        // If your Relationship exposes all nested columns via getAllAvailableColumns(), keep as a fallback:
+        if (method_exists($relationship, 'getAllAvailableColumns')) {
+            foreach ($relationship->getAllAvailableColumns() as $col) {
+                if ($col->getName() === $finalCol) {
+                    return true;
                 }
             }
         }
 
         return false;
+    }
+
+    /**
+     * Find a nested child relationship by name on a parent Relationship.
+     */
+    private function getChildRelationship($parentRelationship, string $name)
+    {
+        if (!method_exists($parentRelationship, 'getAutoJoinRelationships')) {
+            return null;
+        }
+        foreach ($parentRelationship->getAutoJoinRelationships() as $child) {
+            if ($child->getName() === $name) {
+                return $child;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -326,16 +434,23 @@ class ReportSchemaRegistry
             return;
         }
 
+        $table = $this->getTable($tableName);
+        if (!$table) {
+            return;
+        }
+
+        $extension = $table->getExtension();
+        $category  = $table->getCategory();
+
         $keys = [
             "report_columns_{$tableName}",
             "report_relationships_{$tableName}",
-            'report_tables_all',
+            // IMPORTANT: these match getAvailableTables()
+            "report_tables_{$extension}_all",
         ];
 
-        // Also clear category-specific caches
-        $table = $this->getTable($tableName);
-        if ($table && $table->getCategory()) {
-            $keys[] = "report_tables_{$table->getCategory()}";
+        if ($category) {
+            $keys[] = "report_tables_{$extension}_{$category}";
         }
 
         foreach ($keys as $key) {

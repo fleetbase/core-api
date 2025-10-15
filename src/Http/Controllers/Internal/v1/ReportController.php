@@ -198,17 +198,6 @@ class ReportController extends FleetbaseController
         try {
             $report = Report::where('uuid', $id)->firstOrFail();
 
-            // Check permissions
-            if (!$this->canAccessReport($report)) {
-                return response()->json([
-                    'success' => false,
-                    'error'   => [
-                        'code'    => 'PERMISSION_DENIED',
-                        'message' => 'Access denied to this report',
-                    ],
-                ], 403);
-            }
-
             // Validate query configuration before execution
             $validationResult = $this->queryValidator->validate($report->query_config);
             if (!$validationResult['valid']) {
@@ -325,19 +314,7 @@ class ReportController extends FleetbaseController
     public function export(Request $request, string $id): JsonResponse
     {
         try {
-            $report = Report::where('uuid', $id)->firstOrFail();
-
-            // Check permissions
-            if (!$this->canAccessReport($report)) {
-                return response()->json([
-                    'success' => false,
-                    'error'   => [
-                        'code'    => 'PERMISSION_DENIED',
-                        'message' => 'Access denied to this report',
-                    ],
-                ], 403);
-            }
-
+            $report  = Report::where('uuid', $id)->firstOrFail();
             $format  = $request->input('format', 'csv');
             $options = $request->input('options', []);
 
