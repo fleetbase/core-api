@@ -108,7 +108,7 @@ trait HasApiModelBehavior
         $columns = $request->input('columns', ['*']);
 
         /**
-         * @var \Illuminate\Database\Query\Builder $builder
+         * @var \Illuminate\Database\Eloquent\Builder $builder
          */
         $builder = $this->searchBuilder($request, $columns);
 

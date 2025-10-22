@@ -11,8 +11,6 @@ class FleetbaseResource extends JsonResource
 {
     /**
      * List of attributes to exclude from the final array.
-     *
-     * @var array
      */
     protected array $excluded = [];
 
@@ -77,13 +75,10 @@ class FleetbaseResource extends JsonResource
 
     /**
      * Exclude one or more keys from serialization.
-     *
-     * @param  array|string  $keys
-     * @return static
      */
     public function without(array|string $keys): static
     {
-        $clone = clone $this;
+        $clone           = clone $this;
         $clone->excluded = array_merge($this->excluded, (array) $keys);
 
         return $clone;

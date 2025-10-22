@@ -7,7 +7,7 @@ use Illuminate\Http\Resources\Json\ResourceCollection;
 use Illuminate\Support\Arr;
 
 /**
- * FleetbaseResourceCollection
+ * FleetbaseResourceCollection.
  *
  * Usage:
  *   return (new FleetbaseResourceCollection($paginator, Order::class))
@@ -39,8 +39,9 @@ class FleetbaseResourceCollection extends ResourceCollection
     /**
      * Create a new resource collection.
      *
-     * @param  mixed               $resource  A paginator, array, or collection
-     * @param  class-string|null   $collects  Fully-qualified resource class for items
+     * @param mixed             $resource A paginator, array, or collection
+     * @param class-string|null $collects Fully-qualified resource class for items
+     *
      * @return void
      */
     public function __construct($resource, $collects = null)
@@ -53,12 +54,11 @@ class FleetbaseResourceCollection extends ResourceCollection
     /**
      * Exclude one or more keys from every item in this collection.
      *
-     * @param  array<string>|string  $keys
-     * @return static
+     * @param array<string>|string $keys
      */
     public function without(array|string $keys): static
     {
-        $clone = clone $this;
+        $clone           = clone $this;
         $clone->excluded = array_values(array_unique(array_merge($this->excluded, (array) $keys)));
 
         return $clone;
@@ -70,7 +70,8 @@ class FleetbaseResourceCollection extends ResourceCollection
      * Applies the exclusion list to every item. If items are not already resources,
      * they are wrapped using the $collects class (if provided).
      *
-     * @param  \Illuminate\Http\Request  $request
+     * @param \Illuminate\Http\Request $request
+     *
      * @return array<int, mixed>
      */
     public function toArray($request): array
@@ -81,11 +82,13 @@ class FleetbaseResourceCollection extends ResourceCollection
                 if (method_exists($item, 'without')) {
                     /** @var object $item */
                     $array = $item->without($this->excluded)->toArray($request);
+
                     return $this->applyArrayExclusions($array);
                 }
 
                 // Otherwise, just resolve it to array and then filter.
                 $array = $item->toArray($request);
+
                 return $this->applyArrayExclusions($array);
             }
 
@@ -113,7 +116,8 @@ class FleetbaseResourceCollection extends ResourceCollection
     /**
      * Apply the exclusion list to an array using dot-notation.
      *
-     * @param  array<string, mixed>  $array
+     * @param array<string, mixed> $array
+     *
      * @return array<string, mixed>
      */
     protected function applyArrayExclusions(array $array): array
@@ -132,7 +136,8 @@ class FleetbaseResourceCollection extends ResourceCollection
     /**
      * Create a paginate-aware HTTP response (unchanged from your original).
      *
-     * @param  \Illuminate\Http\Request  $request
+     * @param \Illuminate\Http\Request $request
+     *
      * @return \Illuminate\Http\JsonResponse
      */
     protected function preparePaginatedResponse($request)
