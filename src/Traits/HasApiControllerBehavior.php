@@ -454,13 +454,11 @@ trait HasApiControllerBehavior
 
             return new $this->resource($record);
         } catch (QueryException $e) {
-            dd($e);
-
-            return response()->error(env('DEBUG') ? $e->getMessage() : 'Error occurred while trying to create a ' . $this->getHumanReadableResourceName());
+            return response()->error(app()->hasDebugModeEnabled() ? $e->getMessage() : 'Error occurred while trying to create a ' . $this->getHumanReadableResourceName());
         } catch (FleetbaseRequestValidationException $e) {
             return response()->error($e->getErrors());
         } catch (\Exception $e) {
-            return response()->error(env('DEBUG') ? $e->getMessage() : 'Error occurred while trying to create a ' . $this->getHumanReadableResourceName());
+            return response()->error(app()->hasDebugModeEnabled() ? $e->getMessage() : 'Error occurred while trying to create a ' . $this->getHumanReadableResourceName());
         }
     }
 
@@ -509,11 +507,11 @@ trait HasApiControllerBehavior
 
             return new $this->resource($record);
         } catch (QueryException $e) {
-            return response()->error(env('DEBUG') ? $e->getMessage() : 'Error occurred while trying to update a ' . $this->getHumanReadableResourceName());
+            return response()->error(app()->hasDebugModeEnabled() ? $e->getMessage() : 'Error occurred while trying to update a ' . $this->getHumanReadableResourceName());
         } catch (FleetbaseRequestValidationException $e) {
             return response()->error($e->getErrors());
         } catch (\Exception $e) {
-            return response()->error(env('DEBUG') ? $e->getMessage() : 'Error occurred while trying to update a ' . $this->getHumanReadableResourceName());
+            return response()->error(app()->hasDebugModeEnabled() ? $e->getMessage() : 'Error occurred while trying to update a ' . $this->getHumanReadableResourceName());
         }
     }
 
