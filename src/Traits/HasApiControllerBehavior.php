@@ -404,7 +404,8 @@ trait HasApiControllerBehavior
      */
     public function findRecord(Request $request, $id)
     {
-        $record = $this->model->getById($id, $request);
+        $queryCallback = $this->getControllerCallback('onFindRecord');
+        $record        = $this->model->getById($id, $queryCallback, $request);
 
         if ($record) {
             return [$this->resourceSingularlName => new $this->resource($record)];
