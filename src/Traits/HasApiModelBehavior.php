@@ -260,7 +260,7 @@ trait HasApiModelBehavior
         try {
             $record->update($input);
         } catch (\Exception $e) {
-            throw new \Exception('Failed to update ' . $this->getApiHumanReadableName());
+            throw new \Exception(app()->hasDebugModeEnabled() ? $e->getMessage() : 'Failed to update ' . $this->getApiHumanReadableName());
         }
 
         if (isset($options['return_object']) && $options['return_object'] === true) {
@@ -595,7 +595,7 @@ trait HasApiModelBehavior
      *
      * @return \Illuminate\Database\Eloquent\Model|null
      */
-    public function getById($id, Request $request)
+    public function getById($id, ?callable $queryCallback = null, Request $request)
     {
         $builder = $this->where(function ($q) use ($id) {
             $publicIdColumn = $this->getQualifiedPublicId();
@@ -605,6 +605,10 @@ trait HasApiModelBehavior
                 $q->orWhere($publicIdColumn, $id);
             }
         });
+
+        if (is_callable($queryCallback)) {
+            $queryCallback($builder, $request);
+        }
 
         $builder = $this->withCounts($request, $builder);
         $builder = $this->withRelationships($request, $builder);

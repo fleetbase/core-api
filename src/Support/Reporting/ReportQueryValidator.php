@@ -354,7 +354,7 @@ class ReportQueryValidator
                 'groupBy'           => 'required|array',
                 'groupBy.name'      => 'required|string',
                 'aggregateFn'       => 'sometimes|array',
-                'aggregateFn.value' => 'required_with:aggregateFn|string|in:count,sum,avg,min,max',
+                'aggregateFn.value' => 'required_with:aggregateFn|string|in:count,sum,avg,min,max,group_concat',
                 'aggregateBy'       => 'sometimes|array',
                 'aggregateBy.name'  => 'required_with:aggregateBy|string',
             ]);
@@ -374,7 +374,14 @@ class ReportQueryValidator
             // Validate aggregate field if present
             if (isset($groupItem['aggregateBy']['name'])) {
                 $aggregateField = $groupItem['aggregateBy']['name'];
-                if (!$this->isFieldAvailable($aggregateField, $queryConfig['table']['name'], $queryConfig)) {
+                $aggregateFn    = $groupItem['aggregateFn']['value'] ?? null;
+
+                // Allow '*' for COUNT operations only
+                if ($aggregateField === '*') {
+                    if ($aggregateFn !== 'count') {
+                        $this->errors[] = "Group By {$index}: Wildcard '*' can only be used with COUNT function";
+                    }
+                } elseif (!$this->isFieldAvailable($aggregateField, $queryConfig['table']['name'], $queryConfig)) {
                     $this->errors[] = "Group By {$index}: Aggregate field '{$aggregateField}' is not available";
                 }
             }

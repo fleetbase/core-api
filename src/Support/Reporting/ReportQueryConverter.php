@@ -11,10 +11,11 @@ class ReportQueryConverter
 {
     protected ReportSchemaRegistry $registry;
     protected array $queryConfig;
-    protected array $autoJoins   = [];
-    protected array $manualJoins = [];
-    protected array $joinAliases = [];
-    protected int $aliasCounter  = 0;
+    protected array $autoJoins         = [];
+    protected array $manualJoins       = [];
+    protected array $joinAliases       = [];
+    protected array $emittedAggregates = [];
+    protected int $aliasCounter        = 0;
 
     public function __construct(ReportSchemaRegistry $registry, array $queryConfig)
     {
@@ -41,7 +42,6 @@ class ReportQueryConverter
 
             // Execute and get results
             $results = $query->get()->toArray();
-            // dd($results);
 
             // Process results
             $processedResults = $this->processResults($results);
@@ -210,8 +210,8 @@ class ReportQueryConverter
     protected function collectAutoJoinPathsFromGroupBy(array $groupBy, array &$autoJoinPaths): void
     {
         foreach ($groupBy as $g) {
-            if (!empty($g['name']) && str_contains($g['name'], '.')) {
-                $parts = explode('.', $g['name']);
+            if (!empty($g['groupBy']['name']) && str_contains($g['groupBy']['name'], '.')) {
+                $parts = explode('.', $g['groupBy']['name']);
                 if (count($parts) >= 2) {
                     $autoJoinPaths[] = implode('.', array_slice($parts, 0, -1));
                 }
@@ -427,24 +427,87 @@ class ReportQueryConverter
      */
     protected function buildSelectClause(Builder $query): void
     {
-        $selects   = [];
-        $rootTable = $this->queryConfig['table']['name'];
+        $rootTable   = $this->queryConfig['table']['name'];
+        $hasGrouping = !empty($this->queryConfig['groupBy']);
 
-        foreach ($this->queryConfig['columns'] ?? [] as $column) {
-            $name  = $column['name'];
-            // Optional: normalize aliases to avoid dots in JSON keys
-            $alias = $column['alias'] ?? str_replace('.', '_', $name);
+        if (!$hasGrouping) {
+            // existing behavior
+            $selects = [];
+            foreach ($this->queryConfig['columns'] ?? [] as $column) {
+                $name             = $column['name'];
+                $alias            = $column['alias'] ?? str_replace('.', '_', $name);
+                [$tblAlias, $col] = $this->resolveAliasAndColumn($rootTable, $name);
+                $selects[]        = "{$tblAlias}.{$col} as `{$alias}`";
+            }
+            if ($selects) {
+                $query->selectRaw(implode(', ', $selects));
+            }
 
-            [$tblAlias, $col] = $this->resolveAliasAndColumn($rootTable, $name);
-            $selects[]        = "{$tblAlias}.{$col} as `{$alias}`";
+            return;
         }
 
-        // NOTE: nothing to add in addForeignKeyColumns() right now (safe to keep as-is)
-        // Always include foreign key columns for joins (but don't select them)
-        // $this->addForeignKeyColumns($query, $rootTable);
+        $selects = [];
 
-        if (!empty($selects)) {
-            // Use selectRaw to pass the comma-joined expression list
+        // Select grouped columns
+        $groupAliases = []; // track to validate orderBy later
+        foreach ($this->queryConfig['groupBy'] as $g) {
+            $groupColName     = $g['groupBy']['name'];
+            $alias            = $g['groupBy']['alias'] ?? str_replace('.', '_', $groupColName);
+            [$tblAlias, $col] = $this->resolveAliasAndColumn($rootTable, $groupColName);
+            $selects[]        = "{$tblAlias}.{$col} as `{$alias}`";
+            $groupAliases[]   = $alias;
+        }
+
+        // Add aggregates per groupBy rule (support count/sum/avg/min/max)
+        foreach ($this->queryConfig['groupBy'] as $g) {
+            $fn = strtolower($g['aggregateFn']['value'] ?? '');
+            if (!$fn) {
+                continue;
+            }
+
+            $by = $g['aggregateBy']['full'] ?? $g['aggregateBy']['name'] ?? '*';
+
+            if ($by === '*' || $by === 'count') {
+                $expr = 'COUNT(*)';
+            } else {
+                [$tblAlias, $col] = $this->resolveAliasAndColumn($rootTable, $by);
+                $expr             = strtoupper($fn) . "({$tblAlias}.{$col})";
+            }
+
+            $aggAlias  = $this->deriveAggregateAlias($g);
+            $selects[] = "{$expr} as `{$aggAlias}`";
+
+            // decide a type/label
+            $typeMap = [
+                'count'          => 'integer',
+                'sum'            => 'decimal',
+                'avg'            => 'decimal',
+                'min'            => 'string',   // could be numeric/datetime;
+                'max'            => 'string',
+                'group_concat'   => 'string',
+            ];
+            $labelMap = [
+                'count'          => 'Count',
+                'sum'            => 'Sum',
+                'avg'            => 'Average',
+                'min'            => 'Min',
+                'max'            => 'Max',
+                'group_concat'   => 'Concatenate',
+            ];
+
+            $this->emittedAggregates[] = [
+                'alias' => $aggAlias,
+                'fn'    => $fn,
+                'by'    => $by,
+                'type'  => $typeMap[$fn] ?? 'decimal',
+                'label' => $labelMap[$fn] ?? strtoupper($fn),
+            ];
+        }
+
+        // (Optional) if user selected extra columns, drop them here OR auto-aggregate.
+        // We'll drop them to stay deterministic under ONLY_FULL_GROUP_BY.
+
+        if ($selects) {
             $query->selectRaw(implode(', ', $selects));
         }
     }
@@ -559,7 +622,7 @@ class ReportQueryConverter
         $groupBy   = [];
 
         foreach ($this->queryConfig['groupBy'] as $g) {
-            [$tblAlias, $col] = $this->resolveAliasAndColumn($rootTable, $g['name']);
+            [$tblAlias, $col] = $this->resolveAliasAndColumn($rootTable, $g['groupBy']['name']);
             $groupBy[]        = "{$tblAlias}.{$col}";
         }
 
@@ -577,11 +640,47 @@ class ReportQueryConverter
             return;
         }
 
-        $rootTable = $this->queryConfig['table']['name'];
+        $rootTable   = $this->queryConfig['table']['name'];
+        $hasGrouping = !empty($this->queryConfig['groupBy']);
+
+        // Build a whitelist for grouped mode
+        $allowedOrderExprs = [];
+        if ($hasGrouping) {
+            // Grouped aliases (as emitted in buildSelectClause)
+            foreach ($this->queryConfig['groupBy'] as $g) {
+                $groupColName                    = $g['groupBy']['name'];
+                $alias                           = $g['groupBy']['alias'] ?? str_replace('.', '_', $groupColName);
+                $allowedOrderExprs["`{$alias}`"] = true;
+            }
+            // Aggregate aliases (as emitted in buildSelectClause)
+            foreach ($this->queryConfig['groupBy'] as $g) {
+                $fn = strtolower($g['aggregateFn']['value'] ?? '');
+                if ($fn) {
+                    $aggAliasBase                       = $g['aggregateBy']['name'] ?? $g['aggregateBy']['full'] ?? 'all';
+                    $aggAlias                           = ($fn === 'count') ? "count_{$aggAliasBase}" : "{$fn}_" . str_replace('.', '_', $aggAliasBase);
+                    $allowedOrderExprs["`{$aggAlias}`"] = true;
+                }
+            }
+        }
 
         foreach ($this->queryConfig['sortBy'] as $s) {
-            $dir              = $s['direction']['value'] ?? 'asc';
-            [$tblAlias, $col] = $this->resolveAliasAndColumn($rootTable, $s['column']['name']);
+            $dir     = $s['direction']['value'] ?? 'asc';
+            $colName = $s['column']['name'];
+
+            if ($hasGrouping) {
+                // Try to order by a select alias first
+                $alias     = $s['column']['alias'] ?? str_replace('.', '_', $colName);
+                $aliasExpr = "`{$alias}`";
+                if (isset($allowedOrderExprs[$aliasExpr])) {
+                    $query->orderByRaw("{$aliasExpr} {$dir}");
+                    continue;
+                }
+                // Not allowed → skip (or convert to MIN/MAX if you prefer)
+                continue;
+            }
+
+            // Non-grouped mode → original behavior
+            [$tblAlias, $col] = $this->resolveAliasAndColumn($rootTable, $colName);
             $query->orderBy("{$tblAlias}.{$col}", $dir);
         }
     }
@@ -615,19 +714,72 @@ class ReportQueryConverter
      */
     protected function getSelectedColumns(): array
     {
-        $columns = [];
+        $cols = [];
 
+        // base: actual selected (non-aggregate) columns
         foreach ($this->queryConfig['columns'] ?? [] as $column) {
-            $columns[] = [
-                'name'                  => Str::snake(str_replace('.', '_', $column['name'])),
-                'column_name'           => $column['name'],
-                'label'                 => $column['label'] ?? $column['name'],
-                'type'                  => $column['type'] ?? 'string',
-                'auto_join_path'        => $column['auto_join_path'] ?? null,
+            $cols[] = [
+                'name'           => Str::snake(str_replace('.', '_', $column['name'])),
+                'column_name'    => $column['name'],
+                'label'          => $column['label'] ?? $column['name'],
+                'type'           => $column['type'] ?? 'string',
+                'auto_join_path' => $column['auto_join_path'] ?? null,
             ];
         }
 
-        return $columns;
+        // add group keys explicitly (they might already be in columns; harmless if duplicated)
+        if (!empty($this->queryConfig['groupBy'])) {
+            foreach ($this->queryConfig['groupBy'] as $g) {
+                $gname  = $g['groupBy']['name'];
+                $galias = $g['groupBy']['alias'] ?? str_replace('.', '_', $gname);
+                $cols[] = [
+                    'name'           => Str::snake($galias),
+                    'column_name'    => $gname,
+                    'label'          => $g['groupBy']['label'] ?? $gname,
+                    'type'           => $g['groupBy']['type'] ?? 'string',
+                    'auto_join_path' => $g['groupBy']['auto_join_path'] ?? null,
+                ];
+            }
+        }
+
+        // add aggregates emitted in SELECT
+        foreach ($this->emittedAggregates as $agg) {
+            $cols[] = [
+                'name'           => $agg['alias'],
+                'column_name'    => $agg['alias'],
+                'label'          => $agg['label'] . ($agg['by'] === '*' ? '' : " ({$agg['by']})"),
+                'type'           => $agg['type'],
+                'auto_join_path' => null,
+            ];
+        }
+
+        // dedupe by 'name' to avoid duplicates if group key also appears in columns
+        $uniq = [];
+        $out  = [];
+        foreach ($cols as $c) {
+            if (!isset($uniq[$c['name']])) {
+                $uniq[$c['name']] = true;
+                $out[]            = $c;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Derive an alias for aggregates.
+     */
+    protected function deriveAggregateAlias(array $g): string
+    {
+        $fn   = strtolower($g['aggregateFn']['value'] ?? '');
+        $by   = $g['aggregateBy']['name'] ?? $g['aggregateBy']['full'] ?? '*';
+        $base = ($by === '*' ? 'all' : str_replace('.', '_', $by));
+
+        if ($fn === 'count') {
+            return "count_{$base}";
+        }
+
+        return "{$fn}_{$base}";
     }
 
     /**
@@ -635,9 +787,24 @@ class ReportQueryConverter
      */
     protected function getSelectedColumnNames(): array
     {
-        return array_map(function ($column) {
-            return $column['name'];
-        }, $this->queryConfig['columns'] ?? []);
+        $names = array_map(fn ($c) => $c['name'], $this->queryConfig['columns'] ?? []);
+
+        // grouped keys
+        if (!empty($this->queryConfig['groupBy'])) {
+            foreach ($this->queryConfig['groupBy'] as $g) {
+                $gname   = $g['groupBy']['name'];
+                $galias  = $g['groupBy']['alias'] ?? str_replace('.', '_', $gname);
+                $names[] = $galias;
+            }
+        }
+
+        // aggregate aliases
+        foreach ($this->emittedAggregates as $agg) {
+            $names[] = $agg['alias'];
+        }
+
+        // dedupe
+        return array_values(array_unique($names));
     }
 
     /**
@@ -673,5 +840,39 @@ class ReportQueryConverter
                 throw new \InvalidArgumentException("Column '{$column['name']}' is not allowed for table '{$tableName}'");
             }
         }
+
+        if (!empty($this->queryConfig['groupBy'])) {
+            $groupCols = array_map(
+                fn ($g) => $g['groupBy']['name'],
+                $this->queryConfig['groupBy']
+            );
+
+            foreach ($this->queryConfig['columns'] as $col) {
+                $isGrouped   = in_array($col['name'], $groupCols, true);
+                $isComputed  = !empty($col['computed']) && $col['computed'] === true;
+                if (!$isGrouped && !$isComputed) {
+                    throw new \InvalidArgumentException("Column '{$col['name']}' must be grouped or aggregated when GROUP BY is used");
+                }
+            }
+        }
+
+        // Autostrip non grouped columns (optional) - we can add this as an option later
+        // if (!empty($this->queryConfig['groupBy'])) {
+        //     $groupCols = array_map(
+        //         fn ($g) => $g['groupBy']['name'],
+        //         $this->queryConfig['groupBy']
+        //     );
+
+        //     // Keep only grouped or computed (aggregated) columns
+        //     $this->queryConfig['columns'] = array_values(array_filter(
+        //         $this->queryConfig['columns'],
+        //         function ($col) use ($groupCols) {
+        //             $isGrouped  = in_array($col['name'], $groupCols, true);
+        //             $isComputed = !empty($col['computed']); // e.g. COUNT(...), AVG(...), etc.
+        //             return $isGrouped || $isComputed;
+        //         }
+        //     ));
+        //     // (Optional) log/warn that some columns were dropped
+        // }
     }
 }

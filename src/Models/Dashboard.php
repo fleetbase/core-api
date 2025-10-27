@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Models;
 
+use Fleetbase\Casts\Json;
 use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasUuid;
@@ -29,7 +30,9 @@ class Dashboard extends Model
     protected $fillable = [
         'user_uuid',
         'company_uuid',
+        'extension',
         'name',
+        'is_default',
     ];
 
     /**
@@ -38,6 +41,18 @@ class Dashboard extends Model
      * @var array
      */
     protected $with = ['widgets'];
+
+    /**
+     * The attributes that should be cast to native types.
+     *
+     * @var array
+     */
+    protected $casts = [
+        'is_default'             => 'boolean',
+        'meta'                   => Json::class,
+        'options'                => Json::class,
+        'tags'                   => Json::class,
+    ];
 
     /**
      * @return \Illuminate\Database\Eloquent\Relations\HasMany
