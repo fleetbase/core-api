@@ -33,6 +33,9 @@ class Dashboard extends Model
         'extension',
         'name',
         'is_default',
+        'tags',
+        'meta',
+        'options',
     ];
 
     /**
