@@ -4,6 +4,7 @@ namespace Fleetbase\Models;
 
 use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\HasApiModelBehavior;
+use Fleetbase\Traits\HasSessionAttributes;
 use Fleetbase\Traits\HasPolicies;
 use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\Searchable;
@@ -15,6 +16,7 @@ class Role extends BaseRole
 {
     use HasUuid;
     use HasApiModelBehavior;
+    use HasSessionAttributes;
     use SoftDeletes;
     use HasPolicies;
     use Filterable;
