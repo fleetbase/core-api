@@ -71,7 +71,7 @@ trait HasOptionsAttributes
 
         $this->setAttribute('options', $options);
 
-        return $this->update(['options' => $options]);
+        return $this->updateQuietly(['options' => $options]);
     }
 
     public function missingOption($key)

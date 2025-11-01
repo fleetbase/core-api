@@ -114,7 +114,7 @@ trait HasMetaAttributes
         $this->setMeta($key, $value);
         $meta = $this->getAttribute('meta');
 
-        return $this->update(['meta' => $meta]);
+        return $this->updateQuietly(['meta' => $meta]);
     }
 
     /**
