@@ -278,8 +278,6 @@ trait HasApiControllerBehavior
     /**
      * Resolves the resource form request and validates.
      *
-     * @return void
-     *
      * @throws FleetbaseRequestValidationException
      */
     public function validateRequest(Request $request): void

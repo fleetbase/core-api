@@ -5,7 +5,6 @@ namespace Fleetbase\Http\Middleware;
 use Fleetbase\Jobs\LogApiRequest;
 use Fleetbase\Support\Http;
 use Fleetbase\Traits\CustomMiddleware;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
 
 class LogApiRequests
@@ -13,29 +12,27 @@ class LogApiRequests
     use CustomMiddleware;
 
     /**
-     * @var bool Whether logging is globally enabled.
+     * @var bool whether logging is globally enabled
      */
     protected bool $enabled = true;
 
     /**
-     * @var bool Whether to use queued async dispatching for logs.
+     * @var bool whether to use queued async dispatching for logs
      */
     protected bool $asyncLogging = true;
 
     /**
-     * @var string[] List of URIs to exclude from logging.
+     * @var string[] list of URIs to exclude from logging
      */
     protected array $excludeUris = [
         'v1/drivers/*/track',
-        'v1/vehicles/*/track'
+        'v1/vehicles/*/track',
     ];
 
     /**
      * Handle an incoming request.
      *
      * @param \Illuminate\Http\Request $request
-     * @param \Closure $next
-     * @return mixed
      */
     public function handle($request, \Closure $next)
     {
@@ -59,7 +56,6 @@ class LogApiRequests
      * Determine if the current request should be logged.
      *
      * @param \Illuminate\Http\Request $request
-     * @return bool
      */
     protected function shouldLog($request): bool
     {
@@ -79,7 +75,6 @@ class LogApiRequests
      * Check if the current request URI should be excluded from logging.
      *
      * @param \Illuminate\Http\Request $request
-     * @return bool
      */
     protected function isExcludedUri($request): bool
     {
@@ -88,7 +83,7 @@ class LogApiRequests
         // Normalize dynamic segments like /v1/drivers/{id}/track patterns
         foreach ($this->excludeUris as $pattern) {
             // Make pattern regex-compatible: replace wildcards and escape path separators
-            $regex = '/^' . str_replace(['*'], ['[^\/]+'], str_replace('/', '\/', trim($pattern, '/'))) . '$/i';
+            $regex          = '/^' . str_replace(['*'], ['[^\/]+'], str_replace('/', '\/', trim($pattern, '/'))) . '$/i';
             $normalizedPath = trim($path, '/');
 
             if (preg_match($regex, $normalizedPath)) {
@@ -102,9 +97,8 @@ class LogApiRequests
     /**
      * Log the API request payload asynchronously or synchronously.
      *
-     * @param \Illuminate\Http\Request $request
+     * @param \Illuminate\Http\Request                                             $request
      * @param \Illuminate\Http\Response|\Symfony\Component\HttpFoundation\Response $response
-     * @return void
      */
     protected function logApiRequest($request, $response): void
     {

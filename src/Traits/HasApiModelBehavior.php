@@ -1122,6 +1122,6 @@ trait HasApiModelBehavior
         }
 
         // Qualify only when it's a real column on the base table
-        return $this->isBaseColumn($column) ? ($this->getTable().'.'.$column) : $column;
+        return $this->isBaseColumn($column) ? ($this->getTable() . '.' . $column) : $column;
     }
 }
