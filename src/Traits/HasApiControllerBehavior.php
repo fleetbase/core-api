@@ -282,45 +282,49 @@ trait HasApiControllerBehavior
      *
      * @throws FleetbaseRequestValidationException
      */
-    public function validateRequest(Request $request)
+    public function validateRequest(Request $request): void
     {
-        $input = $this->model?->getApiPayloadFromRequest($request) ?? [];
+        // Always validate the transformed API payload (your standard)
+        $input = (array) ($this->model?->getApiPayloadFromRequest($request) ?? []);
 
-        if (Utils::classExists($this->request)) {
-            $formRequest = new $this->request($request->all());
-            $validator   = Validator::make($input, $formRequest->rules(), $formRequest->messages());
+        // Resolve the correct request class
+        $requestClass = null;
 
-            if ($validator->fails()) {
-                throw new FleetbaseRequestValidationException($validator->errors());
-            }
+        if ($request->isMethod('post') && $this->hasCreateRequest()) {
+            $requestClass = $this->getCreateRequest();
+        } elseif (($request->isMethod('put') || $request->isMethod('patch')) && $this->hasUpdateRequest()) {
+            $requestClass = $this->getUpdateRequest();
+        } elseif (Utils::classExists($this->request ?? null)) {
+            $requestClass = $this->request;
         }
 
-        // Specific validators
-        if ($this->hasCreateRequest() && $request->isMethod('POST')) {
-            $createRequestClass = $this->getCreateRequest();
-            $createRequest      = $createRequestClass::createFrom($request);
-            $rules              = $createRequest->rules();
+        if ($requestClass) {
+            // instantiate via container (tiny fix vs "new $class($request->all())")
+            $formRequest = app($requestClass);
 
-            // Run validator
-            $validator = Validator::make($input, $rules);
+            // pull rules/messages/attributes; still validating $input by design
+            $rules      = $formRequest->rules();
+            $messages   = method_exists($formRequest, 'messages') ? $formRequest->messages() : [];
+            $attributes = method_exists($formRequest, 'attributes') ? $formRequest->attributes() : [];
+
+            $validator = Validator::make($input, $rules, $messages, $attributes);
+
+            // if present, allow FR to tweak the validator (works even without full hydration)
+            if (method_exists($formRequest, 'withValidator')) {
+                $formRequest->withValidator($validator);
+            }
 
             if ($validator->fails()) {
                 throw new FleetbaseRequestValidationException($validator->errors());
             }
+
+            return; // <= prevents any second pass
         }
 
-        // Specific validators
-        if ($this->hasUpdateRequest() && $request->isMethod('PUT')) {
-            $updateRequestClass = $this->getUpdateRequest();
-            $updateRequest      = $updateRequestClass::createFrom($request);
-            $rules              = $updateRequest->rules();
-
-            // Run validator
-            $validator = Validator::make($input, $rules);
-
-            if ($validator->fails()) {
-                throw new FleetbaseRequestValidationException($validator->errors());
-            }
+        // Fallback (no request class available)
+        $validator = Validator::make($input, $this->rules ?? []);
+        if ($validator->fails()) {
+            throw new FleetbaseRequestValidationException($validator->errors());
         }
     }
 
