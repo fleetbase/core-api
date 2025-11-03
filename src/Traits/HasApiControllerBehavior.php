@@ -299,7 +299,7 @@ trait HasApiControllerBehavior
         }
 
         if ($requestClass) {
-            // instantiate via container (tiny fix vs "new $class($request->all())")
+            // instantiate via container
             $formRequest = app($requestClass);
 
             // pull rules/messages/attributes; still validating $input by design
@@ -309,7 +309,7 @@ trait HasApiControllerBehavior
 
             $validator = Validator::make($input, $rules, $messages, $attributes);
 
-            // if present, allow FR to tweak the validator (works even without full hydration)
+            // if present, allow FR to tweak the validator
             if (method_exists($formRequest, 'withValidator')) {
                 $formRequest->withValidator($validator);
             }
