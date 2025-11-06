@@ -535,14 +535,16 @@ trait HasApiModelBehavior
         }
 
         foreach ($sorts as $sort) {
-            if (Schema::hasColumn($this->table, $this->getCreatedAtColumn())) {
+            if (Schema::hasColumn($this->getTable(), $this->getCreatedAtColumn())) {
                 if (strtolower($sort) == 'latest') {
-                    $builder->latest();
+                    // $builder->latest();
+                    $builder->orderBy($this->qualifySortColumn($this->getCreatedAtColumn()), 'desc');
                     continue;
                 }
 
                 if (strtolower($sort) == 'oldest') {
-                    $builder->oldest();
+                    // $builder->oldest();
+                    $builder->orderBy($this->qualifySortColumn($this->getCreatedAtColumn()), 'asc');
                     continue;
                 }
             }
@@ -560,15 +562,15 @@ trait HasApiModelBehavior
                         $direction = Str::startsWith($column, '-') ? 'desc' : 'asc';
                         $param     = Str::startsWith($column, '-') ? substr($column, 1) : $column;
 
-                        $builder->orderBy($column, $direction);
+                        $builder->orderBy($this->qualifySortColumn($column), $direction);
                         continue;
                     }
 
                     $sd = explode(':', $column);
                     if ($sd && count($sd) > 0) {
                         count($sd) == 2
-                            ? $builder->orderBy(trim($sd[0]), trim($sd[1]))
-                            : $builder->orderBy(trim($sd[0]), 'asc');
+                            ? $builder->orderBy($this->qualifySortColumn(trim($sd[0])), strtolower(trim($sd[1])))
+                            : $builder->orderBy($this->qualifySortColumn(trim($sd[0])), 'asc');
                     }
                 }
             }
@@ -576,12 +578,12 @@ trait HasApiModelBehavior
             if (Str::startsWith($sort, '-')) {
                 list($param, $direction) = Http::useSort($request);
 
-                $builder->orderBy($param, $direction);
+                $builder->orderBy($this->qualifySortColumn($param), $direction);
                 continue;
             }
 
             list($param, $direction) = Http::useSort($request);
-            $builder->orderBy($param, $direction);
+            $builder->orderBy($this->qualifySortColumn($param), $direction);
         }
 
         return $builder;
@@ -1099,5 +1101,27 @@ trait HasApiModelBehavior
         }
 
         throw (new \Illuminate\Database\Eloquent\ModelNotFoundException())->setModel(static::class, $id);
+    }
+
+    /**
+     * Return true if $column exists on the model's base table.
+     */
+    protected function isBaseColumn(string $column): bool
+    {
+        return !str_contains($column, '.') && Schema::hasColumn($this->getTable(), $column);
+    }
+
+    /**
+     * Qualify base-table columns; leave anything else (aliases, joins, expressions) alone.
+     */
+    protected function qualifySortColumn(string $column): string
+    {
+        // If it's already qualified, an alias, or a function/expression, don't touch it
+        if (str_contains($column, '.') || str_contains($column, '(') || str_contains($column, ' ')) {
+            return $column;
+        }
+
+        // Qualify only when it's a real column on the base table
+        return $this->isBaseColumn($column) ? ($this->getTable() . '.' . $column) : $column;
     }
 }

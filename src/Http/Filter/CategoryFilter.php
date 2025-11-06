@@ -15,6 +15,11 @@ class CategoryFilter extends Filter
         $this->builder->where('company_uuid', $this->session->get('company'));
     }
 
+    public function queryForPublic()
+    {
+        $this->queryForInternal();
+    }
+
     public function parentsOnly()
     {
         if ($this->request->boolean('parents_only')) {
