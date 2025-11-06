@@ -8,7 +8,7 @@ use Fleetbase\Rules\ValidPhoneNumber;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 
-class OnboardRequest extends FleetbaseRequest
+class CreateUserRequest extends FleetbaseRequest
 {
     /**
      * Array of blacklisted words which cannot be used in onboard names and company names.
@@ -39,8 +39,7 @@ class OnboardRequest extends FleetbaseRequest
             'email'                 => ['required', 'email', Rule::unique('users', 'email')->whereNull('deleted_at'), new EmailDomainExcluded()],
             'phone'                 => ['required', new ValidPhoneNumber(), Rule::unique('users', 'phone')->whereNull('deleted_at')],
             'password'              => ['required', 'confirmed', 'string', Password::min(8)->mixedCase()->letters()->numbers()->symbols()->uncompromised()],
-            'password_confirmation' => ['required', 'min:4', 'max:64'],
-            'organization_name'     => ['required', 'min:4', 'max:100', 'regex:/^(?!.*\b[a-z0-9]+(?:\.[a-z0-9]+){1,}\b)[a-zA-ZÀ-ÿ0-9\'\-\s\.]+$/u', new ExcludeWords($this->excludedWords)],
+            'password_confirmation' => ['sometimes', 'min:4', 'max:64'],
         ];
     }
 
@@ -52,8 +51,8 @@ class OnboardRequest extends FleetbaseRequest
     public function messages()
     {
         return [
-            '*.required'        => 'Your :attribute is required to signup',
-            'email'             => 'You must enter a valid :attribute to signup',
+            '*.required'        => 'Your :attribute is required',
+            'email'             => 'You must enter a valid :attribute',
             'email.unique'      => 'An account with this email address already exists',
             'phone.unique'      => 'An account with this phone number already exists',
             'password.required' => 'You must enter a password.',

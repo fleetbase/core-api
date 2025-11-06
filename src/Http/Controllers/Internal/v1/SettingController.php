@@ -212,14 +212,15 @@ class SettingController extends Controller
      */
     public function getMailConfig(AdminRequest $request)
     {
-        $mailer         = config('mail.default');
-        $from           = config('mail.from');
-        $mailers        = Arr::except(array_keys(config('mail.mailers', [])), ['log', 'array', 'failover']);
-        $smtpConfig     = config('mail.mailers.smtp');
-        $mailgunConfig  = config('services.mailgun');
-        $postmarkConfig = config('services.postmark');
-        $sendgridConfig = config('services.sendgrid');
-        $resendConfig   = config('services.resend');
+        $mailer                   = config('mail.default');
+        $from                     = config('mail.from');
+        $mailers                  = Arr::except(array_keys(config('mail.mailers', [])), ['log', 'array', 'failover']);
+        $smtpConfig               = config('mail.mailers.smtp');
+        $microsoftGraphConfig     = config('mail.mailers.microsoft-graph');
+        $mailgunConfig            = config('services.mailgun');
+        $postmarkConfig           = config('services.postmark');
+        $sendgridConfig           = config('services.sendgrid');
+        $resendConfig             = config('services.resend');
 
         $config = [
             'mailer'      => $mailer,
@@ -234,6 +235,14 @@ class SettingController extends Controller
             }
 
             $config['smtp' . ucfirst($key)] = $value;
+        }
+
+        foreach ($microsoftGraphConfig as $key => $value) {
+            if ($key === 'transport') {
+                continue;
+            }
+
+            $config['microsoftGraph' . ucfirst($key)] = $value;
         }
 
         foreach ($mailgunConfig as $key => $value) {
@@ -262,17 +271,19 @@ class SettingController extends Controller
      */
     public function saveMailConfig(AdminRequest $request)
     {
-        $mailer     = $request->input('mailer', 'smtp');
-        $from       = $request->array('from', []);
-        $smtp       = $request->array('smtp');
-        $mailgun    = $request->array('mailgun');
-        $postmark   = $request->array('postmark');
-        $sendgrid   = $request->array('sendgrid');
-        $resend     = $request->array('resend');
+        $mailer             = $request->input('mailer', 'smtp');
+        $from               = $request->array('from', []);
+        $smtp               = $request->array('smtp');
+        $mailgun            = $request->array('mailgun');
+        $postmark           = $request->array('postmark');
+        $sendgrid           = $request->array('sendgrid');
+        $resend             = $request->array('resend');
+        $microsoftGraph     = $request->array('microsoftGraph');
 
         Setting::configureSystem('mail.mailer', $mailer);
         Setting::configureSystem('mail.from', $from);
-        Setting::configureSystem('mail.smtp', array_merge(['transport' => 'smtp'], $smtp));
+        Setting::configureSystem('mail.mailers.smtp', array_merge(['transport' => 'smtp'], $smtp));
+        Setting::configureSystem('mail.mailers.microsoft-graph', array_merge(['transport' => 'microsoft-graph'], $microsoftGraph));
         Setting::configureSystem('services.mailgun', $mailgun);
         Setting::configureSystem('services.postmark', $postmark);
         Setting::configureSystem('services.sendgrid', $sendgrid);
@@ -305,19 +316,24 @@ class SettingController extends Controller
                 'name'    => 'Fleetbase',
             ]
         );
-        $smtp       = $request->input('smtp', []);
-        $mailgun    = $request->array('mailgun');
-        $postmark   = $request->array('postmark');
-        $sendgrid   = $request->array('sendgrid');
-        $resend     = $request->array('resend');
-        $user       = $request->user();
-        $message    = 'Mail configuration is successful, check your inbox for the test email to confirm.';
-        $status     = 'success';
+        $smtp           = $request->input('smtp', []);
+        $microsoftGraph = $request->array('microsoftGraph');
+        $mailgun        = $request->array('mailgun');
+        $postmark       = $request->array('postmark');
+        $sendgrid       = $request->array('sendgrid');
+        $resend         = $request->array('resend');
+        $user           = $request->user();
+        $message        = 'Mail configuration is successful, check your inbox for the test email to confirm.';
+        $status         = 'success';
 
         // set config values from input
         config(['mail.default' => $mailer, 'mail.from' => $from, 'mail.mailers.smtp' => array_merge(['transport' => 'smtp'], $smtp)]);
 
         // set mailer configs
+        if ($mailer === 'microsoft-graph') {
+            config(['mail.mailers.microsoft-graph' => array_merge(['transport' => 'microsoft-graph'], $microsoftGraph)]);
+        }
+
         if ($mailer === 'mailgun') {
             config(['services.mailgun' => $mailgun]);
         }

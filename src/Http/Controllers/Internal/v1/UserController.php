@@ -7,6 +7,7 @@ use Fleetbase\Events\UserRemovedFromCompany;
 use Fleetbase\Exceptions\FleetbaseRequestValidationException;
 use Fleetbase\Exports\UserExport;
 use Fleetbase\Http\Controllers\FleetbaseController;
+use Fleetbase\Http\Requests\CreateUserRequest;
 use Fleetbase\Http\Requests\ExportRequest;
 use Fleetbase\Http\Requests\Internal\AcceptCompanyInvite;
 use Fleetbase\Http\Requests\Internal\InviteUserRequest;
@@ -49,13 +50,21 @@ class UserController extends FleetbaseController
     public $service = 'iam';
 
     /**
+     * Create user request.
+     *
+     * @var CreateUserRequest
+     */
+    public $createRequest = CreateUserRequest::class;
+
+    /**
      * Creates a record with request payload.
      *
      * @return \Illuminate\Http\Response
      */
     public function createRecord(Request $request)
     {
-        // @TODO Add user creation validation
+        $this->validateRequest($request);
+
         try {
             $record = $this->model->createRecordFromRequest($request, function (&$request, &$input) {
                 // Get user properties

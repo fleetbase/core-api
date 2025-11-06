@@ -12,6 +12,11 @@ class ApiRequestLogFilter extends Filter
         $this->builder->where('company_uuid', $this->session->get('company'));
     }
 
+    public function queryForPublic()
+    {
+        $this->queryForInternal();
+    }
+
     public function query(?string $query)
     {
         $this->builder->search($query);

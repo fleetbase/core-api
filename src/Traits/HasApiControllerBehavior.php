@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Redirector;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
@@ -88,7 +89,7 @@ trait HasApiControllerBehavior
      * This can be set to a specific FleetbaseRequest instance or remain null
      * if no create request validation is required.
      */
-    protected ?FleetbaseRequest $createRequest = null;
+    public $createRequest;
 
     /**
      * The request class to be used for update operations on this resource.
@@ -96,7 +97,7 @@ trait HasApiControllerBehavior
      * This can be set to a specific FleetbaseRequest instance or remain null
      * if no update request validation is required.
      */
-    protected ?FleetbaseRequest $updateRequest = null;
+    public $updateRequest;
 
     /**
      * Determines the action to perform based on the HTTP verb.
@@ -282,10 +283,8 @@ trait HasApiControllerBehavior
      */
     public function validateRequest(Request $request): void
     {
-        // Always validate the transformed API payload (your standard)
         $input = (array) ($this->model?->getApiPayloadFromRequest($request) ?? []);
 
-        // Resolve the correct request class
         $requestClass = null;
 
         if ($request->isMethod('post') && $this->hasCreateRequest()) {
@@ -297,29 +296,32 @@ trait HasApiControllerBehavior
         }
 
         if ($requestClass) {
-            // instantiate via container
-            $formRequest = app($requestClass);
+            /** @var FormRequest $formRequest */
+            $formRequest = $requestClass::createFrom($request);
+            $formRequest->setContainer(app())->setRedirector(app(Redirector::class));
+            $formRequest->replace($input);
 
-            // pull rules/messages/attributes; still validating $input by design
             $rules      = $formRequest->rules();
             $messages   = method_exists($formRequest, 'messages') ? $formRequest->messages() : [];
             $attributes = method_exists($formRequest, 'attributes') ? $formRequest->attributes() : [];
 
             $validator = Validator::make($input, $rules, $messages, $attributes);
 
-            // if present, allow FR to tweak the validator
             if (method_exists($formRequest, 'withValidator')) {
                 $formRequest->withValidator($validator);
+            }
+
+            if (method_exists($formRequest, 'authorize') && $formRequest->authorize() === false) {
+                abort(403);
             }
 
             if ($validator->fails()) {
                 throw new FleetbaseRequestValidationException($validator->errors());
             }
 
-            return; // <= prevents any second pass
+            return;
         }
 
-        // Fallback (no request class available)
         $validator = Validator::make($input, $this->rules ?? []);
         if ($validator->fails()) {
             throw new FleetbaseRequestValidationException($validator->errors());
@@ -695,7 +697,7 @@ trait HasApiControllerBehavior
     /**
      * Get the configured update request class for this resource, if any.
      */
-    public function getUpdateRequest(): ?FleetbaseRequest
+    public function getUpdateRequest(): ?string
     {
         return $this->updateRequest;
     }
@@ -703,7 +705,7 @@ trait HasApiControllerBehavior
     /**
      * Get the configured create request class for this resource, if any.
      */
-    public function getCreateRequest(): ?FleetbaseRequest
+    public function getCreateRequest(): ?string
     {
         return $this->createRequest;
     }
@@ -715,7 +717,7 @@ trait HasApiControllerBehavior
      */
     public function hasUpdateRequest(): bool
     {
-        return $this->getUpdateRequest() instanceof FleetbaseRequest;
+        return !empty($this->getUpdateRequest());
     }
 
     /**
@@ -725,7 +727,7 @@ trait HasApiControllerBehavior
      */
     public function hasCreateRequest(): bool
     {
-        return $this->getCreateRequest() instanceof FleetbaseRequest;
+        return !empty($this->getCreateRequest());
     }
 
     public function getHumanReadableResourceName(): string

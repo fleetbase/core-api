@@ -5,6 +5,7 @@ namespace Fleetbase\Http\Controllers\Internal\v1;
 use Fleetbase\Exceptions\InvalidVerificationCodeException;
 use Fleetbase\Http\Controllers\Controller;
 use Fleetbase\Http\Requests\AdminRequest;
+use Fleetbase\Http\Requests\ChangePasswordRequest;
 use Fleetbase\Http\Requests\Internal\ResetPasswordRequest;
 use Fleetbase\Http\Requests\Internal\UserForgotPasswordRequest;
 use Fleetbase\Http\Requests\JoinOrganizationRequest;
@@ -643,7 +644,7 @@ class AuthController extends Controller
      *
      * @return \Illuminate\Http\Response
      */
-    public function changeUserPassword(Request $request)
+    public function changeUserPassword(ChangePasswordRequest $request)
     {
         $user = Auth::getUserFromSession($request);
         if (!$user) {

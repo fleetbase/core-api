@@ -21,7 +21,7 @@ use Illuminate\Support\Str;
  */
 trait HasCustomFields
 {
-    /** @var array<string,\Fleetbase\Models\CustomField|null> */
+    /** @var array<string,CustomField|null> */
     protected array $customFieldCache = [];
 
     /** @var array<string,mixed> */

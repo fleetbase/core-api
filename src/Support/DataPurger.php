@@ -262,7 +262,7 @@ class DataPurger
     /**
      * List all app tables that we are allowed to touch.
      *
-     * @return \Illuminate\Support\Collection<string>
+     * @return Collection<string>
      */
     protected function listTenantTables(): Collection
     {

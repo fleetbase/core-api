@@ -3,12 +3,11 @@
 namespace Fleetbase\Support;
 
 use Fleetbase\Models\Setting;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 
 /**
  * The EnvironmentMapper class is responsible for mapping system settings stored in the database
- * to environment variables and configuration settings within the Laravel application. This allows
+ * to environment variables and configuration settings within the Fleetbase application. This allows
  * dynamic configuration of the application based on database-stored settings.
  *
  * The class includes methods to set environment variables, merge configuration settings from the database,
@@ -23,7 +22,7 @@ class EnvironmentMapper
      * configuration paths within the application. This array is used to set environment
      * variables based on system settings stored in the database.
      */
-    protected static array $environmentVariables         = [
+    protected static array $environmentVariables = [
         'AWS_ACCESS_KEY_ID'                    => 'services.aws.key',
         'AWS_SECRET_ACCESS_KEY'                => 'services.aws.secret',
         'AWS_DEFAULT_REGION'                   => 'services.aws.region',
@@ -33,7 +32,7 @@ class EnvironmentMapper
         'SQS_PREFIX'                           => 'queue.connections.sqs',
         'MAIL_MAILER'                          => 'mail.default',
         'MAIL_FROM_ADDRESS'                    => 'mail.from',
-        'MAIL_HOST'                            => 'mail.mailers.smtp',
+        'MAIL_HOST'                            => 'mail.mailers.smtp.host',
         'TWILIO_SID'                           => 'services.twilio.sid',
         'TWILIO_TOKEN'                         => 'services.twilio.token',
         'TWILIO_FROM'                          => 'services.twilio.from',
@@ -53,6 +52,10 @@ class EnvironmentMapper
         'POSTMARK_TOKEN'                       => 'services.postmark.token',
         'SENDGRID_API_KEY'                     => 'services.sendgrid.api_key',
         'RESEND_KEY'                           => 'services.resend.key',
+        'MICROSOFT_GRAPH_CLIENT_ID'            => 'mail.mailers.microsoft-graph.client_id',
+        'MICROSOFT_GRAPH_CLIENT_SECRET'        => 'mail.mailers.microsoft-graph.client_secret',
+        'MICROSOFT_GRAPH_TENANT_ID'            => 'mail.mailers.microsoft-graph.tenant_id',
+        'MAIL_SAVE_TO_SENT_ITEMS'              => 'mail.mailers.microsoft-graph.save_to_sent_items',
     ];
 
     /**
@@ -68,7 +71,8 @@ class EnvironmentMapper
         ['settingsKey' => 'filesystem.gcs', 'configKey' => 'filesystems.disks.gcs'],
         ['settingsKey' => 'mail.mailer', 'configKey' => 'mail.default'],
         ['settingsKey' => 'mail.from', 'configKey' => 'mail.from'],
-        ['settingsKey' => 'mail.smtp', 'configKey' => 'mail.mailers.smtp'],
+        ['settingsKey' => 'mail.mailers.smtp', 'configKey' => 'mail.mailers.smtp'],
+        ['settingsKey' => 'mail.mailers.microsoft-graph', 'configKey' => 'mail.mailers.microsoft-graph'],
         ['settingsKey' => 'queue.driver', 'configKey' => 'queue.default'],
         ['settingsKey' => 'queue.sqs', 'configKey' => 'queue.connections.sqs'],
         ['settingsKey' => 'queue.beanstalkd', 'configKey' => 'queue.connections.beanstalkd'],
@@ -107,11 +111,10 @@ class EnvironmentMapper
      * but are defined in the system settings. This method returns an array of environment
      * variables that can be set based on the system's configuration.
      *
-     * @return array
-     *               An associative array where the keys are the environment variable names and
+     * @return array An associative array where the keys are the environment variable names and
      *               the values are the corresponding configuration paths
      */
-    protected static function getSettableEnvironmentVairables(): array
+    protected static function getSettableEnvironmentVariables(): array
     {
         $settableEnvironmentVariables = [];
         foreach (static::$environmentVariables as $variable => $configPath) {
@@ -121,89 +124,6 @@ class EnvironmentMapper
         }
 
         return $settableEnvironmentVariables;
-    }
-
-    /**
-     * Sets environment variables for the application based on the system settings stored
-     * in the database. This method checks if the environment variable is not already set
-     * and then sets it using the corresponding value from the system settings.
-     *
-     * If the database connection is not available, the method exits early.
-     */
-    public static function setEnvironmentVariables(): void
-    {
-        if (Setting::doesntHaveConnection() || env('CI')) {
-            return;
-        }
-
-        $environmentVariables = static::getSettableEnvironmentVairables();
-        foreach ($environmentVariables as $variable => $configPath) {
-            $value = Setting::system($configPath);
-            if ($value && is_string($value) && !empty($value)) {
-                putenv($variable . '="' . $value . '"');
-            }
-        }
-    }
-
-    /**
-     * Merges system settings from the database into the application's configuration.
-     * This method first sets any environment variables that can be derived from the
-     * system settings and then merges specific settings into the configuration.
-     *
-     * It also handles special configuration logic, such as setting a default mail
-     * address if none is specified.
-     *
-     * If the database connection is not available, the method exits early.
-     */
-    public static function mergeConfigFromSettings(): void
-    {
-        if (Setting::doesntHaveConnection()) {
-            return;
-        }
-
-        static::setEnvironmentVariables();
-        foreach (static::$settings as $setting) {
-            $settingsKey = $setting['settingsKey'];
-            $configKey   = $setting['configKey'];
-
-            static::mergeConfig($settingsKey, $configKey);
-        }
-
-        static::setDefaultMailFrom();
-    }
-
-    /**
-     * Merges a single system setting from the database into the application's configuration.
-     * The method fetches the setting value and updates the application's configuration at
-     * the specified config key.
-     *
-     * If the database connection is not available, the method exits early.
-     *
-     * @param string $settingsKey
-     *                            The key in the system settings that contains the value to be merged into the configuration
-     * @param string $configKey
-     *                            The key in the application's configuration that should be updated with the value from the system settings
-     */
-    protected static function mergeConfig(string $settingsKey, string $configKey): void
-    {
-        if (Setting::doesntHaveConnection()) {
-            return;
-        }
-
-        $value = Setting::system($settingsKey);
-        // Merge config values for array instead of complete overwrite
-        if (is_array($value) && is_array(config($configKey))) {
-            $value = array_merge(config($configKey), array_filter($value));
-        }
-
-        if ($value) {
-            // Fetch the current config array
-            $config = config()->all();
-            // Update the specific value in the config array
-            Arr::set($config, $configKey, $value);
-            // Set the entire config array
-            config($config);
-        }
     }
 
     /**
@@ -231,23 +151,32 @@ class EnvironmentMapper
         }
 
         // Build DB keys for env vars (prefixed with 'system.')
-        $envDbKeys = array_map(fn ($path) => Str::startsWith($path, 'system.')
-            ? $path
-            : 'system.' . $path, array_values(static::$environmentVariables)
+        $envDbKeys = array_map(
+            fn ($path) => Str::startsWith($path, 'system.') ? $path : 'system.' . $path,
+            array_values(static::$environmentVariables)
         );
 
-        // Build DB keys for settings (use first two segments for nested keys)
-        $settingDbKeys = array_map(function ($map) {
-            $key      = $map['settingsKey'];
-            $segments = explode('.', $key);
-            if (count($segments) >= 3) {
-                return 'system.' . $segments[0] . '.' . $segments[1];
-            }
+        // Build DB keys for settings including parent keys for nested lookups
+        $settingDbKeys = collect(static::$settings)
+            ->flatMap(function ($map) {
+                $key     = $map['settingsKey'];
+                $fullKey = Str::startsWith($key, 'system.') ? $key : 'system.' . $key;
 
-            return Str::startsWith($key, 'system.')
-                ? $key
-                : 'system.' . $key;
-        }, static::$settings);
+                $segments = explode('.', $key);
+                $keys     = [$fullKey];
+
+                // Add parent keys for nested lookups (e.g., 'system.services.aws' for 'system.services.aws.region')
+                if (count($segments) >= 2) {
+                    for ($i = 1; $i < count($segments); $i++) {
+                        $keys[] = 'system.' . implode('.', array_slice($segments, 0, $i));
+                    }
+                }
+
+                return $keys;
+            })
+            ->unique()
+            ->values()
+            ->toArray();
 
         // Unique list of keys to fetch
         $fetchKeys = array_unique(array_merge($envDbKeys, $settingDbKeys));
@@ -265,23 +194,15 @@ class EnvironmentMapper
         foreach (static::$settings as $map) {
             $settingsKey = $map['settingsKey'];
             $configKey   = $map['configKey'];
-            $segments    = explode('.', $settingsKey);
 
-            // Determine the DB key we fetched
-            $dbKey = count($segments) >= 3
-                ? 'system.' . $segments[0] . '.' . $segments[1]
-                : 'system.' . $settingsKey;
+            // Determine the DB key we're looking for
+            $dbKey = 'system.' . $settingsKey;
+            $value = static::getDbSetting($dbSettings, $dbKey);
 
-            if (!isset($dbSettings[$dbKey])) {
+            // Skip if nothing was found
+            if ($value === null) {
                 continue;
             }
-
-            $rawValue = $dbSettings[$dbKey];
-
-            // Extract nested subkey if needed
-            $value = count($segments) >= 3
-                ? data_get($rawValue, implode('.', array_slice($segments, 2)))
-                : $rawValue;
 
             // Merge arrays rather than overwrite
             if (is_array($value) && is_array(config($configKey))) {
@@ -307,17 +228,74 @@ class EnvironmentMapper
      */
     protected static function setEnvironmentVariablesOptimized(array $dbSettings): void
     {
-        foreach (static::$environmentVariables as $envVar => $configPath) {
-            $dbKey = Str::startsWith($configPath, 'system.')
-                ? $configPath
-                : 'system.' . $configPath;
+        $environmentVariables = static::getSettableEnvironmentVariables();
 
-            if (empty(env($envVar)) && isset($dbSettings[$dbKey])) {
-                $value = $dbSettings[$dbKey];
-                if (is_string($value) && $value !== '') {
+        foreach ($environmentVariables as $envVar => $configPath) {
+            $dbKey = Str::startsWith($configPath, 'system.') ? $configPath : 'system.' . $configPath;
+            if (empty(env($envVar))) {
+                $value = static::getDbSetting($dbSettings, $dbKey);
+                if (is_string($value) && !empty($value)) {
                     putenv(sprintf('%s="%s"', $envVar, addcslashes($value, '"')));
                 }
             }
         }
+    }
+
+    /**
+     * Get a value from the database settings array, with fallback to parent keys.
+     *
+     * This method implements a progressive fallback strategy for nested configuration keys.
+     * If the full key doesn't exist directly, it tries progressively shorter parent keys
+     * and traverses into their values using the remaining segments.
+     *
+     * Example:
+     * If looking for 'system.services.aws.region' and it doesn't exist directly,
+     * but 'system.services.aws' exists with value ['region' => 'ap-southeast-1', 'key' => '...'],
+     * this method will return 'ap-southeast-1'.
+     *
+     * @param array  $dbSettings The flat array of database settings (key => value)
+     * @param string $lookupKey  The dot-separated key to look up (e.g., 'system.services.aws.region')
+     * @param mixed  $default    The default value to return if not found
+     *
+     * @return mixed The found value, or the default if not found
+     */
+    private static function getDbSetting(array $dbSettings, string $lookupKey, $default = null)
+    {
+        // First, check if the full key exists directly in the flat array
+        if (isset($dbSettings[$lookupKey])) {
+            return $dbSettings[$lookupKey];
+        }
+
+        // Split the lookup key into segments
+        $segments = explode('.', $lookupKey);
+
+        // Try progressively shorter keys, starting from the full key
+        for ($i = count($segments) - 1; $i > 0; $i--) {
+            // Build a parent key (e.g., 'system.services.aws' from 'system.services.aws.region')
+            $parentKey = implode('.', array_slice($segments, 0, $i));
+
+            // Check if this parent key exists in the database settings
+            if (isset($dbSettings[$parentKey])) {
+                $value = $dbSettings[$parentKey];
+
+                // Get the remaining segments to traverse into the value
+                $remainingSegments = array_slice($segments, $i);
+
+                // Traverse into the value using the remaining segments
+                foreach ($remainingSegments as $segment) {
+                    if (is_array($value) && array_key_exists($segment, $value)) {
+                        $value = $value[$segment];
+                    } else {
+                        // Path doesn't exist in the nested structure
+                        return $default;
+                    }
+                }
+
+                return $value;
+            }
+        }
+
+        // Nothing found at any level
+        return $default;
     }
 }
