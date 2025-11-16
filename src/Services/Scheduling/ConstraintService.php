@@ -16,11 +16,6 @@ class ConstraintService
 
     /**
      * Register a constraint handler for a specific entity type.
-     *
-     * @param string $entityType
-     * @param string $handlerClass
-     *
-     * @return void
      */
     public function register(string $entityType, string $handlerClass): void
     {
@@ -33,10 +28,6 @@ class ConstraintService
 
     /**
      * Validate a schedule item against all applicable constraints.
-     *
-     * @param ScheduleItem $item
-     *
-     * @return array
      */
     public function validate(ScheduleItem $item): array
     {
@@ -80,9 +71,6 @@ class ConstraintService
     /**
      * Get active constraints for a specific subject.
      *
-     * @param string $subjectType
-     * @param string $subjectUuid
-     *
      * @return \Illuminate\Database\Eloquent\Collection
      */
     public function getConstraintsForSubject(string $subjectType, string $subjectUuid)
@@ -96,8 +84,6 @@ class ConstraintService
     /**
      * Get active constraints by type.
      *
-     * @param string $type
-     *
      * @return \Illuminate\Database\Eloquent\Collection
      */
     public function getConstraintsByType(string $type)
@@ -110,11 +96,6 @@ class ConstraintService
 
     /**
      * Check if a specific constraint is satisfied.
-     *
-     * @param ScheduleItem $item
-     * @param string       $constraintKey
-     *
-     * @return bool
      */
     public function checkConstraint(ScheduleItem $item, string $constraintKey): bool
     {

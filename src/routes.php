@@ -302,6 +302,11 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     $router->post('{id}/execute', $controller('execute'));
                                     $router->post('{id}/export', $controller('export'));
                                 });
+                                $router->fleetbaseRoutes('schedules');
+                                $router->fleetbaseRoutes('schedule-items');
+                                $router->fleetbaseRoutes('schedule-templates');
+                                $router->fleetbaseRoutes('schedule-availability');
+                                $router->fleetbaseRoutes('schedule-constraints');
                             }
                         );
                     }
@@ -310,10 +315,3 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
         );
     }
 );
-
-                                // Scheduling Module Routes
-                                $router->fleetbaseRoutes('schedules');
-                                $router->fleetbaseRoutes('schedule-items');
-                                $router->fleetbaseRoutes('schedule-templates');
-                                $router->fleetbaseRoutes('schedule-availability');
-                                $router->fleetbaseRoutes('schedule-constraints');

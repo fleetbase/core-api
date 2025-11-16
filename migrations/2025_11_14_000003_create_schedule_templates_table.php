@@ -34,7 +34,6 @@ return new class extends Migration {
 
             $table->unique(['uuid']);
             $table->index(['subject_uuid', 'subject_type']);
-            $table->index(['company_uuid']);
         });
     }
 

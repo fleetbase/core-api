@@ -1,13 +1,18 @@
 <?php
+
 namespace Fleetbase\Events;
+
 use Fleetbase\Models\Schedule;
 use Illuminate\Broadcasting\InteractsWithSockets;
-use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
+
 class ScheduleDeleted
 {
-    use Dispatchable, InteractsWithSockets, SerializesModels;
+    use InteractsWithSockets;
+    use SerializesModels;
+
     public $schedule;
+
     public function __construct(Schedule $schedule)
     {
         $this->schedule = $schedule;

@@ -9,7 +9,7 @@ class ConstraintResult
 
     public function __construct(bool $passed, array $violations = [])
     {
-        $this->passed = $passed;
+        $this->passed     = $passed;
         $this->violations = $violations;
     }
 

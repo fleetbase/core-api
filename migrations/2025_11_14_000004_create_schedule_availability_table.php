@@ -31,8 +31,8 @@ return new class extends Migration {
             $table->timestamp('updated_at')->nullable();
 
             $table->unique(['uuid']);
-            $table->index(['subject_uuid', 'subject_type', 'start_at', 'end_at', 'is_available'], 'schedule_availability_composite_idx');
-            $table->index(['subject_type', 'is_available', 'start_at', 'end_at']);
+            $table->index(['subject_uuid', 'subject_type', 'start_at', 'end_at', 'is_available'], 'schedule_subject_availability_composite_idx');
+            $table->index(['subject_type', 'is_available', 'start_at', 'end_at'], 'schedule_availability_composite_idx');
         });
     }
 

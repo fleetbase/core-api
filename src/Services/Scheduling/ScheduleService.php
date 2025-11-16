@@ -10,10 +10,6 @@ class ScheduleService
 {
     /**
      * Create a new schedule.
-     *
-     * @param array $data
-     *
-     * @return Schedule
      */
     public function createSchedule(array $data): Schedule
     {
@@ -35,11 +31,6 @@ class ScheduleService
 
     /**
      * Update an existing schedule.
-     *
-     * @param Schedule $schedule
-     * @param array    $data
-     *
-     * @return Schedule
      */
     public function updateSchedule(Schedule $schedule, array $data): Schedule
     {
@@ -61,10 +52,6 @@ class ScheduleService
 
     /**
      * Delete a schedule.
-     *
-     * @param Schedule $schedule
-     *
-     * @return bool
      */
     public function deleteSchedule(Schedule $schedule): bool
     {
@@ -83,10 +70,6 @@ class ScheduleService
 
     /**
      * Create a new schedule item.
-     *
-     * @param array $data
-     *
-     * @return ScheduleItem
      */
     public function createScheduleItem(array $data): ScheduleItem
     {
@@ -108,11 +91,6 @@ class ScheduleService
 
     /**
      * Update an existing schedule item.
-     *
-     * @param ScheduleItem $item
-     * @param array        $data
-     *
-     * @return ScheduleItem
      */
     public function updateScheduleItem(ScheduleItem $item, array $data): ScheduleItem
     {
@@ -134,10 +112,6 @@ class ScheduleService
 
     /**
      * Delete a schedule item.
-     *
-     * @param ScheduleItem $item
-     *
-     * @return bool
      */
     public function deleteScheduleItem(ScheduleItem $item): bool
     {
@@ -156,12 +130,6 @@ class ScheduleService
 
     /**
      * Assign a schedule item to an assignee.
-     *
-     * @param ScheduleItem $item
-     * @param string       $assigneeType
-     * @param string       $assigneeUuid
-     *
-     * @return ScheduleItem
      */
     public function assignScheduleItem(ScheduleItem $item, string $assigneeType, string $assigneeUuid): ScheduleItem
     {
@@ -190,10 +158,6 @@ class ScheduleService
     /**
      * Get schedules for a specific subject.
      *
-     * @param string $subjectType
-     * @param string $subjectUuid
-     * @param array  $filters
-     *
      * @return \Illuminate\Database\Eloquent\Collection
      */
     public function getSchedulesForSubject(string $subjectType, string $subjectUuid, array $filters = [])
@@ -213,10 +177,6 @@ class ScheduleService
 
     /**
      * Get schedule items for a specific assignee.
-     *
-     * @param string $assigneeType
-     * @param string $assigneeUuid
-     * @param array  $filters
      *
      * @return \Illuminate\Database\Eloquent\Collection
      */

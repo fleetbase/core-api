@@ -46,7 +46,7 @@ class ComputedColumnValidatorTest extends TestCase
     }
 
     /** @test */
-    public function it_validates_simple_datediff_expression()
+    public function itValidatesSimpleDatediffExpression()
     {
         $expression = 'DATEDIFF(end_date, start_date)';
         $result     = $this->validator->validate($expression, 'test_table');
@@ -56,7 +56,7 @@ class ComputedColumnValidatorTest extends TestCase
     }
 
     /** @test */
-    public function it_validates_complex_datediff_with_functions()
+    public function itValidatesComplexDatediffWithFunctions()
     {
         $expression = "DATEDIFF(LEAST(end_date, '2025-10-31'), GREATEST(start_date, '2025-10-01')) + 1";
         $result     = $this->validator->validate($expression, 'test_table');
@@ -66,7 +66,7 @@ class ComputedColumnValidatorTest extends TestCase
     }
 
     /** @test */
-    public function it_validates_concat_expression()
+    public function itValidatesConcatExpression()
     {
         $expression = "CONCAT(name, ' - ', id)";
         $result     = $this->validator->validate($expression, 'test_table');
@@ -76,7 +76,7 @@ class ComputedColumnValidatorTest extends TestCase
     }
 
     /** @test */
-    public function it_validates_case_statement()
+    public function itValidatesCaseStatement()
     {
         $expression = "CASE WHEN amount > 100 THEN 'High' WHEN amount > 50 THEN 'Medium' ELSE 'Low' END";
         $result     = $this->validator->validate($expression, 'test_table');
@@ -86,7 +86,7 @@ class ComputedColumnValidatorTest extends TestCase
     }
 
     /** @test */
-    public function it_validates_safe_division()
+    public function itValidatesSafeDivision()
     {
         $expression = 'ROUND(COALESCE(amount / NULLIF(quantity, 0), 0), 2)';
         $result     = $this->validator->validate($expression, 'test_table');
@@ -96,7 +96,7 @@ class ComputedColumnValidatorTest extends TestCase
     }
 
     /** @test */
-    public function it_validates_json_column_access()
+    public function itValidatesJsonColumnAccess()
     {
         $expression = 'details.price * quantity';
         $result     = $this->validator->validate($expression, 'test_table');
@@ -106,7 +106,7 @@ class ComputedColumnValidatorTest extends TestCase
     }
 
     /** @test */
-    public function it_validates_relationship_column_access()
+    public function itValidatesRelationshipColumnAccess()
     {
         $expression = "CONCAT(name, ' - ', related.value)";
         $result     = $this->validator->validate($expression, 'test_table');
@@ -116,7 +116,7 @@ class ComputedColumnValidatorTest extends TestCase
     }
 
     /** @test */
-    public function it_rejects_forbidden_keywords()
+    public function itRejectsForbiddenKeywords()
     {
         $expressions = [
             'DROP TABLE test_table',
@@ -135,7 +135,7 @@ class ComputedColumnValidatorTest extends TestCase
     }
 
     /** @test */
-    public function it_rejects_invalid_functions()
+    public function itRejectsInvalidFunctions()
     {
         $expression = 'INVALID_FUNC(name)';
         $result     = $this->validator->validate($expression, 'test_table');
@@ -146,7 +146,7 @@ class ComputedColumnValidatorTest extends TestCase
     }
 
     /** @test */
-    public function it_rejects_dangerous_operators()
+    public function itRejectsDangerousOperators()
     {
         $expressions = [
             'name || "test"',  // String concatenation operator (MySQL specific)
@@ -164,7 +164,7 @@ class ComputedColumnValidatorTest extends TestCase
     }
 
     /** @test */
-    public function it_rejects_invalid_column_references()
+    public function itRejectsInvalidColumnReferences()
     {
         $expression = 'DATEDIFF(invalid_column, start_date)';
         $result     = $this->validator->validate($expression, 'test_table');
@@ -175,7 +175,7 @@ class ComputedColumnValidatorTest extends TestCase
     }
 
     /** @test */
-    public function it_rejects_invalid_table_name()
+    public function itRejectsInvalidTableName()
     {
         $expression = 'DATEDIFF(end_date, start_date)';
         $result     = $this->validator->validate($expression, 'invalid_table');
@@ -186,7 +186,7 @@ class ComputedColumnValidatorTest extends TestCase
     }
 
     /** @test */
-    public function it_provides_allowed_functions_list()
+    public function itProvidesAllowedFunctionsList()
     {
         $functions = $this->validator->getAllowedFunctions();
 
@@ -197,7 +197,7 @@ class ComputedColumnValidatorTest extends TestCase
     }
 
     /** @test */
-    public function it_provides_allowed_operators_list()
+    public function itProvidesAllowedOperatorsList()
     {
         $operators = $this->validator->getAllowedOperators();
 

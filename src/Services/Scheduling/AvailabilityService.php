@@ -9,10 +9,6 @@ class AvailabilityService
 {
     /**
      * Set availability for a subject.
-     *
-     * @param array $data
-     *
-     * @return ScheduleAvailability
      */
     public function setAvailability(array $data): ScheduleAvailability
     {
@@ -32,13 +28,6 @@ class AvailabilityService
 
     /**
      * Check if a subject is available during a time range.
-     *
-     * @param string $subjectType
-     * @param string $subjectUuid
-     * @param string $startAt
-     * @param string $endAt
-     *
-     * @return bool
      */
     public function checkAvailability(string $subjectType, string $subjectUuid, string $startAt, string $endAt): bool
     {
@@ -54,11 +43,6 @@ class AvailabilityService
     /**
      * Get availability for a subject within a time range.
      *
-     * @param string $subjectType
-     * @param string $subjectUuid
-     * @param string $startAt
-     * @param string $endAt
-     *
      * @return \Illuminate\Database\Eloquent\Collection
      */
     public function getAvailability(string $subjectType, string $subjectUuid, string $startAt, string $endAt)
@@ -71,13 +55,6 @@ class AvailabilityService
 
     /**
      * Get available resources of a specific type within a time range.
-     *
-     * @param string $subjectType
-     * @param string $startAt
-     * @param string $endAt
-     * @param array  $filters
-     *
-     * @return array
      */
     public function getAvailableResources(string $subjectType, string $startAt, string $endAt, array $filters = []): array
     {
@@ -98,10 +75,6 @@ class AvailabilityService
 
     /**
      * Delete availability.
-     *
-     * @param ScheduleAvailability $availability
-     *
-     * @return bool
      */
     public function deleteAvailability(ScheduleAvailability $availability): bool
     {
