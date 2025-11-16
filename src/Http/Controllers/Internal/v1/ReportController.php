@@ -4,6 +4,7 @@ namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Models\Report;
+use Fleetbase\Support\Reporting\ComputedColumnValidator;
 use Fleetbase\Support\Reporting\ReportQueryConverter;
 use Fleetbase\Support\Reporting\ReportQueryErrorHandler;
 use Fleetbase\Support\Reporting\ReportQueryValidator;
@@ -608,5 +609,68 @@ class ReportController extends FleetbaseController
         }
 
         return $recommendations;
+    }
+
+    /**
+     * Validate a computed column expression.
+     */
+    public function validateComputedColumn(Request $request): JsonResponse
+    {
+        try {
+            $expression = $request->input('expression');
+            $tableName  = $request->input('table_name');
+
+            if (!$expression) {
+                return response()->json([
+                    'valid'  => false,
+                    'errors' => ['Expression is required'],
+                ], 400);
+            }
+
+            if (!$tableName) {
+                return response()->json([
+                    'valid'  => false,
+                    'errors' => ['Table name is required'],
+                ], 400);
+            }
+
+            // Get the registry and create validator
+            $registry  = app(ReportSchemaRegistry::class);
+            $validator = new ComputedColumnValidator($registry);
+
+            // Validate the expression
+            $validationResult = $validator->validate($expression, $tableName);
+
+            if ($validationResult['valid']) {
+                return response()->json([
+                    'valid'   => true,
+                    'message' => 'Expression is valid',
+                    'meta'    => [
+                        'expression'  => $expression,
+                        'table_name'  => $tableName,
+                        'timestamp'   => now()->toISOString(),
+                    ],
+                ]);
+            } else {
+                return response()->json([
+                    'valid'  => false,
+                    'errors' => $validationResult['errors'],
+                    'meta'   => [
+                        'expression' => $expression,
+                        'table_name' => $tableName,
+                        'timestamp'  => now()->toISOString(),
+                    ],
+                ], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(
+                $this->errorHandler->handleError($e, [
+                    'action'     => 'validate_computed_column',
+                    'expression' => $request->input('expression'),
+                    'table_name' => $request->input('table_name'),
+                ]),
+                500
+            );
+        }
     }
 }
