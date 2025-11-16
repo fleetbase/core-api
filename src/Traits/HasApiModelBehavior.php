@@ -528,62 +528,49 @@ trait HasApiModelBehavior
      */
     public function applySorts($request, $builder)
     {
-        $sorts = $request->sort ? explode(',', $request->sort) : null;
+        // Grab the raw sort input
+        $sorts = (array) $request->array('sort');
 
-        if (!$sorts) {
+        // Nothing to sort by
+        if (empty($sorts)) {
             return $builder;
         }
 
         foreach ($sorts as $sort) {
+            $sort = trim($sort);
+
+            if ($sort === '') {
+                continue;
+            }
+
+            // Handle special keywords that don't care about column name
             if (Schema::hasColumn($this->getTable(), $this->getCreatedAtColumn())) {
-                if (strtolower($sort) == 'latest') {
-                    // $builder->latest();
+                $sortLower = strtolower($sort);
+
+                if ($sortLower === 'latest') {
                     $builder->orderBy($this->qualifySortColumn($this->getCreatedAtColumn()), 'desc');
                     continue;
                 }
 
-                if (strtolower($sort) == 'oldest') {
-                    // $builder->oldest();
+                if ($sortLower === 'oldest') {
                     $builder->orderBy($this->qualifySortColumn($this->getCreatedAtColumn()), 'asc');
                     continue;
                 }
             }
 
-            if (strtolower($sort) == 'distance') {
+            // Custom distance sort hook
+            if (strtolower($sort) === 'distance') {
                 $builder->orderByDistance();
                 continue;
             }
 
-            if (is_array($sort) || Str::contains($sort, ',')) {
-                $columns = !is_array($sort) ? explode(',', $sort) : $sort;
+            // Normal case: "status", "-status", "status:desc", etc.
+            // Delegate parsing of direction & column to Http::useSort
+            [$column, $direction] = Http::useSort($sort);
 
-                foreach ($columns as $column) {
-                    if (Str::startsWith($column, '-')) {
-                        $direction = Str::startsWith($column, '-') ? 'desc' : 'asc';
-                        $param     = Str::startsWith($column, '-') ? substr($column, 1) : $column;
-
-                        $builder->orderBy($this->qualifySortColumn($column), $direction);
-                        continue;
-                    }
-
-                    $sd = explode(':', $column);
-                    if ($sd && count($sd) > 0) {
-                        count($sd) == 2
-                            ? $builder->orderBy($this->qualifySortColumn(trim($sd[0])), strtolower(trim($sd[1])))
-                            : $builder->orderBy($this->qualifySortColumn(trim($sd[0])), 'asc');
-                    }
-                }
+            if (!empty($column)) {
+                $builder->orderBy($this->qualifySortColumn($column), $direction ?: 'asc');
             }
-
-            if (Str::startsWith($sort, '-')) {
-                list($param, $direction) = Http::useSort($request);
-
-                $builder->orderBy($this->qualifySortColumn($param), $direction);
-                continue;
-            }
-
-            list($param, $direction) = Http::useSort($request);
-            $builder->orderBy($this->qualifySortColumn($param), $direction);
         }
 
         return $builder;
