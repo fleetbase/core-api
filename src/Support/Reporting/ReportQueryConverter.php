@@ -439,6 +439,10 @@ class ReportQueryConverter
                 [$tblAlias, $col] = $this->resolveAliasAndColumn($rootTable, $name);
                 $selects[]        = "{$tblAlias}.{$col} as `{$alias}`";
             }
+
+            // Add computed columns
+            $this->buildComputedColumns($query, $selects);
+
             if ($selects) {
                 $query->selectRaw(implode(', ', $selects));
             }
@@ -808,6 +812,78 @@ class ReportQueryConverter
     }
 
     /**
+     * Build computed columns and add them to the select array.
+     */
+    protected function buildComputedColumns(Builder $query, array &$selects): void
+    {
+        if (empty($this->queryConfig['computed_columns'])) {
+            return;
+        }
+
+        $tableName = $this->queryConfig['table']['name'];
+        $validator = new ComputedColumnValidator($this->registry);
+
+        foreach ($this->queryConfig['computed_columns'] as $computedColumn) {
+            $name       = $computedColumn['name'] ?? '';
+            $expression = $computedColumn['expression'] ?? '';
+
+            if (empty($name) || empty($expression)) {
+                throw new \InvalidArgumentException('Computed column must have both name and expression');
+            }
+
+            // Validate the expression
+            $validationResult = $validator->validate($expression, $tableName);
+            if (!$validationResult['valid']) {
+                $errors = implode('; ', $validationResult['errors']);
+                throw new \InvalidArgumentException("Invalid computed column '{$name}': {$errors}");
+            }
+
+            // Resolve column references in the expression to use proper table aliases
+            $resolvedExpression = $this->resolveComputedColumnReferences($expression, $tableName);
+
+            // Add to selects
+            $selects[] = "({$resolvedExpression}) as `{$name}`";
+        }
+    }
+
+    /**
+     * Resolve column references in computed column expressions to use proper table aliases.
+     */
+    protected function resolveComputedColumnReferences(string $expression, string $rootTable): string
+    {
+        // Find all potential column references (words that could be column names)
+        return preg_replace_callback(
+            '/\b([a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)*)\b/i',
+            function ($matches) use ($rootTable) {
+                $columnRef = $matches[1];
+
+                // Skip SQL keywords and functions
+                $keywords = ['DATEDIFF', 'DATE_ADD', 'DATE_SUB', 'CONCAT', 'COALESCE', 'IFNULL',
+                    'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'LEAST', 'GREATEST', 'ROUND',
+                    'ABS', 'UPPER', 'LOWER', 'TRIM', 'LENGTH', 'NULLIF', 'NOW', 'CURDATE',
+                    'INTERVAL', 'DAY', 'MONTH', 'YEAR', 'HOUR', 'MINUTE', 'SECOND',
+                    'AND', 'OR', 'NOT', 'IS', 'NULL', 'TRUE', 'FALSE', 'AS', 'FROM', 'WHERE',
+                ];
+
+                if (in_array(strtoupper($columnRef), $keywords) || is_numeric($columnRef)) {
+                    return $columnRef;
+                }
+
+                // Try to resolve the column reference
+                try {
+                    [$tblAlias, $col] = $this->resolveAliasAndColumn($rootTable, $columnRef);
+
+                    return "{$tblAlias}.{$col}";
+                } catch (\Exception $e) {
+                    // If resolution fails, return as-is (might be a literal or string)
+                    return $columnRef;
+                }
+            },
+            $expression
+        );
+    }
+
+    /**
      * Process results (apply transformers, etc.).
      */
     protected function processResults(array $results): array
@@ -825,8 +901,8 @@ class ReportQueryConverter
             throw new \InvalidArgumentException('Table name is required');
         }
 
-        if (empty($this->queryConfig['columns'])) {
-            throw new \InvalidArgumentException('At least one column must be selected');
+        if (empty($this->queryConfig['columns']) && empty($this->queryConfig['computed_columns'])) {
+            throw new \InvalidArgumentException('At least one column or computed column must be selected');
         }
 
         $tableName = $this->queryConfig['table']['name'];
