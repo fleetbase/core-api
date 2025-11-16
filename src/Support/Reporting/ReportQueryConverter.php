@@ -511,6 +511,9 @@ class ReportQueryConverter
         // (Optional) if user selected extra columns, drop them here OR auto-aggregate.
         // We'll drop them to stay deterministic under ONLY_FULL_GROUP_BY.
 
+        // Add computed columns (works in both grouped and non-grouped mode)
+        $this->buildComputedColumns($query, $selects);
+
         if ($selects) {
             $query->selectRaw(implode(', ', $selects));
         }
@@ -731,6 +734,18 @@ class ReportQueryConverter
             ];
         }
 
+        // Add computed columns
+        foreach ($this->queryConfig['computed_columns'] ?? [] as $computedColumn) {
+            $cols[] = [
+                'name'        => $computedColumn['name'],
+                'column_name' => $computedColumn['name'],
+                'label'       => $computedColumn['label'] ?? $computedColumn['name'],
+                'type'        => $computedColumn['type'] ?? 'string',
+                'computed'    => true,
+                'expression'  => $computedColumn['expression'] ?? '',
+            ];
+        }
+
         // add group keys explicitly (they might already be in columns; harmless if duplicated)
         if (!empty($this->queryConfig['groupBy'])) {
             foreach ($this->queryConfig['groupBy'] as $g) {
@@ -792,6 +807,11 @@ class ReportQueryConverter
     protected function getSelectedColumnNames(): array
     {
         $names = array_map(fn ($c) => $c['name'], $this->queryConfig['columns'] ?? []);
+
+        // computed columns
+        foreach ($this->queryConfig['computed_columns'] ?? [] as $computedColumn) {
+            $names[] = $computedColumn['name'];
+        }
 
         // grouped keys
         if (!empty($this->queryConfig['groupBy'])) {
