@@ -201,9 +201,12 @@ class ComputedColumnValidator
                 ];
             }
 
+            // Remove string literals (both single and double quoted) to avoid treating them as column references
+            $cleanExpression = $this->removeStringLiterals($expression);
+
             // Extract potential column references (simple word boundaries)
             // This regex matches words that could be column names
-            preg_match_all('/\b([a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)*)\b/i', $expression, $matches);
+            preg_match_all('/\b([a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)*)\b/i', $cleanExpression, $matches);
 
             if (!empty($matches[1])) {
                 $potentialColumns = array_unique($matches[1]);
@@ -223,11 +226,24 @@ class ComputedColumnValidator
         } catch (\Exception $e) {
             $errors[] = 'Error validating column references: ' . $e->getMessage();
         }
-
         return [
             'valid'  => empty($errors),
             'errors' => $errors,
         ];
+    }
+
+    /**
+     * Remove string literals from expression to avoid false positives.
+     */
+    protected function removeStringLiterals(string $expression): string
+    {
+        // Remove single-quoted strings (e.g., 'High', 'Low')
+        $cleaned = preg_replace("/'[^']*'/", "''", $expression);
+        
+        // Remove double-quoted strings (e.g., "High", "Low")
+        $cleaned = preg_replace('/"[^"]*"/', '""', $cleaned);
+        
+        return $cleaned;
     }
 
     /**

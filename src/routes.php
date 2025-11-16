@@ -294,6 +294,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     $router->get('tables/{table}/columns', $controller('getTableColumns'));
                                     $router->get('tables/{table}/relationships', $controller('getTableRelationships'));
                                     $router->post('validate-query', $controller('validateQuery'));
+                                    $router->post('validate-computed-column', $controller('validateComputedColumn'));
                                     $router->post('execute-query', $controller('executeQuery'));
                                     $router->post('analyze-query', $controller('analyzeQuery'));
                                     $router->post('export-query', $controller('exportQuery'));
