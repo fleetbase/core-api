@@ -871,8 +871,31 @@ class ReportQueryConverter
      */
     protected function resolveComputedColumnReferences(string $expression, string $rootTable): string
     {
-        // Find all potential column references (words that could be column names)
-        return preg_replace_callback(
+        // First, extract and protect string literals
+        $stringLiterals = [];
+        $protectedExpression = preg_replace_callback(
+            "/'([^']*)'/",
+            function ($matches) use (&$stringLiterals) {
+                $placeholder = '___STRING_LITERAL_' . count($stringLiterals) . '___';
+                $stringLiterals[$placeholder] = $matches[0]; // Keep the quotes
+                return $placeholder;
+            },
+            $expression
+        );
+
+        // Also protect double-quoted strings
+        $protectedExpression = preg_replace_callback(
+            '/"([^"]*)"/',
+            function ($matches) use (&$stringLiterals) {
+                $placeholder = '___STRING_LITERAL_' . count($stringLiterals) . '___';
+                $stringLiterals[$placeholder] = $matches[0]; // Keep the quotes
+                return $placeholder;
+            },
+            $protectedExpression
+        );
+
+        // Now resolve column references in the protected expression
+        $resolvedExpression = preg_replace_callback(
             '/\b([a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)*)\b/i',
             function ($matches) use ($rootTable) {
                 $columnRef = $matches[1];
@@ -889,6 +912,11 @@ class ReportQueryConverter
                     return $columnRef;
                 }
 
+                // Skip string literal placeholders
+                if (strpos($columnRef, '___STRING_LITERAL_') === 0) {
+                    return $columnRef;
+                }
+
                 // Try to resolve the column reference
                 try {
                     [$tblAlias, $col] = $this->resolveAliasAndColumn($rootTable, $columnRef);
@@ -899,8 +927,15 @@ class ReportQueryConverter
                     return $columnRef;
                 }
             },
-            $expression
+            $protectedExpression
         );
+
+        // Restore string literals
+        foreach ($stringLiterals as $placeholder => $original) {
+            $resolvedExpression = str_replace($placeholder, $original, $resolvedExpression);
+        }
+
+        return $resolvedExpression;
     }
 
     /**
