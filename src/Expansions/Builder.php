@@ -41,6 +41,14 @@ class Builder implements Expansion
                             }
                         } else {
                             foreach ($column as $c) {
+                                if (Str::contains($c, '->')) {
+                                    $jsonQueryPath = explode('->', $c);
+                                    if (count($jsonQueryPath) !== 2) continue;
+
+                                    [$column, $property] = $jsonQueryPath;
+                                    $query->orWhere(DB::raw("lower(json_unquote(json_extract($column, '$.$property')))"), 'LIKE', '%' . str_replace('.', '%', str_replace(',', '%', $search)) . '%');
+                                    continue;
+                                }
                                 $query->orWhere(DB::raw("lower($c)"), 'like', '%' . str_replace('.', '%', str_replace(',', '%', $search)) . '%');
                             }
                         }
@@ -50,6 +58,14 @@ class Builder implements Expansion
 
             if ($strict === true) {
                 return $this->where($column, $search);
+            }
+
+            if (Str::contains($column, '->')) {
+                $jsonQueryPath = explode('->', $column);
+                if (count($jsonQueryPath) !== 2) return;
+
+                [$column, $property] = $jsonQueryPath;
+                return $this->where(DB::raw("lower(json_unquote(json_extract($column, '$.$property')))"), 'LIKE', '%' . str_replace('.', '%', str_replace(',', '%', $search)) . '%');
             }
 
             return $this->where(DB::raw("lower($column)"), 'like', '%' . str_replace('.', '%', str_replace(',', '%', $search)) . '%');

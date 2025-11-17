@@ -294,6 +294,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     $router->get('tables/{table}/columns', $controller('getTableColumns'));
                                     $router->get('tables/{table}/relationships', $controller('getTableRelationships'));
                                     $router->post('validate-query', $controller('validateQuery'));
+                                    $router->post('validate-computed-column', $controller('validateComputedColumn'));
                                     $router->post('execute-query', $controller('executeQuery'));
                                     $router->post('analyze-query', $controller('analyzeQuery'));
                                     $router->post('export-query', $controller('exportQuery'));
@@ -302,6 +303,11 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     $router->post('{id}/execute', $controller('execute'));
                                     $router->post('{id}/export', $controller('export'));
                                 });
+                                $router->fleetbaseRoutes('schedules');
+                                $router->fleetbaseRoutes('schedule-items');
+                                $router->fleetbaseRoutes('schedule-templates');
+                                $router->fleetbaseRoutes('schedule-availability');
+                                $router->fleetbaseRoutes('schedule-constraints');
                             }
                         );
                     }

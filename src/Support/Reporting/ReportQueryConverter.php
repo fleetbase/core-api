@@ -439,6 +439,10 @@ class ReportQueryConverter
                 [$tblAlias, $col] = $this->resolveAliasAndColumn($rootTable, $name);
                 $selects[]        = "{$tblAlias}.{$col} as `{$alias}`";
             }
+
+            // Add computed columns
+            $this->buildComputedColumns($query, $selects);
+
             if ($selects) {
                 $query->selectRaw(implode(', ', $selects));
             }
@@ -506,6 +510,9 @@ class ReportQueryConverter
 
         // (Optional) if user selected extra columns, drop them here OR auto-aggregate.
         // We'll drop them to stay deterministic under ONLY_FULL_GROUP_BY.
+
+        // Add computed columns (works in both grouped and non-grouped mode)
+        $this->buildComputedColumns($query, $selects);
 
         if ($selects) {
             $query->selectRaw(implode(', ', $selects));
@@ -727,6 +734,18 @@ class ReportQueryConverter
             ];
         }
 
+        // Add computed columns
+        foreach ($this->queryConfig['computed_columns'] ?? [] as $computedColumn) {
+            $cols[] = [
+                'name'        => $computedColumn['name'],
+                'column_name' => $computedColumn['name'],
+                'label'       => $computedColumn['label'] ?? $computedColumn['name'],
+                'type'        => $computedColumn['type'] ?? 'string',
+                'computed'    => true,
+                'expression'  => $computedColumn['expression'] ?? '',
+            ];
+        }
+
         // add group keys explicitly (they might already be in columns; harmless if duplicated)
         if (!empty($this->queryConfig['groupBy'])) {
             foreach ($this->queryConfig['groupBy'] as $g) {
@@ -789,6 +808,11 @@ class ReportQueryConverter
     {
         $names = array_map(fn ($c) => $c['name'], $this->queryConfig['columns'] ?? []);
 
+        // computed columns
+        foreach ($this->queryConfig['computed_columns'] ?? [] as $computedColumn) {
+            $names[] = $computedColumn['name'];
+        }
+
         // grouped keys
         if (!empty($this->queryConfig['groupBy'])) {
             foreach ($this->queryConfig['groupBy'] as $g) {
@@ -805,6 +829,113 @@ class ReportQueryConverter
 
         // dedupe
         return array_values(array_unique($names));
+    }
+
+    /**
+     * Build computed columns and add them to the select array.
+     */
+    protected function buildComputedColumns(Builder $query, array &$selects): void
+    {
+        if (empty($this->queryConfig['computed_columns'])) {
+            return;
+        }
+
+        $tableName = $this->queryConfig['table']['name'];
+        $validator = new ComputedColumnValidator($this->registry);
+
+        foreach ($this->queryConfig['computed_columns'] as $computedColumn) {
+            $name       = $computedColumn['name'] ?? '';
+            $expression = $computedColumn['expression'] ?? '';
+
+            if (empty($name) || empty($expression)) {
+                throw new \InvalidArgumentException('Computed column must have both name and expression');
+            }
+
+            // Validate the expression
+            $validationResult = $validator->validate($expression, $tableName);
+            if (!$validationResult['valid']) {
+                $errors = implode('; ', $validationResult['errors']);
+                throw new \InvalidArgumentException("Invalid computed column '{$name}': {$errors}");
+            }
+
+            // Resolve column references in the expression to use proper table aliases
+            $resolvedExpression = $this->resolveComputedColumnReferences($expression, $tableName);
+
+            // Add to selects
+            $selects[] = "({$resolvedExpression}) as `{$name}`";
+        }
+    }
+
+    /**
+     * Resolve column references in computed column expressions to use proper table aliases.
+     */
+    protected function resolveComputedColumnReferences(string $expression, string $rootTable): string
+    {
+        // First, extract and protect string literals
+        $stringLiterals = [];
+        $protectedExpression = preg_replace_callback(
+            "/'([^']*)'/",
+            function ($matches) use (&$stringLiterals) {
+                $placeholder = '___STRING_LITERAL_' . count($stringLiterals) . '___';
+                $stringLiterals[$placeholder] = $matches[0]; // Keep the quotes
+                return $placeholder;
+            },
+            $expression
+        );
+
+        // Also protect double-quoted strings
+        $protectedExpression = preg_replace_callback(
+            '/"([^"]*)"/',
+            function ($matches) use (&$stringLiterals) {
+                $placeholder = '___STRING_LITERAL_' . count($stringLiterals) . '___';
+                $stringLiterals[$placeholder] = $matches[0]; // Keep the quotes
+                return $placeholder;
+            },
+            $protectedExpression
+        );
+
+        // Now resolve column references in the protected expression
+        $resolvedExpression = preg_replace_callback(
+            '/\b([a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)*)\b/i',
+            function ($matches) use ($rootTable) {
+                $columnRef = $matches[1];
+
+                // Skip SQL keywords and functions
+                $keywords = ['DATEDIFF', 'DATE_ADD', 'DATE_SUB', 'CONCAT', 'COALESCE', 'IFNULL',
+                    'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'LEAST', 'GREATEST', 'ROUND',
+                    'ABS', 'UPPER', 'LOWER', 'TRIM', 'LENGTH', 'NULLIF', 'NOW', 'CURDATE',
+                    'INTERVAL', 'DAY', 'MONTH', 'YEAR', 'HOUR', 'MINUTE', 'SECOND',
+                    'AND', 'OR', 'NOT', 'IS', 'NULL', 'TRUE', 'FALSE', 'AS', 'FROM', 'WHERE',
+                ];
+
+                if (in_array(strtoupper($columnRef), $keywords) || is_numeric($columnRef)) {
+                    return $columnRef;
+                }
+
+                // Skip string literal placeholders
+                if (strpos($columnRef, '___STRING_LITERAL_') === 0) {
+                    return $columnRef;
+                }
+
+                // Try to resolve the column reference
+                try {
+                    [$tblAlias, $col] = $this->resolveAliasAndColumn($rootTable, $columnRef);
+
+                    return "{$tblAlias}.{$col}";
+                } catch (\Exception $e) {
+                    // If resolution fails, return as-is (might be a literal or string)
+                    return $columnRef;
+                }
+            },
+            $protectedExpression
+        );
+
+        // Restore string literals
+        foreach ($stringLiterals as $placeholder => $original) {
+            $resolvedExpression = str_replace($placeholder, $original, $resolvedExpression);
+        }
+
+        return $resolvedExpression;
     }
 
     /**
@@ -825,8 +956,8 @@ class ReportQueryConverter
             throw new \InvalidArgumentException('Table name is required');
         }
 
-        if (empty($this->queryConfig['columns'])) {
-            throw new \InvalidArgumentException('At least one column must be selected');
+        if (empty($this->queryConfig['columns']) && empty($this->queryConfig['computed_columns'])) {
+            throw new \InvalidArgumentException('At least one column or computed column must be selected');
         }
 
         $tableName = $this->queryConfig['table']['name'];
