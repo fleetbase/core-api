@@ -941,7 +941,30 @@ class ReportQueryConverter
      */
     protected function resolveComputedColumnReferences(string $expression, string $rootTable): string
     {
-        // First, extract and protect string literals BEFORE any processing
+        // Step 1: Recursively expand computed column references FIRST (before any protection)
+        $computedColumns = $this->queryConfig['computed_columns'] ?? [];
+        $computedColumnMap = [];
+        foreach ($computedColumns as $col) {
+            $computedColumnMap[$col['name']] = $col['expression'];
+        }
+
+        $maxDepth = 10; // Prevent infinite recursion
+        $depth = 0;
+        while ($depth < $maxDepth) {
+            $changed = false;
+            foreach ($computedColumnMap as $name => $expr) {
+                if (preg_match('/\b' . preg_quote($name, '/') . '\b/', $expression)) {
+                    $expression = preg_replace('/\b' . preg_quote($name, '/') . '\b/', '(' . $expr . ')', $expression);
+                    $changed = true;
+                }
+            }
+            if (!$changed) {
+                break;
+            }
+            $depth++;
+        }
+
+        // Step 2: Now protect ALL string literals in the fully expanded expression
         $stringLiterals = [];
         $protectedExpression = preg_replace_callback(
             "/'([^']*)'/",
@@ -963,30 +986,6 @@ class ReportQueryConverter
             },
             $protectedExpression
         );
-
-        // Now check if this expression references other computed columns and expand them
-        $computedColumns = $this->queryConfig['computed_columns'] ?? [];
-        $computedColumnMap = [];
-        foreach ($computedColumns as $col) {
-            $computedColumnMap[$col['name']] = $col['expression'];
-        }
-
-        // Recursively expand computed column references
-        $maxDepth = 10; // Prevent infinite recursion
-        $depth = 0;
-        while ($depth < $maxDepth) {
-            $changed = false;
-            foreach ($computedColumnMap as $name => $expr) {
-                if (preg_match('/\b' . preg_quote($name, '/') . '\b/', $protectedExpression)) {
-                    $protectedExpression = preg_replace('/\b' . preg_quote($name, '/') . '\b/', '(' . $expr . ')', $protectedExpression);
-                    $changed = true;
-                }
-            }
-            if (!$changed) {
-                break;
-            }
-            $depth++;
-        }
 
         // Now resolve column references in the protected expression
         $resolvedExpression = preg_replace_callback(
