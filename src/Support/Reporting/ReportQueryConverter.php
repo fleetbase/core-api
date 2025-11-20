@@ -870,8 +870,8 @@ class ReportQueryConverter
                 throw new \InvalidArgumentException('Computed column must have both name and expression');
             }
 
-            // Validate the expression
-            $validationResult = $validator->validate($expression, $tableName);
+            // Validate the expression, passing all computed columns so they can reference each other
+            $validationResult = $validator->validate($expression, $tableName, $this->queryConfig['computed_columns']);
             if (!$validationResult['valid']) {
                 $errors = implode('; ', $validationResult['errors']);
                 throw new \InvalidArgumentException("Invalid computed column '{$name}': {$errors}");

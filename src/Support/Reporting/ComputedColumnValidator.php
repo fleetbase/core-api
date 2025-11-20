@@ -156,10 +156,11 @@ class ComputedColumnValidator
      *
      * @param string $expression the SQL expression
      * @param string $tableName  the base table name for column validation
+     * @param array  $computedColumns optional array of other computed columns that can be referenced
      *
      * @return array validation result with 'valid' boolean and optional 'errors' array
      */
-    public function validate(string $expression, string $tableName): array
+    public function validate(string $expression, string $tableName, array $computedColumns = []): array
     {
         $errors = [];
 
@@ -182,7 +183,7 @@ class ComputedColumnValidator
         }
 
         // Validate column references
-        $columnCheck = $this->validateColumnReferences($expression, $tableName);
+        $columnCheck = $this->validateColumnReferences($expression, $tableName, $computedColumns);
         if (!$columnCheck['valid']) {
             $errors = array_merge($errors, $columnCheck['errors']);
         }
@@ -266,7 +267,7 @@ class ComputedColumnValidator
     /**
      * Validate that all column references exist in the schema.
      */
-    protected function validateColumnReferences(string $expression, string $tableName): array
+    protected function validateColumnReferences(string $expression, string $tableName, array $computedColumns = []): array
     {
         $errors = [];
 
@@ -277,6 +278,12 @@ class ComputedColumnValidator
                     'valid'  => false,
                     'errors' => ["Table '{$tableName}' not found in schema registry"],
                 ];
+            }
+
+            // Build a list of computed column names for quick lookup
+            $computedColumnNames = [];
+            foreach ($computedColumns as $col) {
+                $computedColumnNames[] = $col['name'] ?? '';
             }
 
             // Remove string literals (both single and double quoted) to avoid treating them as column references
@@ -293,6 +300,11 @@ class ComputedColumnValidator
                     // Skip if it's a function, keyword, or literal
                     if ($this->isKeywordOrLiteral($columnRef)) {
                         continue;
+                    }
+
+                    // Check if it's a reference to another computed column
+                    if (in_array($columnRef, $computedColumnNames)) {
+                        continue; // Valid reference to another computed column
                     }
 
                     // Check if it's a valid column reference
