@@ -941,6 +941,30 @@ class ReportQueryConverter
      */
     protected function resolveComputedColumnReferences(string $expression, string $rootTable): string
     {
+        // First, check if this expression references other computed columns and expand them
+        $computedColumns = $this->queryConfig['computed_columns'] ?? [];
+        $computedColumnMap = [];
+        foreach ($computedColumns as $col) {
+            $computedColumnMap[$col['name']] = $col['expression'];
+        }
+
+        // Recursively expand computed column references
+        $maxDepth = 10; // Prevent infinite recursion
+        $depth = 0;
+        while ($depth < $maxDepth) {
+            $changed = false;
+            foreach ($computedColumnMap as $name => $expr) {
+                if (preg_match('/\b' . preg_quote($name, '/') . '\b/', $expression)) {
+                    $expression = preg_replace('/\b' . preg_quote($name, '/') . '\b/', '(' . $expr . ')', $expression);
+                    $changed = true;
+                }
+            }
+            if (!$changed) {
+                break;
+            }
+            $depth++;
+        }
+
         // First, extract and protect string literals
         $stringLiterals = [];
         $protectedExpression = preg_replace_callback(
@@ -970,12 +994,33 @@ class ReportQueryConverter
             function ($matches) use ($rootTable) {
                 $columnRef = $matches[1];
 
-                // Skip SQL keywords and functions
-                $keywords = ['DATEDIFF', 'DATE_ADD', 'DATE_SUB', 'CONCAT', 'COALESCE', 'IFNULL',
-                    'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'LEAST', 'GREATEST', 'ROUND',
-                    'ABS', 'UPPER', 'LOWER', 'TRIM', 'LENGTH', 'NULLIF', 'NOW', 'CURDATE',
-                    'INTERVAL', 'DAY', 'MONTH', 'YEAR', 'HOUR', 'MINUTE', 'SECOND',
-                    'AND', 'OR', 'NOT', 'IS', 'NULL', 'TRUE', 'FALSE', 'AS', 'FROM', 'WHERE',
+                // Skip SQL keywords and functions (comprehensive list)
+                $keywords = [
+                    // Date/Time Functions
+                    'DATEDIFF', 'DATE_ADD', 'DATE_SUB', 'NOW', 'CURDATE', 'CURTIME',
+                    'LAST_DAY', 'DAYOFWEEK', 'DAYOFMONTH', 'DAYOFYEAR', 'WEEK', 'WEEKDAY', 'QUARTER',
+                    'TIMESTAMPDIFF', 'TIMESTAMPADD', 'FROM_UNIXTIME', 'UNIX_TIMESTAMP', 'STR_TO_DATE',
+                    'MAKEDATE', 'ADDDATE', 'SUBDATE', 'DATE_FORMAT', 'TIME_FORMAT',
+                    'DAY', 'MONTH', 'YEAR', 'HOUR', 'MINUTE', 'SECOND',
+                    // String Functions
+                    'CONCAT', 'CONCAT_WS', 'SUBSTRING', 'SUBSTR', 'LEFT', 'RIGHT',
+                    'UPPER', 'LOWER', 'TRIM', 'LTRIM', 'RTRIM', 'LENGTH', 'CHAR_LENGTH',
+                    'LPAD', 'RPAD', 'REVERSE', 'REPLACE', 'LOCATE', 'POSITION', 'INSTR', 'STRCMP',
+                    // Numeric Functions
+                    'ROUND', 'CEIL', 'CEILING', 'FLOOR', 'TRUNCATE', 'ABS', 'MOD',
+                    'POW', 'POWER', 'SQRT', 'SIGN', 'RAND', 'PI',
+                    'EXP', 'LN', 'LOG', 'LOG10', 'LOG2', 'DEGREES', 'RADIANS',
+                    'SIN', 'COS', 'TAN', 'ASIN', 'ACOS', 'ATAN', 'ATAN2',
+                    // Conditional/Logic
+                    'COALESCE', 'IFNULL', 'NULLIF', 'IF',
+                    'CASE', 'WHEN', 'THEN', 'ELSE', 'END',
+                    // Aggregate Functions
+                    'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'GROUP_CONCAT',
+                    // Type Conversion
+                    'CAST', 'CONVERT',
+                    // Keywords
+                    'INTERVAL', 'AND', 'OR', 'NOT', 'IS', 'NULL', 'TRUE', 'FALSE',
+                    'AS', 'FROM', 'WHERE', 'DIV',
                 ];
 
                 if (in_array(strtoupper($columnRef), $keywords) || is_numeric($columnRef)) {
