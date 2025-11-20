@@ -987,39 +987,28 @@ class ReportQueryConverter
             $protectedExpression
         );
 
-        // Now resolve column references in the protected expression
+        // Step 3: Protect SQL function calls (word followed by opening parenthesis)
+        $sqlFunctions = [];
+        $protectedExpression = preg_replace_callback(
+            '/\b([A-Z_][A-Z0-9_]*)\s*\(/i',
+            function ($matches) use (&$sqlFunctions) {
+                $placeholder = '___SQL_FUNCTION_' . count($sqlFunctions) . '___(';
+                $sqlFunctions[$placeholder] = $matches[1] . '(';
+                return $placeholder;
+            },
+            $protectedExpression
+        );
+
+        // Step 4: Now resolve column references in the protected expression
         $resolvedExpression = preg_replace_callback(
             '/\b([a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)*)\b/i',
             function ($matches) use ($rootTable) {
                 $columnRef = $matches[1];
 
-                // Skip SQL keywords and functions (comprehensive list)
+                // Skip SQL keywords (non-function keywords)
                 $keywords = [
-                    // Date/Time Functions
-                    'DATEDIFF', 'DATE_ADD', 'DATE_SUB', 'NOW', 'CURDATE', 'CURTIME',
-                    'LAST_DAY', 'DAYOFWEEK', 'DAYOFMONTH', 'DAYOFYEAR', 'WEEK', 'WEEKDAY', 'QUARTER',
-                    'TIMESTAMPDIFF', 'TIMESTAMPADD', 'FROM_UNIXTIME', 'UNIX_TIMESTAMP', 'STR_TO_DATE',
-                    'MAKEDATE', 'ADDDATE', 'SUBDATE', 'DATE_FORMAT', 'TIME_FORMAT',
-                    'DAY', 'MONTH', 'YEAR', 'HOUR', 'MINUTE', 'SECOND',
-                    // String Functions
-                    'CONCAT', 'CONCAT_WS', 'SUBSTRING', 'SUBSTR', 'LEFT', 'RIGHT',
-                    'UPPER', 'LOWER', 'TRIM', 'LTRIM', 'RTRIM', 'LENGTH', 'CHAR_LENGTH',
-                    'LPAD', 'RPAD', 'REVERSE', 'REPLACE', 'LOCATE', 'POSITION', 'INSTR', 'STRCMP',
-                    // Numeric Functions
-                    'ROUND', 'CEIL', 'CEILING', 'FLOOR', 'TRUNCATE', 'ABS', 'MOD',
-                    'POW', 'POWER', 'SQRT', 'SIGN', 'RAND', 'PI',
-                    'EXP', 'LN', 'LOG', 'LOG10', 'LOG2', 'DEGREES', 'RADIANS',
-                    'SIN', 'COS', 'TAN', 'ASIN', 'ACOS', 'ATAN', 'ATAN2',
-                    // Conditional/Logic
-                    'COALESCE', 'IFNULL', 'NULLIF', 'IF',
-                    'CASE', 'WHEN', 'THEN', 'ELSE', 'END',
-                    // Aggregate Functions
-                    'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'GROUP_CONCAT',
-                    // Type Conversion
-                    'CAST', 'CONVERT',
-                    // Keywords
                     'INTERVAL', 'AND', 'OR', 'NOT', 'IS', 'NULL', 'TRUE', 'FALSE',
-                    'AS', 'FROM', 'WHERE', 'DIV',
+                    'AS', 'FROM', 'WHERE', 'DIV', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END',
                 ];
 
                 if (in_array(strtoupper($columnRef), $keywords) || is_numeric($columnRef)) {
@@ -1028,6 +1017,11 @@ class ReportQueryConverter
 
                 // Skip string literal placeholders
                 if (strpos($columnRef, '___STRING_LITERAL_') === 0) {
+                    return $columnRef;
+                }
+
+                // Skip SQL function placeholders
+                if (strpos($columnRef, '___SQL_FUNCTION_') === 0) {
                     return $columnRef;
                 }
 
@@ -1043,6 +1037,11 @@ class ReportQueryConverter
             },
             $protectedExpression
         );
+
+        // Restore SQL functions
+        foreach ($sqlFunctions as $placeholder => $original) {
+            $resolvedExpression = str_replace($placeholder, $original, $resolvedExpression);
+        }
 
         // Restore string literals
         foreach ($stringLiterals as $placeholder => $original) {
