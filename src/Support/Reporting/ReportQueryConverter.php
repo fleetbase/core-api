@@ -633,8 +633,9 @@ class ReportQueryConverter
         // (Optional) if user selected extra columns, drop them here OR auto-aggregate.
         // We'll drop them to stay deterministic under ONLY_FULL_GROUP_BY.
 
-        // Add computed columns (works in both grouped and non-grouped mode)
-        $this->buildComputedColumns($query, $selects);
+        // Note: In grouped mode, we do NOT add computed columns as standalone SELECT items
+        // because they would violate ONLY_FULL_GROUP_BY. Computed columns are only used
+        // when explicitly referenced in aggregates (handled above in lines 580-600).
 
         if ($selects) {
             $query->selectRaw(implode(', ', $selects));
