@@ -966,6 +966,9 @@ class ReportQueryConverter
                 throw new \InvalidArgumentException("Invalid computed column '{$name}': {$errors}");
             }
 
+            // Extract and create auto-joins for relationship paths in the expression
+            $this->createJoinsForComputedColumn($query, $expression, $tableName);
+
             // Resolve column references in the expression to use proper table aliases
             $resolvedExpression = $this->resolveComputedColumnReferences($expression, $tableName);
 
@@ -1158,3 +1161,73 @@ class ReportQueryConverter
         // }
     }
 }
+
+    /**
+     * Extract relationship paths from a computed column expression and create necessary joins.
+     * 
+     * This method parses the expression to find column references like "asset.financials.monthly_hire_revenue"
+     * and ensures that all necessary auto-joins are created for the relationship paths.
+     */
+    protected function createJoinsForComputedColumn(Builder $query, string $expression, string $rootTable): void
+    {
+        // First, expand any computed column references in the expression
+        $computedColumns = $this->queryConfig['computed_columns'] ?? [];
+        $computedColumnMap = [];
+        foreach ($computedColumns as $col) {
+            $computedColumnMap[$col['name']] = $col['expression'];
+        }
+
+        // Recursively expand computed column references
+        $maxDepth = 10;
+        $depth = 0;
+        $expandedExpression = $expression;
+        while ($depth < $maxDepth) {
+            $changed = false;
+            foreach ($computedColumnMap as $name => $expr) {
+                if (preg_match('/\b' . preg_quote($name, '/') . '\b/', $expandedExpression)) {
+                    $expandedExpression = preg_replace('/\b' . preg_quote($name, '/') . '\b/', '(' . $expr . ')', $expandedExpression);
+                    $changed = true;
+                }
+            }
+            if (!$changed) {
+                break;
+            }
+            $depth++;
+        }
+
+        // Now extract all column references that look like relationship paths (e.g., "asset.financials.monthly_hire_revenue")
+        // We need to match patterns like: word.word.word (but not inside string literals)
+        
+        // First, remove string literals to avoid matching inside them
+        $cleanedExpression = preg_replace("/'[^']*'/", '', $expandedExpression);
+        $cleanedExpression = preg_replace('/"[^"]*"/', '', $cleanedExpression);
+        
+        // Match column references with dots (relationship paths)
+        preg_match_all('/\b([a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)*)\b/i', $cleanedExpression, $matches);
+        
+        if (empty($matches[1])) {
+            return;
+        }
+        
+        // Extract unique relationship paths (everything except the final column name)
+        $relationshipPaths = [];
+        foreach ($matches[1] as $columnPath) {
+            $parts = explode('.', $columnPath);
+            if (count($parts) >= 2) {
+                // Remove the last part (column name) to get the relationship path
+                array_pop($parts);
+                $relationshipPath = implode('.', $parts);
+                $relationshipPaths[$relationshipPath] = true;
+            }
+        }
+        
+        // Create auto-joins for each unique relationship path
+        foreach (array_keys($relationshipPaths) as $path) {
+            try {
+                $this->applyAutoJoinPath($query, $rootTable, $path);
+            } catch (\Exception $e) {
+                // If the join fails, it might not be a valid relationship path
+                // Just continue - the error will be caught later when resolving the column
+            }
+        }
+    }
