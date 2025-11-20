@@ -474,8 +474,27 @@ class ReportQueryConverter
             if ($by === '*' || $by === 'count') {
                 $expr = 'COUNT(*)';
             } else {
-                [$tblAlias, $col] = $this->resolveAliasAndColumn($rootTable, $by);
-                $expr             = strtoupper($fn) . "({$tblAlias}.{$col})";
+                // Check if this is a computed column
+                $isComputed = false;
+                $computedExpression = null;
+                
+                foreach ($this->queryConfig['computed_columns'] ?? [] as $computedColumn) {
+                    if ($computedColumn['name'] === $by) {
+                        $isComputed = true;
+                        $computedExpression = $computedColumn['expression'] ?? '';
+                        break;
+                    }
+                }
+                
+                if ($isComputed && $computedExpression) {
+                    // For computed columns, use the resolved expression
+                    $resolvedExpression = $this->resolveComputedColumnReferences($computedExpression, $rootTable);
+                    $expr = strtoupper($fn) . "({$resolvedExpression})";
+                } else {
+                    // For regular columns, use table.column format
+                    [$tblAlias, $col] = $this->resolveAliasAndColumn($rootTable, $by);
+                    $expr = strtoupper($fn) . "({$tblAlias}.{$col})";
+                }
             }
 
             $aggAlias  = $this->deriveAggregateAlias($g);
