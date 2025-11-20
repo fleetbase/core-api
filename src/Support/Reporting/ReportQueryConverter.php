@@ -21,6 +21,57 @@ class ReportQueryConverter
     {
         $this->registry    = $registry;
         $this->queryConfig = $queryConfig;
+        
+        // Extract computed columns from groupBy aggregates if not already in computed_columns array
+        $this->extractComputedColumnsFromAggregates();
+    }
+    
+    /**
+     * Extract computed columns from groupBy aggregates and add to computed_columns array.
+     * This handles cases where the frontend sends computed column metadata in aggregateBy objects.
+     */
+    protected function extractComputedColumnsFromAggregates(): void
+    {
+        if (empty($this->queryConfig['groupBy'])) {
+            return;
+        }
+        
+        // Initialize computed_columns array if it doesn't exist
+        if (!isset($this->queryConfig['computed_columns'])) {
+            $this->queryConfig['computed_columns'] = [];
+        }
+        
+        // Track which computed columns we've already added
+        $existingComputedColumns = [];
+        foreach ($this->queryConfig['computed_columns'] as $col) {
+            $existingComputedColumns[$col['name']] = true;
+        }
+        
+        // Extract computed columns from groupBy aggregates
+        foreach ($this->queryConfig['groupBy'] as $groupBy) {
+            $aggregateBy = $groupBy['aggregateBy'] ?? null;
+            
+            if (!$aggregateBy) {
+                continue;
+            }
+            
+            // Check if this is a computed column
+            $isComputed = $aggregateBy['computed'] ?? false;
+            $computation = $aggregateBy['computation'] ?? null;
+            $name = $aggregateBy['name'] ?? null;
+            
+            if ($isComputed && $computation && $name && !isset($existingComputedColumns[$name])) {
+                // Add to computed_columns array
+                $this->queryConfig['computed_columns'][] = [
+                    'name' => $name,
+                    'expression' => $computation,
+                    'type' => $aggregateBy['type'] ?? 'string',
+                    'label' => $aggregateBy['label'] ?? $name,
+                ];
+                
+                $existingComputedColumns[$name] = true;
+            }
+        }
     }
 
     /**
@@ -178,6 +229,7 @@ class ReportQueryConverter
         $this->collectAutoJoinPathsFromConditions($this->queryConfig['conditions'] ?? [], $autoJoinPaths);
         $this->collectAutoJoinPathsFromGroupBy($this->queryConfig['groupBy'] ?? [], $autoJoinPaths);
         $this->collectAutoJoinPathsFromSortBy($this->queryConfig['sortBy'] ?? [], $autoJoinPaths);
+        $this->collectAutoJoinPathsFromComputedColumns($this->queryConfig['computed_columns'] ?? [], $autoJoinPaths, $tableName);
 
         // dedupe and sort shortest->longest so parent joins first
         $autoJoinPaths = array_values(array_unique($autoJoinPaths));
@@ -233,6 +285,22 @@ class ReportQueryConverter
                 if (count($parts) >= 2) {
                     $autoJoinPaths[] = implode('.', array_slice($parts, 0, -1));
                 }
+            }
+        }
+    }
+
+    protected function collectAutoJoinPathsFromComputedColumns(array $computedColumns, array &$autoJoinPaths, string $rootTable): void
+    {
+        foreach ($computedColumns as $computedColumn) {
+            $expression = $computedColumn['expression'] ?? '';
+            if (empty($expression)) {
+                continue;
+            }
+            
+            // Extract relationship paths from the expression
+            $paths = $this->extractRelationshipPathsFromExpression($expression, $rootTable);
+            foreach ($paths as $path) {
+                $autoJoinPaths[] = $path;
             }
         }
     }
@@ -338,11 +406,44 @@ class ReportQueryConverter
             return [$rootTable, $parts[0]];
         }
 
-        $col          = array_pop($parts);           // "street1"
-        $relPath      = implode('.', $parts);        // "payload.pickup"
-        $alias        = $this->joinAliases[$relPath] ?? null;
-
-        return [$alias ?: $rootTable, $alias ? $col : $columnPath];
+        $col = array_pop($parts); // The final column name
+        
+        // Build the relationship path step by step to find the correct alias
+        // For nested relationships like "relationship.nested.column", we need to:
+        // 1. Check for the full path "relationship.nested"
+        // 2. If not found, resolve step by step from "relationship" to "nested"
+        
+        $relPath = implode('.', $parts);
+        
+        // Check if we have a direct alias for the full relationship path
+        if (isset($this->joinAliases[$relPath])) {
+            return [$this->joinAliases[$relPath], $col];
+        }
+        
+        // If not, try to resolve it step by step
+        // Walk through each segment and use the longest matching path
+        
+        $currentTable = $rootTable;
+        $pathSegments = [];
+        
+        // Loop through all segments and keep updating currentTable with the last successfully resolved alias
+        foreach ($parts as $segment) {
+            $pathSegments[] = $segment;
+            $currentPath = implode('.', $pathSegments);
+            
+            if (isset($this->joinAliases[$currentPath])) {
+                $currentTable = $this->joinAliases[$currentPath];
+            }
+            // Don't break - continue to check if there's a longer path that matches
+        }
+        
+        // If we resolved at least part of the path, use that table alias
+        if ($currentTable !== $rootTable) {
+            return [$currentTable, $col];
+        }
+        
+        // Fallback: return as-is if we couldn't resolve
+        return [$rootTable, $columnPath];
     }
 
     /**
@@ -474,8 +575,27 @@ class ReportQueryConverter
             if ($by === '*' || $by === 'count') {
                 $expr = 'COUNT(*)';
             } else {
-                [$tblAlias, $col] = $this->resolveAliasAndColumn($rootTable, $by);
-                $expr             = strtoupper($fn) . "({$tblAlias}.{$col})";
+                // Check if this is a computed column
+                $isComputed = false;
+                $computedExpression = null;
+                
+                foreach ($this->queryConfig['computed_columns'] ?? [] as $computedColumn) {
+                    if ($computedColumn['name'] === $by) {
+                        $isComputed = true;
+                        $computedExpression = $computedColumn['expression'] ?? '';
+                        break;
+                    }
+                }
+                
+                if ($isComputed && $computedExpression) {
+                    // For computed columns, use the resolved expression
+                    $resolvedExpression = $this->resolveComputedColumnReferences($computedExpression, $rootTable);
+                    $expr = strtoupper($fn) . "({$resolvedExpression})";
+                } else {
+                    // For regular columns, use table.column format
+                    [$tblAlias, $col] = $this->resolveAliasAndColumn($rootTable, $by);
+                    $expr = strtoupper($fn) . "({$tblAlias}.{$col})";
+                }
             }
 
             $aggAlias  = $this->deriveAggregateAlias($g);
@@ -511,8 +631,9 @@ class ReportQueryConverter
         // (Optional) if user selected extra columns, drop them here OR auto-aggregate.
         // We'll drop them to stay deterministic under ONLY_FULL_GROUP_BY.
 
-        // Add computed columns (works in both grouped and non-grouped mode)
-        $this->buildComputedColumns($query, $selects);
+        // Note: In grouped mode, we do NOT add computed columns as standalone SELECT items
+        // because they would violate ONLY_FULL_GROUP_BY. Computed columns are only used
+        // when explicitly referenced in aggregates (handled above in lines 580-600).
 
         if ($selects) {
             $query->selectRaw(implode(', ', $selects));
@@ -851,12 +972,15 @@ class ReportQueryConverter
                 throw new \InvalidArgumentException('Computed column must have both name and expression');
             }
 
-            // Validate the expression
-            $validationResult = $validator->validate($expression, $tableName);
+            // Validate the expression, passing all computed columns so they can reference each other
+            $validationResult = $validator->validate($expression, $tableName, $this->queryConfig['computed_columns']);
             if (!$validationResult['valid']) {
                 $errors = implode('; ', $validationResult['errors']);
                 throw new \InvalidArgumentException("Invalid computed column '{$name}': {$errors}");
             }
+
+            // Note: Auto-joins for computed column relationships are now created earlier in processAutoJoins()
+            // This ensures joins exist before aggregate expressions are resolved
 
             // Resolve column references in the expression to use proper table aliases
             $resolvedExpression = $this->resolveComputedColumnReferences($expression, $tableName);
@@ -871,7 +995,30 @@ class ReportQueryConverter
      */
     protected function resolveComputedColumnReferences(string $expression, string $rootTable): string
     {
-        // First, extract and protect string literals
+        // Step 1: Recursively expand computed column references FIRST (before any protection)
+        $computedColumns = $this->queryConfig['computed_columns'] ?? [];
+        $computedColumnMap = [];
+        foreach ($computedColumns as $col) {
+            $computedColumnMap[$col['name']] = $col['expression'];
+        }
+
+        $maxDepth = 10; // Prevent infinite recursion
+        $depth = 0;
+        while ($depth < $maxDepth) {
+            $changed = false;
+            foreach ($computedColumnMap as $name => $expr) {
+                if (preg_match('/\b' . preg_quote($name, '/') . '\b/', $expression)) {
+                    $expression = preg_replace('/\b' . preg_quote($name, '/') . '\b/', '(' . $expr . ')', $expression);
+                    $changed = true;
+                }
+            }
+            if (!$changed) {
+                break;
+            }
+            $depth++;
+        }
+
+        // Step 2: Now protect ALL string literals in the fully expanded expression
         $stringLiterals = [];
         $protectedExpression = preg_replace_callback(
             "/'([^']*)'/",
@@ -894,18 +1041,28 @@ class ReportQueryConverter
             $protectedExpression
         );
 
-        // Now resolve column references in the protected expression
+        // Step 3: Protect SQL function calls (word followed by opening parenthesis)
+        $sqlFunctions = [];
+        $protectedExpression = preg_replace_callback(
+            '/\b([A-Z_][A-Z0-9_]*)\s*\(/i',
+            function ($matches) use (&$sqlFunctions) {
+                $placeholder = '___SQL_FUNCTION_' . count($sqlFunctions) . '___(';
+                $sqlFunctions[$placeholder] = $matches[1] . '(';
+                return $placeholder;
+            },
+            $protectedExpression
+        );
+
+        // Step 4: Now resolve column references in the protected expression
         $resolvedExpression = preg_replace_callback(
             '/\b([a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)*)\b/i',
             function ($matches) use ($rootTable) {
                 $columnRef = $matches[1];
 
-                // Skip SQL keywords and functions
-                $keywords = ['DATEDIFF', 'DATE_ADD', 'DATE_SUB', 'CONCAT', 'COALESCE', 'IFNULL',
-                    'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'LEAST', 'GREATEST', 'ROUND',
-                    'ABS', 'UPPER', 'LOWER', 'TRIM', 'LENGTH', 'NULLIF', 'NOW', 'CURDATE',
-                    'INTERVAL', 'DAY', 'MONTH', 'YEAR', 'HOUR', 'MINUTE', 'SECOND',
-                    'AND', 'OR', 'NOT', 'IS', 'NULL', 'TRUE', 'FALSE', 'AS', 'FROM', 'WHERE',
+                // Skip SQL keywords (non-function keywords)
+                $keywords = [
+                    'INTERVAL', 'AND', 'OR', 'NOT', 'IS', 'NULL', 'TRUE', 'FALSE',
+                    'AS', 'FROM', 'WHERE', 'DIV', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END',
                 ];
 
                 if (in_array(strtoupper($columnRef), $keywords) || is_numeric($columnRef)) {
@@ -914,6 +1071,11 @@ class ReportQueryConverter
 
                 // Skip string literal placeholders
                 if (strpos($columnRef, '___STRING_LITERAL_') === 0) {
+                    return $columnRef;
+                }
+
+                // Skip SQL function placeholders
+                if (strpos($columnRef, '___SQL_FUNCTION_') === 0) {
                     return $columnRef;
                 }
 
@@ -929,6 +1091,11 @@ class ReportQueryConverter
             },
             $protectedExpression
         );
+
+        // Restore SQL functions
+        foreach ($sqlFunctions as $placeholder => $original) {
+            $resolvedExpression = str_replace($placeholder, $original, $resolvedExpression);
+        }
 
         // Restore string literals
         foreach ($stringLiterals as $placeholder => $original) {
@@ -1005,5 +1172,86 @@ class ReportQueryConverter
         //     ));
         //     // (Optional) log/warn that some columns were dropped
         // }
+    }
+
+    /**
+     * Extract relationship paths from a computed column expression.
+     * 
+     * This method parses the expression to find column references with nested relationships
+     * and returns the relationship paths (e.g., "relationship.nested").
+     * 
+     * @param string $expression The computed column expression
+     * @param string $rootTable The root table name (not used currently but kept for consistency)
+     * @return array Array of relationship paths
+     */
+    protected function extractRelationshipPathsFromExpression(string $expression, string $rootTable): array
+    {
+        // First, expand any computed column references in the expression
+        $computedColumns = $this->queryConfig['computed_columns'] ?? [];
+        $computedColumnMap = [];
+        foreach ($computedColumns as $col) {
+            $computedColumnMap[$col['name']] = $col['expression'];
+        }
+
+        // Recursively expand computed column references
+        $maxDepth = 10;
+        $depth = 0;
+        $expandedExpression = $expression;
+        while ($depth < $maxDepth) {
+            $changed = false;
+            foreach ($computedColumnMap as $name => $expr) {
+                if (preg_match('/\b' . preg_quote($name, '/') . '\b/', $expandedExpression)) {
+                    $expandedExpression = preg_replace('/\b' . preg_quote($name, '/') . '\b/', '(' . $expr . ')', $expandedExpression);
+                    $changed = true;
+                }
+            }
+            if (!$changed) {
+                break;
+            }
+            $depth++;
+        }
+
+        // Now extract all column references that look like relationship paths
+        // We need to match patterns like: word.word.word (but not inside string literals)
+        
+        // First, remove string literals to avoid matching inside them
+        $cleanedExpression = preg_replace("/'[^']*'/", '', $expandedExpression);
+        $cleanedExpression = preg_replace('/"[^"]*"/', '', $cleanedExpression);
+        
+        // Match column references with dots (relationship paths)
+        preg_match_all('/\b([a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)*)\b/i', $cleanedExpression, $matches);
+        
+        if (empty($matches[1])) {
+            return [];
+        }
+        
+        // Extract unique relationship paths (everything except the final column name)
+        $relationshipPaths = [];
+        foreach ($matches[1] as $columnPath) {
+            $parts = explode('.', $columnPath);
+            if (count($parts) >= 2) {
+                // Remove the last part (column name) to get the relationship path
+                array_pop($parts);
+                $relationshipPath = implode('.', $parts);
+                $relationshipPaths[$relationshipPath] = true;
+            }
+        }
+        
+        return array_keys($relationshipPaths);
+    }
+    
+    /**
+     * Extract relationship paths from a computed column expression and create necessary joins.
+     * 
+     * This method parses the expression to find column references with nested relationships
+     * and ensures that all necessary auto-joins are created for the relationship paths.
+     * 
+     * @deprecated This method is now redundant as join creation happens in processAutoJoins
+     */
+    protected function createJoinsForComputedColumn(Builder $query, string $expression, string $rootTable): void
+    {
+        // This method is now a no-op since joins are created earlier in processAutoJoins
+        // Keeping it for backward compatibility but it does nothing
+        return;
     }
 }

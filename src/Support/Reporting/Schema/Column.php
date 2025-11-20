@@ -41,14 +41,14 @@ class Column
     /**
      * Create a computed column.
      */
-    public static function computed(string $name, string $computation, string $type = 'string'): self
+    public static function computed(string $name, string $computation, string $type = 'string', array $options = []): self
     {
         return static::make($name, $type)
             ->setComputed(true)
             ->setComputation($computation)
-            ->setAggregatable(false)
-            ->setSortable(false)
-            ->setSearchable(false);
+            ->setAggregatable(isset($options['aggregatable']) ? (bool) $options['aggregatable'] : false)
+            ->setSortable(isset($options['sortable']) ? (bool) $options['sortable'] : false)
+            ->setSearchable(isset($options['searchable']) ? (bool) $options['searchable'] : false);
     }
 
     /**

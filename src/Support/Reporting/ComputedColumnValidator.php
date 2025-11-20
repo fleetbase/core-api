@@ -10,26 +10,10 @@ class ComputedColumnValidator
      * Allowed SQL functions.
      */
     protected array $allowedFunctions = [
+        // Date/Time Functions
         'DATEDIFF',
         'DATE_ADD',
         'DATE_SUB',
-        'CONCAT',
-        'COALESCE',
-        'IFNULL',
-        'CASE',
-        'WHEN',
-        'THEN',
-        'ELSE',
-        'END',
-        'LEAST',
-        'GREATEST',
-        'ROUND',
-        'ABS',
-        'UPPER',
-        'LOWER',
-        'TRIM',
-        'LENGTH',
-        'NULLIF',
         'NOW',
         'CURDATE',
         'CURTIME',
@@ -40,9 +24,103 @@ class ComputedColumnValidator
         'MINUTE',
         'SECOND',
         'DATE_FORMAT',
+        'LAST_DAY',           // Get last day of month
+        'DAYOFWEEK',          // Get day of week (1=Sunday, 7=Saturday)
+        'DAYOFMONTH',         // Get day of month (1-31)
+        'DAYOFYEAR',          // Get day of year (1-366)
+        'WEEK',               // Get week number
+        'WEEKDAY',            // Get weekday index (0=Monday, 6=Sunday)
+        'QUARTER',            // Get quarter (1-4)
+        'TIMESTAMPDIFF',      // Difference between timestamps
+        'TIMESTAMPADD',       // Add interval to timestamp
+        'FROM_UNIXTIME',      // Convert Unix timestamp to datetime
+        'UNIX_TIMESTAMP',     // Convert datetime to Unix timestamp
+        'STR_TO_DATE',        // Parse string to date
+        'MAKEDATE',           // Create date from year and day of year
+        'ADDDATE',            // Add days to date
+        'SUBDATE',            // Subtract days from date
+        
+        // String Functions
+        'CONCAT',
+        'CONCAT_WS',          // Concat with separator
         'SUBSTRING',
+        'SUBSTR',             // Alias for SUBSTRING
         'REPLACE',
-        'INTERVAL',
+        'UPPER',
+        'LOWER',
+        'TRIM',
+        'LTRIM',              // Left trim
+        'RTRIM',              // Right trim
+        'LENGTH',
+        'CHAR_LENGTH',        // Character length
+        'LEFT',               // Get leftmost characters
+        'RIGHT',              // Get rightmost characters
+        'LPAD',               // Left pad string
+        'RPAD',               // Right pad string
+        'REVERSE',            // Reverse string
+        'LOCATE',             // Find substring position
+        'POSITION',           // Find substring position
+        'INSTR',              // Find substring position
+        'STRCMP',             // Compare strings
+        
+        // Numeric Functions
+        'ROUND',
+        'ABS',
+        'CEIL',               // Round up
+        'CEILING',            // Round up (alias)
+        'FLOOR',              // Round down
+        'TRUNCATE',           // Truncate to decimal places
+        'MOD',                // Modulo
+        'POW',                // Power
+        'POWER',              // Power (alias)
+        'SQRT',               // Square root
+        'SIGN',               // Sign of number (-1, 0, 1)
+        'RAND',               // Random number
+        'PI',                 // Pi constant
+        'EXP',                // Exponential
+        'LN',                 // Natural logarithm
+        'LOG',                // Logarithm
+        'LOG10',              // Base-10 logarithm
+        'LOG2',               // Base-2 logarithm
+        'DEGREES',            // Radians to degrees
+        'RADIANS',            // Degrees to radians
+        'SIN',                // Sine
+        'COS',                // Cosine
+        'TAN',                // Tangent
+        'ASIN',               // Arc sine
+        'ACOS',               // Arc cosine
+        'ATAN',               // Arc tangent
+        'ATAN2',              // Arc tangent of two variables
+        
+        // Conditional/Logic Functions
+        'CASE',
+        'WHEN',
+        'THEN',
+        'ELSE',
+        'END',
+        'IF',                 // IF(condition, true_value, false_value)
+        'IFNULL',
+        'NULLIF',
+        'COALESCE',
+        
+        // Comparison Functions
+        'LEAST',
+        'GREATEST',
+        
+        // Aggregate Functions (for reference, though typically used in GROUP BY)
+        'COUNT',
+        'SUM',
+        'AVG',
+        'MIN',
+        'MAX',
+        'GROUP_CONCAT',
+        
+        // Type Conversion
+        'CAST',
+        'CONVERT',
+        
+        // Other Utility Functions
+        'INTERVAL',           // For date arithmetic
     ];
 
     /**
@@ -78,10 +156,11 @@ class ComputedColumnValidator
      *
      * @param string $expression the SQL expression
      * @param string $tableName  the base table name for column validation
+     * @param array  $computedColumns optional array of other computed columns that can be referenced
      *
      * @return array validation result with 'valid' boolean and optional 'errors' array
      */
-    public function validate(string $expression, string $tableName): array
+    public function validate(string $expression, string $tableName, array $computedColumns = []): array
     {
         $errors = [];
 
@@ -104,7 +183,7 @@ class ComputedColumnValidator
         }
 
         // Validate column references
-        $columnCheck = $this->validateColumnReferences($expression, $tableName);
+        $columnCheck = $this->validateColumnReferences($expression, $tableName, $computedColumns);
         if (!$columnCheck['valid']) {
             $errors = array_merge($errors, $columnCheck['errors']);
         }
@@ -188,7 +267,7 @@ class ComputedColumnValidator
     /**
      * Validate that all column references exist in the schema.
      */
-    protected function validateColumnReferences(string $expression, string $tableName): array
+    protected function validateColumnReferences(string $expression, string $tableName, array $computedColumns = []): array
     {
         $errors = [];
 
@@ -199,6 +278,12 @@ class ComputedColumnValidator
                     'valid'  => false,
                     'errors' => ["Table '{$tableName}' not found in schema registry"],
                 ];
+            }
+
+            // Build a list of computed column names for quick lookup
+            $computedColumnNames = [];
+            foreach ($computedColumns as $col) {
+                $computedColumnNames[] = $col['name'] ?? '';
             }
 
             // Remove string literals (both single and double quoted) to avoid treating them as column references
@@ -215,6 +300,11 @@ class ComputedColumnValidator
                     // Skip if it's a function, keyword, or literal
                     if ($this->isKeywordOrLiteral($columnRef)) {
                         continue;
+                    }
+
+                    // Check if it's a reference to another computed column
+                    if (in_array($columnRef, $computedColumnNames)) {
+                        continue; // Valid reference to another computed column
                     }
 
                     // Check if it's a valid column reference
