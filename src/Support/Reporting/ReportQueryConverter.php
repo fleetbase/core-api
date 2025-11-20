@@ -411,18 +411,15 @@ class ReportQueryConverter
         $currentTable = $rootTable;
         $pathSegments = [];
         
+        // Loop through all segments and keep updating currentTable with the last successfully resolved alias
         foreach ($parts as $segment) {
             $pathSegments[] = $segment;
             $currentPath = implode('.', $pathSegments);
             
             if (isset($this->joinAliases[$currentPath])) {
                 $currentTable = $this->joinAliases[$currentPath];
-            } else {
-                // Try to find the relationship from the current table
-                // This handles nested relationships like "asset" -> "financials"
-                // where we need to use the asset table alias as the base
-                break;
             }
+            // Don't break - continue to check if there's a longer path that matches
         }
         
         // If we resolved at least part of the path, use that table alias
