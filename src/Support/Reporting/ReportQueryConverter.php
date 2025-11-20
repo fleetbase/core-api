@@ -229,6 +229,7 @@ class ReportQueryConverter
         $this->collectAutoJoinPathsFromConditions($this->queryConfig['conditions'] ?? [], $autoJoinPaths);
         $this->collectAutoJoinPathsFromGroupBy($this->queryConfig['groupBy'] ?? [], $autoJoinPaths);
         $this->collectAutoJoinPathsFromSortBy($this->queryConfig['sortBy'] ?? [], $autoJoinPaths);
+        $this->collectAutoJoinPathsFromComputedColumns($this->queryConfig['computed_columns'] ?? [], $autoJoinPaths, $tableName);
 
         // dedupe and sort shortest->longest so parent joins first
         $autoJoinPaths = array_values(array_unique($autoJoinPaths));
@@ -284,6 +285,22 @@ class ReportQueryConverter
                 if (count($parts) >= 2) {
                     $autoJoinPaths[] = implode('.', array_slice($parts, 0, -1));
                 }
+            }
+        }
+    }
+
+    protected function collectAutoJoinPathsFromComputedColumns(array $computedColumns, array &$autoJoinPaths, string $rootTable): void
+    {
+        foreach ($computedColumns as $computedColumn) {
+            $expression = $computedColumn['expression'] ?? '';
+            if (empty($expression)) {
+                continue;
+            }
+            
+            // Extract relationship paths from the expression
+            $paths = $this->extractRelationshipPathsFromExpression($expression, $rootTable);
+            foreach ($paths as $path) {
+                $autoJoinPaths[] = $path;
             }
         }
     }
@@ -963,8 +980,8 @@ class ReportQueryConverter
                 throw new \InvalidArgumentException("Invalid computed column '{$name}': {$errors}");
             }
 
-            // Extract and create auto-joins for relationship paths in the expression
-            $this->createJoinsForComputedColumn($query, $expression, $tableName);
+            // Note: Auto-joins for computed column relationships are now created earlier in processAutoJoins()
+            // This ensures joins exist before aggregate expressions are resolved
 
             // Resolve column references in the expression to use proper table aliases
             $resolvedExpression = $this->resolveComputedColumnReferences($expression, $tableName);
@@ -1159,12 +1176,16 @@ class ReportQueryConverter
     }
 
     /**
-     * Extract relationship paths from a computed column expression and create necessary joins.
+     * Extract relationship paths from a computed column expression.
      * 
      * This method parses the expression to find column references like "asset.financials.monthly_hire_revenue"
-     * and ensures that all necessary auto-joins are created for the relationship paths.
+     * and returns the relationship paths (e.g., "asset.financials").
+     * 
+     * @param string $expression The computed column expression
+     * @param string $rootTable The root table name (not used currently but kept for consistency)
+     * @return array Array of relationship paths
      */
-    protected function createJoinsForComputedColumn(Builder $query, string $expression, string $rootTable): void
+    protected function extractRelationshipPathsFromExpression(string $expression, string $rootTable): array
     {
         // First, expand any computed column references in the expression
         $computedColumns = $this->queryConfig['computed_columns'] ?? [];
@@ -1202,7 +1223,7 @@ class ReportQueryConverter
         preg_match_all('/\b([a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)*)\b/i', $cleanedExpression, $matches);
         
         if (empty($matches[1])) {
-            return;
+            return [];
         }
         
         // Extract unique relationship paths (everything except the final column name)
@@ -1217,14 +1238,21 @@ class ReportQueryConverter
             }
         }
         
-        // Create auto-joins for each unique relationship path
-        foreach (array_keys($relationshipPaths) as $path) {
-            try {
-                $this->applyAutoJoinPath($query, $rootTable, $path);
-            } catch (\Exception $e) {
-                // If the join fails, it might not be a valid relationship path
-                // Just continue - the error will be caught later when resolving the column
-            }
-        }
+        return array_keys($relationshipPaths);
+    }
+    
+    /**
+     * Extract relationship paths from a computed column expression and create necessary joins.
+     * 
+     * This method parses the expression to find column references like "asset.financials.monthly_hire_revenue"
+     * and ensures that all necessary auto-joins are created for the relationship paths.
+     * 
+     * @deprecated This method is now redundant as join creation happens in processAutoJoins
+     */
+    protected function createJoinsForComputedColumn(Builder $query, string $expression, string $rootTable): void
+    {
+        // This method is now a no-op since joins are created earlier in processAutoJoins
+        // Keeping it for backward compatibility but it does nothing
+        return;
     }
 }
