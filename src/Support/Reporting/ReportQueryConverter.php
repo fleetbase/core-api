@@ -406,14 +406,14 @@ class ReportQueryConverter
             return [$rootTable, $parts[0]];
         }
 
-        $col = array_pop($parts); // The final column name (e.g., "monthly_hire_revenue")
+        $col = array_pop($parts); // The final column name
         
         // Build the relationship path step by step to find the correct alias
-        // For "asset.financials.monthly_hire_revenue", we need to check:
-        // 1. "asset.financials" (full path)
-        // 2. If not found, build it from "asset" + "financials"
+        // For nested relationships like "relationship.nested.column", we need to:
+        // 1. Check for the full path "relationship.nested"
+        // 2. If not found, resolve step by step from "relationship" to "nested"
         
-        $relPath = implode('.', $parts); // e.g., "asset.financials"
+        $relPath = implode('.', $parts);
         
         // Check if we have a direct alias for the full relationship path
         if (isset($this->joinAliases[$relPath])) {
@@ -421,9 +421,7 @@ class ReportQueryConverter
         }
         
         // If not, try to resolve it step by step
-        // For "asset.financials", we need to:
-        // 1. Get the alias for "asset" (e.g., "fliit_asset_allocations_asset")
-        // 2. Then look for "asset.financials" alias
+        // Walk through each segment and use the longest matching path
         
         $currentTable = $rootTable;
         $pathSegments = [];
@@ -1179,8 +1177,8 @@ class ReportQueryConverter
     /**
      * Extract relationship paths from a computed column expression.
      * 
-     * This method parses the expression to find column references like "asset.financials.monthly_hire_revenue"
-     * and returns the relationship paths (e.g., "asset.financials").
+     * This method parses the expression to find column references with nested relationships
+     * and returns the relationship paths (e.g., "relationship.nested").
      * 
      * @param string $expression The computed column expression
      * @param string $rootTable The root table name (not used currently but kept for consistency)
@@ -1213,7 +1211,7 @@ class ReportQueryConverter
             $depth++;
         }
 
-        // Now extract all column references that look like relationship paths (e.g., "asset.financials.monthly_hire_revenue")
+        // Now extract all column references that look like relationship paths
         // We need to match patterns like: word.word.word (but not inside string literals)
         
         // First, remove string literals to avoid matching inside them
@@ -1245,7 +1243,7 @@ class ReportQueryConverter
     /**
      * Extract relationship paths from a computed column expression and create necessary joins.
      * 
-     * This method parses the expression to find column references like "asset.financials.monthly_hire_revenue"
+     * This method parses the expression to find column references with nested relationships
      * and ensures that all necessary auto-joins are created for the relationship paths.
      * 
      * @deprecated This method is now redundant as join creation happens in processAutoJoins
