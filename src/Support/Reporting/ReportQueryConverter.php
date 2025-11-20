@@ -389,11 +389,49 @@ class ReportQueryConverter
             return [$rootTable, $parts[0]];
         }
 
-        $col          = array_pop($parts);           // "street1"
-        $relPath      = implode('.', $parts);        // "payload.pickup"
-        $alias        = $this->joinAliases[$relPath] ?? null;
-
-        return [$alias ?: $rootTable, $alias ? $col : $columnPath];
+        $col = array_pop($parts); // The final column name (e.g., "monthly_hire_revenue")
+        
+        // Build the relationship path step by step to find the correct alias
+        // For "asset.financials.monthly_hire_revenue", we need to check:
+        // 1. "asset.financials" (full path)
+        // 2. If not found, build it from "asset" + "financials"
+        
+        $relPath = implode('.', $parts); // e.g., "asset.financials"
+        
+        // Check if we have a direct alias for the full relationship path
+        if (isset($this->joinAliases[$relPath])) {
+            return [$this->joinAliases[$relPath], $col];
+        }
+        
+        // If not, try to resolve it step by step
+        // For "asset.financials", we need to:
+        // 1. Get the alias for "asset" (e.g., "fliit_asset_allocations_asset")
+        // 2. Then look for "asset.financials" alias
+        
+        $currentTable = $rootTable;
+        $pathSegments = [];
+        
+        foreach ($parts as $segment) {
+            $pathSegments[] = $segment;
+            $currentPath = implode('.', $pathSegments);
+            
+            if (isset($this->joinAliases[$currentPath])) {
+                $currentTable = $this->joinAliases[$currentPath];
+            } else {
+                // Try to find the relationship from the current table
+                // This handles nested relationships like "asset" -> "financials"
+                // where we need to use the asset table alias as the base
+                break;
+            }
+        }
+        
+        // If we resolved at least part of the path, use that table alias
+        if ($currentTable !== $rootTable) {
+            return [$currentTable, $col];
+        }
+        
+        // Fallback: return as-is if we couldn't resolve
+        return [$rootTable, $columnPath];
     }
 
     /**
