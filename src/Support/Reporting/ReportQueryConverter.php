@@ -1160,7 +1160,6 @@ class ReportQueryConverter
         //     // (Optional) log/warn that some columns were dropped
         // }
     }
-}
 
     /**
      * Extract relationship paths from a computed column expression and create necessary joins.
@@ -1231,3 +1230,4 @@ class ReportQueryConverter
             }
         }
     }
+}
