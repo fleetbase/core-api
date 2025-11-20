@@ -21,6 +21,57 @@ class ReportQueryConverter
     {
         $this->registry    = $registry;
         $this->queryConfig = $queryConfig;
+        
+        // Extract computed columns from groupBy aggregates if not already in computed_columns array
+        $this->extractComputedColumnsFromAggregates();
+    }
+    
+    /**
+     * Extract computed columns from groupBy aggregates and add to computed_columns array.
+     * This handles cases where the frontend sends computed column metadata in aggregateBy objects.
+     */
+    protected function extractComputedColumnsFromAggregates(): void
+    {
+        if (empty($this->queryConfig['groupBy'])) {
+            return;
+        }
+        
+        // Initialize computed_columns array if it doesn't exist
+        if (!isset($this->queryConfig['computed_columns'])) {
+            $this->queryConfig['computed_columns'] = [];
+        }
+        
+        // Track which computed columns we've already added
+        $existingComputedColumns = [];
+        foreach ($this->queryConfig['computed_columns'] as $col) {
+            $existingComputedColumns[$col['name']] = true;
+        }
+        
+        // Extract computed columns from groupBy aggregates
+        foreach ($this->queryConfig['groupBy'] as $groupBy) {
+            $aggregateBy = $groupBy['aggregateBy'] ?? null;
+            
+            if (!$aggregateBy) {
+                continue;
+            }
+            
+            // Check if this is a computed column
+            $isComputed = $aggregateBy['computed'] ?? false;
+            $computation = $aggregateBy['computation'] ?? null;
+            $name = $aggregateBy['name'] ?? null;
+            
+            if ($isComputed && $computation && $name && !isset($existingComputedColumns[$name])) {
+                // Add to computed_columns array
+                $this->queryConfig['computed_columns'][] = [
+                    'name' => $name,
+                    'expression' => $computation,
+                    'type' => $aggregateBy['type'] ?? 'string',
+                    'label' => $aggregateBy['label'] ?? $name,
+                ];
+                
+                $existingComputedColumns[$name] = true;
+            }
+        }
     }
 
     /**
