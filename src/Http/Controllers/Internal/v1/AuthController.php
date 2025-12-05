@@ -188,7 +188,7 @@ class AuthController extends Controller
                 ->where('company_users.user_uuid', $user->uuid)
                 ->whereNull('company_users.deleted_at')
                 ->whereNotNull('companies.owner_uuid')
-                ->with(['owner:uuid,name,email'])
+                ->with(['owner:uuid,company_uuid,name,email'])
                 ->distinct()
                 ->get();
 
@@ -643,7 +643,7 @@ class AuthController extends Controller
                 ->where('company_users.user_uuid', $user->uuid)
                 ->whereNull('company_users.deleted_at')
                 ->whereNotNull('companies.owner_uuid')
-                ->with(['owner:uuid,name,email', 'owner.companyUser:uuid,user_uuid,company_uuid'])
+                ->with(['owner:uuid,company_uuid,name,email', 'owner.companyUser:uuid,user_uuid,company_uuid'])
                 ->distinct()
                 ->get();
         });
