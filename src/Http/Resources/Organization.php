@@ -33,7 +33,7 @@ class Organization extends FleetbaseResource
             'backdrop_url'       => $this->backdrop_url,
             'branding'           => Setting::getBranding(),
             'options'            => $this->options,
-            'owner'              => new User($this->owner),
+            'owner'              => $this->owner ? new User($this->owner) : null,
             'slug'               => $this->slug,
             'status'             => $this->status,
             'joined_at'          => $this->when(Http::isInternalRequest() && $request->hasSession() && $request->session()->has('user'), function () {

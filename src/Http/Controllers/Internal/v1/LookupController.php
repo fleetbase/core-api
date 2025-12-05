@@ -7,6 +7,8 @@ use Fleetbase\Support\Http;
 use Fleetbase\Types\Country;
 use Fleetbase\Types\Currency;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class LookupController extends Controller
@@ -178,34 +180,120 @@ class LookupController extends Controller
     }
 
     /**
-     * Pull the Fleetbase.io blog RSS feed.
+     * Pull the Fleetbase.io blog RSS feed with aggressive caching.
      *
-     * @param Request
+     * @param Request $request
      *
      * @return \Illuminate\Http\Response
      */
     public function fleetbaseBlog(Request $request)
     {
-        $limit  = $request->integer('limit', 6);
-        $rssUrl = 'https://www.fleetbase.io/post/rss.xml';
-        $rss    = simplexml_load_file($rssUrl);
-        $posts  = [];
+        $limit    = $request->integer('limit', 6);
+        $cacheKey = "fleetbase_blog_posts_{$limit}";
+        $cacheTTL = now()->addDays(4); // 4 days as requested
 
-        foreach ($rss->channel->item as $item) {
-            $posts[] = [
-                'title'           => (string) $item->title,
-                'link'            => (string) $item->link,
-                'guid'            => (string) $item->guid,
-                'description'     => (string) $item->description,
-                'pubDate'         => (string) $item->pubDate,
-                'media_content'   => (string) data_get($item, 'media:content.url'),
-                'media_thumbnail' => (string) data_get($item, 'media:thumbnail.url'),
-            ];
+        // Try to get from cache
+        $posts = Cache::remember($cacheKey, $cacheTTL, function () use ($limit) {
+            return $this->fetchBlogPosts($limit);
+        });
+
+        // If cache failed and we have no posts, try to fetch directly
+        if (empty($posts)) {
+            Log::warning('[Blog] Cache miss and fetch failed, attempting direct fetch');
+            $posts = $this->fetchBlogPosts($limit);
         }
 
-        $posts = array_slice($posts, 0, $limit);
+        // Return cached response with HTTP cache headers
+        return response()->json($posts)
+            ->header('Cache-Control', 'public, max-age=345600') // 4 days in seconds
+            ->header('X-Cache-Status', Cache::has($cacheKey) ? 'HIT' : 'MISS');
+    }
 
-        return response()->json($posts);
+    /**
+     * Fetch blog posts from RSS feed.
+     *
+     * @param int $limit
+     *
+     * @return array
+     */
+    protected function fetchBlogPosts(int $limit): array
+    {
+        $rssUrl = 'https://www.fleetbase.io/post/rss.xml';
+        $posts  = [];
+
+        try {
+            // Use HTTP client with timeout instead of simplexml_load_file
+            $response = \Illuminate\Support\Facades\Http::timeout(5) // 5 second timeout
+                ->retry(2, 100) // Retry twice with 100ms delay
+                ->get($rssUrl);
+
+            if (!$response->successful()) {
+                Log::error('[Blog] Failed to fetch RSS feed', [
+                    'status' => $response->status(),
+                    'url'    => $rssUrl,
+                ]);
+
+                return [];
+            }
+
+            // Parse XML
+            $rss = simplexml_load_string($response->body());
+
+            if (!$rss || !isset($rss->channel->item)) {
+                Log::error('[Blog] Invalid RSS feed structure');
+
+                return [];
+            }
+
+            foreach ($rss->channel->item as $item) {
+                $posts[] = [
+                    'title'           => (string) $item->title,
+                    'link'            => (string) $item->link,
+                    'guid'            => (string) $item->guid,
+                    'description'     => (string) $item->description,
+                    'pubDate'         => (string) $item->pubDate,
+                    'media_content'   => (string) data_get($item, 'media:content.url'),
+                    'media_thumbnail' => (string) data_get($item, 'media:thumbnail.url'),
+                ];
+
+                // Early exit if we have enough
+                if (count($posts) >= $limit) {
+                    break;
+                }
+            }
+
+            Log::info('[Blog] Successfully fetched blog posts', ['count' => count($posts)]);
+        } catch (\Exception $e) {
+            Log::error('[Blog] Exception fetching RSS feed', [
+                'error' => $e->getMessage(),
+                'url'   => $rssUrl,
+            ]);
+        }
+
+        return array_slice($posts, 0, $limit);
+    }
+
+    /**
+     * Manually refresh blog cache (can be called via webhook or admin panel).
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function refreshBlogCache()
+    {
+        // Clear all blog caches
+        Cache::forget('fleetbase_blog_posts_6');
+        Cache::forget('fleetbase_blog_posts_10');
+        Cache::forget('fleetbase_blog_posts_20');
+
+        // Warm up cache with default limit
+        $posts = $this->fetchBlogPosts(6);
+        Cache::put('fleetbase_blog_posts_6', $posts, now()->addDays(4));
+
+        return response()->json([
+            'status'      => 'success',
+            'message'     => 'Blog cache refreshed',
+            'posts_count' => count($posts),
+        ]);
     }
 
     /**

@@ -26,6 +26,8 @@ use Fleetbase\Support\Utils;
 use Fleetbase\Twilio\Support\Laravel\Facade as Twilio;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Str;
@@ -101,17 +103,37 @@ class AuthController extends Controller
      */
     public function session(Request $request)
     {
-        $user = $request->user();
-        if (!$user) {
+        $token = $request->bearerToken();
+        $cacheKey = "session_validation_{$token}";
+
+        // Cache session validation for 5 minutes
+        $session = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($request) {
+            $user = $request->user();
+
+            if (!$user) {
+                return null;
+            }
+
+            $sessionData = [
+                'token'    => $request->bearerToken(),
+                'user'     => $user->uuid,
+                'verified' => $user->isVerified(),
+                'type'     => $user->getType(),
+            ];
+
+            if (session()->has('impersonator')) {
+                $sessionData['impersonator'] = session()->get('impersonator');
+            }
+
+            return $sessionData;
+        });
+
+        if (!$session) {
             return response()->error('Session has expired.', 401, ['restore' => false]);
         }
 
-        $session = ['token' => $request->bearerToken(), 'user' => $user->uuid, 'verified' => $user->isVerified(), 'type' => $user->getType()];
-        if (session()->has('impersonator')) {
-            $session['impersonator'] = session()->get('impersonator');
-        }
-
-        return response()->json($session);
+        return response()->json($session)
+            ->header('Cache-Control', 'private, max-age=300'); // 5 minutes
     }
 
     /**
@@ -119,11 +141,93 @@ class AuthController extends Controller
      *
      * @return \Illuminate\Http\Response
      */
-    public function logout()
+    public function logout(Request $request)
     {
+        $token = $request->bearerToken();
+        Cache::forget("session_validation_{$token}");
+
         Auth::logout();
 
         return response()->json(['Goodbye']);
+    }
+
+    /**
+     * Bootstrap endpoint - combines session, organizations, and installer status.
+     *
+     * @param Request $request
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function bootstrap(Request $request)
+    {
+        $user     = $request->user();
+        $token    = $request->bearerToken();
+        $cacheKey = "auth_bootstrap_{$user->uuid}_{$token}";
+
+        // Cache for 5 minutes
+        $bootstrap = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($request, $user) {
+            // Get session data
+            $session = [
+                'token'    => $request->bearerToken(),
+                'user'     => $user->uuid,
+                'verified' => $user->isVerified(),
+                'type'     => $user->getType(),
+            ];
+
+            if (session()->has('impersonator')) {
+                $session['impersonator'] = session()->get('impersonator');
+            }
+
+            // Get organizations (optimized query)
+            $organizations = Company::select([
+                'companies.uuid',
+                'companies.name',
+                'companies.owner_uuid',
+            ])
+                ->join('company_users', 'companies.uuid', '=', 'company_users.company_uuid')
+                ->where('company_users.user_uuid', $user->uuid)
+                ->whereNull('company_users.deleted_at')
+                ->whereNotNull('companies.owner_uuid')
+                ->with(['owner:uuid,company_uuid,name,email'])
+                ->distinct()
+                ->get();
+
+            // Get installer status (cached separately)
+            $installer = Cache::remember('installer_status', now()->addHour(), function () {
+                $shouldInstall = false;
+                $shouldOnboard = false;
+
+                try {
+                    DB::connection()->getPdo();
+                    if (DB::connection()->getDatabaseName()) {
+                        if (\Illuminate\Support\Facades\Schema::hasTable('companies')) {
+                            $shouldOnboard = !DB::table('companies')->exists();
+                        } else {
+                            $shouldInstall = true;
+                        }
+                    } else {
+                        $shouldInstall = true;
+                    }
+                } catch (\Exception $e) {
+                    $shouldInstall = true;
+                }
+
+                return [
+                    'shouldInstall' => $shouldInstall,
+                    'shouldOnboard' => $shouldOnboard,
+                    'defaultTheme'  => \Fleetbase\Models\Setting::lookup('branding.default_theme', 'dark'),
+                ];
+            });
+
+            return [
+                'session'       => $session,
+                'organizations' => Organization::collection($organizations),
+                'installer'     => $installer,
+            ];
+        });
+
+        return response()->json($bootstrap)
+            ->header('Cache-Control', 'private, max-age=300');
     }
 
     /**
@@ -522,19 +626,43 @@ class AuthController extends Controller
      */
     public function getUserOrganizations(Request $request)
     {
-        $user      = $request->user();
-        $companies = Company::whereHas(
-            'users',
-            function ($query) use ($user) {
-                $query->where('users.uuid', $user->uuid);
-                $query->whereNull('company_users.deleted_at');
-            }
-        )
-        ->whereHas('owner')
-        ->with(['owner', 'owner.companyUser'])
-        ->get();
+        $user     = $request->user();
+        $cacheKey = "user_organizations_{$user->uuid}";
 
-        return Organization::collection($companies);
+        // Cache for 30 minutes
+        $companies = Cache::remember($cacheKey, now()->addMinutes(30), function () use ($user) {
+            // Optimized query: use join instead of whereHas
+            return Company::select([
+                'companies.uuid',
+                'companies.name',
+                'companies.owner_uuid',
+                'companies.created_at',
+                'companies.updated_at',
+            ])
+                ->join('company_users', 'companies.uuid', '=', 'company_users.company_uuid')
+                ->where('company_users.user_uuid', $user->uuid)
+                ->whereNull('company_users.deleted_at')
+                ->whereNotNull('companies.owner_uuid')
+                ->with(['owner:uuid,company_uuid,name,email', 'owner.companyUser:uuid,user_uuid,company_uuid'])
+                ->distinct()
+                ->get();
+        });
+
+        return Organization::collection($companies)
+            ->response()
+            ->header('Cache-Control', 'private, max-age=1800'); // 30 minutes
+    }
+
+    /**
+     * Clear user organizations cache (call when org changes).
+     *
+     * @param string $userUuid
+     *
+     * @return void
+     */
+    public static function clearUserOrganizationsCache(string $userUuid)
+    {
+        Cache::forget("user_organizations_{$userUuid}");
     }
 
     /**

@@ -153,8 +153,15 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                             ['middleware' => ['fleetbase.protected']],
                             function ($router) {
                                 $router->group(
+                                    ['prefix' => 'lookup'],
+                                    function ($router) {
+                                        $router->post('refresh-blog-cache', 'LookupController@refreshBlogCache');
+                                    }
+                                );
+                                $router->group(
                                     ['prefix' => 'auth'],
                                     function ($router) {
+                                        $router->get('bootstrap', 'AuthController@bootstrap');
                                         $router->get('organizations', 'AuthController@getUserOrganizations');
                                         $router->post('change-user-password', 'AuthController@changeUserPassword');
                                         $router->post('impersonate', 'AuthController@impersonate');
