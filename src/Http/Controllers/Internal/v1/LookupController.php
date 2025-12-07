@@ -182,8 +182,6 @@ class LookupController extends Controller
     /**
      * Pull the Fleetbase.io blog RSS feed with aggressive caching.
      *
-     * @param Request $request
-     *
      * @return \Illuminate\Http\Response
      */
     public function fleetbaseBlog(Request $request)
@@ -211,10 +209,6 @@ class LookupController extends Controller
 
     /**
      * Fetch blog posts from RSS feed.
-     *
-     * @param int $limit
-     *
-     * @return array
      */
     protected function fetchBlogPosts(int $limit): array
     {

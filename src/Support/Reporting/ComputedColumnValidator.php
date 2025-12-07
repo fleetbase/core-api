@@ -39,7 +39,7 @@ class ComputedColumnValidator
         'MAKEDATE',           // Create date from year and day of year
         'ADDDATE',            // Add days to date
         'SUBDATE',            // Subtract days from date
-        
+
         // String Functions
         'CONCAT',
         'CONCAT_WS',          // Concat with separator
@@ -62,7 +62,7 @@ class ComputedColumnValidator
         'POSITION',           // Find substring position
         'INSTR',              // Find substring position
         'STRCMP',             // Compare strings
-        
+
         // Numeric Functions
         'ROUND',
         'ABS',
@@ -91,7 +91,7 @@ class ComputedColumnValidator
         'ACOS',               // Arc cosine
         'ATAN',               // Arc tangent
         'ATAN2',              // Arc tangent of two variables
-        
+
         // Conditional/Logic Functions
         'CASE',
         'WHEN',
@@ -102,11 +102,11 @@ class ComputedColumnValidator
         'IFNULL',
         'NULLIF',
         'COALESCE',
-        
+
         // Comparison Functions
         'LEAST',
         'GREATEST',
-        
+
         // Aggregate Functions (for reference, though typically used in GROUP BY)
         'COUNT',
         'SUM',
@@ -114,11 +114,11 @@ class ComputedColumnValidator
         'MIN',
         'MAX',
         'GROUP_CONCAT',
-        
+
         // Type Conversion
         'CAST',
         'CONVERT',
-        
+
         // Other Utility Functions
         'INTERVAL',           // For date arithmetic
     ];
@@ -154,8 +154,8 @@ class ComputedColumnValidator
     /**
      * Validate a computed column expression.
      *
-     * @param string $expression the SQL expression
-     * @param string $tableName  the base table name for column validation
+     * @param string $expression      the SQL expression
+     * @param string $tableName       the base table name for column validation
      * @param array  $computedColumns optional array of other computed columns that can be referenced
      *
      * @return array validation result with 'valid' boolean and optional 'errors' array
@@ -316,6 +316,7 @@ class ComputedColumnValidator
         } catch (\Exception $e) {
             $errors[] = 'Error validating column references: ' . $e->getMessage();
         }
+
         return [
             'valid'  => empty($errors),
             'errors' => $errors,
@@ -329,10 +330,10 @@ class ComputedColumnValidator
     {
         // Remove single-quoted strings (e.g., 'High', 'Low')
         $cleaned = preg_replace("/'[^']*'/", "''", $expression);
-        
+
         // Remove double-quoted strings (e.g., "High", "Low")
         $cleaned = preg_replace('/"[^"]*"/', '""', $cleaned);
-        
+
         return $cleaned;
     }
 
