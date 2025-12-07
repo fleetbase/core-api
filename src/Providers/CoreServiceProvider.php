@@ -25,11 +25,12 @@ class CoreServiceProvider extends ServiceProvider
      * @var array
      */
     public $observers = [
-        \Fleetbase\Models\User::class                 => \Fleetbase\Observers\UserObserver::class,
-        \Fleetbase\Models\ApiCredential::class        => \Fleetbase\Observers\ApiCredentialObserver::class,
-        \Fleetbase\Models\Notification::class         => \Fleetbase\Observers\NotificationObserver::class,
-        \Fleetbase\Models\ChatParticipant::class      => \Fleetbase\Observers\ChatParticipantObserver::class,
-        \Spatie\Activitylog\Models\Activity::class    => \Fleetbase\Observers\ActivityObserver::class,
+        \Fleetbase\Models\Company::class                 => \Fleetbase\Observers\CompanyObserver::class,
+        \Fleetbase\Models\User::class                    => \Fleetbase\Observers\UserObserver::class,
+        \Fleetbase\Models\ApiCredential::class           => \Fleetbase\Observers\ApiCredentialObserver::class,
+        \Fleetbase\Models\Notification::class            => \Fleetbase\Observers\NotificationObserver::class,
+        \Fleetbase\Models\ChatParticipant::class         => \Fleetbase\Observers\ChatParticipantObserver::class,
+        \Spatie\Activitylog\Models\Activity::class       => \Fleetbase\Observers\ActivityObserver::class,
     ];
 
     /**

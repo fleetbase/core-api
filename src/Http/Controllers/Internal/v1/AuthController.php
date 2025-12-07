@@ -103,7 +103,7 @@ class AuthController extends Controller
      */
     public function session(Request $request)
     {
-        $token = $request->bearerToken();
+        $token    = $request->bearerToken();
         $cacheKey = "session_validation_{$token}";
 
         // Cache session validation for 5 minutes
@@ -153,8 +153,6 @@ class AuthController extends Controller
 
     /**
      * Bootstrap endpoint - combines session, organizations, and installer status.
-     *
-     * @param Request $request
      *
      * @return \Illuminate\Http\Response
      */
@@ -630,11 +628,16 @@ class AuthController extends Controller
         $cacheKey = "user_organizations_{$user->uuid}";
 
         // Cache for 30 minutes
-        $companies = Cache::remember($cacheKey, now()->addMinutes(30), function () use ($user) {
-            // Optimized query: use join instead of whereHas
+        $companies = Cache::remember($cacheKey, 60 * 30, function () use ($user) {
             return Company::select([
                 'companies.uuid',
                 'companies.name',
+                'companies.phone',
+                'companies.options',
+                'companies.currency',
+                'companies.timezone',
+                'companies.status',
+                'companies.type',
                 'companies.owner_uuid',
                 'companies.created_at',
                 'companies.updated_at',
@@ -643,20 +646,36 @@ class AuthController extends Controller
                 ->where('company_users.user_uuid', $user->uuid)
                 ->whereNull('company_users.deleted_at')
                 ->whereNotNull('companies.owner_uuid')
-                ->with(['owner:uuid,company_uuid,name,email', 'owner.companyUser:uuid,user_uuid,company_uuid'])
+                ->with([
+                    'owner:uuid,company_uuid,name,email',
+                    'owner.companyUser:uuid,user_uuid,company_uuid',
+                ])
                 ->distinct()
                 ->get();
         });
 
+        /**
+         * Generate a full ETag representing:
+         * - all org UUIDs
+         * - all org updated_at timestamps
+         * - count of organizations
+         */
+        $etagPayload = $companies->map(function ($company) {
+            return $company->uuid . ':' . $company->updated_at;
+        })->join('|');
+
+        // Add count to ETag (if orgs added/removed)
+        $etagPayload .= '|count:' . $companies->count();
+        $etag = sha1($etagPayload);
+
         return Organization::collection($companies)
             ->response()
-            ->header('Cache-Control', 'private, max-age=1800'); // 30 minutes
+            ->setEtag($etag)
+            ->header('Cache-Control', 'private, max-age=1800, must-revalidate');
     }
 
     /**
      * Clear user organizations cache (call when org changes).
-     *
-     * @param string $userUuid
      *
      * @return void
      */

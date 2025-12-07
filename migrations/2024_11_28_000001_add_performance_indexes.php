@@ -88,7 +88,7 @@ class AddPerformanceIndexes extends Migration
                 ->listTableIndexes($table);
 
             return isset($indexes[$index]);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             return false;
         }
     }

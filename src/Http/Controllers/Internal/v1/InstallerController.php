@@ -34,8 +34,6 @@ class InstallerController extends Controller
 
     /**
      * Check installation status.
-     *
-     * @return array
      */
     protected function checkInstallationStatus(): array
     {

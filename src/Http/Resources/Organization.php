@@ -4,6 +4,7 @@ namespace Fleetbase\Http\Resources;
 
 use Fleetbase\Models\Setting;
 use Fleetbase\Support\Http;
+use Fleetbase\Support\Utils;
 
 class Organization extends FleetbaseResource
 {
@@ -32,7 +33,7 @@ class Organization extends FleetbaseResource
             'logo_url'           => $this->logo_url,
             'backdrop_url'       => $this->backdrop_url,
             'branding'           => Setting::getBranding(),
-            'options'            => $this->options,
+            'options'            => $this->options ?? Utils::createObject([]),
             'owner'              => $this->owner ? new User($this->owner) : null,
             'slug'               => $this->slug,
             'status'             => $this->status,

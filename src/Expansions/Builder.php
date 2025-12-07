@@ -43,7 +43,9 @@ class Builder implements Expansion
                             foreach ($column as $c) {
                                 if (Str::contains($c, '->')) {
                                     $jsonQueryPath = explode('->', $c);
-                                    if (count($jsonQueryPath) !== 2) continue;
+                                    if (count($jsonQueryPath) !== 2) {
+                                        continue;
+                                    }
 
                                     [$column, $property] = $jsonQueryPath;
                                     $query->orWhere(DB::raw("lower(json_unquote(json_extract($column, '$.$property')))"), 'LIKE', '%' . str_replace('.', '%', str_replace(',', '%', $search)) . '%');
@@ -62,9 +64,12 @@ class Builder implements Expansion
 
             if (Str::contains($column, '->')) {
                 $jsonQueryPath = explode('->', $column);
-                if (count($jsonQueryPath) !== 2) return;
+                if (count($jsonQueryPath) !== 2) {
+                    return;
+                }
 
                 [$column, $property] = $jsonQueryPath;
+
                 return $this->where(DB::raw("lower(json_unquote(json_extract($column, '$.$property')))"), 'LIKE', '%' . str_replace('.', '%', str_replace(',', '%', $search)) . '%');
             }
 

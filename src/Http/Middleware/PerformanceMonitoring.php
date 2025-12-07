@@ -2,7 +2,6 @@
 
 namespace Fleetbase\Http\Middleware;
 
-use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -10,13 +9,8 @@ class PerformanceMonitoring
 {
     /**
      * Handle an incoming request and log performance metrics.
-     *
-     * @param \Illuminate\Http\Request $request
-     * @param \Closure                 $next
-     *
-     * @return mixed
      */
-    public function handle(Request $request, Closure $next)
+    public function handle(Request $request, \Closure $next)
     {
         $startTime   = microtime(true);
         $startMemory = memory_get_usage();
