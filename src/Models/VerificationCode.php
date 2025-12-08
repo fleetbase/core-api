@@ -183,7 +183,7 @@ class VerificationCode extends Model
         // Twilio params
         $twilioParams = [];
 
-        $companyUuid = session('company') ?? data_get($subject, 'company_uuid');
+        $companyUuid = data_get($options, 'company_uuid') ?? session('company') ?? data_get($subject, 'company_uuid');
         if ($companyUuid) {
             $company = Company::select(['uuid', 'options'])->find($companyUuid);
 
