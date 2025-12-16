@@ -887,14 +887,9 @@ trait HasApiModelBehavior
                 }
             }
 
-            // IMPORTANT: Match original behavior
-            // - Basic filters (no operator): Only apply if fillable/searchable
-            // - Operator filters (_in, _like, etc.): Apply regardless of fillable status
-            if ($hasOperatorSuffix) {
-                // Operator-based filter: apply without fillable check (original behavior)
-                $builder = $this->applyOperators($builder, $column, $operator, $operatorType, $value);
-            } elseif ($this->isFillable($column) || in_array($column, ['uuid', 'public_id']) || in_array($column, $this->searcheableFields())) {
-                // Basic filter: only apply if fillable or searchable (includes timestamps, primary key, custom searchableColumns)
+            // IMPORTANT: Only apply filters for columns that are searchable
+            // searchableFields() includes: fillable + primary key + timestamps + custom searchableColumns
+            if ($this->isFillable($column) || in_array($column, ['uuid', 'public_id']) || in_array($column, $this->searcheableFields())) {
                 $builder = $this->applyOperators($builder, $column, $operator, $operatorType, $value);
             }
         }
