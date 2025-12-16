@@ -27,6 +27,16 @@ class ApiModelCache
     const DEFAULT_TTL = 3600;
 
     /**
+     * Cache status for current request
+     */
+    protected static $cacheStatus = null;
+
+    /**
+     * Cache key for current request
+     */
+    protected static $cacheKey = null;
+
+    /**
      * Cache TTL for list queries (default: 5 minutes)
      */
     const LIST_TTL = 300;
@@ -160,10 +170,22 @@ class ApiModelCache
         $ttl = $ttl ?? static::LIST_TTL;
 
         try {
-            return Cache::tags($tags)->remember($cacheKey, $ttl, function () use ($callback, $cacheKey) {
+            $isCached = Cache::tags($tags)->has($cacheKey);
+            
+            $result = Cache::tags($tags)->remember($cacheKey, $ttl, function () use ($callback, $cacheKey) {
                 Log::debug("Cache MISS for query", ['key' => $cacheKey]);
+                static::$cacheStatus = 'MISS';
+                static::$cacheKey = $cacheKey;
                 return $callback();
             });
+            
+            if ($isCached) {
+                Log::debug("Cache HIT for query", ['key' => $cacheKey]);
+                static::$cacheStatus = 'HIT';
+                static::$cacheKey = $cacheKey;
+            }
+            
+            return $result;
         } catch (\Exception $e) {
             Log::warning("Cache error, falling back to direct query", [
                 'key' => $cacheKey,
@@ -194,15 +216,29 @@ class ApiModelCache
         $ttl = $ttl ?? static::MODEL_TTL;
 
         try {
-            return Cache::tags($tags)->remember($cacheKey, $ttl, function () use ($callback, $cacheKey) {
+            $isCached = Cache::tags($tags)->has($cacheKey);
+            
+            $result = Cache::tags($tags)->remember($cacheKey, $ttl, function () use ($callback, $cacheKey) {
                 Log::debug("Cache MISS for model", ['key' => $cacheKey]);
+                static::$cacheStatus = 'MISS';
+                static::$cacheKey = $cacheKey;
                 return $callback();
             });
+            
+            if ($isCached) {
+                Log::debug("Cache HIT for model", ['key' => $cacheKey]);
+                static::$cacheStatus = 'HIT';
+                static::$cacheKey = $cacheKey;
+            }
+            
+            return $result;
         } catch (\Exception $e) {
             Log::warning("Cache error, falling back to direct query", [
                 'key' => $cacheKey,
                 'error' => $e->getMessage(),
             ]);
+            static::$cacheStatus = 'ERROR';
+            static::$cacheKey = $cacheKey;
             return $callback();
         }
     }
@@ -227,15 +263,29 @@ class ApiModelCache
         $ttl = $ttl ?? static::RELATIONSHIP_TTL;
 
         try {
-            return Cache::tags($tags)->remember($cacheKey, $ttl, function () use ($callback, $cacheKey) {
+            $isCached = Cache::tags($tags)->has($cacheKey);
+            
+            $result = Cache::tags($tags)->remember($cacheKey, $ttl, function () use ($callback, $cacheKey) {
                 Log::debug("Cache MISS for relationship", ['key' => $cacheKey]);
+                static::$cacheStatus = 'MISS';
+                static::$cacheKey = $cacheKey;
                 return $callback();
             });
+            
+            if ($isCached) {
+                Log::debug("Cache HIT for relationship", ['key' => $cacheKey]);
+                static::$cacheStatus = 'HIT';
+                static::$cacheKey = $cacheKey;
+            }
+            
+            return $result;
         } catch (\Exception $e) {
             Log::warning("Cache error, falling back to direct query", [
                 'key' => $cacheKey,
                 'error' => $e->getMessage(),
             ]);
+            static::$cacheStatus = 'ERROR';
+            static::$cacheKey = $cacheKey;
             return $callback();
         }
     }
@@ -430,5 +480,36 @@ class ApiModelCache
                 'relationship' => static::getRelationshipTtl(),
             ],
         ];
+    }
+
+    /**
+     * Get cache status for current request.
+     *
+     * @return string|null 'HIT', 'MISS', 'ERROR', or null
+     */
+    public static function getCacheStatus(): ?string
+    {
+        return static::$cacheStatus;
+    }
+
+    /**
+     * Get cache key for current request.
+     *
+     * @return string|null
+     */
+    public static function getCacheKey(): ?string
+    {
+        return static::$cacheKey;
+    }
+
+    /**
+     * Reset cache status (for testing).
+     *
+     * @return void
+     */
+    public static function resetCacheStatus(): void
+    {
+        static::$cacheStatus = null;
+        static::$cacheKey = null;
     }
 }

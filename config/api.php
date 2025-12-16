@@ -59,5 +59,9 @@ return [
         // Cache key prefix
         // Default: 'fleetbase_api'
         'prefix' => env('API_CACHE_PREFIX', 'fleetbase_api'),
+
+        // Debug mode - adds X-Cache-Key header to responses
+        // Default: false (only enabled when APP_DEBUG=true)
+        'debug' => env('API_CACHE_DEBUG', false),
     ],
 ];

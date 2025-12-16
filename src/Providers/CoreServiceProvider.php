@@ -42,6 +42,7 @@ class CoreServiceProvider extends ServiceProvider
         \Fleetbase\Http\Middleware\RequestTimer::class,
         \Fleetbase\Http\Middleware\ResetJsonResourceWrap::class,
         \Fleetbase\Http\Middleware\MergeConfigFromSettings::class,
+        \Fleetbase\Http\Middleware\AttachCacheHeaders::class,
     ];
 
     /**
