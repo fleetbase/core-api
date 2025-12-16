@@ -69,24 +69,28 @@ class AttachCacheHeaders
 
     /**
      * Check if the request is an API request.
+     * 
+     * Uses Fleetbase's Http helper to determine if the request is either:
+     * - Internal request (int/v1/... - used by Fleetbase applications)
+     * - Public request (v1/... - used by end users for integrations/dev)
      *
      * @param Request $request
      * @return bool
      */
     protected function isApiRequest(Request $request): bool
     {
-        // Check if request path starts with /api/
-        if (str_starts_with($request->path(), 'api/')) {
+        // Check if it's an internal request (int/v1/...)
+        if (\Fleetbase\Support\Http::isInternalRequest($request)) {
             return true;
         }
 
-        // Check if request expects JSON
+        // Check if it's a public API request (v1/...)
+        if (\Fleetbase\Support\Http::isPublicRequest($request)) {
+            return true;
+        }
+
+        // Fallback: check if request expects JSON
         if ($request->expectsJson()) {
-            return true;
-        }
-
-        // Check Accept header
-        if ($request->header('Accept') === 'application/json') {
             return true;
         }
 
