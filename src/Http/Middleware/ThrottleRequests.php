@@ -23,27 +23,17 @@ class ThrottleRequests extends ThrottleRequestsMiddleware
      */
     public function handle($request, \Closure $next, $maxAttempts = null, $decayMinutes = null, $prefix = '')
     {
-        // DEBUG: Log entry into middleware
-        Log::info('ThrottleRequests middleware called', [
-            'path' => $request->path(),
-            'method' => $request->method(),
-        ]);
-        
         // Option 1: Check if throttling is globally disabled via configuration
-        $throttleEnabled = config('api.throttle.enabled', true);
-        Log::info('Throttle config check', [
-            'enabled' => $throttleEnabled,
-            'type' => gettype($throttleEnabled),
-            'strict_false' => $throttleEnabled === false,
-        ]);
-        
-        if ($throttleEnabled === false) {
+        if (config('api.throttle.enabled', true) === false) {
             // Log when throttling is disabled (for security monitoring)
-            Log::info('BYPASSING THROTTLE - Config disabled', [
-                'ip' => $request->ip(),
-                'path' => $request->path(),
-                'method' => $request->method(),
-            ]);
+            if (app()->environment('production')) {
+                Log::warning('API throttling is DISABLED globally', [
+                    'ip' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                    'path' => $request->path(),
+                    'method' => $request->method(),
+                ]);
+            }
             
             return $next($request);
         }
