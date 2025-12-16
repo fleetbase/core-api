@@ -878,13 +878,15 @@ trait HasApiModelBehavior
 
             // Determine the column name and operator type
             $column = $key;
-            $operatorType = '=';
+            $opKey = '=';
+            $opType = '=';
 
             // Check if the parameter has an operator suffix (_in, _like, _gt, etc.)
             foreach ($operatorKeys as $op_key) {
                 if (Str::endsWith(strtolower($key), strtolower($op_key))) {
                     $column = Str::replaceLast($op_key, '', $key);
-                    $operatorType = $operators[$op_key];
+                    $opKey = $op_key;
+                    $opType = $operators[$op_key];
                     break;
                 }
             }
@@ -892,7 +894,7 @@ trait HasApiModelBehavior
             // Only apply filters for searchable columns
             // searchableFields() includes: fillable + primary key + timestamps + custom searchableColumns
             if ($this->isFillable($column) || in_array($column, ['uuid', 'public_id']) || in_array($column, $this->searcheableFields())) {
-                $builder = $this->applyOperators($builder, $column, '=', $operatorType, $value);
+                $builder = $this->applyOperators($builder, $column, $opKey, $opType, $value);
             }
         }
 
