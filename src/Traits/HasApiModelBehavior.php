@@ -104,6 +104,11 @@ trait HasApiModelBehavior
      */
     public function queryFromRequest(Request $request, ?\Closure $queryCallback = null)
     {
+        // Check if model has caching enabled via HasApiModelCache trait
+        if ($this->shouldUseCache()) {
+            return $this->queryFromRequestCached($request, $queryCallback);
+        }
+
         $limit   = $request->integer('limit', 30);
         $columns = $request->input('columns', ['*']);
 
@@ -136,6 +141,30 @@ trait HasApiModelBehavior
 
         // mutate if mutation causing params present
         return static::mutateModelWithRequest($request, $result);
+    }
+
+    /**
+     * Check if this model should use caching.
+     * 
+     * @return bool
+     */
+    protected function shouldUseCache(): bool
+    {
+        // Check if HasApiModelCache trait is used
+        $traits = class_uses_recursive(static::class);
+        $hasCacheTrait = isset($traits['Fleetbase\\Traits\\HasApiModelCache']);
+        
+        if (!$hasCacheTrait) {
+            return false;
+        }
+        
+        // Check if caching is disabled for this specific model
+        if (property_exists($this, 'disableApiCache') && $this->disableApiCache === true) {
+            return false;
+        }
+        
+        // Check if API caching is enabled globally
+        return config('api.cache.enabled', true);
     }
 
     /**

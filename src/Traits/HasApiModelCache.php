@@ -52,10 +52,8 @@ trait HasApiModelCache
      */
     public function queryFromRequestCached(Request $request, ?\Closure $queryCallback = null)
     {
-        // Check if caching is enabled
-        if (!ApiModelCache::isCachingEnabled()) {
-            return $this->queryFromRequest($request, $queryCallback);
-        }
+        // Note: Caching checks are now handled in queryFromRequest()
+        // This method is called automatically when HasApiModelCache trait is present
 
         // Generate additional params from query callback
         $additionalParams = [];
@@ -68,10 +66,52 @@ trait HasApiModelCache
         return ApiModelCache::cacheQueryResult(
             $this,
             $request,
-            fn() => $this->queryFromRequest($request, $queryCallback),
+            fn() => $this->queryFromRequestWithoutCache($request, $queryCallback),
             $additionalParams,
             ApiModelCache::getQueryTtl()
         );
+    }
+
+    /**
+     * Query from request without caching (internal use).
+     * 
+     * This method bypasses the cache check to avoid infinite recursion.
+     *
+     * @param Request $request
+     * @param \Closure|null $queryCallback
+     * @return mixed
+     */
+    protected function queryFromRequestWithoutCache(Request $request, ?\Closure $queryCallback = null)
+    {
+        $limit   = $request->integer('limit', 30);
+        $columns = $request->input('columns', ['*']);
+
+        /**
+         * @var \Illuminate\Database\Eloquent\Builder $builder
+         */
+        $builder = $this->searchBuilder($request, $columns);
+
+        if (intval($limit) > 0) {
+            $builder->limit($limit);
+        } elseif ($limit === -1) {
+            $limit = 999999999;
+            $builder->limit($limit);
+        }
+
+        // if queryCallback is supplied
+        if (is_callable($queryCallback)) {
+            $queryCallback($builder, $request);
+        }
+
+        if (\Fleetbase\Support\Http::isInternalRequest($request)) {
+            return $builder->fastPaginate($limit, $columns);
+        }
+
+        // get the results
+        $result = $builder->get($columns);
+
+        // mutate if mutation causing params present
+        return static::mutateModelWithRequest($request, $result);
     }
 
     /**

@@ -27,10 +27,11 @@ return [
 
     'cache' => [
         // Enable/disable API model caching
-        // Set to true to enable caching for API queries and models
-        // Default: false (disabled)
-        // Example: API_CACHE_ENABLED=true
-        'enabled' => env('API_CACHE_ENABLED', false),
+        // Caching is enabled by default when HasApiModelCache trait is used
+        // Set to false to disable caching globally
+        // Default: true (enabled)
+        // Example: API_CACHE_ENABLED=false
+        'enabled' => env('API_CACHE_ENABLED', true),
 
         // Cache TTL (Time To Live) in seconds
         'ttl' => [
