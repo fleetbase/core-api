@@ -451,9 +451,25 @@ class ApiModelCache
                         foreach ($keys as $key) {
                             if (!in_array($key, $foundKeys)) {
                                 $foundKeys[] = $key;
-                                $redis->del($key);
-                                $deletedCount++;
-                                Log::debug("Deleted cache key: {$key}");
+                                
+                                // Use raw DEL command to ensure deletion
+                                $result = $redis->del($key);
+                                
+                                // Verify deletion worked
+                                $exists = $redis->exists($key);
+                                
+                                if ($result > 0 && !$exists) {
+                                    $deletedCount++;
+                                    Log::debug("Successfully deleted cache key: {$key}", [
+                                        'del_result' => $result,
+                                        'exists_after' => $exists,
+                                    ]);
+                                } else {
+                                    Log::warning("Failed to delete cache key: {$key}", [
+                                        'del_result' => $result,
+                                        'exists_after' => $exists,
+                                    ]);
+                                }
                             }
                         }
                     }
