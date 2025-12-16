@@ -875,18 +875,26 @@ trait HasApiModelBehavior
             $column = $key;
             $operator = '=';
             $operatorType = '=';
+            $hasOperatorSuffix = false;
 
             // OPTIMIZATION: Check for operator suffix without nested loops
             foreach ($operatorKeys as $op_key) {
                 if (Str::endsWith(strtolower($key), strtolower($op_key))) {
                     $column = Str::replaceLast($op_key, '', $key);
                     $operatorType = $operators[$op_key];
+                    $hasOperatorSuffix = true;
                     break;
                 }
             }
 
-            // Only apply if column is fillable or a known searchable field
-            if ($this->isFillable($column) || in_array($column, ['uuid', 'public_id']) || in_array($column, $this->searcheableFields())) {
+            // IMPORTANT: Match original behavior
+            // - Basic filters (no operator): Only apply if fillable/searchable
+            // - Operator filters (_in, _like, etc.): Apply regardless of fillable status
+            if ($hasOperatorSuffix) {
+                // Operator-based filter: apply without fillable check (original behavior)
+                $builder = $this->applyOperators($builder, $column, $operator, $operatorType, $value);
+            } elseif ($this->isFillable($column) || in_array($column, ['uuid', 'public_id'])) {
+                // Basic filter: only apply if fillable (original behavior)
                 $builder = $this->applyOperators($builder, $column, $operator, $operatorType, $value);
             }
         }
