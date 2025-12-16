@@ -92,8 +92,14 @@ class ApiModelCache
         // Include company UUID for multi-tenancy
         $companyPart = $companyUuid ? "company_{$companyUuid}" : 'no_company';
         
+        // Get query version for this table/company
+        // This ensures cache keys change after invalidation
+        $versionKey = "api_query_version:{$table}:{$companyUuid}";
+        $version = Cache::get($versionKey, 1);  // Default to version 1
+        
         // Add Redis hash tag {api_query} for Redis Cluster shard routing
-        return "{api_query}:{$table}:{$companyPart}:{$paramsHash}";
+        // Include version to ensure cache keys change after writes
+        return "{api_query}:{$table}:{$companyPart}:v{$version}:{$paramsHash}";
     }
 
     /**
@@ -326,6 +332,18 @@ class ApiModelCache
         // This prevents Laravel from serving stale data from request memory
         // after invalidation within the same request lifecycle
         static::resetCacheStatus();
+
+        // FIX #4: Increment query version counter
+        // This ensures the cache key changes after invalidation
+        $table = $model->getTable();
+        $versionKey = "api_query_version:{$table}:{$companyUuid}";
+        Cache::increment($versionKey);
+        Log::debug("Incremented query version", [
+            'table' => $table,
+            'company_uuid' => $companyUuid,
+            'version_key' => $versionKey,
+            'new_version' => Cache::get($versionKey),
+        ]);
 
         // Generate tags for BOTH model and query caches
         // Model caches: single-record lookups
