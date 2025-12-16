@@ -404,8 +404,24 @@ class ApiModelCache
     protected static function flushRedisCacheByPattern(Model $model, ?string $companyUuid = null): void
     {
         try {
+            // Get the cache store configuration
+            $cacheStore = config('cache.stores.redis', []);
+            $redisConnection = $cacheStore['connection'] ?? 'cache';
+            $database = $cacheStore['database'] ?? config("database.redis.{$redisConnection}.database", 0);
+            
+            Log::info("Redis connection info", [
+                'connection' => $redisConnection,
+                'database' => $database,
+            ]);
+            
             // Get raw Redis client (bypasses Laravel's prefix handling)
-            $redis = \Illuminate\Support\Facades\Redis::connection(config('cache.stores.redis.connection', 'cache'))->client();
+            $redis = \Illuminate\Support\Facades\Redis::connection($redisConnection)->client();
+            
+            // Ensure we're on the correct database
+            if (method_exists($redis, 'select')) {
+                $redis->select($database);
+                Log::info("Selected Redis database {$database}");
+            }
             $cachePrefix = config('cache.prefix');
             $apiPrefix = config('api.cache.prefix', 'fleetbase_api');
             $table = $model->getTable();
