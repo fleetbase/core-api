@@ -92,7 +92,8 @@ class ApiModelCache
         // Include company UUID for multi-tenancy
         $companyPart = $companyUuid ? "company_{$companyUuid}" : 'no_company';
         
-        return "api_query:{$table}:{$companyPart}:{$paramsHash}";
+        // Add Redis hash tag {api_query} for Redis Cluster shard routing
+        return "{api_query}:{$table}:{$companyPart}:{$paramsHash}";
     }
 
     /**
@@ -108,7 +109,8 @@ class ApiModelCache
         $table = $model->getTable();
         $withHash = !empty($with) ? ':' . md5(json_encode($with)) : '';
         
-        return "api_model:{$table}:{$id}{$withHash}";
+        // Add Redis hash tag {api_model} for Redis Cluster shard routing
+        return "{api_model}:{$table}:{$id}{$withHash}";
     }
 
     /**
@@ -123,7 +125,8 @@ class ApiModelCache
         $table = $model->getTable();
         $id = $model->getKey();
         
-        return "api_relation:{$table}:{$id}:{$relationshipName}";
+        // Add Redis hash tag {api_relation} for Redis Cluster shard routing
+        return "{api_relation}:{$table}:{$id}:{$relationshipName}";
     }
 
     /**
@@ -306,32 +309,24 @@ class ApiModelCache
         $tags = static::generateCacheTags($model, $companyUuid);
 
         try {
-            Log::info("Attempting to invalidate cache", [
+            Log::info("Invalidating cache via tag flush", [
                 'model' => get_class($model),
                 'table' => $model->getTable(),
                 'id' => $model->getKey(),
                 'company_uuid' => $companyUuid,
                 'tags' => $tags,
-                'cache_driver' => config('cache.default'),
             ]);
             
-            $cacheDriver = config('cache.default');
-            
-            // IMPORTANT: Delete keys by pattern BEFORE tag flush
-            // Tag flush changes the tag namespace hash, making old keys inaccessible
-            // but new requests will use the new hash and won't see our deletions
-            if ($cacheDriver === 'redis') {
-                static::flushRedisCacheByPattern($model, $companyUuid);
-            }
-            
-            // Then flush tags (this will prevent any remaining tagged access)
+            // Use Laravel's Cache::tags()->flush() which is Redis Cluster safe
+            // This invalidates the tag namespace, making all tagged cache entries inaccessible
+            // without physically deleting keys (which doesn't work reliably in Redis Cluster)
             Cache::tags($tags)->flush();
             
             Log::info("Cache invalidated successfully", [
                 'model' => get_class($model),
                 'table' => $model->getTable(),
                 'id' => $model->getKey(),
-                'company_uuid' => $companyUuid,
+                'tags_flushed' => $tags,
             ]);
         } catch (\Exception $e) {
             Log::error("Failed to invalidate cache", [
@@ -394,128 +389,8 @@ class ApiModelCache
         }
     }
 
-    /**
-     * Flush Redis cache by pattern (more aggressive than tag flush).
-     * 
-     * @param Model $model
-     * @param string|null $companyUuid
-     * @return void
-     */
-    protected static function flushRedisCacheByPattern(Model $model, ?string $companyUuid = null): void
-    {
-        try {
-            // Get the cache store configuration
-            $cacheStore = config('cache.stores.redis', []);
-            $redisConnection = $cacheStore['connection'] ?? 'cache';
-            $database = $cacheStore['database'] ?? config("database.redis.{$redisConnection}.database", 0);
-            
-            Log::info("Redis connection info", [
-                'connection' => $redisConnection,
-                'database' => $database,
-            ]);
-            
-            // Get raw Redis client (bypasses Laravel's prefix handling)
-            $redis = \Illuminate\Support\Facades\Redis::connection($redisConnection)->client();
-            
-            // Ensure we're on the correct database
-            if (method_exists($redis, 'select')) {
-                $redis->select($database);
-                Log::info("Selected Redis database {$database}");
-            }
-            $cachePrefix = config('cache.prefix');
-            $apiPrefix = config('api.cache.prefix', 'fleetbase_api');
-            $table = $model->getTable();
-            
-            Log::info("Searching for cache keys to delete", [
-                'cache_prefix' => $cachePrefix,
-                'api_prefix' => $apiPrefix,
-                'table' => $table,
-                'company_uuid' => $companyUuid,
-            ]);
-            
-            // Build patterns to match - try multiple variations
-            $patterns = [];
-            
-            if ($companyUuid) {
-                // Most specific pattern first
-                $patterns[] = "*api_query:{$table}:company_{$companyUuid}:*";
-            }
-            
-            // Also try without company filter (catches all table queries)
-            $patterns[] = "*api_query:{$table}:*";
-            
-            $deletedCount = 0;
-            $foundKeys = [];
-            
-            foreach ($patterns as $basePattern) {
-                // Try with both prefixes
-                $patternsToTry = [
-                    $basePattern,  // No prefix
-                    "{$cachePrefix}:{$basePattern}",  // Laravel cache prefix
-                    "{$apiPrefix}:{$basePattern}",  // API cache prefix
-                    "{$cachePrefix}:{$apiPrefix}:{$basePattern}",  // Both prefixes
-                ];
-                
-                foreach ($patternsToTry as $pattern) {
-                    $keys = $redis->keys($pattern);
-                    
-                    if (!empty($keys)) {
-                        Log::info("Found keys with pattern: {$pattern}", [
-                            'count' => count($keys),
-                            'keys' => $keys,
-                        ]);
-                        
-                        foreach ($keys as $key) {
-                            if (!in_array($key, $foundKeys)) {
-                                $foundKeys[] = $key;
-                                
-                                // Use raw Redis DEL command (key already has full prefix from KEYS)
-                                $result = $redis->del($key);
-                                
-                                // Verify deletion worked
-                                $exists = $redis->exists($key);
-                                
-                                if ($result > 0) {
-                                    $deletedCount++;
-                                    Log::debug("Successfully deleted cache key", [
-                                        'key' => $key,
-                                        'del_result' => $result,
-                                        'exists_after' => $exists,
-                                    ]);
-                                } else {
-                                    Log::warning("Failed to delete cache key", [
-                                        'key' => $key,
-                                        'del_result' => $result,
-                                        'exists_after' => $exists,
-                                        'note' => 'Key format mismatch - KEYS returned key but DEL cannot find it',
-                                    ]);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            
-            if ($deletedCount > 0) {
-                Log::info("Deleted {$deletedCount} cache keys by pattern", [
-                    'table' => $table,
-                    'company_uuid' => $companyUuid,
-                    'deleted_keys' => $foundKeys,
-                ]);
-            } else {
-                Log::warning("No cache keys found to delete", [
-                    'table' => $table,
-                    'company_uuid' => $companyUuid,
-                    'patterns_tried' => $patterns,
-                ]);
-            }
-        } catch (\Exception $e) {
-            Log::error("Failed to flush Redis cache by pattern", [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-        }
-    }
+    // flushRedisCacheByPattern() method removed - not safe for Redis Cluster
+    // Cache invalidation is now handled solely through Cache::tags()->flush()
 
     /**
      * Check if caching is enabled.
