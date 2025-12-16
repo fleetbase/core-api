@@ -893,8 +893,8 @@ trait HasApiModelBehavior
             if ($hasOperatorSuffix) {
                 // Operator-based filter: apply without fillable check (original behavior)
                 $builder = $this->applyOperators($builder, $column, $operator, $operatorType, $value);
-            } elseif ($this->isFillable($column) || in_array($column, ['uuid', 'public_id'])) {
-                // Basic filter: only apply if fillable (original behavior)
+            } elseif ($this->isFillable($column) || in_array($column, ['uuid', 'public_id']) || in_array($column, $this->searcheableFields())) {
+                // Basic filter: only apply if fillable or searchable (includes timestamps, primary key, custom searchableColumns)
                 $builder = $this->applyOperators($builder, $column, $operator, $operatorType, $value);
             }
         }
