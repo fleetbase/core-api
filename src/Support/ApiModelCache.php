@@ -315,15 +315,17 @@ class ApiModelCache
                 'cache_driver' => config('cache.default'),
             ]);
             
-            // Method 1: Flush all keys with these tags
-            Cache::tags($tags)->flush();
-            
-            // Method 2: Also explicitly delete keys by pattern (more aggressive)
-            // This ensures cache is actually cleared even if tag flush doesn't work properly
             $cacheDriver = config('cache.default');
+            
+            // IMPORTANT: Delete keys by pattern BEFORE tag flush
+            // Tag flush changes the tag namespace hash, making old keys inaccessible
+            // but new requests will use the new hash and won't see our deletions
             if ($cacheDriver === 'redis') {
                 static::flushRedisCacheByPattern($model, $companyUuid);
             }
+            
+            // Then flush tags (this will prevent any remaining tagged access)
+            Cache::tags($tags)->flush();
             
             Log::info("Cache invalidated successfully", [
                 'model' => get_class($model),
