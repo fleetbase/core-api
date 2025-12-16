@@ -136,12 +136,20 @@ class ApiModelCache
      * @param string|null $companyUuid
      * @return array
      */
-    public static function generateCacheTags(Model $model, ?string $companyUuid = null): array
+    public static function generateCacheTags(Model $model, ?string $companyUuid = null, bool $includeQueryTag = false): array
     {
+        $table = $model->getTable();
+        
         $tags = [
             'api_cache',
-            "api_model:{$model->getTable()}",
+            "api_model:{$table}",
         ];
+        
+        // Add query-specific tag for collection/list caches
+        // This allows query caches to be invalidated separately from model caches
+        if ($includeQueryTag) {
+            $tags[] = "api_query:{$table}";
+        }
         
         if ($companyUuid) {
             $tags[] = "company:{$companyUuid}";
@@ -169,7 +177,7 @@ class ApiModelCache
 
         $cacheKey = static::generateQueryCacheKey($model, $request, $additionalParams);
         $companyUuid = static::getCompanyUuid($request);
-        $tags = static::generateCacheTags($model, $companyUuid);
+        $tags = static::generateCacheTags($model, $companyUuid, true);  // Include query tag
         $ttl = $ttl ?? static::LIST_TTL;
 
         try {
@@ -306,7 +314,11 @@ class ApiModelCache
             return;
         }
 
-        $tags = static::generateCacheTags($model, $companyUuid);
+        // Generate tags for BOTH model and query caches
+        // Model caches: single-record lookups
+        // Query caches: collection/list endpoints
+        $modelTags = static::generateCacheTags($model, $companyUuid, false);
+        $queryTags = static::generateCacheTags($model, $companyUuid, true);
 
         try {
             Log::info("Invalidating cache via tag flush", [
@@ -314,19 +326,23 @@ class ApiModelCache
                 'table' => $model->getTable(),
                 'id' => $model->getKey(),
                 'company_uuid' => $companyUuid,
-                'tags' => $tags,
+                'model_tags' => $modelTags,
+                'query_tags' => $queryTags,
             ]);
             
-            // Use Laravel's Cache::tags()->flush() which is Redis Cluster safe
-            // This invalidates the tag namespace, making all tagged cache entries inaccessible
-            // without physically deleting keys (which doesn't work reliably in Redis Cluster)
-            Cache::tags($tags)->flush();
+            // Flush model-level caches (single records, relationships)
+            Cache::tags($modelTags)->flush();
+            
+            // Flush query-level caches (collections, lists)
+            // This is CRITICAL - query caches must be explicitly flushed
+            Cache::tags($queryTags)->flush();
             
             Log::info("Cache invalidated successfully", [
                 'model' => get_class($model),
                 'table' => $model->getTable(),
                 'id' => $model->getKey(),
-                'tags_flushed' => $tags,
+                'model_tags_flushed' => $modelTags,
+                'query_tags_flushed' => $queryTags,
             ]);
         } catch (\Exception $e) {
             Log::error("Failed to invalidate cache", [
@@ -353,7 +369,7 @@ class ApiModelCache
 
         $cacheKey = static::generateQueryCacheKey($model, $request, $additionalParams);
         $companyUuid = static::getCompanyUuid($request);
-        $tags = static::generateCacheTags($model, $companyUuid);
+        $tags = static::generateCacheTags($model, $companyUuid, true);  // Include query tag
 
         try {
             Cache::tags($tags)->forget($cacheKey);
