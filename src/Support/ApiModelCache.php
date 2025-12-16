@@ -404,7 +404,8 @@ class ApiModelCache
     protected static function flushRedisCacheByPattern(Model $model, ?string $companyUuid = null): void
     {
         try {
-            $redis = \Illuminate\Support\Facades\Redis::connection(config('cache.stores.redis.connection', 'cache'));
+            // Get raw Redis client (bypasses Laravel's prefix handling)
+            $redis = \Illuminate\Support\Facades\Redis::connection(config('cache.stores.redis.connection', 'cache'))->client();
             $cachePrefix = config('cache.prefix');
             $apiPrefix = config('api.cache.prefix', 'fleetbase_api');
             $table = $model->getTable();
@@ -452,22 +453,25 @@ class ApiModelCache
                             if (!in_array($key, $foundKeys)) {
                                 $foundKeys[] = $key;
                                 
-                                // Use raw DEL command to ensure deletion
+                                // Use raw Redis DEL command (key already has full prefix from KEYS)
                                 $result = $redis->del($key);
                                 
                                 // Verify deletion worked
                                 $exists = $redis->exists($key);
                                 
-                                if ($result > 0 && !$exists) {
+                                if ($result > 0) {
                                     $deletedCount++;
-                                    Log::debug("Successfully deleted cache key: {$key}", [
+                                    Log::debug("Successfully deleted cache key", [
+                                        'key' => $key,
                                         'del_result' => $result,
                                         'exists_after' => $exists,
                                     ]);
                                 } else {
-                                    Log::warning("Failed to delete cache key: {$key}", [
+                                    Log::warning("Failed to delete cache key", [
+                                        'key' => $key,
                                         'del_result' => $result,
                                         'exists_after' => $exists,
+                                        'note' => 'Key format mismatch - KEYS returned key but DEL cannot find it',
                                     ]);
                                 }
                             }
