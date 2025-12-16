@@ -37,16 +37,6 @@ class ApiModelCache
     protected static $cacheKey = null;
 
     /**
-     * Reset request-level cache state.
-     * CRITICAL: Must be called on invalidation to prevent request-level cache reuse.
-     */
-    protected static function resetCacheStatus(): void
-    {
-        static::$cacheStatus = null;
-        static::$cacheKey = null;
-    }
-
-    /**
      * Cache TTL for list queries (default: 5 minutes)
      */
     const LIST_TTL = 300;
