@@ -37,6 +37,16 @@ class ApiModelCache
     protected static $cacheKey = null;
 
     /**
+     * Reset request-level cache state.
+     * CRITICAL: Must be called on invalidation to prevent request-level cache reuse.
+     */
+    protected static function resetCacheStatus(): void
+    {
+        static::$cacheStatus = null;
+        static::$cacheKey = null;
+    }
+
+    /**
      * Cache TTL for list queries (default: 5 minutes)
      */
     const LIST_TTL = 300;
@@ -180,20 +190,25 @@ class ApiModelCache
         $tags = static::generateCacheTags($model, $companyUuid, true);  // Include query tag
         $ttl = $ttl ?? static::LIST_TTL;
 
+        // FIX #3: Guard against read-after-invalidate in same request
+        if (static::$cacheStatus === 'INVALIDATED') {
+            Log::debug("Cache bypassed (invalidated in same request)", ['key' => $cacheKey]);
+            return $callback();
+        }
+
         try {
-            $isCached = Cache::tags($tags)->has($cacheKey);
+            // FIX #2: Remove Cache::has() check - it primes Laravel's request-level cache
+            // and causes false HITs. Always use remember() and check if callback runs.
+            $callbackRan = false;
             
-            $result = Cache::tags($tags)->remember($cacheKey, $ttl, function () use ($callback, $cacheKey) {
+            $result = Cache::tags($tags)->remember($cacheKey, $ttl, function () use ($callback, $cacheKey, &$callbackRan) {
+                $callbackRan = true;
                 Log::debug("Cache MISS for query", ['key' => $cacheKey]);
-                static::$cacheStatus = 'MISS';
-                static::$cacheKey = $cacheKey;
                 return $callback();
             });
             
-            if ($isCached) {
+            if (!$callbackRan) {
                 Log::debug("Cache HIT for query", ['key' => $cacheKey]);
-                static::$cacheStatus = 'HIT';
-                static::$cacheKey = $cacheKey;
             }
             
             return $result;
@@ -313,6 +328,13 @@ class ApiModelCache
         if (!static::isCachingEnabled()) {
             return;
         }
+
+        // FIX #1: Reset request-level cache state
+        // This prevents Laravel from serving stale data from request memory
+        // after invalidation within the same request lifecycle
+        static::resetCacheStatus();
+        static::$cacheStatus = 'INVALIDATED';
+        static::$cacheKey = null;
 
         // Generate tags for BOTH model and query caches
         // Model caches: single-record lookups
