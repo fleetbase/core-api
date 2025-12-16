@@ -306,8 +306,18 @@ class ApiModelCache
         $tags = static::generateCacheTags($model, $companyUuid);
 
         try {
+            Log::info("Attempting to invalidate cache", [
+                'model' => get_class($model),
+                'table' => $model->getTable(),
+                'id' => $model->getKey(),
+                'company_uuid' => $companyUuid,
+                'tags' => $tags,
+                'cache_driver' => config('cache.default'),
+            ]);
+            
             Cache::tags($tags)->flush();
-            Log::info("Cache invalidated for model", [
+            
+            Log::info("Cache invalidated successfully", [
                 'model' => get_class($model),
                 'table' => $model->getTable(),
                 'id' => $model->getKey(),
@@ -317,6 +327,7 @@ class ApiModelCache
             Log::error("Failed to invalidate cache", [
                 'model' => get_class($model),
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
         }
     }
@@ -380,7 +391,7 @@ class ApiModelCache
      */
     public static function isCachingEnabled(): bool
     {
-        return config('api.cache.enabled', false);
+        return config('api.cache.enabled', true);
     }
 
     /**

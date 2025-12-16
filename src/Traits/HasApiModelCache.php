@@ -27,6 +27,10 @@ trait HasApiModelCache
 
         // Invalidate cache when model is updated
         static::updated(function ($model) {
+            \Illuminate\Support\Facades\Log::info("Model updated event fired", [
+                'model' => get_class($model),
+                'id' => $model->getKey(),
+            ]);
             $model->invalidateApiCache();
         });
 
