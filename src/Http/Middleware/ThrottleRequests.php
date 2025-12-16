@@ -23,7 +23,7 @@ class ThrottleRequests extends ThrottleRequestsMiddleware
      */
     public function handle($request, \Closure $next, $maxAttempts = null, $decayMinutes = null, $prefix = '')
     {
-        // Option 1: Check if throttling is globally disabled via configuration
+        // Check if throttling is globally disabled via configuration
         if (config('api.throttle.enabled', true) === false) {
             // Log when throttling is disabled (for security monitoring)
             if (app()->environment('production')) {
@@ -38,7 +38,7 @@ class ThrottleRequests extends ThrottleRequestsMiddleware
             return $next($request);
         }
 
-        // Option 3: Check if request is using an unlimited/test API key
+        // Check if request is using an unlimited/test API key
         $apiKey = $this->extractApiKey($request);
         if ($apiKey && $this->isUnlimitedApiKey($apiKey)) {
             // Log usage of unlimited API key (for auditing)
