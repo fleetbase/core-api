@@ -3,6 +3,7 @@
 namespace Fleetbase\Support;
 
 use Fleetbase\LaravelMysqlSpatial\Eloquent\Builder as SpatialQueryBuilder;
+use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Database\Query\Expression;
 use Illuminate\Support\Facades\Log;
@@ -29,7 +30,7 @@ class QueryOptimizer
      *
      * @return SpatialQueryBuilder|Builder the optimized query builder with unique where clauses
      */
-    public static function removeDuplicateWheres(SpatialQueryBuilder|Builder $query): SpatialQueryBuilder|Builder
+    public static function removeDuplicateWheres(SpatialQueryBuilder|EloquentBuilder|Builder $query): SpatialQueryBuilder|EloquentBuilder|Builder
     {
         try {
             $baseQuery = $query->getQuery();
