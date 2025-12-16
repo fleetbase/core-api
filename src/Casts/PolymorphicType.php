@@ -21,13 +21,7 @@ class PolymorphicType implements CastsAttributes
      */
     public function get($model, $key, $value, $attributes)
     {
-        // If value is null or empty, return as-is
-        if (empty($value)) {
-            return $value;
-        }
-
-        // Convert full class name back to short type
-        return Utils::getShortTypeFromClassName($value);
+        return $value;
     }
 
     /**
@@ -41,7 +35,6 @@ class PolymorphicType implements CastsAttributes
     {
         // default $className is null
         $className = null;
-
         if ($value) {
             $className = Utils::getMutationType($value);
         }
