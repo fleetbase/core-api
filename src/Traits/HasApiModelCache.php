@@ -64,7 +64,8 @@ trait HasApiModelCache
         if ($queryCallback) {
             // Extract parameters that might affect the query
             $additionalParams['has_callback'] = true;
-            $additionalParams['callback_hash'] = md5(serialize($queryCallback));
+            // Use object ID instead of serialize (closures can't be serialized)
+            $additionalParams['callback_hash'] = md5(spl_object_id($queryCallback));
         }
 
         return ApiModelCache::cacheQueryResult(
