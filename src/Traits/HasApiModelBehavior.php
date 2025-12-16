@@ -19,6 +19,64 @@ use Illuminate\Support\Str;
 trait HasApiModelBehavior
 {
     /**
+     * Boot the HasApiModelBehavior trait.
+     * 
+     * Registers model event listeners for automatic cache invalidation.
+     */
+    public static function bootHasApiModelBehavior()
+    {
+        // Only set up cache invalidation if caching is enabled
+        if (!config('api.cache.enabled', true)) {
+            return;
+        }
+
+        // Invalidate cache when model is created
+        static::created(function ($model) {
+            $model->invalidateApiCacheOnChange();
+        });
+
+        // Invalidate cache when model is updated
+        static::updated(function ($model) {
+            $model->invalidateApiCacheOnChange();
+        });
+
+        // Invalidate cache when model is deleted
+        static::deleted(function ($model) {
+            $model->invalidateApiCacheOnChange();
+        });
+
+        // Invalidate cache when model is restored (soft deletes)
+        if (method_exists(static::class, 'restored')) {
+            static::restored(function ($model) {
+                $model->invalidateApiCacheOnChange();
+            });
+        }
+    }
+
+    /**
+     * Invalidate API cache when model changes.
+     * 
+     * @return void
+     */
+    protected function invalidateApiCacheOnChange(): void
+    {
+        if (!config('api.cache.enabled', true)) {
+            return;
+        }
+
+        // Get company UUID if available
+        $companyUuid = null;
+        if (isset($this->company_uuid)) {
+            $companyUuid = $this->company_uuid;
+        }
+
+        // Use ApiModelCache if available
+        if (class_exists('\Fleetbase\Support\ApiModelCache')) {
+            \Fleetbase\Support\ApiModelCache::invalidateModelCache($this, $companyUuid);
+        }
+    }
+
+    /**
      * The name of the database column used to store the public ID for this model.
      *
      * @var string
