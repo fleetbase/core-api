@@ -666,6 +666,10 @@ trait HasApiModelBehavior
         // PERFORMANCE OPTIMIZATION: Apply authorization directives FIRST to reduce dataset early
         $builder = $this->applyDirectivesToQuery($request, $builder);
 
+        // CRITICAL: Apply custom filters ALWAYS (handles queryForInternal/queryForPublic)
+        // This MUST run before the fast path check to ensure data isolation
+        $builder = $this->applyCustomFilters($request, $builder);
+
         // PERFORMANCE OPTIMIZATION: Check if this is a simple query (no filters, sorts, or relationships)
         // This avoids unnecessary method calls for the most common case
         $hasFilters = $request->has('filters') || count($request->except(['limit', 'offset', 'page', 'sort', 'order'])) > 0;
@@ -674,13 +678,9 @@ trait HasApiModelBehavior
         $hasCounts = $request->has('with_count');
 
         if (!$hasFilters && !$hasSorts && !$hasRelationships && !$hasCounts) {
-            // Fast path: no processing needed
+            // Fast path: no additional processing needed (custom filters already applied)
             return $builder;
         }
-
-        // PERFORMANCE OPTIMIZATION: Apply custom filters ALWAYS (handles queryForInternal/queryForPublic)
-        // This is critical for data isolation and authorization
-        $builder = $this->applyCustomFilters($request, $builder);
 
         // PERFORMANCE OPTIMIZATION: Only apply optimized filters if there are actual filter parameters
         if ($hasFilters) {
