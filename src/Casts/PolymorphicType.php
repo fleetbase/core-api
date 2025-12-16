@@ -10,11 +10,6 @@ class PolymorphicType implements CastsAttributes
     /**
      * Cast the given value.
      *
-     * Converts full class names back to short types:
-     * - Fleetbase\Models\Client -> client
-     * - Fleetbase\Fliit\Models\Client -> fliit:client
-     * - Fleetbase\FleetOps\Models\Customer -> fleet-ops:customer
-     *
      * @param \Illuminate\Database\Eloquent\Model $model
      * @param string                              $key
      * @param array                               $attributes

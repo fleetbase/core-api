@@ -858,50 +858,6 @@ class Utils
     }
 
     /**
-     * Reverse of getMutationType - converts full class name back to short type.
-     *
-     * Examples:
-     * Fleetbase\Models\Client -> client
-     * Fleetbase\Fliit\Models\Client -> fliit:client
-     * Fleetbase\FleetOps\Models\Customer -> fleet-ops:customer
-     *
-     * @param string $className Full class name
-     * @return string Short type name (with namespace prefix if applicable)
-     */
-    public static function getShortTypeFromClassName(string $className): string
-    {
-        // If it doesn't contain backslash, it's already a short name
-        if (!Str::contains($className, '\\')) {
-            return $className;
-        }
-
-        // Remove leading backslash if present
-        $className = ltrim($className, '\\');
-
-        // Check if it's a core Fleetbase model (Fleetbase\Models\*)
-        if (Str::startsWith($className, 'Fleetbase\\Models\\')) {
-            $basename = class_basename($className);
-            return Str::slug($basename);
-        }
-
-        // Check if it's a namespaced package model (Fleetbase\PackageName\Models\*)
-        if (preg_match('/^Fleetbase\\\\([^\\\\]+)\\\\Models\\\\(.+)$/', $className, $matches)) {
-            $package = $matches[1];  // e.g., "Fliit" or "FleetOps"
-            $model = $matches[2];    // e.g., "Client" or "Customer"
-            
-            // Convert package name to kebab-case (FleetOps -> fleet-ops, Fliit -> fliit)
-            $packageSlug = Str::slug(Str::snake($package));
-            $modelSlug = Str::slug($model);
-            
-            return "{$packageSlug}:{$modelSlug}";
-        }
-
-        // Fallback: just return the basename as slug
-        $basename = class_basename($className);
-        return Str::slug($basename);
-    }
-
-    /**
      * Retrieves a model class name ans turns it to a type.
      *
      * ex: UserDevice -> user-device
