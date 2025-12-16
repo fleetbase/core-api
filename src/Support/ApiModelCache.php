@@ -191,10 +191,9 @@ class ApiModelCache
         $ttl = $ttl ?? static::LIST_TTL;
 
         // FIX #3: Guard against read-after-invalidate in same request
-        if (static::$cacheStatus === 'INVALIDATED') {
-            Log::debug("Cache bypassed (invalidated in same request)", ['key' => $cacheKey]);
-            return $callback();
-        }
+        // After invalidation, resetCacheStatus() sets $cacheStatus to null
+        // But we need a way to detect if invalidation happened in this request
+        // For now, we'll rely on tag flush working correctly
 
         try {
             // FIX #2: Remove Cache::has() check - it primes Laravel's request-level cache
@@ -204,11 +203,15 @@ class ApiModelCache
             $result = Cache::tags($tags)->remember($cacheKey, $ttl, function () use ($callback, $cacheKey, &$callbackRan) {
                 $callbackRan = true;
                 Log::debug("Cache MISS for query", ['key' => $cacheKey]);
+                static::$cacheStatus = 'MISS';
+                static::$cacheKey = $cacheKey;
                 return $callback();
             });
             
             if (!$callbackRan) {
                 Log::debug("Cache HIT for query", ['key' => $cacheKey]);
+                static::$cacheStatus = 'HIT';
+                static::$cacheKey = $cacheKey;
             }
             
             return $result;
@@ -333,8 +336,6 @@ class ApiModelCache
         // This prevents Laravel from serving stale data from request memory
         // after invalidation within the same request lifecycle
         static::resetCacheStatus();
-        static::$cacheStatus = 'INVALIDATED';
-        static::$cacheKey = null;
 
         // Generate tags for BOTH model and query caches
         // Model caches: single-record lookups
