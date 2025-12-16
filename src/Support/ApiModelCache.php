@@ -315,7 +315,15 @@ class ApiModelCache
                 'cache_driver' => config('cache.default'),
             ]);
             
+            // Method 1: Flush all keys with these tags
             Cache::tags($tags)->flush();
+            
+            // Method 2: Also explicitly delete keys by pattern (more aggressive)
+            // This ensures cache is actually cleared even if tag flush doesn't work properly
+            $cacheDriver = config('cache.default');
+            if ($cacheDriver === 'redis') {
+                static::flushRedisCacheByPattern($model, $companyUuid);
+            }
             
             Log::info("Cache invalidated successfully", [
                 'model' => get_class($model),
@@ -379,6 +387,57 @@ class ApiModelCache
         } catch (\Exception $e) {
             Log::error("Failed to invalidate company cache", [
                 'company_uuid' => $companyUuid,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Flush Redis cache by pattern (more aggressive than tag flush).
+     * 
+     * @param Model $model
+     * @param string|null $companyUuid
+     * @return void
+     */
+    protected static function flushRedisCacheByPattern(Model $model, ?string $companyUuid = null): void
+    {
+        try {
+            $redis = \Illuminate\Support\Facades\Redis::connection(config('cache.stores.redis.connection', 'cache'));
+            $prefix = config('cache.prefix', config('api.cache.prefix', 'fleetbase_api'));
+            $table = $model->getTable();
+            
+            // Build patterns to match
+            $patterns = [
+                "*api_query:{$table}:*",
+            ];
+            
+            if ($companyUuid) {
+                $patterns[] = "*api_query:{$table}:company_{$companyUuid}:*";
+            }
+            
+            $deletedCount = 0;
+            foreach ($patterns as $pattern) {
+                $fullPattern = $prefix ? "{$prefix}:{$pattern}" : $pattern;
+                $keys = $redis->keys($fullPattern);
+                
+                if (!empty($keys)) {
+                    foreach ($keys as $key) {
+                        // Remove prefix if it was added by Redis
+                        $keyToDelete = $prefix ? str_replace("{$prefix}:", '', $key) : $key;
+                        $redis->del($keyToDelete);
+                        $deletedCount++;
+                    }
+                }
+            }
+            
+            if ($deletedCount > 0) {
+                Log::info("Deleted {$deletedCount} cache keys by pattern", [
+                    'table' => $table,
+                    'company_uuid' => $companyUuid,
+                ]);
+            }
+        } catch (\Exception $e) {
+            Log::warning("Failed to flush Redis cache by pattern", [
                 'error' => $e->getMessage(),
             ]);
         }
