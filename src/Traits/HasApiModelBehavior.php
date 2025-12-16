@@ -678,10 +678,13 @@ trait HasApiModelBehavior
             return $builder;
         }
 
-        // PERFORMANCE OPTIMIZATION: Use optimized filter method instead of two separate methods
+        // PERFORMANCE OPTIMIZATION: Apply custom filters ALWAYS (handles queryForInternal/queryForPublic)
+        // This is critical for data isolation and authorization
+        $builder = $this->applyCustomFilters($request, $builder);
+
+        // PERFORMANCE OPTIMIZATION: Only apply optimized filters if there are actual filter parameters
         if ($hasFilters) {
             $builder = $this->applyOptimizedFilters($request, $builder);
-            $builder = $this->applyCustomFilters($request, $builder);
         }
 
         // Only apply sorts if requested
