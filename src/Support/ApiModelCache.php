@@ -403,29 +403,57 @@ class ApiModelCache
     {
         try {
             $redis = \Illuminate\Support\Facades\Redis::connection(config('cache.stores.redis.connection', 'cache'));
-            $prefix = config('cache.prefix', config('api.cache.prefix', 'fleetbase_api'));
+            $cachePrefix = config('cache.prefix');
+            $apiPrefix = config('api.cache.prefix', 'fleetbase_api');
             $table = $model->getTable();
             
-            // Build patterns to match
-            $patterns = [
-                "*api_query:{$table}:*",
-            ];
+            Log::info("Searching for cache keys to delete", [
+                'cache_prefix' => $cachePrefix,
+                'api_prefix' => $apiPrefix,
+                'table' => $table,
+                'company_uuid' => $companyUuid,
+            ]);
+            
+            // Build patterns to match - try multiple variations
+            $patterns = [];
             
             if ($companyUuid) {
+                // Most specific pattern first
                 $patterns[] = "*api_query:{$table}:company_{$companyUuid}:*";
             }
             
+            // Also try without company filter (catches all table queries)
+            $patterns[] = "*api_query:{$table}:*";
+            
             $deletedCount = 0;
-            foreach ($patterns as $pattern) {
-                $fullPattern = $prefix ? "{$prefix}:{$pattern}" : $pattern;
-                $keys = $redis->keys($fullPattern);
+            $foundKeys = [];
+            
+            foreach ($patterns as $basePattern) {
+                // Try with both prefixes
+                $patternsToTry = [
+                    $basePattern,  // No prefix
+                    "{$cachePrefix}:{$basePattern}",  // Laravel cache prefix
+                    "{$apiPrefix}:{$basePattern}",  // API cache prefix
+                    "{$cachePrefix}:{$apiPrefix}:{$basePattern}",  // Both prefixes
+                ];
                 
-                if (!empty($keys)) {
-                    foreach ($keys as $key) {
-                        // Remove prefix if it was added by Redis
-                        $keyToDelete = $prefix ? str_replace("{$prefix}:", '', $key) : $key;
-                        $redis->del($keyToDelete);
-                        $deletedCount++;
+                foreach ($patternsToTry as $pattern) {
+                    $keys = $redis->keys($pattern);
+                    
+                    if (!empty($keys)) {
+                        Log::info("Found keys with pattern: {$pattern}", [
+                            'count' => count($keys),
+                            'keys' => $keys,
+                        ]);
+                        
+                        foreach ($keys as $key) {
+                            if (!in_array($key, $foundKeys)) {
+                                $foundKeys[] = $key;
+                                $redis->del($key);
+                                $deletedCount++;
+                                Log::debug("Deleted cache key: {$key}");
+                            }
+                        }
                     }
                 }
             }
@@ -434,11 +462,19 @@ class ApiModelCache
                 Log::info("Deleted {$deletedCount} cache keys by pattern", [
                     'table' => $table,
                     'company_uuid' => $companyUuid,
+                    'deleted_keys' => $foundKeys,
+                ]);
+            } else {
+                Log::warning("No cache keys found to delete", [
+                    'table' => $table,
+                    'company_uuid' => $companyUuid,
+                    'patterns_tried' => $patterns,
                 ]);
             }
         } catch (\Exception $e) {
-            Log::warning("Failed to flush Redis cache by pattern", [
+            Log::error("Failed to flush Redis cache by pattern", [
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
         }
     }
