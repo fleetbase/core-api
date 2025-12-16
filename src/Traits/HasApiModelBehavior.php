@@ -845,6 +845,9 @@ trait HasApiModelBehavior
      * PERFORMANCE OPTIMIZATION: Optimized filter application that merges buildSearchParams and applyFilters logic.
      * This method eliminates redundant iterations and string operations.
      *
+     * Filters are only applied if the column is searchable (defined in searchableFields()).
+     * Custom filters defined in Filter classes take precedence over automatic filtering.
+     *
      * @param Request                               $request The request object containing filter parameters
      * @param \Illuminate\Database\Eloquent\Builder $builder The search query builder
      *
@@ -852,6 +855,7 @@ trait HasApiModelBehavior
      */
     protected function applyOptimizedFilters(Request $request, $builder)
     {
+        // Extract only filter parameters (exclude pagination, sorting, relationships)
         $filters = $request->except(['limit', 'offset', 'page', 'sort', 'order', 'with', 'expand', 'without', 'with_count']);
         
         if (empty($filters)) {
@@ -862,35 +866,33 @@ trait HasApiModelBehavior
         $operatorKeys = array_keys($operators);
 
         foreach ($filters as $key => $value) {
-            // Skip empty values
+            // Skip empty values (but allow '0' and 0)
             if (empty($value) && $value !== '0' && $value !== 0) {
                 continue;
             }
 
-            // Check for custom filter first (avoid redundant checks)
+            // Skip if a custom filter method exists for this parameter
             if ($this->prioritizedCustomColumnFilter($request, $builder, $key)) {
                 continue;
             }
 
+            // Determine the column name and operator type
             $column = $key;
-            $operator = '=';
             $operatorType = '=';
-            $hasOperatorSuffix = false;
 
-            // OPTIMIZATION: Check for operator suffix without nested loops
+            // Check if the parameter has an operator suffix (_in, _like, _gt, etc.)
             foreach ($operatorKeys as $op_key) {
                 if (Str::endsWith(strtolower($key), strtolower($op_key))) {
                     $column = Str::replaceLast($op_key, '', $key);
                     $operatorType = $operators[$op_key];
-                    $hasOperatorSuffix = true;
                     break;
                 }
             }
 
-            // IMPORTANT: Only apply filters for columns that are searchable
+            // Only apply filters for searchable columns
             // searchableFields() includes: fillable + primary key + timestamps + custom searchableColumns
             if ($this->isFillable($column) || in_array($column, ['uuid', 'public_id']) || in_array($column, $this->searcheableFields())) {
-                $builder = $this->applyOperators($builder, $column, $operator, $operatorType, $value);
+                $builder = $this->applyOperators($builder, $column, '=', $operatorType, $value);
             }
         }
 
