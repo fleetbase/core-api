@@ -19,6 +19,64 @@ use Illuminate\Support\Str;
 trait HasApiModelBehavior
 {
     /**
+     * Boot the HasApiModelBehavior trait.
+     * 
+     * Registers model event listeners for automatic cache invalidation.
+     */
+    public static function bootHasApiModelBehavior()
+    {
+        // Only set up cache invalidation if caching is enabled
+        if (!config('api.cache.enabled', true)) {
+            return;
+        }
+
+        // Invalidate cache when model is created
+        static::created(function ($model) {
+            $model->invalidateApiCacheOnChange();
+        });
+
+        // Invalidate cache when model is updated
+        static::updated(function ($model) {
+            $model->invalidateApiCacheOnChange();
+        });
+
+        // Invalidate cache when model is deleted
+        static::deleted(function ($model) {
+            $model->invalidateApiCacheOnChange();
+        });
+
+        // Invalidate cache when model is restored (soft deletes)
+        if (method_exists(static::class, 'restored')) {
+            static::restored(function ($model) {
+                $model->invalidateApiCacheOnChange();
+            });
+        }
+    }
+
+    /**
+     * Invalidate API cache when model changes.
+     * 
+     * @return void
+     */
+    protected function invalidateApiCacheOnChange(): void
+    {
+        if (!config('api.cache.enabled', true)) {
+            return;
+        }
+
+        // Get company UUID if available
+        $companyUuid = null;
+        if (isset($this->company_uuid)) {
+            $companyUuid = $this->company_uuid;
+        }
+
+        // Use ApiModelCache if available
+        if (class_exists('\Fleetbase\Support\ApiModelCache')) {
+            \Fleetbase\Support\ApiModelCache::invalidateModelCache($this, $companyUuid);
+        }
+    }
+
+    /**
      * The name of the database column used to store the public ID for this model.
      *
      * @var string
@@ -104,6 +162,11 @@ trait HasApiModelBehavior
      */
     public function queryFromRequest(Request $request, ?\Closure $queryCallback = null)
     {
+        // Check if model has caching enabled via HasApiModelCache trait
+        if ($this->shouldUseCache()) {
+            return $this->queryFromRequestCached($request, $queryCallback);
+        }
+
         $limit   = $request->integer('limit', 30);
         $columns = $request->input('columns', ['*']);
 
@@ -136,6 +199,30 @@ trait HasApiModelBehavior
 
         // mutate if mutation causing params present
         return static::mutateModelWithRequest($request, $result);
+    }
+
+    /**
+     * Check if this model should use caching.
+     * 
+     * @return bool
+     */
+    protected function shouldUseCache(): bool
+    {
+        // Check if HasApiModelCache trait is used
+        $traits = class_uses_recursive(static::class);
+        $hasCacheTrait = isset($traits['Fleetbase\\Traits\\HasApiModelCache']);
+        
+        if (!$hasCacheTrait) {
+            return false;
+        }
+        
+        // Check if caching is disabled for this specific model
+        if (property_exists($this, 'disableApiCache') && $this->disableApiCache === true) {
+            return false;
+        }
+        
+        // Check if API caching is enabled globally
+        return config('api.cache.enabled', true);
     }
 
     /**
@@ -190,11 +277,18 @@ trait HasApiModelBehavior
             return $record;
         }
 
-        $builder = $this->where($this->getQualifiedKeyName(), $record->getKey());
-        $builder = $this->withRelationships($request, $builder);
-        $builder = $this->withCounts($request, $builder);
+        // PERFORMANCE OPTIMIZATION: Use load() instead of re-querying the database
+        // This avoids an unnecessary second database query
+        $with = $request->or(['with', 'expand'], []);
+        if (!empty($with)) {
+            $record->load($with);
+        }
 
-        $record = $builder->first();
+        // Load counts if requested
+        $withCount = $request->array('with_count', []);
+        if (!empty($withCount)) {
+            $record->loadCount($withCount);
+        }
 
         if (is_callable($onAfter)) {
             $after = $onAfter($request, $record, $input);
@@ -267,20 +361,18 @@ trait HasApiModelBehavior
             return $record;
         }
 
-        $builder = $this->where(
-            function ($q) use ($id) {
-                $publicIdColumn = $this->getQualifiedPublicId();
+        // PERFORMANCE OPTIMIZATION: Use load() instead of re-querying the database
+        // This avoids an unnecessary second database query
+        $with = $request->or(['with', 'expand'], []);
+        if (!empty($with)) {
+            $record->load($with);
+        }
 
-                $q->where($this->getQualifiedKeyName(), $id);
-                if ($this->isColumn($publicIdColumn)) {
-                    $q->orWhere($publicIdColumn, $id);
-                }
-            }
-        );
-        $builder = $this->withRelationships($request, $builder);
-        $builder = $this->withCounts($request, $builder);
-
-        $record = $builder->first();
+        // Load counts if requested
+        $withCount = $request->array('with_count', []);
+        if (!empty($withCount)) {
+            $record->loadCount($withCount);
+        }
 
         if (is_callable($onAfter)) {
             $after = $onAfter($request, $record, $input);
@@ -657,13 +749,47 @@ trait HasApiModelBehavior
     public function searchBuilder(Request $request, $columns = ['*'])
     {
         $builder = self::query()->select($columns);
-        $builder = $this->buildSearchParams($request, $builder);
-        $builder = $this->applyFilters($request, $builder);
-        $builder = $this->applyCustomFilters($request, $builder);
-        $builder = $this->withRelationships($request, $builder);
-        $builder = $this->withCounts($request, $builder);
-        $builder = $this->applySorts($request, $builder);
+
+        // PERFORMANCE OPTIMIZATION: Apply authorization directives FIRST to reduce dataset early
         $builder = $this->applyDirectivesToQuery($request, $builder);
+
+        // CRITICAL: Apply custom filters ALWAYS (handles queryForInternal/queryForPublic)
+        // This MUST run before the fast path check to ensure data isolation
+        $builder = $this->applyCustomFilters($request, $builder);
+
+        // PERFORMANCE OPTIMIZATION: Check if this is a simple query (no filters, sorts, or relationships)
+        // This avoids unnecessary method calls for the most common case
+        $hasFilters = $request->has('filters') || count($request->except(['limit', 'offset', 'page', 'sort', 'order'])) > 0;
+        $hasSorts = $request->has('sort') || $request->has('order');
+        $hasRelationships = $request->has('with') || $request->has('expand') || $request->has('without');
+        $hasCounts = $request->has('with_count');
+
+        if (!$hasFilters && !$hasSorts && !$hasRelationships && !$hasCounts) {
+            // Fast path: no additional processing needed (custom filters already applied)
+            return $builder;
+        }
+
+        // PERFORMANCE OPTIMIZATION: Only apply optimized filters if there are actual filter parameters
+        if ($hasFilters) {
+            $builder = $this->applyOptimizedFilters($request, $builder);
+        }
+
+        // Only apply sorts if requested
+        if ($hasSorts) {
+            $builder = $this->applySorts($request, $builder);
+        }
+
+        // Only eager-load relationships if requested
+        if ($hasRelationships) {
+            $builder = $this->withRelationships($request, $builder);
+        }
+
+        if ($hasCounts) {
+            $builder = $this->withCounts($request, $builder);
+        }
+
+        // PERFORMANCE OPTIMIZATION: Apply query optimizer to remove duplicate where clauses
+        $builder = $this->optimizeQuery($builder);
 
         return $builder;
     }
@@ -797,6 +923,66 @@ trait HasApiModelBehavior
             }
 
             $builder = $this->applyOperators($builder, $column, $operator, $operator_symbol, $value);
+        }
+
+        return $builder;
+    }
+
+    /**
+     * PERFORMANCE OPTIMIZATION: Optimized filter application that merges buildSearchParams and applyFilters logic.
+     * This method eliminates redundant iterations and string operations.
+     *
+     * Filters are only applied if the column is searchable (defined in searchableFields()).
+     * Custom filters defined in Filter classes take precedence over automatic filtering.
+     *
+     * @param Request                               $request The request object containing filter parameters
+     * @param \Illuminate\Database\Eloquent\Builder $builder The search query builder
+     *
+     * @return \Illuminate\Database\Eloquent\Builder The search query builder with filters applied
+     */
+    protected function applyOptimizedFilters(Request $request, $builder)
+    {
+        // Extract only filter parameters (exclude pagination, sorting, relationships)
+        $filters = $request->except(['limit', 'offset', 'page', 'sort', 'order', 'with', 'expand', 'without', 'with_count']);
+        
+        if (empty($filters)) {
+            return $builder;
+        }
+
+        $operators = $this->getQueryOperators();
+        $operatorKeys = array_keys($operators);
+
+        foreach ($filters as $key => $value) {
+            // Skip empty values (but allow '0' and 0)
+            if (empty($value) && $value !== '0' && $value !== 0) {
+                continue;
+            }
+
+            // Skip if a custom filter method exists for this parameter
+            if ($this->prioritizedCustomColumnFilter($request, $builder, $key)) {
+                continue;
+            }
+
+            // Determine the column name and operator type
+            $column = $key;
+            $opKey = '=';
+            $opType = '=';
+
+            // Check if the parameter has an operator suffix (_in, _like, _gt, etc.)
+            foreach ($operatorKeys as $op_key) {
+                if (Str::endsWith(strtolower($key), strtolower($op_key))) {
+                    $column = Str::replaceLast($op_key, '', $key);
+                    $opKey = $op_key;
+                    $opType = $operators[$op_key];
+                    break;
+                }
+            }
+
+            // Only apply filters for searchable columns
+            // searchableFields() includes: fillable + primary key + timestamps + custom searchableColumns
+            if ($this->isFillable($column) || in_array($column, ['uuid', 'public_id']) || in_array($column, $this->searcheableFields())) {
+                $builder = $this->applyOperators($builder, $column, $opKey, $opType, $value);
+            }
         }
 
         return $builder;

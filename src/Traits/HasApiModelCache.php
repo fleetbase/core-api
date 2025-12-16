@@ -1,0 +1,329 @@
+<?php
+
+namespace Fleetbase\Traits;
+
+use Fleetbase\Support\ApiModelCache;
+use Illuminate\Http\Request;
+
+/**
+ * Adds caching capabilities to API models.
+ * 
+ * This trait should be used alongside HasApiModelBehavior to provide
+ * automatic caching of query results, model instances, and relationships.
+ */
+trait HasApiModelCache
+{
+    /**
+     * Boot the HasApiModelCache trait.
+     * 
+     * Registers model event listeners for automatic cache invalidation.
+     */
+    public static function bootHasApiModelCache()
+    {
+        // Invalidate cache when model is created
+        static::created(function ($model) {
+            $model->invalidateApiCache();
+        });
+
+        // Invalidate cache when model is updated
+        static::updated(function ($model) {
+            \Illuminate\Support\Facades\Log::info("Model updated event fired", [
+                'model' => get_class($model),
+                'id' => $model->getKey(),
+            ]);
+            $model->invalidateApiCache();
+        });
+
+        // Invalidate cache when model is deleted
+        static::deleted(function ($model) {
+            $model->invalidateApiCache();
+        });
+
+        // Invalidate cache when model is restored (soft deletes)
+        if (method_exists(static::class, 'restored')) {
+            static::restored(function ($model) {
+                $model->invalidateApiCache();
+            });
+        }
+    }
+
+    /**
+     * Query from request with caching.
+     *
+     * @param Request $request
+     * @param \Closure|null $queryCallback
+     * @return mixed
+     */
+    public function queryFromRequestCached(Request $request, ?\Closure $queryCallback = null)
+    {
+        // Note: Caching checks are now handled in queryFromRequest()
+        // This method is called automatically when HasApiModelCache trait is present
+
+        // Generate additional params from query callback
+        $additionalParams = [];
+        if ($queryCallback) {
+            // Extract parameters that might affect the query
+            $additionalParams['has_callback'] = true;
+            $additionalParams['callback_hash'] = md5(serialize($queryCallback));
+        }
+
+        return ApiModelCache::cacheQueryResult(
+            $this,
+            $request,
+            fn() => $this->queryFromRequestWithoutCache($request, $queryCallback),
+            $additionalParams,
+            ApiModelCache::getQueryTtl()
+        );
+    }
+
+    /**
+     * Query from request without caching (internal use).
+     * 
+     * This method bypasses the cache check to avoid infinite recursion.
+     *
+     * @param Request $request
+     * @param \Closure|null $queryCallback
+     * @return mixed
+     */
+    protected function queryFromRequestWithoutCache(Request $request, ?\Closure $queryCallback = null)
+    {
+        $limit   = $request->integer('limit', 30);
+        $columns = $request->input('columns', ['*']);
+
+        /**
+         * @var \Illuminate\Database\Eloquent\Builder $builder
+         */
+        $builder = $this->searchBuilder($request, $columns);
+
+        if (intval($limit) > 0) {
+            $builder->limit($limit);
+        } elseif ($limit === -1) {
+            $limit = 999999999;
+            $builder->limit($limit);
+        }
+
+        // if queryCallback is supplied
+        if (is_callable($queryCallback)) {
+            $queryCallback($builder, $request);
+        }
+
+        if (\Fleetbase\Support\Http::isInternalRequest($request)) {
+            return $builder->fastPaginate($limit, $columns);
+        }
+
+        // get the results
+        $result = $builder->get($columns);
+
+        // mutate if mutation causing params present
+        return static::mutateModelWithRequest($request, $result);
+    }
+
+    /**
+     * Static alias for queryFromRequestCached().
+     *
+     * @param Request $request
+     * @param \Closure|null $queryCallback
+     * @return mixed
+     */
+    public static function queryWithRequestCached(Request $request, ?\Closure $queryCallback = null)
+    {
+        return (new static())->queryFromRequestCached($request, $queryCallback);
+    }
+
+    /**
+     * Find a model by ID with caching.
+     *
+     * @param mixed $id
+     * @param array $with
+     * @return static|null
+     */
+    public static function findCached($id, array $with = [])
+    {
+        if (!ApiModelCache::isCachingEnabled()) {
+            $model = static::find($id);
+            if ($model && !empty($with)) {
+                $model->load($with);
+            }
+            return $model;
+        }
+
+        return ApiModelCache::cacheModel(
+            new static(),
+            $id,
+            function () use ($id, $with) {
+                $model = static::find($id);
+                if ($model && !empty($with)) {
+                    $model->load($with);
+                }
+                return $model;
+            },
+            $with,
+            ApiModelCache::getModelTtl()
+        );
+    }
+
+    /**
+     * Find a model by public ID with caching.
+     *
+     * @param string $publicId
+     * @param array $with
+     * @return static|null
+     */
+    public static function findByPublicIdCached(string $publicId, array $with = [])
+    {
+        if (!ApiModelCache::isCachingEnabled()) {
+            $model = static::where('public_id', $publicId)->first();
+            if ($model && !empty($with)) {
+                $model->load($with);
+            }
+            return $model;
+        }
+
+        return ApiModelCache::cacheModel(
+            new static(),
+            "public_id:{$publicId}",
+            function () use ($publicId, $with) {
+                $model = static::where('public_id', $publicId)->first();
+                if ($model && !empty($with)) {
+                    $model->load($with);
+                }
+                return $model;
+            },
+            $with,
+            ApiModelCache::getModelTtl()
+        );
+    }
+
+    /**
+     * Load a relationship with caching.
+     *
+     * @param string $relationshipName
+     * @return mixed
+     */
+    public function loadCached(string $relationshipName)
+    {
+        if (!ApiModelCache::isCachingEnabled()) {
+            return $this->load($relationshipName);
+        }
+
+        // Check if relationship is already loaded
+        if ($this->relationLoaded($relationshipName)) {
+            return $this;
+        }
+
+        $cachedRelation = ApiModelCache::cacheRelationship(
+            $this,
+            $relationshipName,
+            fn() => $this->{$relationshipName},
+            ApiModelCache::getRelationshipTtl()
+        );
+
+        // Set the relationship on the model
+        $this->setRelation($relationshipName, $cachedRelation);
+
+        return $this;
+    }
+
+    /**
+     * Load multiple relationships with caching.
+     *
+     * @param array|string $relationships
+     * @return $this
+     */
+    public function loadMultipleCached($relationships)
+    {
+        if (!ApiModelCache::isCachingEnabled()) {
+            return $this->load($relationships);
+        }
+
+        $relationships = is_string($relationships) ? func_get_args() : $relationships;
+
+        foreach ($relationships as $relationship) {
+            $this->loadCached($relationship);
+        }
+
+        return $this;
+    }
+
+    /**
+     * Invalidate all caches for this model.
+     *
+     * @return void
+     */
+    public function invalidateApiCache(): void
+    {
+        if (!ApiModelCache::isCachingEnabled()) {
+            return;
+        }
+
+        // Get company UUID if available
+        $companyUuid = null;
+        if (isset($this->company_uuid)) {
+            $companyUuid = $this->company_uuid;
+        }
+
+        ApiModelCache::invalidateModelCache($this, $companyUuid);
+    }
+
+    /**
+     * Invalidate cache for a specific query.
+     *
+     * @param Request $request
+     * @param array $additionalParams
+     * @return void
+     */
+    public function invalidateQueryCache(Request $request, array $additionalParams = []): void
+    {
+        if (!ApiModelCache::isCachingEnabled()) {
+            return;
+        }
+
+        ApiModelCache::invalidateQueryCache($this, $request, $additionalParams);
+    }
+
+    /**
+     * Warm up cache for common queries.
+     *
+     * @param Request $request
+     * @param \Closure|null $queryCallback
+     * @return void
+     */
+    public static function warmUpCache(Request $request, ?\Closure $queryCallback = null): void
+    {
+        if (!ApiModelCache::isCachingEnabled()) {
+            return;
+        }
+
+        $model = new static();
+        ApiModelCache::warmCache(
+            $model,
+            $request,
+            fn() => $model->queryFromRequest($request, $queryCallback)
+        );
+    }
+
+    /**
+     * Check if caching is enabled for this model.
+     *
+     * @return bool
+     */
+    public function isCachingEnabled(): bool
+    {
+        // Check if model has caching disabled
+        if (property_exists($this, 'disableApiCache') && $this->disableApiCache === true) {
+            return false;
+        }
+
+        return ApiModelCache::isCachingEnabled();
+    }
+
+    /**
+     * Get cache statistics for this model.
+     *
+     * @return array
+     */
+    public static function getCacheStats(): array
+    {
+        return ApiModelCache::getStats();
+    }
+}
