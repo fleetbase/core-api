@@ -19,7 +19,10 @@ if (!empty($databaseUrl)) {
     $database = substr($url['path'], 1);
 }
 
-$mysql_options = [];
+$mysql_options = [
+    PDO::ATTR_PERSISTENT => true,
+    PDO::ATTR_TIMEOUT => 5,
+];
 
 if (env('APP_ENV') === 'local') {
     $mysql_options[PDO::ATTR_EMULATE_PREPARES] = true;
@@ -68,6 +71,9 @@ return [
         'strict' => true,
         'engine' => null,
         'options' => $mysql_options,
+        'pool' => [
+            'size' => env('DB_CONNECTION_POOL_SIZE', 25),
+        ],
     ],
 
     'sandbox' => [
