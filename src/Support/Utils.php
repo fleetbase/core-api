@@ -1773,11 +1773,17 @@ class Utils
     }
 
     /**
-     * Converts a string or class name to an ember resource type \Fleetbase\FleetOps\Models\IntegratedVendor -> integrated-vendor.
+     * Converts a fully qualified class name to an ember resource type with namespace prefix.
+     * 
+     * Examples:
+     * - \Fleetbase\FleetOps\Models\IntegratedVendor -> fleet-ops:integrated-vendor
+     * - \Fleetbase\Fliit\Models\Client -> fliit:client
+     * - fliit:client -> fliit:client (already short format, returned as-is)
+     * - SimpleClass -> simple-class (no namespace, just kebab-case)
      *
-     * @param string $className
+     * @param string $className The fully qualified class name or short type
      *
-     * @return string|null
+     * @return string|null The namespaced type string (package:type) or null if input is invalid
      */
     public static function toEmberResourceType($className)
     {
@@ -1785,10 +1791,33 @@ class Utils
             return null;
         }
 
-        $baseClassName     = static::classBasename($className);
-        $emberResourceType = Str::snake($baseClassName, '-');
+        // If it's already in short format (contains ':'), return as-is
+        if (Str::contains($className, ':')) {
+            return $className;
+        }
 
-        return $emberResourceType;
+        // If it doesn't contain namespace separator, just convert to kebab-case
+        if (!Str::contains($className, '\\')) {
+            return Str::snake($className, '-');
+        }
+
+        // Extract package name from namespace
+        // e.g., "Fleetbase\\Fliit\\Models\\Client" -> "fliit:client"
+        // e.g., "Fleetbase\\FleetOps\\Models\\Vendor" -> "fleet-ops:vendor"
+        $parts = explode('\\', $className);
+        
+        // Get the base class name
+        $baseClassName = end($parts);
+        $baseType = Str::snake($baseClassName, '-');
+        
+        // Get the package name (second part of namespace after Fleetbase)
+        if (count($parts) >= 3 && $parts[0] === 'Fleetbase') {
+            $packageName = Str::snake($parts[1], '-');
+            return $packageName . ':' . $baseType;
+        }
+
+        // Fallback to just the base type
+        return $baseType;
     }
 
     public static function dateRange($date)

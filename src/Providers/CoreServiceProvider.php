@@ -42,6 +42,7 @@ class CoreServiceProvider extends ServiceProvider
         \Fleetbase\Http\Middleware\RequestTimer::class,
         \Fleetbase\Http\Middleware\ResetJsonResourceWrap::class,
         \Fleetbase\Http\Middleware\MergeConfigFromSettings::class,
+        \Fleetbase\Http\Middleware\AttachCacheHeaders::class,
     ];
 
     /**
@@ -112,6 +113,7 @@ class CoreServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__ . '/../../config/database.redis.php', 'database.redis');
         $this->mergeConfigFrom(__DIR__ . '/../../config/broadcasting.connections.php', 'broadcasting.connections');
         $this->mergeConfigFrom(__DIR__ . '/../../config/fleetbase.php', 'fleetbase');
+        $this->mergeConfigFrom(__DIR__ . '/../../config/api.php', 'api');
         $this->mergeConfigFrom(__DIR__ . '/../../config/auth.php', 'auth');
         $this->mergeConfigFrom(__DIR__ . '/../../config/sanctum.php', 'sanctum');
         $this->mergeConfigFrom(__DIR__ . '/../../config/twilio.php', 'twilio');
