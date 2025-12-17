@@ -68,7 +68,7 @@ abstract class Filter
      *
      * @var array|null
      */
-    protected static $rangePatterns = null;
+    protected static $rangePatterns;
 
     /**
      * Initialize a new filter instance.
@@ -122,7 +122,6 @@ abstract class Filter
      * - Direct method calls instead of call_user_func_array
      *
      * @param string $name
-     * @param mixed  $value
      *
      * @return void
      */

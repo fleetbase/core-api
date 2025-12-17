@@ -1774,7 +1774,7 @@ class Utils
 
     /**
      * Converts a fully qualified class name to an ember resource type with namespace prefix.
-     * 
+     *
      * Examples:
      * - \Fleetbase\FleetOps\Models\IntegratedVendor -> fleet-ops:integrated-vendor
      * - \Fleetbase\Fliit\Models\Client -> fliit:client
@@ -1805,14 +1805,15 @@ class Utils
         // e.g., "Fleetbase\\Fliit\\Models\\Client" -> "fliit:client"
         // e.g., "Fleetbase\\FleetOps\\Models\\Vendor" -> "fleet-ops:vendor"
         $parts = explode('\\', $className);
-        
+
         // Get the base class name
         $baseClassName = end($parts);
-        $baseType = Str::snake($baseClassName, '-');
-        
+        $baseType      = Str::snake($baseClassName, '-');
+
         // Get the package name (second part of namespace after Fleetbase)
         if (count($parts) >= 3 && $parts[0] === 'Fleetbase') {
             $packageName = Str::snake($parts[1], '-');
+
             return $packageName . ':' . $baseType;
         }
 

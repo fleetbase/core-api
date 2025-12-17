@@ -14,11 +14,11 @@ class ThrottleRequests extends ThrottleRequestsMiddleware
      * 1. Global disable via THROTTLE_ENABLED=false (for development/testing)
      * 2. Unlimited API keys via THROTTLE_UNLIMITED_API_KEYS (for production testing)
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  \Closure  $next
-     * @param  int|string  $maxAttempts
-     * @param  float|int  $decayMinutes
-     * @param  string  $prefix
+     * @param \Illuminate\Http\Request $request
+     * @param int|string               $maxAttempts
+     * @param float|int                $decayMinutes
+     * @param string                   $prefix
+     *
      * @return \Symfony\Component\HttpFoundation\Response
      */
     public function handle($request, \Closure $next, $maxAttempts = null, $decayMinutes = null, $prefix = '')
@@ -28,13 +28,13 @@ class ThrottleRequests extends ThrottleRequestsMiddleware
             // Log when throttling is disabled (for security monitoring)
             if (app()->environment('production')) {
                 Log::warning('API throttling is DISABLED globally', [
-                    'ip' => $request->ip(),
+                    'ip'         => $request->ip(),
                     'user_agent' => $request->userAgent(),
-                    'path' => $request->path(),
-                    'method' => $request->method(),
+                    'path'       => $request->path(),
+                    'method'     => $request->method(),
                 ]);
             }
-            
+
             return $next($request);
         }
 
@@ -44,11 +44,11 @@ class ThrottleRequests extends ThrottleRequestsMiddleware
             // Log usage of unlimited API key (for auditing)
             Log::info('Request using unlimited API key', [
                 'api_key_prefix' => substr($apiKey, 0, 20) . '...',
-                'ip' => $request->ip(),
-                'path' => $request->path(),
-                'method' => $request->method(),
+                'ip'             => $request->ip(),
+                'path'           => $request->path(),
+                'method'         => $request->method(),
             ]);
-            
+
             return $next($request);
         }
 
@@ -67,7 +67,8 @@ class ThrottleRequests extends ThrottleRequestsMiddleware
      * - Basic auth
      * - Query parameter
      *
-     * @param  \Illuminate\Http\Request  $request
+     * @param \Illuminate\Http\Request $request
+     *
      * @return string|null
      */
     protected function extractApiKey($request)
@@ -96,13 +97,14 @@ class ThrottleRequests extends ThrottleRequestsMiddleware
     /**
      * Check if the given API key is in the unlimited keys list.
      *
-     * @param  string  $apiKey
+     * @param string $apiKey
+     *
      * @return bool
      */
     protected function isUnlimitedApiKey($apiKey)
     {
         $unlimitedKeys = config('api.throttle.unlimited_keys', []);
-        
+
         if (empty($unlimitedKeys)) {
             return false;
         }

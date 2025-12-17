@@ -34,8 +34,8 @@ class QueryOptimizer
     {
         try {
             $baseQuery = $query->getQuery();
-            $wheres = $baseQuery->wheres;
-            $bindings = $baseQuery->bindings['where'] ?? [];
+            $wheres    = $baseQuery->wheres;
+            $bindings  = $baseQuery->bindings['where'] ?? [];
 
             // If no wheres or bindings, nothing to optimize
             if (empty($wheres)) {
@@ -49,18 +49,19 @@ class QueryOptimizer
             $uniqueClauses = static::removeDuplicates($whereClauses);
 
             // Extract unique wheres and bindings
-            $uniqueWheres = array_column($uniqueClauses, 'where');
+            $uniqueWheres   = array_column($uniqueClauses, 'where');
             $uniqueBindings = static::extractBindings($uniqueClauses);
 
             // Validate that we haven't broken anything
             if (!static::validateOptimization($wheres, $bindings, $uniqueWheres, $uniqueBindings)) {
                 // If validation fails, return original query unchanged
                 Log::warning('QueryOptimizer: Validation failed, returning original query');
+
                 return $query;
             }
 
             // Apply the optimized wheres and bindings
-            $baseQuery->wheres = $uniqueWheres;
+            $baseQuery->wheres            = $uniqueWheres;
             $baseQuery->bindings['where'] = $uniqueBindings;
 
             return $query;
@@ -68,8 +69,9 @@ class QueryOptimizer
             // If anything goes wrong, log and return original query
             Log::error('QueryOptimizer: Exception during optimization', [
                 'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
+                'trace'   => $e->getTraceAsString(),
             ]);
+
             return $query;
         }
     }
@@ -92,7 +94,7 @@ class QueryOptimizer
 
         foreach ($wheres as $where) {
             $clauseBindings = [];
-            $bindingCount = static::getBindingCount($where);
+            $bindingCount   = static::getBindingCount($where);
 
             // Extract the bindings for this where clause
             for ($i = 0; $i < $bindingCount; $i++) {
@@ -106,8 +108,8 @@ class QueryOptimizer
             $signature = static::createWhereSignature($where, $clauseBindings);
 
             $whereClauses[] = [
-                'where' => $where,
-                'bindings' => $clauseBindings,
+                'where'     => $where,
+                'bindings'  => $clauseBindings,
                 'signature' => $signature,
             ];
         }
@@ -148,6 +150,7 @@ class QueryOptimizer
                 if (isset($where['query']) && $where['query'] instanceof Builder) {
                     return count($where['query']->bindings['where'] ?? []);
                 }
+
                 return 0;
 
             case 'Exists':
@@ -156,6 +159,7 @@ class QueryOptimizer
                 if (isset($where['query']) && $where['query'] instanceof Builder) {
                     return count($where['query']->bindings['where'] ?? []);
                 }
+
                 return 0;
 
             case 'Basic':
@@ -164,6 +168,7 @@ class QueryOptimizer
                 if (isset($where['value']) && $where['value'] instanceof Expression) {
                     return 0;
                 }
+
                 return 1;
         }
     }
@@ -183,13 +188,13 @@ class QueryOptimizer
         $type = $where['type'] ?? 'Basic';
 
         $signatureData = [
-            'type' => $type,
+            'type'    => $type,
             'boolean' => $where['boolean'] ?? 'and',
         ];
 
         switch ($type) {
             case 'Basic':
-                $signatureData['column'] = $where['column'] ?? '';
+                $signatureData['column']   = $where['column'] ?? '';
                 $signatureData['operator'] = $where['operator'] ?? '=';
                 if ($where['value'] instanceof Expression) {
                     $signatureData['value'] = (string) $where['value'];
@@ -200,7 +205,7 @@ class QueryOptimizer
 
             case 'In':
             case 'NotIn':
-                $signatureData['column'] = $where['column'] ?? '';
+                $signatureData['column']   = $where['column'] ?? '';
                 $signatureData['bindings'] = $bindings;
                 break;
 
@@ -211,7 +216,7 @@ class QueryOptimizer
 
             case 'Between':
             case 'NotBetween':
-                $signatureData['column'] = $where['column'] ?? '';
+                $signatureData['column']   = $where['column'] ?? '';
                 $signatureData['bindings'] = $bindings;
                 break;
 
@@ -220,7 +225,7 @@ class QueryOptimizer
             case 'NotExists':
                 // For nested queries, include the nested where structure
                 if (isset($where['query']) && $where['query'] instanceof Builder) {
-                    $nestedWheres = $where['query']->wheres ?? [];
+                    $nestedWheres            = $where['query']->wheres ?? [];
                     $signatureData['nested'] = array_map(function ($nestedWhere) {
                         return static::normalizeWhereForSignature($nestedWhere);
                     }, $nestedWheres);
@@ -234,7 +239,7 @@ class QueryOptimizer
 
             default:
                 // For unknown types, include the entire where clause
-                $signatureData['where'] = $where;
+                $signatureData['where']    = $where;
                 $signatureData['bindings'] = $bindings;
         }
 
@@ -251,10 +256,10 @@ class QueryOptimizer
     protected static function normalizeWhereForSignature(array $where): array
     {
         return [
-            'type' => $where['type'] ?? 'Basic',
-            'column' => $where['column'] ?? null,
+            'type'     => $where['type'] ?? 'Basic',
+            'column'   => $where['column'] ?? null,
             'operator' => $where['operator'] ?? null,
-            'boolean' => $where['boolean'] ?? 'and',
+            'boolean'  => $where['boolean'] ?? 'and',
         ];
     }
 
@@ -267,7 +272,7 @@ class QueryOptimizer
      */
     protected static function removeDuplicates(array $whereClauses): array
     {
-        $seen = [];
+        $seen   = [];
         $unique = [];
 
         foreach ($whereClauses as $clause) {
@@ -275,7 +280,7 @@ class QueryOptimizer
 
             if (!isset($seen[$signature])) {
                 $seen[$signature] = true;
-                $unique[] = $clause;
+                $unique[]         = $clause;
             }
         }
 
@@ -319,7 +324,7 @@ class QueryOptimizer
         array $originalWheres,
         array $originalBindings,
         array $uniqueWheres,
-        array $uniqueBindings
+        array $uniqueBindings,
     ): bool {
         // The unique wheres should not be more than the original
         if (count($uniqueWheres) > count($originalWheres)) {

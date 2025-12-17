@@ -7,7 +7,7 @@ use Illuminate\Http\Request;
 
 /**
  * Adds caching capabilities to API models.
- * 
+ *
  * This trait should be used alongside HasApiModelBehavior to provide
  * automatic caching of query results, model instances, and relationships.
  */
@@ -15,7 +15,7 @@ trait HasApiModelCache
 {
     /**
      * Boot the HasApiModelCache trait.
-     * 
+     *
      * Registers model event listeners for automatic cache invalidation.
      */
     public static function bootHasApiModelCache()
@@ -27,10 +27,6 @@ trait HasApiModelCache
 
         // Invalidate cache when model is updated
         static::updated(function ($model) {
-            \Illuminate\Support\Facades\Log::info("Model updated event fired", [
-                'model' => get_class($model),
-                'id' => $model->getKey(),
-            ]);
             $model->invalidateApiCache();
         });
 
@@ -49,10 +45,6 @@ trait HasApiModelCache
 
     /**
      * Query from request with caching.
-     *
-     * @param Request $request
-     * @param \Closure|null $queryCallback
-     * @return mixed
      */
     public function queryFromRequestCached(Request $request, ?\Closure $queryCallback = null)
     {
@@ -71,7 +63,7 @@ trait HasApiModelCache
         return ApiModelCache::cacheQueryResult(
             $this,
             $request,
-            fn() => $this->queryFromRequestWithoutCache($request, $queryCallback),
+            fn () => $this->queryFromRequestWithoutCache($request, $queryCallback),
             $additionalParams,
             ApiModelCache::getQueryTtl()
         );
@@ -79,12 +71,8 @@ trait HasApiModelCache
 
     /**
      * Query from request without caching (internal use).
-     * 
-     * This method bypasses the cache check to avoid infinite recursion.
      *
-     * @param Request $request
-     * @param \Closure|null $queryCallback
-     * @return mixed
+     * This method bypasses the cache check to avoid infinite recursion.
      */
     protected function queryFromRequestWithoutCache(Request $request, ?\Closure $queryCallback = null)
     {
@@ -121,10 +109,6 @@ trait HasApiModelCache
 
     /**
      * Static alias for queryFromRequestCached().
-     *
-     * @param Request $request
-     * @param \Closure|null $queryCallback
-     * @return mixed
      */
     public static function queryWithRequestCached(Request $request, ?\Closure $queryCallback = null)
     {
@@ -134,8 +118,6 @@ trait HasApiModelCache
     /**
      * Find a model by ID with caching.
      *
-     * @param mixed $id
-     * @param array $with
      * @return static|null
      */
     public static function findCached($id, array $with = [])
@@ -145,6 +127,7 @@ trait HasApiModelCache
             if ($model && !empty($with)) {
                 $model->load($with);
             }
+
             return $model;
         }
 
@@ -156,6 +139,7 @@ trait HasApiModelCache
                 if ($model && !empty($with)) {
                     $model->load($with);
                 }
+
                 return $model;
             },
             $with,
@@ -166,8 +150,6 @@ trait HasApiModelCache
     /**
      * Find a model by public ID with caching.
      *
-     * @param string $publicId
-     * @param array $with
      * @return static|null
      */
     public static function findByPublicIdCached(string $publicId, array $with = [])
@@ -177,6 +159,7 @@ trait HasApiModelCache
             if ($model && !empty($with)) {
                 $model->load($with);
             }
+
             return $model;
         }
 
@@ -188,6 +171,7 @@ trait HasApiModelCache
                 if ($model && !empty($with)) {
                     $model->load($with);
                 }
+
                 return $model;
             },
             $with,
@@ -197,9 +181,6 @@ trait HasApiModelCache
 
     /**
      * Load a relationship with caching.
-     *
-     * @param string $relationshipName
-     * @return mixed
      */
     public function loadCached(string $relationshipName)
     {
@@ -215,7 +196,7 @@ trait HasApiModelCache
         $cachedRelation = ApiModelCache::cacheRelationship(
             $this,
             $relationshipName,
-            fn() => $this->{$relationshipName},
+            fn () => $this->{$relationshipName},
             ApiModelCache::getRelationshipTtl()
         );
 
@@ -229,6 +210,7 @@ trait HasApiModelCache
      * Load multiple relationships with caching.
      *
      * @param array|string $relationships
+     *
      * @return $this
      */
     public function loadMultipleCached($relationships)
@@ -248,8 +230,6 @@ trait HasApiModelCache
 
     /**
      * Invalidate all caches for this model.
-     *
-     * @return void
      */
     public function invalidateApiCache(): void
     {
@@ -268,10 +248,6 @@ trait HasApiModelCache
 
     /**
      * Invalidate cache for a specific query.
-     *
-     * @param Request $request
-     * @param array $additionalParams
-     * @return void
      */
     public function invalidateQueryCache(Request $request, array $additionalParams = []): void
     {
@@ -284,10 +260,6 @@ trait HasApiModelCache
 
     /**
      * Warm up cache for common queries.
-     *
-     * @param Request $request
-     * @param \Closure|null $queryCallback
-     * @return void
      */
     public static function warmUpCache(Request $request, ?\Closure $queryCallback = null): void
     {
@@ -299,14 +271,12 @@ trait HasApiModelCache
         ApiModelCache::warmCache(
             $model,
             $request,
-            fn() => $model->queryFromRequest($request, $queryCallback)
+            fn () => $model->queryFromRequest($request, $queryCallback)
         );
     }
 
     /**
      * Check if caching is enabled for this model.
-     *
-     * @return bool
      */
     public function isCachingEnabled(): bool
     {
@@ -320,8 +290,6 @@ trait HasApiModelCache
 
     /**
      * Get cache statistics for this model.
-     *
-     * @return array
      */
     public static function getCacheStats(): array
     {

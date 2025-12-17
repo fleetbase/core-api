@@ -2,15 +2,14 @@
 
 namespace Fleetbase\Http\Middleware;
 
-use Closure;
 use Fleetbase\Support\ApiModelCache;
 use Illuminate\Http\Request;
 
 /**
- * Attach Cache Headers Middleware
- * 
+ * Attach Cache Headers Middleware.
+ *
  * Adds cache status headers to API responses for debugging and monitoring.
- * 
+ *
  * Headers added:
  * - X-Cache-Status: HIT, MISS, ERROR, or DISABLED
  * - X-Cache-Key: The cache key used (only in debug mode)
@@ -19,12 +18,8 @@ class AttachCacheHeaders
 {
     /**
      * Handle an incoming request.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  \Closure  $next
-     * @return mixed
      */
-    public function handle(Request $request, Closure $next)
+    public function handle(Request $request, \Closure $next)
     {
         $response = $next($request);
 
@@ -36,12 +31,13 @@ class AttachCacheHeaders
         // Check if caching is enabled
         if (!ApiModelCache::isCachingEnabled()) {
             $response->headers->set('X-Cache-Status', 'DISABLED');
+
             return $response;
         }
 
         // Get cache status from ApiModelCache
         $cacheStatus = ApiModelCache::getCacheStatus();
-        $cacheKey = ApiModelCache::getCacheKey();
+        $cacheKey    = ApiModelCache::getCacheKey();
 
         // Add cache status header
         if ($cacheStatus) {
@@ -69,13 +65,10 @@ class AttachCacheHeaders
 
     /**
      * Check if the request is an API request.
-     * 
+     *
      * Uses Fleetbase's Http helper to determine if the request is either:
      * - Internal request (int/v1/... - used by Fleetbase applications)
      * - Public request (v1/... - used by end users for integrations/dev)
-     *
-     * @param Request $request
-     * @return bool
      */
     protected function isApiRequest(Request $request): bool
     {
@@ -99,8 +92,6 @@ class AttachCacheHeaders
 
     /**
      * Check if debug mode is enabled.
-     *
-     * @return bool
      */
     protected function isDebugMode(): bool
     {

@@ -20,7 +20,7 @@ trait HasApiModelBehavior
 {
     /**
      * Boot the HasApiModelBehavior trait.
-     * 
+     *
      * Registers model event listeners for automatic cache invalidation.
      */
     public static function bootHasApiModelBehavior()
@@ -55,8 +55,6 @@ trait HasApiModelBehavior
 
     /**
      * Invalidate API cache when model changes.
-     * 
-     * @return void
      */
     protected function invalidateApiCacheOnChange(): void
     {
@@ -203,24 +201,22 @@ trait HasApiModelBehavior
 
     /**
      * Check if this model should use caching.
-     * 
-     * @return bool
      */
     protected function shouldUseCache(): bool
     {
         // Check if HasApiModelCache trait is used
-        $traits = class_uses_recursive(static::class);
+        $traits        = class_uses_recursive(static::class);
         $hasCacheTrait = isset($traits['Fleetbase\\Traits\\HasApiModelCache']);
-        
+
         if (!$hasCacheTrait) {
             return false;
         }
-        
+
         // Check if caching is disabled for this specific model
         if (property_exists($this, 'disableApiCache') && $this->disableApiCache === true) {
             return false;
         }
-        
+
         // Check if API caching is enabled globally
         return config('api.cache.enabled', true);
     }
@@ -759,10 +755,10 @@ trait HasApiModelBehavior
 
         // PERFORMANCE OPTIMIZATION: Check if this is a simple query (no filters, sorts, or relationships)
         // This avoids unnecessary method calls for the most common case
-        $hasFilters = $request->has('filters') || count($request->except(['limit', 'offset', 'page', 'sort', 'order'])) > 0;
-        $hasSorts = $request->has('sort') || $request->has('order');
+        $hasFilters       = $request->has('filters') || count($request->except(['limit', 'offset', 'page', 'sort', 'order'])) > 0;
+        $hasSorts         = $request->has('sort') || $request->has('order');
         $hasRelationships = $request->has('with') || $request->has('expand') || $request->has('without');
-        $hasCounts = $request->has('with_count');
+        $hasCounts        = $request->has('with_count');
 
         if (!$hasFilters && !$hasSorts && !$hasRelationships && !$hasCounts) {
             // Fast path: no additional processing needed (custom filters already applied)
@@ -944,12 +940,12 @@ trait HasApiModelBehavior
     {
         // Extract only filter parameters (exclude pagination, sorting, relationships)
         $filters = $request->except(['limit', 'offset', 'page', 'sort', 'order', 'with', 'expand', 'without', 'with_count']);
-        
+
         if (empty($filters)) {
             return $builder;
         }
 
-        $operators = $this->getQueryOperators();
+        $operators    = $this->getQueryOperators();
         $operatorKeys = array_keys($operators);
 
         foreach ($filters as $key => $value) {
@@ -965,14 +961,14 @@ trait HasApiModelBehavior
 
             // Determine the column name and operator type
             $column = $key;
-            $opKey = '=';
+            $opKey  = '=';
             $opType = '=';
 
             // Check if the parameter has an operator suffix (_in, _like, _gt, etc.)
             foreach ($operatorKeys as $op_key) {
                 if (Str::endsWith(strtolower($key), strtolower($op_key))) {
                     $column = Str::replaceLast($op_key, '', $key);
-                    $opKey = $op_key;
+                    $opKey  = $op_key;
                     $opType = $operators[$op_key];
                     break;
                 }
