@@ -192,17 +192,38 @@ class ApiModelCache
         // For now, we'll rely on tag flush working correctly
 
         try {
+            // Use atomic lock to prevent cache stampede
+            // When cache expires and 250 VUs hit simultaneously, only one rebuilds cache
+            // Others wait for the lock, then get the newly cached value
+            $lockKey = "lock:{$cacheKey}";
+            $lockTimeout = 10; // Wait up to 10 seconds for lock
+            
+            // Try to get the lock
+            $lock = Cache::lock($lockKey, $lockTimeout);
+            
             // FIX #2: Remove Cache::has() check - it primes Laravel's request-level cache
             // and causes false HITs. Always use remember() and check if callback runs.
             $callbackRan = false;
             
-            $result = Cache::tags($tags)->remember($cacheKey, $ttl, function () use ($callback, $cacheKey, &$callbackRan) {
-                $callbackRan = true;
-                Log::debug("Cache MISS for query", ['key' => $cacheKey]);
-                static::$cacheStatus = 'MISS';
-                static::$cacheKey = $cacheKey;
-                return $callback();
+            // If we can't get the lock, wait and retry
+            // This prevents 250 concurrent cache rebuilds
+            $result = $lock->get(function () use ($tags, $cacheKey, $ttl, $callback, &$callbackRan) {
+                // Inside the lock, check if cache was built by another process
+                return Cache::tags($tags)->remember($cacheKey, $ttl, function () use ($callback, $cacheKey, &$callbackRan) {
+                    $callbackRan = true;
+                    Log::debug("Cache MISS for query (rebuilding)", ['key' => $cacheKey]);
+                    static::$cacheStatus = 'MISS';
+                    static::$cacheKey = $cacheKey;
+                    return $callback();
+                });
             });
+            
+            // If lock->get() returns null, it means we couldn't get the lock in time
+            // Fall back to reading cache without lock (might be stale, but better than nothing)
+            if ($result === null) {
+                Log::warning("Cache lock timeout, reading without lock", ['key' => $cacheKey]);
+                $result = Cache::tags($tags)->remember($cacheKey, $ttl, $callback);
+            }
             
             if (!$callbackRan) {
                 Log::debug("Cache HIT for query", ['key' => $cacheKey]);
