@@ -3,7 +3,6 @@
 namespace Fleetbase\Traits;
 
 use Fleetbase\Support\Utils;
-use Illuminate\Support\Facades\DB;
 
 trait HasPublicId
 {
@@ -26,7 +25,7 @@ trait HasPublicId
     }
 
     /**
-     * Generate a hashid with maximum uniqueness.
+     * Generate a hashid with maximum uniqueness using cryptographically secure random numbers.
      *
      * @return string
      */
@@ -35,17 +34,19 @@ trait HasPublicId
         $sqids  = new \Sqids\Sqids();
         
         // Maximize uniqueness with multiple entropy sources
+        // CRITICAL: Use random_int() instead of rand() for cryptographic security
         $hashid = lcfirst($sqids->encode([
-            time(),                              // Current second
-            (int)(microtime(true) * 1000000),   // Microseconds (increased precision)
-            getmypid(),                          // Process ID
-            rand(0, 999999),                     // Large random number
-            rand(0, 999999),                     // Another large random number
-            rand(0, 999999),                     // Third random number for extra entropy
+            time(),                                    // Current second
+            (int)(microtime(true) * 1000000),         // Microseconds
+            getmypid(),                                // Process ID
+            random_int(0, PHP_INT_MAX),               // Cryptographically secure random
+            random_int(0, PHP_INT_MAX),               // Another secure random
+            random_int(0, PHP_INT_MAX),               // Third secure random
+            crc32(uniqid('', true)),                  // Unique ID hash for extra entropy
         ]));
         
-        // Increase from 7 to 10 characters for better collision resistance
-        // 62^10 = 839 quadrillion combinations vs 62^7 = 3.5 trillion
+        // 10 characters for better collision resistance
+        // 62^10 = 839 quadrillion combinations
         $hashid = substr($hashid, 0, 10);
 
         return $hashid;
@@ -80,7 +81,6 @@ trait HasPublicId
 
         if ($exists) {
             // Exponential backoff: 2^attempt milliseconds
-            // attempt 0: 1ms, attempt 1: 2ms, attempt 2: 4ms, etc.
             $backoffMs = pow(2, $attempt);
             usleep($backoffMs * 1000);
             
