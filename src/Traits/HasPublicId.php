@@ -3,6 +3,7 @@
 namespace Fleetbase\Traits;
 
 use Fleetbase\Support\Utils;
+use Illuminate\Support\Facades\DB;
 
 trait HasPublicId
 {
@@ -25,7 +26,7 @@ trait HasPublicId
     }
 
     /**
-     * Generate a hashid with improved uniqueness using microseconds and process ID.
+     * Generate a hashid with maximum uniqueness.
      *
      * @return string
      */
@@ -33,33 +34,36 @@ trait HasPublicId
     {
         $sqids  = new \Sqids\Sqids();
         
-        // Improve uniqueness by adding microseconds and process ID
-        // This significantly reduces collision probability under high load
+        // Maximize uniqueness with multiple entropy sources
         $hashid = lcfirst($sqids->encode([
-            time(),
-            (int)(microtime(true) * 10000), // microseconds for sub-second uniqueness
-            getmypid(),                      // process ID for multi-process uniqueness
-            rand(),
-            rand()
+            time(),                              // Current second
+            (int)(microtime(true) * 1000000),   // Microseconds (increased precision)
+            getmypid(),                          // Process ID
+            rand(0, 999999),                     // Large random number
+            rand(0, 999999),                     // Another large random number
+            rand(0, 999999),                     // Third random number for extra entropy
         ]));
         
-        $hashid = substr($hashid, 0, 7);
+        // Increase from 7 to 10 characters for better collision resistance
+        // 62^10 = 839 quadrillion combinations vs 62^7 = 3.5 trillion
+        $hashid = substr($hashid, 0, 10);
 
         return $hashid;
     }
 
     /**
-     * Generate a unique public ID with race condition protection.
+     * Generate a unique public ID with robust race condition protection.
      *
      * @param string|null $type The public ID type prefix
      * @param int $attempt Current attempt number (for internal recursion tracking)
      * @return string
+     * @throws \RuntimeException If unable to generate unique ID after max attempts
      */
     public static function generatePublicId(?string $type = null, int $attempt = 0): string
     {
         // Prevent infinite loops
         if ($attempt > 10) {
-            throw new \RuntimeException('Failed to generate unique public_id after 10 attempts');
+            throw new \RuntimeException('Failed to generate unique public_id after 10 attempts. This indicates a serious collision issue.');
         }
 
         $model  = new static();
@@ -70,12 +74,16 @@ trait HasPublicId
         $hashid   = static::getPublicId();
         $publicId = $type . '_' . $hashid;
         
-        // Use exact match instead of LIKE for better performance and accuracy
+        // Check for existing public_id with exact match
+        // Use exists() for performance (doesn't load full model)
         $exists = $model->where('public_id', $publicId)->withTrashed()->exists();
 
         if ($exists) {
-            // Add small random delay to reduce collision probability on retry
-            usleep(rand(100, 1000)); // 0.1-1ms
+            // Exponential backoff: 2^attempt milliseconds
+            // attempt 0: 1ms, attempt 1: 2ms, attempt 2: 4ms, etc.
+            $backoffMs = pow(2, $attempt);
+            usleep($backoffMs * 1000);
+            
             return static::generatePublicId($type, $attempt + 1);
         }
 
