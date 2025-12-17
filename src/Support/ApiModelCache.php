@@ -154,7 +154,8 @@ class ApiModelCache
     {
         // Check if caching is enabled
         if (!static::isCachingEnabled()) {
-            return $callback();
+            $result = $callback();
+            return $result ?? collect([]); // Guard against null
         }
 
         $cacheKey    = static::generateQueryCacheKey($model, $request, $additionalParams);
@@ -194,16 +195,33 @@ class ApiModelCache
                 });
             });
 
-            // If lock->get() returns null, it means we couldn't get the lock in time
-            // Fall back to reading cache without lock (might be stale, but better than nothing)
-            if ($result === null) {
-                Log::warning('Cache lock timeout, reading without lock', ['key' => $cacheKey]);
-                $result = Cache::tags($tags)->remember($cacheKey, $ttl, $callback);
+            // FIX: If lock->get() returns null, it means we couldn't get the lock in time
+            // Fall back to reading cache without lock, or execute callback directly
+            if ($result === null || $result === false) {
+                Log::warning('Cache lock timeout, executing callback directly', ['key' => $cacheKey]);
+                
+                // Try cache one more time without lock
+                $result = Cache::tags($tags)->get($cacheKey);
+                
+                // If still no cache, execute callback directly
+                if ($result === null || $result === false) {
+                    $result = $callback();
+                }
             }
 
-            if (!$callbackRan) {
+            if (!$callbackRan && $result !== null) {
                 static::$cacheStatus = 'HIT';
                 static::$cacheKey    = $cacheKey;
+            }
+
+            // FINAL GUARD: Ensure we never return null/false
+            // Always return a collection or paginator
+            if ($result === null || $result === false) {
+                Log::error('Cache query result is null/false, returning empty collection', [
+                    'key'   => $cacheKey,
+                    'model' => get_class($model),
+                ]);
+                return collect([]);
             }
 
             return $result;
@@ -213,7 +231,10 @@ class ApiModelCache
                 'error' => $e->getMessage(),
             ]);
 
-            return $callback();
+            $result = $callback();
+            
+            // Guard against callback returning null/false
+            return $result ?? collect([]);
         }
     }
 
