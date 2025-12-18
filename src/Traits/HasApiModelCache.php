@@ -54,10 +54,10 @@ trait HasApiModelCache
         // Generate additional params from query callback
         $additionalParams = [];
         if ($queryCallback) {
-            // Extract parameters that might affect the query
+            // Mark that a callback is present, but don't hash it
+            // The callback's effect on results is already captured by request parameters
+            // Using spl_object_id() would create unique keys per request, preventing cache hits
             $additionalParams['has_callback'] = true;
-            // Use object ID instead of serialize (closures can't be serialized)
-            $additionalParams['callback_hash'] = md5(spl_object_id($queryCallback));
         }
 
         return ApiModelCache::cacheQueryResult(
