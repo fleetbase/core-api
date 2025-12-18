@@ -190,10 +190,19 @@ class ApiModelCache
             // This is rare, but we need graceful fallback
             if ($result === null) {
                 // Try to read from cache (might have been populated by another process)
-                $result = Cache::tags($tags)->get($cacheKey) ?? $callback();
+                $cached = Cache::tags($tags)->get($cacheKey);
+                if ($cached !== null) {
+                    // Cache hit from fallback
+                    $result              = $cached;
+                    static::$cacheStatus = 'HIT';
+                } else {
+                    // Cache miss - execute callback
+                    $result              = $callback();
+                    static::$cacheStatus = 'MISS';
+                }
             }
 
-            // Default to HIT if MISS was never set
+            // Default to HIT if MISS was never set (normal path through remember())
             static::$cacheStatus ??= 'HIT';
 
             // FINAL GUARD: Ensure we never return null/false
@@ -204,7 +213,9 @@ class ApiModelCache
                 'error' => $e->getMessage(),
             ]);
 
-            $result = $callback();
+            // Exception means cache failed, so this is a MISS
+            static::$cacheStatus = 'MISS';
+            $result              = $callback();
             
             // Guard against callback returning null/false
             return $result ?? collect([]);
