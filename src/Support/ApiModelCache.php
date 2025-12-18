@@ -169,25 +169,16 @@ class ApiModelCache
         // For now, we'll rely on tag flush working correctly
 
         try {
+            // Initialize cache status and key
+            static::$cacheStatus = null;
+            static::$cacheKey    = $cacheKey;
+
             // Use atomic lock to prevent cache stampede
-            // Lock expiration: 10 seconds (how long lock lives)
-            // Wait timeout: 10 seconds (how long to wait for lock)
-            $lockKey        = "lock:{$cacheKey}";
-            $lockExpiration = 10;
-            $waitTimeout    = 10;
-
-            $lock = Cache::lock($lockKey, $lockExpiration);
-
-            // Track if callback was executed (for cache status)
-            $callbackRan = false;
-
-            // Use block() to WAIT for lock instead of get() which returns immediately
-            // This ensures concurrent requests wait for cache to be built, not rebuild it themselves
-            $result = $lock->block($waitTimeout, function () use ($tags, $cacheKey, $ttl, $callback, &$callbackRan) {
+            $lock   = Cache::lock("lock:{$cacheKey}", 10);
+            $result = $lock->block(10, function () use ($tags, $cacheKey, $ttl, $callback) {
                 // Inside the lock, use remember() to check if cache exists
-                return Cache::tags($tags)->remember($cacheKey, $ttl, function () use ($callback, $cacheKey, &$callbackRan) {
+                return Cache::tags($tags)->remember($cacheKey, $ttl, function () use ($callback, $cacheKey) {
                     // Callback only runs if cache is empty/expired
-                    $callbackRan         = true;
                     static::$cacheStatus = 'MISS';
                     static::$cacheKey    = $cacheKey;
 
@@ -197,41 +188,16 @@ class ApiModelCache
 
             // If block() timed out (couldn't get lock in 10 seconds), result is null
             // This is rare, but we need graceful fallback
-            if ($result === null || $result === false) {
+            if ($result === null) {
                 // Try to read from cache (might have been populated by another process)
-                $result = Cache::tags($tags)->get($cacheKey);
-
-                if ($result !== null && $result !== false) {
-                    // Cache hit from fallback
-                    static::$cacheStatus = 'HIT';
-                    static::$cacheKey    = $cacheKey;
-                } else {
-                    // Last resort: execute callback directly
-                    // This should be rare (only if lock timeout AND no cache)
-                    $result              = $callback();
-                    static::$cacheStatus = 'MISS';
-                    static::$cacheKey    = $cacheKey;
-                }
-            } elseif (!$callbackRan) {
-                // Lock was acquired, remember() returned cached data (callback didn't run)
-                static::$cacheStatus = 'HIT';
-                static::$cacheKey    = $cacheKey;
+                $result = Cache::tags($tags)->get($cacheKey) ?? $callback();
             }
 
-            // Ensure lock is released (block() handles this, but be explicit)
-            optional($lock)->release();
+            // Default to HIT if MISS was never set
+            static::$cacheStatus ??= 'HIT';
 
             // FINAL GUARD: Ensure we never return null/false
-            // Always return a collection or paginator
-            if ($result === null || $result === false) {
-                Log::error('Cache query result is null/false, returning empty collection', [
-                    'key'   => $cacheKey,
-                    'model' => get_class($model),
-                ]);
-                return collect([]);
-            }
-
-            return $result;
+            return $result ?? collect([]);
         } catch (\Exception $e) {
             Log::warning('Cache error, falling back to direct query', [
                 'key'   => $cacheKey,
