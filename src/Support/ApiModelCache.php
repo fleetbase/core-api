@@ -189,7 +189,7 @@ class ApiModelCache
                     // Callback only runs if cache is empty/expired
                     $callbackRan         = true;
                     static::$cacheStatus = 'MISS';
-                    static::$cacheKey    = static::generateQueryCacheKey(new static(), request());
+                    static::$cacheKey    = $cacheKey;
 
                     return $callback();
                 });
