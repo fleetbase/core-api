@@ -185,7 +185,7 @@ class ApiModelCache
             // This ensures concurrent requests wait for cache to be built, not rebuild it themselves
             $result = $lock->block($waitTimeout, function () use ($tags, $cacheKey, $ttl, $callback, &$callbackRan) {
                 // Inside the lock, use remember() to check if cache exists
-                return Cache::tags($tags)->remember($cacheKey, $ttl, function () use ($callback, &$callbackRan) {
+                return Cache::tags($tags)->remember($cacheKey, $ttl, function () use ($callback, $cacheKey, &$callbackRan) {
                     // Callback only runs if cache is empty/expired
                     $callbackRan         = true;
                     static::$cacheStatus = 'MISS';
