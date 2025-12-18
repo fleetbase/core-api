@@ -56,6 +56,14 @@ trait HasApiControllerBehavior
     public $resource;
 
     /**
+     * The lightweight API Resource for index/list views.
+     * When set, this resource will be used for queryRecord collections instead of $resource.
+     *
+     * @var \Fleetbase\Http\Resources\FleetbaseResource|null
+     */
+    public $indexResource;
+
+    /**
      * The target Service the controller belongs to.
      *
      * @var string
@@ -374,13 +382,16 @@ trait HasApiControllerBehavior
             return new $this->resource($data);
         }
 
-        if (Http::isInternalRequest($request)) {
-            $this->resource::wrap($this->resourcePluralName);
+        // Use indexResource if set, otherwise fall back to resource
+        $resourceClass = $this->indexResource ?? $this->resource;
 
-            return $this->resource::collection($data);
+        if (Http::isInternalRequest($request)) {
+            $resourceClass::wrap($this->resourcePluralName);
+
+            return $resourceClass::collection($data);
         }
 
-        return $this->resource::collection($data);
+        return $resourceClass::collection($data);
     }
 
     /**
