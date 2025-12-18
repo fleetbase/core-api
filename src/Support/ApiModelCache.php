@@ -198,14 +198,18 @@ class ApiModelCache
             // FIX: If lock->get() returns null, it means we couldn't get the lock in time
             // Fall back to reading cache without lock, or execute callback directly
             if ($result === null || $result === false) {
-                Log::warning('Cache lock timeout, executing callback directly', ['key' => $cacheKey]);
-                
                 // Try cache one more time without lock
                 $result = Cache::tags($tags)->get($cacheKey);
                 
-                // If still no cache, execute callback directly
-                if ($result === null || $result === false) {
-                    $result = $callback();
+                if ($result !== null && $result !== false) {
+                    // We got cached data from fallback!
+                    static::$cacheStatus = 'HIT';
+                    static::$cacheKey    = $cacheKey;
+                } else {
+                    // No cache available, execute callback directly
+                    $result              = $callback();
+                    static::$cacheStatus = 'MISS';
+                    static::$cacheKey    = $cacheKey;
                 }
             }
 
