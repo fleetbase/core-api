@@ -170,53 +170,56 @@ class ApiModelCache
 
         try {
             // Use atomic lock to prevent cache stampede
-            // When cache expires and 250 VUs hit simultaneously, only one rebuilds cache
-            // Others wait for the lock, then get the newly cached value
-            $lockKey     = "lock:{$cacheKey}";
-            $lockTimeout = 10; // Wait up to 10 seconds for lock
+            // Lock expiration: 10 seconds (how long lock lives)
+            // Wait timeout: 10 seconds (how long to wait for lock)
+            $lockKey        = "lock:{$cacheKey}";
+            $lockExpiration = 10;
+            $waitTimeout    = 10;
 
-            // Try to get the lock
-            $lock = Cache::lock($lockKey, $lockTimeout);
+            $lock = Cache::lock($lockKey, $lockExpiration);
 
-            // FIX #2: Remove Cache::has() check - it primes Laravel's request-level cache
-            // and causes false HITs. Always use remember() and check if callback runs.
+            // Track if callback was executed (for cache status)
             $callbackRan = false;
 
-            // If we can't get the lock, wait and retry
-            // This prevents 250 concurrent cache rebuilds
-            $result = $lock->get(function () use ($tags, $cacheKey, $ttl, $callback, &$callbackRan) {
-                // Inside the lock, check if cache was built by another process
-                return Cache::tags($tags)->remember($cacheKey, $ttl, function () use ($callback, $cacheKey, &$callbackRan) {
+            // Use block() to WAIT for lock instead of get() which returns immediately
+            // This ensures concurrent requests wait for cache to be built, not rebuild it themselves
+            $result = $lock->block($waitTimeout, function () use ($tags, $cacheKey, $ttl, $callback, &$callbackRan) {
+                // Inside the lock, use remember() to check if cache exists
+                return Cache::tags($tags)->remember($cacheKey, $ttl, function () use ($callback, &$callbackRan) {
+                    // Callback only runs if cache is empty/expired
                     $callbackRan         = true;
                     static::$cacheStatus = 'MISS';
-                    static::$cacheKey    = $cacheKey;
+                    static::$cacheKey    = static::generateQueryCacheKey(new static(), request());
 
                     return $callback();
                 });
             });
 
-            // FIX: If lock->get() returns null, it means we couldn't get the lock in time
-            // Fall back to reading cache without lock, or execute callback directly
+            // If block() timed out (couldn't get lock in 10 seconds), result is null
+            // This is rare, but we need graceful fallback
             if ($result === null || $result === false) {
-                // Try cache one more time without lock
+                // Try to read from cache (might have been populated by another process)
                 $result = Cache::tags($tags)->get($cacheKey);
-                
+
                 if ($result !== null && $result !== false) {
-                    // We got cached data from fallback!
+                    // Cache hit from fallback
                     static::$cacheStatus = 'HIT';
                     static::$cacheKey    = $cacheKey;
                 } else {
-                    // No cache available, execute callback directly
+                    // Last resort: execute callback directly
+                    // This should be rare (only if lock timeout AND no cache)
                     $result              = $callback();
                     static::$cacheStatus = 'MISS';
                     static::$cacheKey    = $cacheKey;
                 }
-            }
-
-            if (!$callbackRan && $result !== null) {
+            } elseif (!$callbackRan) {
+                // Lock was acquired, remember() returned cached data (callback didn't run)
                 static::$cacheStatus = 'HIT';
                 static::$cacheKey    = $cacheKey;
             }
+
+            // Ensure lock is released (block() handles this, but be explicit)
+            optional($lock)->release();
 
             // FINAL GUARD: Ensure we never return null/false
             // Always return a collection or paginator
