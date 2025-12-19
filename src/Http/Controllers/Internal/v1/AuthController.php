@@ -660,7 +660,8 @@ class AuthController extends Controller
          * - count of organizations
          */
         $etagPayload = $companies->map(function ($company) {
-            return $company->uuid . ':' . $company->updated_at . ':' . $company->owner?->updated_at;
+            $ownerTimestamp = $company->owner?->updated_at?->timestamp ?? 0;
+            return $company->uuid . ':' . $company->updated_at->timestamp . ':' . $ownerTimestamp;
         })->join('|');
 
         // Add count to ETag (if orgs added/removed)
