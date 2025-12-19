@@ -58,6 +58,7 @@ class CoreServiceProvider extends ServiceProvider
             \Fleetbase\Http\Middleware\SetupFleetbaseSession::class,
             \Fleetbase\Http\Middleware\AuthorizationGuard::class,
             \Fleetbase\Http\Middleware\TrackPresence::class,
+            \Fleetbase\Http\Middleware\ValidateETag::class,
         ],
         'fleetbase.api' => [
             \Fleetbase\Http\Middleware\ThrottleRequests::class,
