@@ -197,7 +197,7 @@ class UserController extends FleetbaseController
             return response()->json(['user' => $cachedData])
                 ->setEtag($etag, true)  // Use weak ETag for compression compatibility
                 ->setLastModified($user->updated_at)
-                ->header('Cache-Control', 'private, max-age=' . UserCacheService::getBrowserCacheTTL() . ', must-revalidate')
+                ->header('Cache-Control', 'private, no-cache, must-revalidate')
                 ->header('X-Cache-Hit', 'true');
         }
 
@@ -216,7 +216,7 @@ class UserController extends FleetbaseController
         return response()->json(['user' => $userArray])
             ->setEtag($etag, true)  // Use weak ETag for compression compatibility
             ->setLastModified($user->updated_at)
-            ->header('Cache-Control', 'private, max-age=' . UserCacheService::getBrowserCacheTTL() . ', must-revalidate')
+            ->header('Cache-Control', 'private, no-cache, must-revalidate')
             ->header('X-Cache-Hit', 'false');
     }
 
