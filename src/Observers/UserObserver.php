@@ -5,6 +5,7 @@ namespace Fleetbase\Observers;
 use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\User;
 use Fleetbase\Services\UserCacheService;
+use Illuminate\Support\Facades\Cache;
 
 class UserObserver
 {
@@ -17,8 +18,11 @@ class UserObserver
      */
     public function updated(User $user): void
     {
-        // Invalidate cache when user is updated
+        // Invalidate user cache when user is updated
         UserCacheService::invalidateUser($user);
+
+        // Invalidate organizations cache (user might be an owner)
+        $this->invalidateOrganizationsCache($user);
     }
 
     /**
@@ -28,8 +32,11 @@ class UserObserver
      */
     public function deleted(User $user)
     {
-        // Invalidate cache when user is deleted
+        // Invalidate user cache when user is deleted
         UserCacheService::invalidateUser($user);
+
+        // Invalidate organizations cache
+        $this->invalidateOrganizationsCache($user);
 
         // remove company user records
         if (session('company')) {
@@ -46,7 +53,27 @@ class UserObserver
      */
     public function restored(User $user): void
     {
-        // Invalidate cache when user is restored
+        // Invalidate user cache when user is restored
         UserCacheService::invalidateUser($user);
+
+        // Invalidate organizations cache
+        $this->invalidateOrganizationsCache($user);
+    }
+
+    /**
+     * Invalidate organizations cache for the user.
+     *
+     * This clears the cached organizations list which includes owner relationships.
+     * When a user updates their profile and they are an owner of organizations,
+     * the cached organization data needs to be refreshed to reflect the updated owner info.
+     *
+     * @param \Fleetbase\Models\User $user
+     *
+     * @return void
+     */
+    private function invalidateOrganizationsCache(User $user): void
+    {
+        $cacheKey = "user_organizations_{$user->uuid}";
+        Cache::forget($cacheKey);
     }
 }

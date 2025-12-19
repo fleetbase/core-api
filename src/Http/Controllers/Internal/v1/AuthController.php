@@ -669,8 +669,8 @@ class AuthController extends Controller
 
         return Organization::collection($companies)
             ->response()
-            ->setEtag($etag)
-            ->header('Cache-Control', 'private, max-age=1800, must-revalidate');
+            ->setEtag($etag, true)  // Use weak ETag for compression compatibility
+            ->header('Cache-Control', 'private, no-cache, must-revalidate');
     }
 
     /**
