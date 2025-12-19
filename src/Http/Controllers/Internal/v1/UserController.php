@@ -170,6 +170,9 @@ class UserController extends FleetbaseController
             return response()->error('No user session found', 401);
         }
 
+        // Refresh user to get latest updated_at for accurate ETag generation
+        $user->refresh();
+
         // Check if caching is enabled
         if (!UserCacheService::isEnabled()) {
             return response()->json([
