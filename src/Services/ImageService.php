@@ -98,6 +98,7 @@ class ImageService
     ): string {
         $quality      = $quality ?? $this->defaultQuality;
         $allowUpscale = $allowUpscale ?? $this->allowUpscale;
+        $originalExtension = $file->getClientOriginalExtension();
 
         try {
             $image = $this->manager->read($file->getRealPath());
@@ -120,7 +121,7 @@ class ImageService
                     if ($originalWidth <= $width && $originalHeight <= $height) {
                         Log::debug('Image already smaller than target, skipping resize');
 
-                        return $this->encodeImage($image, $format, $quality);
+                        return $this->encodeImage($image, $format, $quality, $originalExtension);
                     }
                 } elseif ($width && $originalWidth <= $width) {
                     Log::debug('Image width already smaller, skipping resize');
@@ -173,7 +174,7 @@ class ImageService
                     break;
             }
 
-            $result = $this->encodeImage($image, $format, $quality);
+            $result = $this->encodeImage($image, $format, $quality, $originalExtension);
 
             Log::info('Image resized successfully', [
                 'final_size' => strlen($result) . ' bytes',
@@ -238,7 +239,7 @@ class ImageService
     /**
      * Encode image to format.
      */
-    protected function encodeImage($image, ?string $format, int $quality): string
+    protected function encodeImage($image, ?string $format, int $quality, ?string $originalExtension = null): string
     {
         if ($format) {
             Log::debug('Converting image format', ['format' => $format, 'quality' => $quality]);
@@ -246,9 +247,8 @@ class ImageService
             return $image->toFormat($format, $quality)->toString();
         }
 
-        // For default encoding, use toJpeg() or toPng() with quality
-        // Intervention Image v3 doesn't have a generic encode() with quality
-        $extension = $image->origin()->extension() ?? 'jpg';
+        // Use original extension or default to jpg
+        $extension = $originalExtension ?? 'jpg';
         
         switch (strtolower($extension)) {
             case 'png':
