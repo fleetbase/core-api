@@ -27,6 +27,7 @@ use Fleetbase\Support\Auth;
 use Fleetbase\Support\NotificationRegistry;
 use Fleetbase\Support\TwoFactorAuth;
 use Fleetbase\Support\Utils;
+use Fleetbase\Services\UserCacheService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
@@ -169,11 +170,46 @@ class UserController extends FleetbaseController
             return response()->error('No user session found', 401);
         }
 
-        return response()->json(
-            [
+        // Check if caching is enabled
+        if (!UserCacheService::isEnabled()) {
+            return response()->json([
                 'user' => new $this->resource($user),
-            ]
-        );
+            ]);
+        }
+
+        // Generate ETag for cache validation
+        $etag = UserCacheService::generateETag($user);
+
+        // Try to get from server cache
+        $companyId = session('company');
+        $cachedData = UserCacheService::get($user->id, $companyId);
+
+        if ($cachedData) {
+            // Return cached data with cache headers
+            return response()->json(['user' => $cachedData])
+                ->setEtag($etag)
+                ->setLastModified($user->updated_at)
+                ->header('Cache-Control', 'private, no-cache, must-revalidate')
+                ->header('X-Cache-Hit', 'true');
+        }
+
+        // Cache miss - load fresh data with eager loading
+        // Note: role, policies, permissions are accessors that use companyUser relationship
+        $user->loadCompanyUser();
+
+        // Transform to resource
+        $userData = new $this->resource($user);
+        $userArray = $userData->toArray($request);
+
+        // Store in cache
+        UserCacheService::put($user->id, $companyId, $userArray);
+
+        // Return with cache headers
+        return response()->json(['user' => $userArray])
+            ->setEtag($etag)
+            ->setLastModified($user->updated_at)
+            ->header('Cache-Control', 'private, no-cache, must-revalidate')
+            ->header('X-Cache-Hit', 'false');
     }
 
     /**

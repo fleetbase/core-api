@@ -34,5 +34,10 @@ return [
         'icon_url' => 'https://flb-assets.s3.ap-southeast-1.amazonaws.com/static/fleetbase-icon.png'
     ],
     'version' => env('FLEETBASE_VERSION', '0.7.1'),
-    'instance_id' => env('FLEETBASE_INSTANCE_ID') ?? (file_exists(base_path('.fleetbase-id')) ? trim(file_get_contents(base_path('.fleetbase-id'))) : null)
+    'instance_id' => env('FLEETBASE_INSTANCE_ID') ?? (file_exists(base_path('.fleetbase-id')) ? trim(file_get_contents(base_path('.fleetbase-id'))) : null),
+    'user_cache' => [
+        'enabled' => env('USER_CACHE_ENABLED', true),
+        'server_ttl' => (int) env('USER_CACHE_SERVER_TTL', 900), // 15 minutes
+        'browser_ttl' => (int) env('USER_CACHE_BROWSER_TTL', 300), // 5 minutes
+    ]
 ];

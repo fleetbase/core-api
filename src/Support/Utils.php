@@ -1005,7 +1005,20 @@ class Utils
      */
     public static function isPublicId($string)
     {
-        return is_string($string) && Str::contains($string, ['_']) && strlen(explode('_', $string)[1]) === 7;
+        if (!is_string($string) || !Str::contains($string, ['_'])) {
+            return false;
+        }
+
+        $parts = explode('_', $string);
+        if (count($parts) < 2) {
+            return false;
+        }
+
+        $hash = $parts[1];
+
+        // Support both legacy (7 chars) and new (10 chars) public ID formats
+        // Hash should be alphanumeric and between 7-15 characters for future-proofing
+        return ctype_alnum($hash) && strlen($hash) >= 7 && strlen($hash) <= 15;
     }
 
     /**
@@ -1773,11 +1786,17 @@ class Utils
     }
 
     /**
-     * Converts a string or class name to an ember resource type \Fleetbase\FleetOps\Models\IntegratedVendor -> integrated-vendor.
+     * Converts a fully qualified class name to an ember resource type with namespace prefix.
      *
-     * @param string $className
+     * Examples:
+     * - \Fleetbase\FleetOps\Models\IntegratedVendor -> fleet-ops:integrated-vendor
+     * - \Fleetbase\Fliit\Models\Client -> fliit:client
+     * - fliit:client -> fliit:client (already short format, returned as-is)
+     * - SimpleClass -> simple-class (no namespace, just kebab-case)
      *
-     * @return string|null
+     * @param string $className The fully qualified class name or short type
+     *
+     * @return string|null The namespaced type string (package:type) or null if input is invalid
      */
     public static function toEmberResourceType($className)
     {
@@ -1785,10 +1804,34 @@ class Utils
             return null;
         }
 
-        $baseClassName     = static::classBasename($className);
-        $emberResourceType = Str::snake($baseClassName, '-');
+        // If it's already in short format (contains ':'), return as-is
+        if (Str::contains($className, ':')) {
+            return $className;
+        }
 
-        return $emberResourceType;
+        // If it doesn't contain namespace separator, just convert to kebab-case
+        if (!Str::contains($className, '\\')) {
+            return Str::snake($className, '-');
+        }
+
+        // Extract package name from namespace
+        // e.g., "Fleetbase\\Fliit\\Models\\Client" -> "fliit:client"
+        // e.g., "Fleetbase\\FleetOps\\Models\\Vendor" -> "fleet-ops:vendor"
+        $parts = explode('\\', $className);
+
+        // Get the base class name
+        $baseClassName = end($parts);
+        $baseType      = Str::snake($baseClassName, '-');
+
+        // Get the package name (second part of namespace after Fleetbase)
+        if (count($parts) >= 3 && $parts[0] === 'Fleetbase') {
+            $packageName = Str::snake($parts[1], '-');
+
+            return $packageName . ':' . $baseType;
+        }
+
+        // Fallback to just the base type
+        return $baseType;
     }
 
     public static function dateRange($date)

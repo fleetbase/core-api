@@ -5,6 +5,7 @@ namespace Fleetbase\Models;
 use Fleetbase\Casts\Json;
 use Fleetbase\Casts\PolymorphicType;
 use Fleetbase\Traits\HasApiModelBehavior;
+use Fleetbase\Traits\HasApiModelCache;
 use Fleetbase\Traits\HasMetaAttributes;
 use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasUuid;
@@ -14,6 +15,7 @@ class Transaction extends Model
     use HasUuid;
     use HasPublicId;
     use HasApiModelBehavior;
+    use HasApiModelCache;
     use HasMetaAttributes;
 
     /**

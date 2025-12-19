@@ -38,6 +38,39 @@ abstract class Filter
     protected $builder;
 
     /**
+     * Cache for method existence checks to avoid repeated reflection.
+     *
+     * @var array
+     */
+    protected $methodCache = [];
+
+    /**
+     * Parameters to skip during filter application.
+     * These are handled elsewhere or are not filter parameters.
+     *
+     * @var array
+     */
+    protected static $skipParams = [
+        'limit',
+        'offset',
+        'page',
+        'sort',
+        'order',
+        'with',
+        'expand',
+        'without',
+        'with_count',
+        'without_relations',
+    ];
+
+    /**
+     * Cached range patterns for range filter detection.
+     *
+     * @var array|null
+     */
+    protected static $rangePatterns;
+
+    /**
      * Initialize a new filter instance.
      *
      * @return void
@@ -55,12 +88,20 @@ abstract class Filter
     {
         $this->builder = $builder;
 
-        foreach ($this->request->all() as $name => $value) {
+        // PERFORMANCE OPTIMIZATION: Filter out non-filter parameters early
+        // This avoids iterating through pagination, sorting, and relationship params
+        $filterParams = array_diff_key(
+            $this->request->all(),
+            array_flip(static::$skipParams)
+        );
+
+        foreach ($filterParams as $name => $value) {
             $this->applyFilter($name, $value);
         }
 
         $this->applyRangeFilters();
 
+        // CRITICAL: Always apply queryForInternal/queryForPublic for data isolation
         if (Http::isInternalRequest($this->request) && method_exists($this, 'queryForInternal')) {
             call_user_func([$this, 'queryForInternal']);
         }
@@ -75,34 +116,70 @@ abstract class Filter
     /**
      * Find dynamically named column filters and apply them.
      *
+     * PERFORMANCE OPTIMIZATIONS:
+     * - Early return for empty values
+     * - Cache method existence checks
+     * - Direct method calls instead of call_user_func_array
+     *
      * @param string $name
      *
      * @return void
      */
     private function applyFilter($name, $value)
     {
-        $methodNames = [$name, Str::camel($name)];
+        // PERFORMANCE OPTIMIZATION: Skip empty values early
+        if (empty($value)) {
+            return;
+        }
 
-        foreach ($methodNames as $methodName) {
-            // if query method value cannot be empty
-            if (empty($value)) {
-                continue;
+        // PERFORMANCE OPTIMIZATION: Check cache first to avoid repeated reflection
+        $cacheKey = $name;
+        if (!isset($this->methodCache[$cacheKey])) {
+            $methodNames                  = [$name, Str::camel($name)];
+            $this->methodCache[$cacheKey] = null;
+
+            foreach ($methodNames as $methodName) {
+                if (method_exists($this, $methodName)) {
+                    $this->methodCache[$cacheKey] = $methodName;
+                    break;
+                }
             }
 
-            if (method_exists($this, $methodName) || static::isExpansion($methodName)) {
-                call_user_func_array([$this, $methodName], [$value]);
-                break;
+            // Check if it's an expansion (only if method not found)
+            if (!$this->methodCache[$cacheKey] && static::isExpansion($name)) {
+                $this->methodCache[$cacheKey] = $name;
             }
+        }
+
+        // PERFORMANCE OPTIMIZATION: Direct method call instead of call_user_func_array
+        if ($this->methodCache[$cacheKey]) {
+            $this->{$this->methodCache[$cacheKey]}($value);
         }
     }
 
     /**
      * Apply dynamically named range filters.
      *
+     * PERFORMANCE OPTIMIZATION: Early return if no range parameters detected
+     *
      * @return void
      */
     private function applyRangeFilters()
     {
+        // PERFORMANCE OPTIMIZATION: Quick check if any range params exist
+        // This avoids expensive processing when no range filters are present
+        $hasRangeParams = false;
+        foreach (array_keys($this->request->all()) as $key) {
+            if (preg_match('/_(?:after|before|from|to|min|max|start|end|gte|lte|greater|less)$/', $key)) {
+                $hasRangeParams = true;
+                break;
+            }
+        }
+
+        if (!$hasRangeParams) {
+            return;
+        }
+
         $ranges = $this->getRangeFilterCallbacks();
 
         if (!is_array($ranges)) {
@@ -118,10 +195,17 @@ abstract class Filter
 
     /**
      * Find standard range filters methods.
+     *
+     * PERFORMANCE OPTIMIZATION: Initialize range patterns once
      */
     private function getRangeFilterCallbacks(): array
     {
-        $ranges = ['after:before', 'from:to', 'min:max', 'start:end', 'gte:lte', 'greater:less'];
+        // PERFORMANCE OPTIMIZATION: Initialize patterns once as static
+        if (static::$rangePatterns === null) {
+            static::$rangePatterns = ['after:before', 'from:to', 'min:max', 'start:end', 'gte:lte', 'greater:less'];
+        }
+
+        $ranges = static::$rangePatterns;
 
         $prepositions = Arr::flatten(
             array_map(

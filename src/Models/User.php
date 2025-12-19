@@ -1329,6 +1329,9 @@ class User extends Authenticatable
         if ($this->companyUser) {
             $this->companyUser->assignSingleRole($role);
 
+            // Invalidate user cache after role change
+            \Fleetbase\Services\UserCacheService::invalidateUser($this);
+
             return $this;
         }
 
