@@ -155,6 +155,7 @@ class ApiModelCache
         // Check if caching is enabled
         if (!static::isCachingEnabled()) {
             $result = $callback();
+
             return $result ?? collect([]); // Guard against null
         }
 
@@ -216,7 +217,7 @@ class ApiModelCache
             // Exception means cache failed, so this is a MISS
             static::$cacheStatus = 'MISS';
             $result              = $callback();
-            
+
             // Guard against callback returning null/false
             return $result ?? collect([]);
         }

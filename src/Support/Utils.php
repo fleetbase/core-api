@@ -1008,14 +1008,14 @@ class Utils
         if (!is_string($string) || !Str::contains($string, ['_'])) {
             return false;
         }
-        
+
         $parts = explode('_', $string);
         if (count($parts) < 2) {
             return false;
         }
-        
+
         $hash = $parts[1];
-        
+
         // Support both legacy (7 chars) and new (10 chars) public ID formats
         // Hash should be alphanumeric and between 7-15 characters for future-proofing
         return ctype_alnum($hash) && strlen($hash) >= 7 && strlen($hash) <= 15;

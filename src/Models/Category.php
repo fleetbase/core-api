@@ -5,6 +5,7 @@ namespace Fleetbase\Models;
 use Fleetbase\Casts\Json;
 use Fleetbase\Support\Utils;
 use Fleetbase\Traits\HasApiModelBehavior;
+use Fleetbase\Traits\HasApiModelCache;
 use Fleetbase\Traits\HasMetaAttributes;
 use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasUuid;
@@ -17,6 +18,7 @@ class Category extends Model
     use HasUuid;
     use HasPublicId;
     use HasApiModelBehavior;
+    use HasApiModelCache;
     use HasSlug;
     use HasMetaAttributes;
     use Searchable;

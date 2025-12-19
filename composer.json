@@ -36,6 +36,7 @@
         "illuminate/support": "^9.0|^10.0",
         "inkrot/php-compress-json": "^0.1.1",
         "innoge/laravel-msgraph-mail": "^1.4",
+        "intervention/image": "^3.11",
         "jdorn/sql-formatter": "^1.2",
         "laravel-notification-channels/apn": "^5.0",
         "laravel-notification-channels/fcm": "^4.1",

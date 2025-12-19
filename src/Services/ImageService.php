@@ -2,32 +2,20 @@
 
 namespace Fleetbase\Services;
 
-use Intervention\Image\ImageManager;
-use Intervention\Image\Drivers\Gd\Driver as GdDriver;
-use Intervention\Image\Drivers\Imagick\Driver as ImagickDriver;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
+use Intervention\Image\Drivers\Gd\Driver as GdDriver;
+use Intervention\Image\Drivers\Imagick\Driver as ImagickDriver;
+use Intervention\Image\ImageManager;
 
 class ImageService
 {
-    /**
-     * @var ImageManager
-     */
     protected ImageManager $manager;
 
-    /**
-     * @var array
-     */
     protected array $presets;
 
-    /**
-     * @var int
-     */
     protected int $defaultQuality;
 
-    /**
-     * @var bool
-     */
     protected bool $allowUpscale;
 
     /**
@@ -94,10 +82,10 @@ class ImageService
         string $mode = 'fit',
         ?int $quality = null,
         ?string $format = null,
-        ?bool $allowUpscale = null
+        ?bool $allowUpscale = null,
     ): string {
-        $quality      = $quality ?? $this->defaultQuality;
-        $allowUpscale = $allowUpscale ?? $this->allowUpscale;
+        $quality           = $quality ?? $this->defaultQuality;
+        $allowUpscale      = $allowUpscale ?? $this->allowUpscale;
         $originalExtension = $file->getClientOriginalExtension();
 
         try {
@@ -200,7 +188,7 @@ class ImageService
         string $preset,
         string $mode = 'fit',
         ?int $quality = null,
-        ?bool $allowUpscale = null
+        ?bool $allowUpscale = null,
     ): string {
         $dimensions = $this->presets[$preset] ?? $this->presets['md'];
 
@@ -249,7 +237,7 @@ class ImageService
 
         // Use original extension or default to jpg
         $extension = $originalExtension ?? 'jpg';
-        
+
         switch (strtolower($extension)) {
             case 'png':
                 return $image->toPng()->toString();

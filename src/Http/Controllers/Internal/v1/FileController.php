@@ -21,9 +21,6 @@ class FileController extends FleetbaseController
      */
     public $resource = 'file';
 
-    /**
-     * @var ImageService
-     */
     protected ImageService $imageService;
 
     /**

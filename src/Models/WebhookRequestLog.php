@@ -5,6 +5,7 @@ namespace Fleetbase\Models;
 use Fleetbase\Casts\Json;
 use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\HasApiModelBehavior;
+use Fleetbase\Traits\HasApiModelCache;
 use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\Searchable;
@@ -13,6 +14,7 @@ class WebhookRequestLog extends Model
 {
     use HasUuid;
     use HasApiModelBehavior;
+    use HasApiModelCache;
     use HasPublicId;
     use Searchable;
     use Filterable;
