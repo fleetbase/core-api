@@ -246,7 +246,24 @@ class ImageService
             return $image->toFormat($format, $quality)->toString();
         }
 
-        return $image->encode(quality: $quality)->toString();
+        // For default encoding, use toJpeg() or toPng() with quality
+        // Intervention Image v3 doesn't have a generic encode() with quality
+        $extension = $image->origin()->extension() ?? 'jpg';
+        
+        switch (strtolower($extension)) {
+            case 'png':
+                return $image->toPng()->toString();
+            case 'gif':
+                return $image->toGif()->toString();
+            case 'webp':
+                return $image->toWebp($quality)->toString();
+            case 'avif':
+                return $image->toAvif($quality)->toString();
+            case 'bmp':
+                return $image->toBitmap()->toString();
+            default:
+                return $image->toJpeg($quality)->toString();
+        }
     }
 
     /**
