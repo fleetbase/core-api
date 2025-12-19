@@ -21,18 +21,7 @@ class FileController extends FleetbaseController
      */
     public $resource = 'file';
 
-    /**
-     * @var ImageService
-     */
-    protected ImageService $imageService;
 
-    /**
-     * Create a new FileController instance.
-     */
-    public function __construct(ImageService $imageService)
-    {
-        $this->imageService = $imageService;
-    }
 
     /**
      * Handle file uploads with optional image resizing.
@@ -59,14 +48,14 @@ class FileController extends FleetbaseController
         $fileName = File::randomFileNameFromRequest($request);
 
         // Check if image resizing is requested
-        $shouldResize = ($resize || $resizeWidth || $resizeHeight) && $this->imageService->isImage($request->file);
+        $shouldResize = ($resize || $resizeWidth || $resizeHeight) && app(ImageService::class)->isImage($request->file);
 
         if ($shouldResize) {
             // Resize image
             try {
                 if ($resize) {
                     // Use preset
-                    $resizedData = $this->imageService->resizePreset(
+                    $resizedData = app(ImageService::class)->resizePreset(
                         $request->file,
                         $resize,
                         $resizeMode,
@@ -75,7 +64,7 @@ class FileController extends FleetbaseController
                     );
                 } else {
                     // Use explicit dimensions
-                    $resizedData = $this->imageService->resize(
+                    $resizedData = app(ImageService::class)->resize(
                         $request->file,
                         $resizeWidth,
                         $resizeHeight,
@@ -207,10 +196,10 @@ class FileController extends FleetbaseController
                 file_put_contents($tempPath, $decoded);
 
                 // Read and resize
-                $image = $this->imageService->manager->read($tempPath);
+                $image = app(ImageService::class)->manager->read($tempPath);
 
                 if ($resize) {
-                    $preset = $this->imageService->getPreset($resize);
+                    $preset = app(ImageService::class)->getPreset($resize);
                     if ($resizeUpscale) {
                         $image->scale($preset['width'], $preset['height']);
                     } else {
