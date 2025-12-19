@@ -184,7 +184,7 @@ class UserController extends FleetbaseController
         $clientETag = $request->header('If-None-Match');
         if ($clientETag && $this->etagsMatch($clientETag, $etag)) {
             return response()->json(null, 304)
-                ->setEtag($etag, true)
+                ->setEtag($etag)
                 ->setLastModified($user->updated_at);
         }
 
@@ -195,7 +195,7 @@ class UserController extends FleetbaseController
         if ($cachedData) {
             // Return cached data with cache headers
             return response()->json(['user' => $cachedData])
-                ->setEtag($etag, true)  // Use weak ETag for compression compatibility
+                ->setEtag($etag)  // Use weak ETag for compression compatibility
                 ->setLastModified($user->updated_at)
                 ->header('Cache-Control', 'private, no-cache, must-revalidate')
                 ->header('X-Cache-Hit', 'true');
@@ -214,7 +214,7 @@ class UserController extends FleetbaseController
 
         // Return with cache headers
         return response()->json(['user' => $userArray])
-            ->setEtag($etag, true)  // Use weak ETag for compression compatibility
+            ->setEtag($etag)  // Use weak ETag for compression compatibility
             ->setLastModified($user->updated_at)
             ->header('Cache-Control', 'private, no-cache, must-revalidate')
             ->header('X-Cache-Hit', 'false');

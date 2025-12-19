@@ -132,8 +132,7 @@ class AuthController extends Controller
             return response()->error('Session has expired.', 401, ['restore' => false]);
         }
 
-        return response()->json($session)
-            ->header('Cache-Control', 'private, max-age=300'); // 5 minutes
+        return response()->json($session)->header('Cache-Control', 'private, max-age=300'); // 5 minutes
     }
 
     /**
@@ -647,8 +646,8 @@ class AuthController extends Controller
                 ->whereNull('company_users.deleted_at')
                 ->whereNotNull('companies.owner_uuid')
                 ->with([
-                    'owner:uuid,company_uuid,name,email',
-                    'owner.companyUser:uuid,user_uuid,company_uuid',
+                    'owner:uuid,company_uuid,name,email,updated_at',
+                    'owner.companyUser:uuid,user_uuid,company_uuid,updated_at',
                 ])
                 ->distinct()
                 ->get();
@@ -661,7 +660,7 @@ class AuthController extends Controller
          * - count of organizations
          */
         $etagPayload = $companies->map(function ($company) {
-            return $company->uuid . ':' . $company->updated_at;
+            return $company->uuid . ':' . $company->updated_at . ':' . $company->owner?->updated_at;
         })->join('|');
 
         // Add count to ETag (if orgs added/removed)
