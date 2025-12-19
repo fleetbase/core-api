@@ -180,13 +180,6 @@ class UserController extends FleetbaseController
         // Generate ETag for cache validation
         $etag = UserCacheService::generateETag($user);
 
-        // Check if client has valid cached version (304 Not Modified)
-        if ($request->header('If-None-Match') === $etag) {
-            return response()->json(null, 304)
-                ->setEtag($etag)
-                ->setLastModified($user->updated_at);
-        }
-
         // Try to get from server cache
         $companyId = session('company');
         $cachedData = UserCacheService::get($user->id, $companyId);
