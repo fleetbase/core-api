@@ -119,7 +119,7 @@ class UserCacheService
     {
         try {
             // Get all companies the user belongs to
-            $companies = $user->companies()->pluck('uuid')->toArray();
+            $companies = $user->companies()->pluck('companies.uuid')->toArray();
 
             // Clear cache for each company
             foreach ($companies as $companyId) {
