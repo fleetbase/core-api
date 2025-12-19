@@ -202,7 +202,6 @@ class UserController extends FleetbaseController
         // Cache miss - load fresh data with eager loading
         // Note: role, policies, permissions are accessors that use companyUser relationship
         $user->loadCompanyUser();
-        $user->load(['company']);
 
         // Transform to resource
         $userData = new $this->resource($user);
