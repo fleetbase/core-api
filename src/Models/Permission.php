@@ -4,6 +4,7 @@ namespace Fleetbase\Models;
 
 use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\HasApiModelBehavior;
+use Fleetbase\Traits\HasApiModelCache;
 use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\Searchable;
 use Illuminate\Support\Collection;
@@ -13,6 +14,7 @@ class Permission extends BasePermission
 {
     use HasUuid;
     use HasApiModelBehavior;
+    use HasApiModelCache;
     use Searchable;
     use Filterable;
 
