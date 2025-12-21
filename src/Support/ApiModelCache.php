@@ -58,20 +58,21 @@ class ApiModelCache
         $table       = $model->getTable();
         $companyUuid = static::getCompanyUuid($request);
 
-        // Get all relevant query parameters
-        $params = [
-            'limit'   => $request->input('limit'),
-            'offset'  => $request->input('offset'),
-            'page'    => $request->input('page'),
-            'sort'    => $request->input('sort'),
-            'order'   => $request->input('order'),
-            'query'   => $request->input('query'),
-            'search'  => $request->input('search'),
-            'filter'  => $request->input('filter'),
-            'with'    => $request->input('with'),
-            'expand'  => $request->input('expand'),
-            'columns' => $request->input('columns'),
+        // Get ALL query parameters from the request
+        // This ensures different filters (e.g., type=customer vs type=contact) generate different cache keys
+        $params = $request->query();
+
+        // Remove internal/non-cacheable parameters that shouldn't affect cache key
+        $excludedParams = [
+            '_',           // Cache-busting timestamp
+            'timestamp',   // Cache-busting timestamp
+            'nocache',     // Explicit cache bypass
+            '_method',     // Laravel method override
         ];
+
+        foreach ($excludedParams as $excluded) {
+            unset($params[$excluded]);
+        }
 
         // Merge additional parameters
         $params = array_merge($params, $additionalParams);

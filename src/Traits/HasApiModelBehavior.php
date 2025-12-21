@@ -1125,12 +1125,18 @@ trait HasApiModelBehavior
      */
     public function shouldQualifyColumn($column_name)
     {
-        return in_array($column_name, [
+        $qualifiableColumns = [
             $this->getKey() ?? 'uuid',
             $this->getCreatedAtColumn() ?? 'created_at',
             $this->getUpdatedAtColumn() ?? 'updated_at',
-            $this->getDeletedAtColumn() ?? 'deleted_at',
-        ]);
+        ];
+
+        // Only include deleted_at column if model uses SoftDeletes trait
+        if (method_exists($this, 'getDeletedAtColumn')) {
+            $qualifiableColumns[] = $this->getDeletedAtColumn();
+        }
+
+        return in_array($column_name, $qualifiableColumns);
     }
 
     /**
