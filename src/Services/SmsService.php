@@ -202,11 +202,19 @@ class SmsService
         // Remove all non-numeric characters except +
         $normalized = preg_replace('/[^0-9+]/', '', $phoneNumber);
 
-        // Ensure + prefix for international numbers
-        if (!Str::startsWith($normalized, '+') && strlen($normalized) > 10) {
-            $normalized = '+' . $normalized;
+        // If already has +, return as is
+        if (Str::startsWith($normalized, '+')) {
+            return $normalized;
         }
 
+        // If starts with 00 (international prefix), replace with +
+        if (Str::startsWith($normalized, '00')) {
+            return '+' . substr($normalized, 2);
+        }
+
+        // If it looks like it might be international (has country code prefix)
+        // We'll keep it as is and let the provider handle it
+        // This is safer than assuming length thresholds
         return $normalized;
     }
 
