@@ -194,7 +194,8 @@ class VerificationCode extends Model
                 $senderId = $company->getOption('alpha_numeric_sender_id');
 
                 if ($enabled && !empty($senderId)) {
-                    $smsOptions['from'] = $senderId;
+                    // Alphanumeric sender IDs are Twilio-specific
+                    // Do NOT set in $smsOptions['from'] as it would be passed to all providers
                     $smsOptions['twilioParams']['from'] = $senderId;
                 }
             }
