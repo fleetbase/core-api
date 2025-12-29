@@ -11,7 +11,7 @@ class SmsService
     /**
      * Available SMS providers.
      */
-    public const PROVIDER_TWILIO = 'twilio';
+    public const PROVIDER_TWILIO  = 'twilio';
     public const PROVIDER_CALLPRO = 'callpro';
 
     /**
@@ -21,8 +21,6 @@ class SmsService
 
     /**
      * Provider routing rules based on phone number prefixes.
-     *
-     * @var array
      */
     protected array $routingRules = [];
 
@@ -243,7 +241,7 @@ class SmsService
             ],
         ];
 
-        $callProService = new CallProSmsService();
+        $callProService                    = new CallProSmsService();
         $providers[self::PROVIDER_CALLPRO] = [
             'name'      => 'CallPro/MessagePro.mn',
             'available' => $callProService->isConfigured(),

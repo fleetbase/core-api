@@ -31,8 +31,8 @@ class CallProSmsService
     /**
      * Send an SMS message (static convenience method).
      *
-     * @param string $to      Recipient phone number (8 digits)
-     * @param string $text    Message text (max 160 characters)
+     * @param string      $to   Recipient phone number (8 digits)
+     * @param string      $text Message text (max 160 characters)
      * @param string|null $from Optional sender ID (8 characters), defaults to config
      *
      * @return array Response containing status and message ID
@@ -49,8 +49,8 @@ class CallProSmsService
     /**
      * Send an SMS message.
      *
-     * @param string $to      Recipient phone number (8 digits)
-     * @param string $text    Message text (max 160 characters)
+     * @param string      $to   Recipient phone number (8 digits)
+     * @param string      $text Message text (max 160 characters)
      * @param string|null $from Optional sender ID (8 characters), defaults to config
      *
      * @return array Response containing status and message ID
@@ -154,10 +154,10 @@ class CallProSmsService
     protected function getErrorMessage(int $statusCode): string
     {
         return match ($statusCode) {
-            402 => 'Invalid request parameters',
-            403 => 'Invalid API key (x-api-key)',
-            404 => 'Invalid sender ID or recipient phone number format',
-            503 => 'API rate limit exceeded (max 5 requests per second)',
+            402     => 'Invalid request parameters',
+            403     => 'Invalid API key (x-api-key)',
+            404     => 'Invalid sender ID or recipient phone number format',
+            503     => 'API rate limit exceeded (max 5 requests per second)',
             default => "API request failed with status code: {$statusCode}",
         };
     }
