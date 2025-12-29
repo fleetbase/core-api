@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Traits;
 
+use Fleetbase\Support\ApiModelCache;
 use Fleetbase\Support\Auth;
 use Fleetbase\Support\Http;
 use Fleetbase\Support\QueryOptimizer;
@@ -63,15 +64,13 @@ trait HasApiModelBehavior
         }
 
         // Get company UUID if available
-        $companyUuid = null;
+        $companyUuid = session('company');
         if (isset($this->company_uuid)) {
             $companyUuid = $this->company_uuid;
         }
 
         // Use ApiModelCache if available
-        if (class_exists('\Fleetbase\Support\ApiModelCache')) {
-            \Fleetbase\Support\ApiModelCache::invalidateModelCache($this, $companyUuid);
-        }
+        ApiModelCache::invalidateModelCache($this, $companyUuid);
     }
 
     /**
@@ -439,6 +438,7 @@ trait HasApiModelBehavior
 
         try {
             $records->delete();
+            $this->invalidateApiCacheOnChange();
 
             return $count;
         } catch (\Exception $e) {
