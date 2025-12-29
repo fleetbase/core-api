@@ -115,10 +115,11 @@ class AuthController extends Controller
             }
 
             $sessionData = [
-                'token'    => $request->bearerToken(),
-                'user'     => $user->uuid,
-                'verified' => $user->isVerified(),
-                'type'     => $user->getType(),
+                'token'         => $request->bearerToken(),
+                'user'          => $user->uuid,
+                'verified'      => $user->isVerified(),
+                'type'          => $user->getType(),
+                'last_modified' => $user->updated_at,
             ];
 
             if (session()->has('impersonator')) {
@@ -132,7 +133,15 @@ class AuthController extends Controller
             return response()->error('Session has expired.', 401, ['restore' => false]);
         }
 
-        return response()->json($session)->header('Cache-Control', 'private, max-age=300'); // 5 minutes
+        // Generate an etag
+        $etag = sha1(json_encode($session));
+
+        return response()
+            ->json($session)
+            ->setEtag($etag)
+            ->setLastModified($session['last_modified'])
+            ->header('Cache-Control', 'private, no-cache, must-revalidate')
+            ->header('X-Cache-Hit', 'false');
     }
 
     /**
@@ -661,6 +670,7 @@ class AuthController extends Controller
          */
         $etagPayload = $companies->map(function ($company) {
             $ownerTimestamp = $company->owner?->updated_at?->timestamp ?? 0;
+
             return $company->uuid . ':' . $company->updated_at->timestamp . ':' . $ownerTimestamp;
         })->join('|');
 

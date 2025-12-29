@@ -784,9 +784,6 @@ trait HasApiModelBehavior
             $builder = $this->withCounts($request, $builder);
         }
 
-        // PERFORMANCE OPTIMIZATION: Apply query optimizer to remove duplicate where clauses
-        $builder = $this->optimizeQuery($builder);
-
         return $builder;
     }
 

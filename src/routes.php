@@ -275,9 +275,9 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 $router->fleetbaseRoutes(
                                     'files',
                                     function ($router, $controller) {
+                                        $router->get('download/{id?}', $controller('download'));
                                         $router->post('upload', $controller('upload'));
                                         $router->post('uploadBase64', $controller('upload-base64'));
-                                        $router->get('download/{id}', $controller('download'));
                                     }
                                 );
                                 $router->fleetbaseRoutes('transactions');

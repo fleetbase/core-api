@@ -3,6 +3,7 @@
 namespace Fleetbase\Traits;
 
 use Fleetbase\Support\ApiModelCache;
+use Fleetbase\Support\Utils;
 use Illuminate\Http\Request;
 
 /**
@@ -95,6 +96,9 @@ trait HasApiModelCache
         if (is_callable($queryCallback)) {
             $queryCallback($builder, $request);
         }
+
+        /* debug */
+        // Utils::sqlDump($builder);
 
         if (\Fleetbase\Support\Http::isInternalRequest($request)) {
             return $builder->fastPaginate($limit, $columns);
@@ -256,6 +260,24 @@ trait HasApiModelCache
         }
 
         ApiModelCache::invalidateQueryCache($this, $request, $additionalParams);
+    }
+
+    /**
+     * Manually invalidate API caches when model events are bypassed.
+     *
+     * This method should be called after operations that modify or delete
+     * records without triggering Eloquent model events (e.g. bulk deletes,
+     * bulk updates, raw queries, or maintenance scripts).
+     *
+     * It performs a table-level cache invalidation, clearing all related
+     * model, relationship, and query caches and incrementing the internal
+     * query version counter to prevent stale reads.
+     *
+     * @param string|null $companyUuid Optional company UUID for scoped invalidation
+     */
+    public static function invalidateApiCacheManually(?string $companyUuid = null): void
+    {
+        ApiModelCache::invalidateModelCache(new static(), $companyUuid);
     }
 
     /**

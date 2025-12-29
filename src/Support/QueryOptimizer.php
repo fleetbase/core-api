@@ -42,6 +42,14 @@ class QueryOptimizer
                 return $query;
             }
 
+            // Check for usage of raw queries as not able relaibly map bindings
+            foreach ($wheres as $w) {
+                if (($w['type'] ?? null) === 'Raw') {
+                    // Can't reliably map bindings for Raw clauses, avoid breaking queries
+                    return $query;
+                }
+            }
+
             // Build a list of where clauses with their associated bindings
             $whereClauses = static::buildWhereClauseList($wheres, $bindings);
 
@@ -51,6 +59,22 @@ class QueryOptimizer
             // Extract unique wheres and bindings
             $uniqueWheres   = array_column($uniqueClauses, 'where');
             $uniqueBindings = static::extractBindings($uniqueClauses);
+
+            // Validate bindings
+            $expected = 0;
+            foreach ($uniqueWheres as $w) {
+                $expected += static::getBindingCount($w);
+            }
+
+            if ($expected !== count($uniqueBindings)) {
+                Log::warning('QueryOptimizer: binding mismatch, aborting optimization', [
+                    'expected' => $expected,
+                    'actual'   => count($uniqueBindings),
+                    'sql'      => $baseQuery->toSql(),
+                ]);
+
+                return $query;
+            }
 
             // Validate that we haven't broken anything
             if (!static::validateOptimization($wheres, $bindings, $uniqueWheres, $uniqueBindings)) {
@@ -142,8 +166,18 @@ class QueryOptimizer
 
             case 'Between':
             case 'NotBetween':
-                // Between uses 2 bindings
-                return 2;
+                // Between may contain Expressions (no bindings for those)
+                $values = $where['values'] ?? [];
+
+                $count = 0;
+                foreach ($values as $v) {
+                    if (!$v instanceof Expression) {
+                        $count++;
+                    }
+                }
+
+                // Fallback: if values array isn't present, assume 2 (Laravel default)
+                return $count > 0 ? $count : 2;
 
             case 'Nested':
                 // Nested queries have their own bindings
