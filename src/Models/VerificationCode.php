@@ -9,6 +9,7 @@ use Fleetbase\Traits\Expirable;
 use Fleetbase\Traits\HasMetaAttributes;
 use Fleetbase\Traits\HasSubject;
 use Fleetbase\Traits\HasUuid;
+use Fleetbase\Services\SmsService;
 use Fleetbase\Twilio\Support\Laravel\Facade as Twilio;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Mail;
@@ -180,9 +181,10 @@ class VerificationCode extends Model
             $message = $messageCallback($verificationCode);
         }
 
-        // Twilio params
-        $twilioParams = [];
+        // SMS service options
+        $smsOptions = [];
 
+        // Check for company-specific sender ID
         $companyUuid = data_get($options, 'company_uuid') ?? session('company') ?? data_get($subject, 'company_uuid');
         if ($companyUuid) {
             $company = Company::select(['uuid', 'options'])->find($companyUuid);
@@ -192,13 +194,32 @@ class VerificationCode extends Model
                 $senderId = $company->getOption('alpha_numeric_sender_id');
 
                 if ($enabled && !empty($senderId)) {
-                    $twilioParams['from'] = $senderId;
+                    $smsOptions['from'] = $senderId;
+                    $smsOptions['twilioParams']['from'] = $senderId;
                 }
             }
         }
 
+        // Allow explicit provider selection
+        $provider = data_get($options, 'provider');
+
+        // Send SMS using SmsService with automatic provider routing
         if ($subject->phone) {
-            Twilio::message($subject->phone, $message, [], $twilioParams);
+            try {
+                $smsService = new SmsService();
+                $smsService->send($subject->phone, $message, $smsOptions, $provider);
+            } catch (\Throwable $e) {
+                // Log error but don't fail the verification code generation
+                \Illuminate\Support\Facades\Log::error('Failed to send SMS verification', [
+                    'phone' => $subject->phone,
+                    'error' => $e->getMessage(),
+                ]);
+
+                // Optionally rethrow based on configuration
+                if (config('sms.throw_on_error', false)) {
+                    throw $e;
+                }
+            }
         }
 
         return $verificationCode;

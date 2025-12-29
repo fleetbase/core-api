@@ -29,6 +29,24 @@ class CallProSmsService
     }
 
     /**
+     * Send an SMS message (static convenience method).
+     *
+     * @param string $to      Recipient phone number (8 digits)
+     * @param string $text    Message text (max 160 characters)
+     * @param string|null $from Optional sender ID (8 characters), defaults to config
+     *
+     * @return array Response containing status and message ID
+     *
+     * @throws \Exception If API request fails
+     */
+    public static function sendSms(string $to, string $text, ?string $from = null): array
+    {
+        $instance = new static();
+
+        return $instance->send($to, $text, $from);
+    }
+
+    /**
      * Send an SMS message.
      *
      * @param string $to      Recipient phone number (8 digits)
