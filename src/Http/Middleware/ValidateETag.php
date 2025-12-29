@@ -2,7 +2,6 @@
 
 namespace Fleetbase\Http\Middleware;
 
-use Closure;
 use Illuminate\Http\Request;
 
 class ValidateETag
@@ -13,13 +12,8 @@ class ValidateETag
      * This middleware checks if the client sent an If-None-Match header with an ETag.
      * If the ETag matches the response ETag, it returns a 304 Not Modified response,
      * allowing the browser to use its cached version.
-     *
-     * @param \Illuminate\Http\Request $request
-     * @param \Closure                 $next
-     *
-     * @return mixed
      */
-    public function handle(Request $request, Closure $next)
+    public function handle(Request $request, \Closure $next)
     {
         // Handle the request and get response
         $response = $next($request);

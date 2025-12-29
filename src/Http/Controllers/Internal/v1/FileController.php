@@ -312,15 +312,32 @@ class FileController extends FleetbaseController
     /**
      * Handle file download.
      *
-     * @return \Illuminate\Http\Response
+     * Supports both:
+     * - /download/{id}
+     * - /download?file={id}
+     *
+     * @param string|null $id File UUID from route parameter
+     *
+     * @return \Symfony\Component\HttpFoundation\StreamedResponse
      */
-    public function download(?string $id, DownloadFileRequest $request)
+    public function download(DownloadFileRequest $request, ?string $id = null)
     {
-        $disk = $request->input('disk', config('filesystems.default'));
-        $file = File::where('uuid', $id)->first();
+        // Resolve file ID from route or query string
+        $fileId = $id ?? $request->query('file');
+        if (!$fileId) {
+            abort(400, 'Missing file identifier.');
+        }
+
+        $disk     = $request->input('disk', config('filesystems.default'));
+        $file     = File::where('uuid', $fileId)->firstOrFail();
+        $filename = $file->original_filename ?: basename($file->path);
+
         /** @var \Illuminate\Filesystem\FilesystemAdapter $filesystem */
         $filesystem = Storage::disk($disk);
 
-        return $filesystem->download($file->path, $file->original_filename);
+        return $filesystem->download(
+            $file->path,
+            $filename
+        );
     }
 }

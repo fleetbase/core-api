@@ -23,11 +23,11 @@ use Fleetbase\Models\Setting;
 use Fleetbase\Models\User;
 use Fleetbase\Notifications\UserAcceptedCompanyInvite;
 use Fleetbase\Notifications\UserInvited;
+use Fleetbase\Services\UserCacheService;
 use Fleetbase\Support\Auth;
 use Fleetbase\Support\NotificationRegistry;
 use Fleetbase\Support\TwoFactorAuth;
 use Fleetbase\Support\Utils;
-use Fleetbase\Services\UserCacheService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
@@ -181,7 +181,7 @@ class UserController extends FleetbaseController
         $etag = UserCacheService::generateETag($user);
 
         // Try to get from server cache
-        $companyId = session('company');
+        $companyId  = session('company');
         $cachedData = UserCacheService::get($user->id, $companyId);
 
         if ($cachedData) {
@@ -198,7 +198,7 @@ class UserController extends FleetbaseController
         $user->loadCompanyUser();
 
         // Transform to resource
-        $userData = new $this->resource($user);
+        $userData  = new $this->resource($user);
         $userArray = $userData->toArray($request);
 
         // Store in cache

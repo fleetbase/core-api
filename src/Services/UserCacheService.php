@@ -27,9 +27,6 @@ class UserCacheService
      * Generate cache key for a user and company.
      *
      * @param int|string $userId
-     * @param string     $companyId
-     *
-     * @return string
      */
     public static function getCacheKey($userId, string $companyId): string
     {
@@ -40,9 +37,6 @@ class UserCacheService
      * Get cached user data.
      *
      * @param int|string $userId
-     * @param string     $companyId
-     *
-     * @return array|null
      */
     public static function get($userId, string $companyId): ?array
     {
@@ -75,11 +69,6 @@ class UserCacheService
      * Store user data in cache.
      *
      * @param int|string $userId
-     * @param string     $companyId
-     * @param array      $data
-     * @param int|null   $ttl
-     *
-     * @return bool
      */
     public static function put($userId, string $companyId, array $data, ?int $ttl = null): bool
     {
@@ -110,10 +99,6 @@ class UserCacheService
 
     /**
      * Invalidate cache for a specific user.
-     *
-     * @param User $user
-     *
-     * @return void
      */
     public static function invalidateUser(User $user): void
     {
@@ -157,9 +142,6 @@ class UserCacheService
      * Invalidate cache for a specific user and company.
      *
      * @param int|string $userId
-     * @param string     $companyId
-     *
-     * @return void
      */
     public static function invalidate($userId, string $companyId): void
     {
@@ -184,16 +166,12 @@ class UserCacheService
 
     /**
      * Invalidate all cache for a company.
-     *
-     * @param string $companyId
-     *
-     * @return void
      */
     public static function invalidateCompany(string $companyId): void
     {
         try {
             // Get all cache keys for this company
-            $pattern  = self::CACHE_PREFIX . '*:' . $companyId;
+            $pattern   = self::CACHE_PREFIX . '*:' . $companyId;
             $cacheKeys = Cache::getRedis()->keys($pattern);
 
             foreach ($cacheKeys as $key) {
@@ -216,10 +194,6 @@ class UserCacheService
 
     /**
      * Generate ETag for a user.
-     *
-     * @param User $user
-     *
-     * @return string
      */
     public static function generateETag(User $user): string
     {
@@ -228,8 +202,6 @@ class UserCacheService
 
     /**
      * Get browser cache TTL.
-     *
-     * @return int
      */
     public static function getBrowserCacheTTL(): int
     {
@@ -238,8 +210,6 @@ class UserCacheService
 
     /**
      * Get server cache TTL.
-     *
-     * @return int
      */
     public static function getServerCacheTTL(): int
     {
@@ -248,8 +218,6 @@ class UserCacheService
 
     /**
      * Check if caching is enabled.
-     *
-     * @return bool
      */
     public static function isEnabled(): bool
     {
@@ -258,8 +226,6 @@ class UserCacheService
 
     /**
      * Clear all user current caches.
-     *
-     * @return void
      */
     public static function flush(): void
     {

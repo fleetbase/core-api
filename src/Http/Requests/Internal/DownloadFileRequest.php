@@ -17,6 +17,20 @@ class DownloadFileRequest extends FleetbaseRequest
     }
 
     /**
+     * Prepare the data for validation.
+     *
+     * Ensures route parameters are available for validation rules.
+     */
+    protected function prepareForValidation(): void
+    {
+        if ($this->route('id')) {
+            $this->merge([
+                'id' => $this->route('id'),
+            ]);
+        }
+    }
+
+    /**
      * Get the validation rules that apply to the request.
      *
      * @return array
@@ -24,7 +38,9 @@ class DownloadFileRequest extends FleetbaseRequest
     public function rules()
     {
         return [
-            'id' => ['required', 'string', 'exists:files,uuid'],
+            'file' => ['required_without:id', 'uuid', 'exists:files,uuid'],
+            'id'   => ['required_without:file', 'uuid', 'exists:files,uuid'],
+            'disk' => ['sometimes', 'string'],
         ];
     }
 
@@ -36,8 +52,20 @@ class DownloadFileRequest extends FleetbaseRequest
     public function messages()
     {
         return [
-            'id.required' => 'Please provide a file ID.',
+            // Missing identifier
+            'id.required_without'   => 'Please provide a file identifier.',
+            'file.required_without' => 'Please provide a file identifier.',
+
+            // Invalid format
+            'id.uuid'   => 'The file identifier must be a valid UUID.',
+            'file.uuid' => 'The file identifier must be a valid UUID.',
+
+            // File not found
             'id.exists'   => 'The requested file does not exist.',
+            'file.exists' => 'The requested file does not exist.',
+
+            // Disk override
+            'disk.string' => 'The storage disk must be a valid string.',
         ];
     }
 }

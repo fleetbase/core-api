@@ -11,10 +11,6 @@ class UserObserver
 {
     /**
      * Handle the User "updated" event.
-     *
-     * @param \Fleetbase\Models\User $user
-     *
-     * @return void
      */
     public function updated(User $user): void
     {
@@ -46,10 +42,6 @@ class UserObserver
 
     /**
      * Handle the User "restored" event.
-     *
-     * @param \Fleetbase\Models\User $user
-     *
-     * @return void
      */
     public function restored(User $user): void
     {
@@ -66,10 +58,6 @@ class UserObserver
      * This clears the cached organizations list which includes owner relationships.
      * When a user updates their profile and they are an owner of organizations,
      * the cached organization data needs to be refreshed to reflect the updated owner info.
-     *
-     * @param \Fleetbase\Models\User $user
-     *
-     * @return void
      */
     private function invalidateOrganizationsCache(User $user): void
     {
