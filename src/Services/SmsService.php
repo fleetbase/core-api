@@ -120,8 +120,15 @@ class SmsService
         // Extract the last 8 digits for CallPro (Mongolia format)
         $toNumber = $this->extractCallProNumber($to);
 
-        // Get from number from options or use default
+        // CallPro does NOT support alphanumeric sender IDs (Twilio-specific)
+        // Only pass 'from' if it's a valid 8-digit number, otherwise use CallPro default
         $from = data_get($options, 'from');
+        if ($from && (strlen($from) !== 8 || !ctype_digit($from))) {
+            Log::debug('Ignoring Twilio-specific sender ID for CallPro', [
+                'sender_id' => $from,
+            ]);
+            $from = null; // Let CallPro use its configured default
+        }
 
         return $callProService->send($toNumber, $text, $from);
     }

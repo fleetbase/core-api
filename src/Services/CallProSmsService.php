@@ -61,15 +61,6 @@ class CallProSmsService
     {
         $from = $from ?? $this->from;
 
-        // Validate sender ID format - if invalid, use default
-        if (!$this->isValidSenderId($from)) {
-            Log::warning('Invalid sender ID for CallPro, using default', [
-                'provided' => $from,
-                'default'  => $this->from,
-            ]);
-            $from = $this->from;
-        }
-
         // Validate parameters
         $this->validateParameters($to, $text, $from);
 
@@ -130,23 +121,6 @@ class CallProSmsService
     }
 
     /**
-     * Check if sender ID is valid for CallPro (8 digits).
-     *
-     * @param string|null $senderId Sender ID to validate
-     *
-     * @return bool True if valid, false otherwise
-     */
-    protected function isValidSenderId(?string $senderId): bool
-    {
-        if (empty($senderId)) {
-            return false;
-        }
-
-        // Must be exactly 8 characters and numeric
-        return strlen($senderId) === 8 && ctype_digit($senderId);
-    }
-
-    /**
      * Validate SMS parameters.
      *
      * @throws \InvalidArgumentException If parameters are invalid
@@ -157,7 +131,7 @@ class CallProSmsService
             throw new \InvalidArgumentException('CallPro API key is not configured');
         }
 
-        if (!$this->isValidSenderId($from)) {
+        if (strlen($from) !== 8 || !ctype_digit($from)) {
             throw new \InvalidArgumentException('Sender ID (from) must be exactly 8 digits');
         }
 
