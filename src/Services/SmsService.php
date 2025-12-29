@@ -191,31 +191,20 @@ class SmsService
     }
 
     /**
-     * Normalize phone number to E.164 format if possible.
+     * Normalize phone number by removing formatting characters.
      *
-     * @param string $phoneNumber Raw phone number
+     * Fleetbase already ensures all phone numbers are in E.164 format with + prefix,
+     * so we just need to strip out any formatting characters.
+     *
+     * @param string $phoneNumber Phone number (already in E.164 format)
      *
      * @return string Normalized phone number
      */
     protected function normalizePhoneNumber(string $phoneNumber): string
     {
         // Remove all non-numeric characters except +
-        $normalized = preg_replace('/[^0-9+]/', '', $phoneNumber);
-
-        // If already has +, return as is
-        if (Str::startsWith($normalized, '+')) {
-            return $normalized;
-        }
-
-        // If starts with 00 (international prefix), replace with +
-        if (Str::startsWith($normalized, '00')) {
-            return '+' . substr($normalized, 2);
-        }
-
-        // If it looks like it might be international (has country code prefix)
-        // We'll keep it as is and let the provider handle it
-        // This is safer than assuming length thresholds
-        return $normalized;
+        // Fleetbase already normalizes to E.164 format, so just clean formatting
+        return preg_replace('/[^0-9+]/', '', $phoneNumber);
     }
 
     /**

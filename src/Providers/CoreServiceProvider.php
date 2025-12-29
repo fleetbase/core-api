@@ -129,6 +129,7 @@ class CoreServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__ . '/../../config/laravel-mysql-s3-backup.php', 'laravel-mysql-s3-backup');
         $this->mergeConfigFrom(__DIR__ . '/../../config/responsecache.php', 'responsecache');
         $this->mergeConfigFrom(__DIR__ . '/../../config/image.php', 'image');
+        $this->mergeConfigFrom(__DIR__ . '/../../config/sms.php', 'sms');
 
         // setup report schema registry
         $this->app->singleton(ReportSchemaRegistry::class, function () {
