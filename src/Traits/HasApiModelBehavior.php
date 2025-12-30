@@ -64,13 +64,11 @@ trait HasApiModelBehavior
         }
 
         // Get company UUID if available
-        $companyUuid = session('company');
-        if (isset($this->company_uuid)) {
-            $companyUuid = $this->company_uuid;
-        }
+        $companyUuid = session('company', $this->company_uuid);
 
         // Use ApiModelCache if available
         ApiModelCache::invalidateModelCache($this, $companyUuid);
+        ApiModelCache::invalidateModelCache(new self(), $companyUuid);
     }
 
     /**
