@@ -224,6 +224,15 @@ class OnboardController extends Controller
         $user->updateLastLogin();
         $token = $user->createToken($user->uuid);
 
+        // Mark company onboarding as complete (email verification is final step)
+        $company = $user->company;
+        if ($company && $company->onboarding_completed_at === null) {
+            $company->update([
+                'onboarding_completed_at'      => $verifiedAt,
+                'onboarding_completed_by_uuid' => $user->uuid,
+            ]);
+        }
+
         return response()->json([
             'status'      => 'ok',
             'verified_at' => $verifiedAt,
