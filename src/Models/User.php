@@ -184,6 +184,7 @@ class User extends Authenticatable
         'avatar_url',
         'session_status',
         'company_name',
+        'company_onboarding_completed',
         'is_admin',
         'is_online',
         'last_seen_at',
@@ -751,6 +752,14 @@ class User extends Authenticatable
     public function getCompanyNameAttribute(): ?string
     {
         return data_get($this, 'company.name');
+    }
+
+    /**
+     * Get the users's company onboard completed.
+     */
+    public function getCompanyOnboardingCompletedAttribute(): bool
+    {
+        return data_get($this, 'company.onboarding_completed_at') !== null;
     }
 
     /**
