@@ -98,6 +98,8 @@ class Company extends Model
         'status',
         'slug',
         'trial_ends_at',
+        'onboarding_completed_at',
+        'onboarding_completed_by_uuid',
     ];
 
     /**
@@ -120,9 +122,10 @@ class Company extends Model
      * @var array
      */
     protected $casts = [
-        'options'       => Json::class,
-        'meta'          => Json::class,
-        'trial_ends_at' => 'datetime',
+        'options'                   => Json::class,
+        'meta'                      => Json::class,
+        'trial_ends_at'             => 'datetime',
+        'onboarding_completed_at'   => 'datetime',
     ];
 
     /**
