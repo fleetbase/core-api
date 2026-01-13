@@ -5,6 +5,7 @@ namespace Fleetbase\Models;
 use Fleetbase\Casts\Json;
 use Fleetbase\FleetOps\Models\Driver;
 use Fleetbase\Traits\HasApiModelBehavior;
+use Fleetbase\Traits\HasMetaAttributes;
 use Fleetbase\Traits\HasOptionsAttributes;
 use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasUuid;
@@ -28,6 +29,7 @@ class Company extends Model
     use TracksApiCredential;
     use HasApiModelBehavior;
     use HasOptionsAttributes;
+    use HasMetaAttributes;
     use HasSlug;
     use Searchable;
     use SendsWebhooks;
@@ -86,6 +88,7 @@ class Company extends Model
         'website_url',
         'description',
         'options',
+        'meta',
         'type',
         'currency',
         'country',
@@ -118,6 +121,7 @@ class Company extends Model
      */
     protected $casts = [
         'options'       => Json::class,
+        'meta'          => Json::class,
         'trial_ends_at' => 'datetime',
     ];
 

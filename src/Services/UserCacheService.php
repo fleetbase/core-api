@@ -197,7 +197,10 @@ class UserCacheService
      */
     public static function generateETag(User $user): string
     {
-        return '"user-' . $user->uuid . '-' . $user->updated_at->timestamp . '"';
+        $userMeta    = json_encode($user->meta);
+        $userOptions = json_encode($user->options);
+
+        return '"user-' . $user->uuid . '-' . $user->updated_at->timestamp . '-' . strlen($userMeta) . '-' . strlen($userOptions) . '"';
     }
 
     /**
