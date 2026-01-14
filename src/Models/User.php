@@ -14,6 +14,7 @@ use Fleetbase\Traits\Filterable;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasCacheableAttributes;
 use Fleetbase\Traits\HasMetaAttributes;
+use Fleetbase\Traits\HasOptionsAttributes;
 use Fleetbase\Traits\HasPresence;
 use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasSessionAttributes;
@@ -53,6 +54,7 @@ class User extends Authenticatable
     use HasApiModelBehavior;
     use HasCacheableAttributes;
     use HasMetaAttributes;
+    use HasOptionsAttributes;
     use HasTimestamps;
     use LogsActivity;
     use CausesActivity;
@@ -149,6 +151,7 @@ class User extends Authenticatable
         'date_of_birth',
         'timezone',
         'meta',
+        'options',
         'country',
         'ip_address',
         'last_login',
@@ -181,6 +184,7 @@ class User extends Authenticatable
         'avatar_url',
         'session_status',
         'company_name',
+        'company_onboarding_completed',
         'is_admin',
         'is_online',
         'last_seen_at',
@@ -192,10 +196,11 @@ class User extends Authenticatable
      * @var array
      */
     protected $casts = [
-        'meta'              => Json::class,
-        'email_verified_at' => 'datetime',
-        'phone_verified_at' => 'datetime',
-        'last_login'        => 'datetime',
+        'meta'                 => Json::class,
+        'options'              => Json::class,
+        'email_verified_at'    => 'datetime',
+        'phone_verified_at'    => 'datetime',
+        'last_login'           => 'datetime',
     ];
 
     /**
@@ -747,6 +752,14 @@ class User extends Authenticatable
     public function getCompanyNameAttribute(): ?string
     {
         return data_get($this, 'company.name');
+    }
+
+    /**
+     * Get the users's company onboard completed.
+     */
+    public function getCompanyOnboardingCompletedAttribute(): bool
+    {
+        return data_get($this, 'company.onboarding_completed_at') !== null;
     }
 
     /**

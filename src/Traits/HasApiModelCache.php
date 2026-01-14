@@ -77,19 +77,37 @@ trait HasApiModelCache
      */
     protected function queryFromRequestWithoutCache(Request $request, ?\Closure $queryCallback = null)
     {
-        $limit   = $request->integer('limit', 30);
-        $columns = $request->input('columns', ['*']);
+        $columns         = $request->input('columns', ['*']);
+        $limit           = $request->integer('limit', 30);
+        $offset          = $request->integer('offset', 0);
+        $page            = max(1, $request->integer('page', 1));
+        $calculateOffset = $request->missing('offset') && $request->has('page');
+
+        // Clamp limit
+        if ($limit !== -1) {
+            $limit = max(1, min($limit, 100));
+        }
 
         /**
          * @var \Illuminate\Database\Eloquent\Builder $builder
          */
         $builder = $this->searchBuilder($request, $columns);
 
-        if (intval($limit) > 0) {
+        // Auto-calculate offset from page
+        if ($calculateOffset) {
+            $offset = ($page - 1) * $limit;
+        }
+
+        // Handle limit
+        if ($limit === -1) {
+            $builder->limit(PHP_INT_MAX);
+        } elseif ($limit > 0) {
             $builder->limit($limit);
-        } elseif ($limit === -1) {
-            $limit = 999999999;
-            $builder->limit($limit);
+        }
+
+        // Handle offset
+        if ($offset > 0) {
+            $builder->offset($offset);
         }
 
         // if queryCallback is supplied

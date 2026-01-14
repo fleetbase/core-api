@@ -18,26 +18,27 @@ class Organization extends FleetbaseResource
     public function toArray($request)
     {
         return [
-            'id'                 => $this->when(Http::isInternalRequest(), $this->id, $this->public_id),
-            'uuid'               => $this->when(Http::isInternalRequest(), $this->uuid),
-            'owner_uuid'         => $this->when(Http::isInternalRequest(), $this->owner_uuid),
-            'public_id'          => $this->when(Http::isInternalRequest(), $this->public_id),
-            'name'               => $this->name,
-            'description'        => $this->description,
-            'phone'              => $this->phone,
-            'type'               => $this->when(Http::isInternalRequest(), $this->type),
-            'users_count'        => $this->when(Http::isInternalRequest(), $this->companyUsers()->count()),
-            'timezone'           => $this->timezone,
-            'country'            => $this->country,
-            'currency'           => $this->currency,
-            'logo_url'           => $this->logo_url,
-            'backdrop_url'       => $this->backdrop_url,
-            'branding'           => Setting::getBranding(),
-            'options'            => $this->options ?? Utils::createObject([]),
-            'owner'              => $this->owner ? new User($this->owner) : null,
-            'slug'               => $this->slug,
-            'status'             => $this->status,
-            'joined_at'          => $this->when(Http::isInternalRequest() && $request->hasSession() && $request->session()->has('user'), function () {
+            'id'                   => $this->when(Http::isInternalRequest(), $this->id, $this->public_id),
+            'uuid'                 => $this->when(Http::isInternalRequest(), $this->uuid),
+            'owner_uuid'           => $this->when(Http::isInternalRequest(), $this->owner_uuid),
+            'public_id'            => $this->when(Http::isInternalRequest(), $this->public_id),
+            'name'                 => $this->name,
+            'description'          => $this->description,
+            'phone'                => $this->phone,
+            'type'                 => $this->when(Http::isInternalRequest(), $this->type),
+            'users_count'          => $this->when(Http::isInternalRequest(), $this->companyUsers()->count()),
+            'timezone'             => $this->timezone,
+            'country'              => $this->country,
+            'currency'             => $this->currency,
+            'logo_url'             => $this->logo_url,
+            'backdrop_url'         => $this->backdrop_url,
+            'branding'             => Setting::getBranding(),
+            'options'              => $this->options ?? Utils::createObject([]),
+            'owner'                => $this->owner ? new User($this->owner) : null,
+            'slug'                 => $this->slug,
+            'status'               => $this->status,
+            'onboarding_completed' => $this->when(Http::isInternalRequest(), $this->onboarding_completed_at !== null),
+            'joined_at'            => $this->when(Http::isInternalRequest() && $request->hasSession() && $request->session()->has('user'), function () {
                 if ($this->resource->joined_at) {
                     return $this->resource->joined_at;
                 }

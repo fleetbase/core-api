@@ -57,6 +57,12 @@ class OnboardController extends Controller
             'last_login' => $isAdmin ? now() : null,
         ]);
 
+        // create company FIRST (required for billing resource tracking)
+        $company = Company::create(['name' => $request->input('organization_name')]);
+
+        // set company_uuid before creating user (required for billing resource tracking)
+        $attributes['company_uuid'] = $company->uuid;
+
         // create user account
         $user = User::create($attributes);
 
@@ -66,8 +72,7 @@ class OnboardController extends Controller
         // set the user type
         $user->setUserType($isAdmin ? 'admin' : 'user');
 
-        // create company
-        $company = new Company(['name' => $request->input('organization_name')]);
+        // set company owner
         $company->setOwner($user)->save();
 
         // assign user to organization
@@ -223,6 +228,15 @@ class OnboardController extends Controller
         $user->status = 'active';
         $user->updateLastLogin();
         $token = $user->createToken($user->uuid);
+
+        // Mark company onboarding as complete (email verification is final step)
+        $company = $user->company;
+        if ($company && $company->onboarding_completed_at === null) {
+            $company->update([
+                'onboarding_completed_at'      => $verifiedAt,
+                'onboarding_completed_by_uuid' => $user->uuid,
+            ]);
+        }
 
         return response()->json([
             'status'      => 'ok',
