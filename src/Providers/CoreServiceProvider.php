@@ -135,6 +135,11 @@ class CoreServiceProvider extends ServiceProvider
         $this->app->singleton(ReportSchemaRegistry::class, function () {
             return new ReportSchemaRegistry();
         });
+
+        // register file resolver service
+        $this->app->singleton(\Fleetbase\Services\FileResolverService::class, function ($app) {
+            return new \Fleetbase\Services\FileResolverService();
+        });
     }
 
     /**
