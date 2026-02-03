@@ -5,7 +5,7 @@ namespace Fleetbase\Traits;
 use Fleetbase\Services\FileResolverService;
 
 /**
- * HasFileResolution Trait
+ * HasFileResolution Trait.
  *
  * Provides convenient file resolution methods for models with file relations.
  */
@@ -42,8 +42,6 @@ trait HasFileResolution
 
     /**
      * Get the default file path for this model.
-     *
-     * @return string
      */
     protected function getDefaultFilePath(): string
     {

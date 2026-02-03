@@ -11,8 +11,8 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 /**
- * FileResolverService
- * 
+ * FileResolverService.
+ *
  * A centralized service for resolving files from multiple input types.
  * Supports: UploadedFile, Base64 strings, existing file IDs, and remote URLs.
  */
@@ -32,7 +32,7 @@ class FileResolverService
      * @param string|null $path The storage path prefix (default: 'uploads')
      * @param string|null $disk The storage disk to use (default: config default)
      *
-     * @return \Fleetbase\Models\File|null The resolved File model or null on failure
+     * @return File|null The resolved File model or null on failure
      */
     public function resolve($file, ?string $path = 'uploads', ?string $disk = null): ?File
     {
@@ -89,19 +89,17 @@ class FileResolverService
      * @param UploadedFile $upload The uploaded file
      * @param string       $path   The storage path prefix
      * @param string|null  $disk   The storage disk
-     *
-     * @return \Fleetbase\Models\File|null
      */
     protected function resolveFromUpload(UploadedFile $upload, string $path, ?string $disk = null): ?File
     {
         $disk = $disk ?? config('filesystems.default');
-        
+
         // Generate a unique filename to prevent collisions
         $extension = $upload->getClientOriginalExtension();
-        $fileName = File::randomFileName($extension);
-        
+        $fileName  = File::randomFileName($extension);
+
         // Ensure path doesn't have trailing slash
-        $path = rtrim($path, '/');
+        $path     = rtrim($path, '/');
         $fullPath = $path . '/' . $fileName;
 
         // Store the file
@@ -117,13 +115,11 @@ class FileResolverService
      * @param string      $base64 The base64 encoded string (with data URI prefix)
      * @param string      $path   The storage path prefix
      * @param string|null $disk   The storage disk
-     *
-     * @return \Fleetbase\Models\File|null
      */
     protected function resolveFromBase64(string $base64, string $path, ?string $disk = null): ?File
     {
         $disk = $disk ?? config('filesystems.default');
-        
+
         // Ensure path is properly formatted
         $path = rtrim($path, '/');
 
@@ -134,8 +130,6 @@ class FileResolverService
      * Resolve a file from an existing file public ID.
      *
      * @param string $id The file public ID (e.g., 'file_390jd2')
-     *
-     * @return \Fleetbase\Models\File|null
      */
     protected function resolveFromId(string $id): ?File
     {
@@ -150,8 +144,6 @@ class FileResolverService
      * @param string      $url  The remote URL
      * @param string      $path The storage path prefix
      * @param string|null $disk The storage disk
-     *
-     * @return \Fleetbase\Models\File|null
      */
     protected function resolveFromUrl(string $url, string $path, ?string $disk = null): ?File
     {
@@ -163,15 +155,16 @@ class FileResolverService
 
             if (!$response->successful()) {
                 Log::warning('Failed to download file from URL', [
-                    'url' => $url,
+                    'url'    => $url,
                     'status' => $response->status(),
                 ]);
+
                 return null;
             }
 
             // Extract filename from URL or generate one
             $filename = $this->extractFilenameFromUrl($url);
-            $path = rtrim($path, '/');
+            $path     = rtrim($path, '/');
             $fullPath = $path . '/' . $filename;
 
             // Store the file content
@@ -179,23 +172,23 @@ class FileResolverService
 
             // Determine content type
             $contentType = $response->header('Content-Type') ?? 'application/octet-stream';
-            
+
             // Get file size
             $fileSize = $response->header('Content-Length') ?? strlen($response->body());
 
             // Create the file record
             return File::create([
-                'company_uuid' => session('company'),
-                'uploader_uuid' => auth()->id(),
-                'disk' => $disk,
-                'path' => $fullPath,
+                'company_uuid'      => session('company'),
+                'uploader_uuid'     => auth()->id(),
+                'disk'              => $disk,
+                'path'              => $fullPath,
                 'original_filename' => $filename,
-                'content_type' => $contentType,
-                'file_size' => $fileSize,
+                'content_type'      => $contentType,
+                'file_size'         => $fileSize,
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to download file from URL', [
-                'url' => $url,
+                'url'   => $url,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
@@ -213,13 +206,13 @@ class FileResolverService
      */
     protected function extractFilenameFromUrl(string $url): string
     {
-        $path = parse_url($url, PHP_URL_PATH);
+        $path     = parse_url($url, PHP_URL_PATH);
         $filename = basename($path);
 
         // If no valid filename, generate one
         if (empty($filename) || !Str::contains($filename, '.')) {
             $extension = $this->guessExtensionFromUrl($url);
-            $filename = File::randomFileName($extension);
+            $filename  = File::randomFileName($extension);
         }
 
         return $filename;
@@ -235,7 +228,7 @@ class FileResolverService
     protected function guessExtensionFromUrl(string $url): string
     {
         // Try to get extension from URL path
-        $path = parse_url($url, PHP_URL_PATH);
+        $path      = parse_url($url, PHP_URL_PATH);
         $extension = pathinfo($path, PATHINFO_EXTENSION);
 
         if (!empty($extension)) {
@@ -266,6 +259,7 @@ class FileResolverService
 
         if ($resolvedFile && $model) {
             $model->{$attribute} = $resolvedFile->uuid;
+
             return true;
         }
 

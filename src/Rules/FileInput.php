@@ -8,7 +8,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Str;
 
 /**
- * FileInput Validation Rule
+ * FileInput Validation Rule.
  *
  * Validates that input is a valid file source (upload, base64, ID, or URL).
  */
@@ -16,8 +16,6 @@ class FileInput implements Rule
 {
     /**
      * The validation error message.
-     *
-     * @var string
      */
     protected string $message = 'The :attribute must be a valid file upload, base64 string, file ID, or URL.';
 
@@ -25,9 +23,6 @@ class FileInput implements Rule
      * Determine if the validation rule passes.
      *
      * @param string $attribute
-     * @param mixed  $value
-     *
-     * @return bool
      */
     public function passes($attribute, $value): bool
     {
@@ -58,8 +53,6 @@ class FileInput implements Rule
 
     /**
      * Get the validation error message.
-     *
-     * @return string
      */
     public function message(): string
     {

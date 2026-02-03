@@ -5,14 +5,14 @@ namespace Fleetbase\Facades;
 use Illuminate\Support\Facades\Facade;
 
 /**
- * FileResolver Facade
- * 
+ * FileResolver Facade.
+ *
  * Provides convenient static-like access to the FileResolverService.
- * 
+ *
  * @method static \Fleetbase\Models\File|null resolve($file, ?string $path = 'uploads', ?string $disk = null)
- * @method static array resolveMany(array $files, ?string $path = 'uploads', ?string $disk = null)
- * @method static bool resolveAndAttach($file, $model, string $attribute, ?string $path = 'uploads', ?string $disk = null)
- * 
+ * @method static array                       resolveMany(array $files, ?string $path = 'uploads', ?string $disk = null)
+ * @method static bool                        resolveAndAttach($file, $model, string $attribute, ?string $path = 'uploads', ?string $disk = null)
+ *
  * @see \Fleetbase\Services\FileResolverService
  */
 class FileResolver extends Facade
