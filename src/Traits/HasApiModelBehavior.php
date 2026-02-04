@@ -21,10 +21,9 @@ trait HasApiModelBehavior
 {
     /**
      * Flag to disable caching for the next query.
-     *
-     * @var bool
      */
     protected static bool $cacheDisabledForNextQuery = false;
+
     /**
      * Boot the HasApiModelBehavior trait.
      *
@@ -272,8 +271,6 @@ trait HasApiModelBehavior
      *
      * This method allows you to bypass the cache for a single query chain.
      * The cache will be re-enabled automatically after the query executes.
-     *
-     * @return static
      *
      * @example
      * ```php
