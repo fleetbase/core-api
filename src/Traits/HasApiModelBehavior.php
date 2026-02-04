@@ -275,8 +275,6 @@ trait HasApiModelBehavior
      * This method creates a new instance with caching disabled for that specific instance.
      * Safe for use in Laravel Octane and concurrent request environments.
      *
-     * @return static
-     *
      * @example
      * ```php
      * // Query without cache - use queryFromRequest (not queryWithRequest)
@@ -287,7 +285,7 @@ trait HasApiModelBehavior
      */
     public static function withoutCache(): static
     {
-        $instance = new static();
+        $instance                  = new static();
         $instance->disableApiCache = true;
 
         return $instance;
