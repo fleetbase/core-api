@@ -254,9 +254,12 @@ class Company extends Model
      *
      * @return Company
      */
-    public function setOwner(User $user)
+    public function setOwner(User $user, bool $completedOnboarding = false)
     {
         $this->owner_uuid = $user->uuid;
+        if ($completedOnboarding) {
+            $this->onboarding_completed_by_uuid = $user->uuid;
+        }
 
         return $this;
     }
