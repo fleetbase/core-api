@@ -20,6 +20,12 @@ use Illuminate\Support\Str;
 trait HasApiModelBehavior
 {
     /**
+     * Flag to disable caching for the next query.
+     *
+     * @var bool
+     */
+    protected static bool $cacheDisabledForNextQuery = false;
+    /**
      * Boot the HasApiModelBehavior trait.
      *
      * Registers model event listeners for automatic cache invalidation.
@@ -219,6 +225,14 @@ trait HasApiModelBehavior
      */
     protected function shouldUseCache(): bool
     {
+        // Check if cache has been disabled for this query
+        if (static::$cacheDisabledForNextQuery) {
+            // Reset the flag for subsequent queries
+            static::$cacheDisabledForNextQuery = false;
+
+            return false;
+        }
+
         // Check if HasApiModelCache trait is used
         $traits        = class_uses_recursive(static::class);
         $hasCacheTrait = isset($traits['Fleetbase\\Traits\\HasApiModelCache']);
@@ -251,6 +265,29 @@ trait HasApiModelBehavior
     public static function queryWithRequest(Request $request, ?\Closure $queryCallback = null)
     {
         return (new static())->queryFromRequest($request, $queryCallback);
+    }
+
+    /**
+     * Disable caching for the next query.
+     *
+     * This method allows you to bypass the cache for a single query chain.
+     * The cache will be re-enabled automatically after the query executes.
+     *
+     * @return static
+     *
+     * @example
+     * ```php
+     * // Query without cache
+     * $results = Place::withoutCache()->queryWithRequest($request, function(&$query) {
+     *     $query->where('owner_uuid', $customer->uuid);
+     * });
+     * ```
+     */
+    public static function withoutCache(): static
+    {
+        static::$cacheDisabledForNextQuery = true;
+
+        return new static();
     }
 
     /**
