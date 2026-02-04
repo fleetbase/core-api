@@ -20,11 +20,6 @@ use Illuminate\Support\Str;
 trait HasApiModelBehavior
 {
     /**
-     * Flag to disable caching for the next query.
-     */
-    protected static bool $cacheDisabledForNextQuery = false;
-
-    /**
      * Boot the HasApiModelBehavior trait.
      *
      * Registers model event listeners for automatic cache invalidation.
@@ -224,14 +219,6 @@ trait HasApiModelBehavior
      */
     protected function shouldUseCache(): bool
     {
-        // Check if cache has been disabled for this query
-        if (static::$cacheDisabledForNextQuery) {
-            // Reset the flag for subsequent queries
-            static::$cacheDisabledForNextQuery = false;
-
-            return false;
-        }
-
         // Check if HasApiModelCache trait is used
         $traits        = class_uses_recursive(static::class);
         $hasCacheTrait = isset($traits['Fleetbase\\Traits\\HasApiModelCache']);
@@ -256,35 +243,53 @@ trait HasApiModelBehavior
      *
      * @param Request       $request       the HTTP request containing the input data
      * @param \Closure|null $queryCallback optional callback to modify data with Request and QueryBuilder instance
+     * @param bool          $withoutCache  whether to bypass the cache for this query
      *
      * @return \Illuminate\Database\Eloquent\Collection|\Illuminate\Contracts\Pagination\LengthAwarePaginator
      *
      * @static
+     *
+     * @example
+     * ```php
+     * // Query with cache disabled using parameter
+     * $results = Place::queryWithRequest($request, function (&$query) {
+     *     $query->where('owner_uuid', $customer->uuid);
+     * }, withoutCache: true);
+     * ```
      */
-    public static function queryWithRequest(Request $request, ?\Closure $queryCallback = null)
+    public static function queryWithRequest(Request $request, ?\Closure $queryCallback = null, bool $withoutCache = false)
     {
-        return (new static())->queryFromRequest($request, $queryCallback);
+        $instance = new static();
+
+        if ($withoutCache) {
+            $instance->disableApiCache = true;
+        }
+
+        return $instance->queryFromRequest($request, $queryCallback);
     }
 
     /**
      * Disable caching for the next query.
      *
-     * This method allows you to bypass the cache for a single query chain.
-     * The cache will be re-enabled automatically after the query executes.
+     * This method creates a new instance with caching disabled for that specific instance.
+     * Safe for use in Laravel Octane and concurrent request environments.
+     *
+     * @return static
      *
      * @example
      * ```php
-     * // Query without cache
-     * $results = Place::withoutCache()->queryWithRequest($request, function(&$query) {
+     * // Query without cache - use queryFromRequest (not queryWithRequest)
+     * $results = Place::withoutCache()->queryFromRequest($request, function (&$query) {
      *     $query->where('owner_uuid', $customer->uuid);
      * });
      * ```
      */
     public static function withoutCache(): static
     {
-        static::$cacheDisabledForNextQuery = true;
+        $instance = new static();
+        $instance->disableApiCache = true;
 
-        return new static();
+        return $instance;
     }
 
     /**
