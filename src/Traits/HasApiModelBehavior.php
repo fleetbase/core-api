@@ -228,7 +228,8 @@ trait HasApiModelBehavior
         }
 
         // Check if caching is disabled for this specific model
-        if (property_exists($this, 'disableApiCache') && $this->disableApiCache === true) {
+        // Use isset() to detect both declared properties and dynamically set properties
+        if (isset($this->disableApiCache) && $this->disableApiCache === true) {
             return false;
         }
 
