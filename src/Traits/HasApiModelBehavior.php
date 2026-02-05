@@ -228,7 +228,8 @@ trait HasApiModelBehavior
         }
 
         // Check if caching is disabled for this specific model
-        if (property_exists($this, 'disableApiCache') && $this->disableApiCache === true) {
+        // Use isset() to detect both declared properties and dynamically set properties
+        if (isset($this->disableApiCache) && $this->disableApiCache === true) {
             return false;
         }
 
@@ -243,14 +244,51 @@ trait HasApiModelBehavior
      *
      * @param Request       $request       the HTTP request containing the input data
      * @param \Closure|null $queryCallback optional callback to modify data with Request and QueryBuilder instance
+     * @param bool          $withoutCache  whether to bypass the cache for this query
      *
      * @return \Illuminate\Database\Eloquent\Collection|\Illuminate\Contracts\Pagination\LengthAwarePaginator
      *
      * @static
+     *
+     * @example
+     * ```php
+     * // Query with cache disabled using parameter
+     * $results = Place::queryWithRequest($request, function (&$query) {
+     *     $query->where('owner_uuid', $customer->uuid);
+     * }, withoutCache: true);
+     * ```
      */
-    public static function queryWithRequest(Request $request, ?\Closure $queryCallback = null)
+    public static function queryWithRequest(Request $request, ?\Closure $queryCallback = null, bool $withoutCache = false)
     {
-        return (new static())->queryFromRequest($request, $queryCallback);
+        $instance = new static();
+
+        if ($withoutCache) {
+            $instance->disableApiCache = true;
+        }
+
+        return $instance->queryFromRequest($request, $queryCallback);
+    }
+
+    /**
+     * Disable caching for the next query.
+     *
+     * This method creates a new instance with caching disabled for that specific instance.
+     * Safe for use in Laravel Octane and concurrent request environments.
+     *
+     * @example
+     * ```php
+     * // Query without cache - use queryFromRequest (not queryWithRequest)
+     * $results = Place::withoutCache()->queryFromRequest($request, function (&$query) {
+     *     $query->where('owner_uuid', $customer->uuid);
+     * });
+     * ```
+     */
+    public static function withoutCache(): static
+    {
+        $instance                  = new static();
+        $instance->disableApiCache = true;
+
+        return $instance;
     }
 
     /**

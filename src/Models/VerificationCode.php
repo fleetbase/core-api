@@ -216,10 +216,7 @@ class VerificationCode extends Model
                     'error' => $e->getMessage(),
                 ]);
 
-                // Optionally rethrow based on configuration
-                if (config('sms.throw_on_error', false)) {
-                    throw $e;
-                }
+                throw $e;
             }
         }
 
