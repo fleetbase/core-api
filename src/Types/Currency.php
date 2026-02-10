@@ -596,6 +596,15 @@ class Currency implements \JsonSerializable
             'decimalSeparator'  => '.',
             'symbolPlacement'   => 'before',
         ],
+        'KZT' => [
+            'code'              => 'KZT',
+            'title'             => 'Kazakhstani Tenge',
+            'symbol'            => '₸',
+            'precision'         => 2,
+            'thousandSeparator' => ' ',
+            'decimalSeparator'  => '.',
+            'symbolPlacement'   => 'after',
+        ],
         'KES' => [
             'code'              => 'KES',
             'title'             => 'Kenyan Shilling',
