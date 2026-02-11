@@ -25,29 +25,34 @@ class UserCacheService
 
     /**
      * Generate cache key for a user and company.
+     * Includes the user's updated_at timestamp for automatic cache busting.
      *
-     * @param int|string $userId
+     * @param User $user
+     * @param string $companyId
+     * @return string
      */
-    public static function getCacheKey($userId, string $companyId): string
+    public static function getCacheKey(User $user, string $companyId): string
     {
-        return self::CACHE_PREFIX . $userId . ':' . $companyId;
+        return self::CACHE_PREFIX . $user->uuid . ':' . $companyId . ':' . $user->updated_at->timestamp;
     }
 
     /**
      * Get cached user data.
      *
-     * @param int|string $userId
+     * @param User $user
+     * @param string $companyId
+     * @return array|null
      */
-    public static function get($userId, string $companyId): ?array
+    public static function get(User $user, string $companyId): ?array
     {
-        $cacheKey = self::getCacheKey($userId, $companyId);
+        $cacheKey = self::getCacheKey($user, $companyId);
 
         try {
             $cached = Cache::get($cacheKey);
 
             if ($cached) {
                 Log::debug('User cache hit', [
-                    'user_id'    => $userId,
+                    'user_id'    => $user->uuid,
                     'company_id' => $companyId,
                     'cache_key'  => $cacheKey,
                 ]);
@@ -57,7 +62,7 @@ class UserCacheService
         } catch (\Exception $e) {
             Log::error('Failed to get user cache', [
                 'error'      => $e->getMessage(),
-                'user_id'    => $userId,
+                'user_id'    => $user->uuid,
                 'company_id' => $companyId,
             ]);
 
@@ -68,18 +73,22 @@ class UserCacheService
     /**
      * Store user data in cache.
      *
-     * @param int|string $userId
+     * @param User $user
+     * @param string $companyId
+     * @param array $data
+     * @param int|null $ttl
+     * @return bool
      */
-    public static function put($userId, string $companyId, array $data, ?int $ttl = null): bool
+    public static function put(User $user, string $companyId, array $data, ?int $ttl = null): bool
     {
-        $cacheKey = self::getCacheKey($userId, $companyId);
+        $cacheKey = self::getCacheKey($user, $companyId);
         $ttl      = $ttl ?? self::CACHE_TTL;
 
         try {
             Cache::put($cacheKey, $data, $ttl);
 
             Log::debug('User cache stored', [
-                'user_id'    => $userId,
+                'user_id'    => $user->uuid,
                 'company_id' => $companyId,
                 'cache_key'  => $cacheKey,
                 'ttl'        => $ttl,
@@ -89,7 +98,7 @@ class UserCacheService
         } catch (\Exception $e) {
             Log::error('Failed to store user cache', [
                 'error'      => $e->getMessage(),
-                'user_id'    => $userId,
+                'user_id'    => $user->uuid,
                 'company_id' => $companyId,
             ]);
 
@@ -108,7 +117,7 @@ class UserCacheService
 
             // Clear cache for each company
             foreach ($companies as $companyId) {
-                $cacheKey = self::getCacheKey($user->id, $companyId);
+                $cacheKey = self::getCacheKey($user, $companyId);
                 Cache::forget($cacheKey);
 
                 Log::debug('User cache invalidated', [
@@ -121,7 +130,7 @@ class UserCacheService
             // Also clear for current session company if different
             $sessionCompany = session('company');
             if ($sessionCompany && !in_array($sessionCompany, $companies)) {
-                $cacheKey = self::getCacheKey($user->id, $sessionCompany);
+                $cacheKey = self::getCacheKey($user, $sessionCompany);
                 Cache::forget($cacheKey);
 
                 Log::debug('User cache invalidated for session company', [
@@ -141,24 +150,26 @@ class UserCacheService
     /**
      * Invalidate cache for a specific user and company.
      *
-     * @param int|string $userId
+     * @param User $user
+     * @param string $companyId
+     * @return void
      */
-    public static function invalidate($userId, string $companyId): void
+    public static function invalidate(User $user, string $companyId): void
     {
-        $cacheKey = self::getCacheKey($userId, $companyId);
+        $cacheKey = self::getCacheKey($user, $companyId);
 
         try {
             Cache::forget($cacheKey);
 
             Log::debug('User cache invalidated', [
-                'user_id'    => $userId,
+                'user_id'    => $user->uuid,
                 'company_id' => $companyId,
                 'cache_key'  => $cacheKey,
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to invalidate user cache', [
                 'error'      => $e->getMessage(),
-                'user_id'    => $userId,
+                'user_id'    => $user->uuid,
                 'company_id' => $companyId,
             ]);
         }

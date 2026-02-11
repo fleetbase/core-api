@@ -182,7 +182,7 @@ class UserController extends FleetbaseController
 
         // Try to get from server cache
         $companyId  = session('company');
-        $cachedData = UserCacheService::get($user->id, $companyId);
+        $cachedData = UserCacheService::get($user, $companyId);
 
         if ($cachedData) {
             // Return cached data with cache headers
@@ -202,7 +202,7 @@ class UserController extends FleetbaseController
         $userArray = $userData->toArray($request);
 
         // Store in cache
-        UserCacheService::put($user->id, $companyId, $userArray);
+        UserCacheService::put($user, $companyId, $userArray);
 
         // Return with cache headers
         return response()->json(['user' => $userArray])
