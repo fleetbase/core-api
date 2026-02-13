@@ -15,6 +15,8 @@ class UserObserver
     public function updated(User $user): void
     {
         // Invalidate user cache when user is updated
+        // Note: With updated_at in cache key, this provides immediate invalidation
+        // while the timestamp-based key provides automatic cache busting
         UserCacheService::invalidateUser($user);
 
         // Invalidate organizations cache (user might be an owner)
