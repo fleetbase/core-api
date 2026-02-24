@@ -1,12 +1,22 @@
-@component('mail::message')
-# @if($currentHour < 12)Good Morning, {{ \Fleetbase\Support\Utils::delinkify($user->name) }}!@elseif($currentHour < 18)Good Afternoon, {{ \Fleetbase\Support\Utils::delinkify($user->name) }}!@elseGood Evening, {{ \Fleetbase\Support\Utils::delinkify($user->name) }}!@endif
+<x-mail-layout>
+<h2 style="font-size: 18px; font-weight: 600;">
+@if($currentHour < 12)
+    Good Morning, {{ \Fleetbase\Support\Utils::delinkify($user->name) }}!
+@elseif($currentHour < 18)
+    Good Afternoon, {{ \Fleetbase\Support\Utils::delinkify($user->name) }}!
+@else
+    Good Evening, {{ \Fleetbase\Support\Utils::delinkify($user->name) }}!
+@endif
+</h2>
 
 @if($content)
 {!! $content !!}
 @else
 Welcome to {{ $appName }}, use the code below to verify your email address and complete registration to {{ $appName }}.
-
-**Your verification code:** `{{ $code }}`
+<br />
+<br />
+Your verification code: <code>{{ $code }}</code>
+<br />
 @endif
 
 @if($type === 'email_verification')
@@ -15,5 +25,4 @@ Verify Email
 @endcomponent
 @endif
 
-© {{ date('Y') }} {{ $appName }}. All Rights Reserved.
-@endcomponent
+</x-mail-layout>
