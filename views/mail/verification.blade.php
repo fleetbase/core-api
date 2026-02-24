@@ -20,9 +20,9 @@ Your verification code: <code>{{ $code }}</code>
 @endif
 
 @if($type === 'email_verification')
-    @component('mail::button', ['url' => \Fleetbase\Support\Utils::consoleUrl('onboard', ['step' => 'verify-email', 'session' => base64_encode($user->uuid), 'code' => $code ])])
-        Verify Email
-    @endcomponent
+@component('mail::button', ['url' => \Fleetbase\Support\Utils::consoleUrl('onboard', ['step' => 'verify-email', 'session' => base64_encode($user->uuid), 'code' => $code ])])
+Verify Email
+@endcomponent
 @endif
 
 </x-mail-layout>

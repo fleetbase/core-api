@@ -5,8 +5,6 @@ namespace Fleetbase\Mail;
 use Fleetbase\Models\VerificationCode;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
-use Illuminate\Mail\Mailables\Content;
-use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
 class VerificationMail extends Mailable
@@ -17,12 +15,12 @@ class VerificationMail extends Mailable
     /**
      * The verification code to email.
      */
-    private VerificationCode $verificationCode;
+    public VerificationCode $verificationCode;
 
     /**
      * Custom content to render if supplied.
      */
-    private ?string $content;
+    public ?string $content;
 
     /**
      * Create a new message instance.
@@ -36,30 +34,21 @@ class VerificationMail extends Mailable
     }
 
     /**
-     * Get the message content definition.
+     * Build the message.
+     *
+     * @return $this
      */
-    public function envelope(): Envelope
+    public function build()
     {
-        return new Envelope(
-            subject: $this->verificationCode->code . ' is your ' . config('app.name') . ' verification code',
-        );
-    }
-
-    /**
-     * Get the message content definition.
-     */
-    public function content(): Content
-    {
-        return new Content(
-            markdown: 'fleetbase::mail.verification',
-            with: [
+        return $this
+            ->subject($this->verificationCode->code . ' is your ' . config('app.name') . ' verification code')
+            ->markdown('fleetbase::mail.verification', [
                 'appName'     => config('app.name'),
                 'currentHour' => now()->hour,
                 'user'        => $this->verificationCode->subject,
                 'code'        => $this->verificationCode->code,
                 'type'        => $this->verificationCode->for,
                 'content'     => $this->content,
-            ]
-        );
+            ]);
     }
 }
