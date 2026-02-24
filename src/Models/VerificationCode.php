@@ -88,8 +88,9 @@ class VerificationCode extends Model
      */
     public static function generateFor($subject = null, $for = 'general_verification', $save = true)
     {
-        $verifyCode      = new static();
-        $verifyCode->for = $for;
+        $verifyCode         = new static();
+        $verifyCode->for    = $for;
+        $verifyCode->status = 'pending';  // Set default status
 
         if ($subject) {
             $verifyCode->setSubject($subject, false);
