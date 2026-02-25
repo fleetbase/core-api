@@ -3,6 +3,7 @@
 namespace Fleetbase\Http\Requests;
 
 use Illuminate\Contracts\Validation\Validator;
+use Illuminate\Validation\Rules\Password;
 
 class SignUpRequest extends FleetbaseRequest
 {
@@ -56,7 +57,17 @@ class SignUpRequest extends FleetbaseRequest
         return [
             'user.name'                  => ['required'],
             'user.email'                 => ['required', 'email'],
-            'user.password'              => ['required', 'confirmed', 'min:4', 'max:24'],
+            'user.password'              => [
+                'required',
+                'confirmed',
+                'string',
+                Password::min(8)
+                    ->mixedCase()
+                    ->letters()
+                    ->numbers()
+                    ->symbols()
+                    ->uncompromised(),
+            ],
             'user.password_confirmation' => ['required'],
             'company.name'               => ['required'],
         ];
@@ -70,10 +81,16 @@ class SignUpRequest extends FleetbaseRequest
     public function messages()
     {
         return [
-            '*.required'             => 'Your :attribute is required to signup',
-            'user.email'             => 'You must enter a valid :attribute to signup',
-            'user.email.unique'      => 'An account with this email address already exists',
-            'user.password.required' => 'You must enter a password to signup',
+            '*.required'                      => 'Your :attribute is required to signup',
+            'user.email'                      => 'You must enter a valid :attribute to signup',
+            'user.email.unique'               => 'An account with this email address already exists',
+            'user.password.required'          => 'You must enter a password to signup',
+            'user.password.min'               => 'Password must be at least 8 characters.',
+            'user.password.mixed'             => 'Password must contain both uppercase and lowercase letters.',
+            'user.password.letters'           => 'Password must contain at least one letter.',
+            'user.password.numbers'           => 'Password must contain at least one number.',
+            'user.password.symbols'           => 'Password must contain at least one symbol.',
+            'user.password.uncompromised'     => 'This password has appeared in a data breach. Please choose a different one.',
         ];
     }
 }
