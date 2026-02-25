@@ -42,8 +42,36 @@ class AuthController extends Controller
      */
     public function login(LoginRequest $request)
     {
-        $identity = $request->input('identity');
-        $password = $request->input('password');
+        $identity  = $request->input('identity');
+        $password  = $request->input('password');
+        $authToken = $request->input('authToken');
+
+        // If an existing auth token is provided, attempt to re-authenticate with it.
+        // The token must be valid AND must belong to the user identified by the
+        // 'identity' field in this request, preventing token-swap attacks where a
+        // token from one user could be used to authenticate as another.
+        if ($authToken) {
+            $personalAccessToken = PersonalAccessToken::findToken($authToken);
+
+            if ($personalAccessToken) {
+                $personalAccessToken->loadMissing('tokenable');
+                $tokenOwner = $personalAccessToken->tokenable;
+
+                if (
+                    $tokenOwner instanceof User &&
+                    ($tokenOwner->email === $identity || $tokenOwner->phone === $identity)
+                ) {
+                    return response()->json([
+                        'token' => $authToken,
+                        'type'  => $tokenOwner->getType(),
+                    ]);
+                }
+            }
+
+            // If the token is invalid or does not match the claimed identity, fall
+            // through silently to normal password-based authentication. Do not
+            // return an error here to avoid leaking whether the token exists.
+        }
 
         // Find the user using the identity provided
         $user = User::where(function ($query) use ($identity) {
