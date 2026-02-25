@@ -556,11 +556,19 @@ trait HasApiControllerBehavior
     public function deleteRecord($id, Request $request)
     {
         if (Http::isInternalRequest($request)) {
-            $key       = $this->model->getKeyName();
-            $builder   = $this->model->where($key, $id);
+            $key     = $this->model->getKeyName();
+            $builder = $this->model->where($key, $id);
         } else {
             $builder = $this->model->wherePublicId($id);
         }
+
+        // Defence-in-depth: scope delete to the caller's company to prevent
+        // cross-tenant deletion (GHSA-3wj9-hh56-7fw7).
+        $companyUuid = session('company');
+        if ($companyUuid && $this->model->isColumn($this->model->qualifyColumn('company_uuid'))) {
+            $builder->where($this->model->qualifyColumn('company_uuid'), $companyUuid);
+        }
+
         $builder   = $this->model->applyDirectivesToQuery($request, $builder);
         $dataModel = $builder->first();
 
