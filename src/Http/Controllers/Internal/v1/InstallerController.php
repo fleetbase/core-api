@@ -103,7 +103,7 @@ class InstallerController extends Controller
         ini_set('memory_limit', '-1');
         ini_set('max_execution_time', 0);
 
-        shell_exec(base_path('artisan') . ' migrate');
+        Artisan::call('migrate', ['--force' => true]);
         Artisan::call('sandbox:migrate');
 
         // Clear cache after migration

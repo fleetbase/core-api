@@ -40,8 +40,12 @@ class LoginRequest extends FleetbaseRequest
     public function rules()
     {
         return [
-            'identity' => 'required|email|exists:users,email',
-            'password' => 'required',
+            // Intentionally no 'exists:users,email' rule here — exposing whether
+            // an identity exists in the database enables user enumeration attacks.
+            // Validation of identity existence is handled in the controller with
+            // a generic error message to prevent information leakage.
+            'identity' => ['required'],
+            'password' => ['required'],
         ];
     }
 
@@ -53,10 +57,8 @@ class LoginRequest extends FleetbaseRequest
     public function messages()
     {
         return [
-            'identity.required'    => 'A email is required',
-            'identity.exists'      => 'No user found by this email',
-            'identity.email'       => 'Email used is invalid',
-            'password.required'    => 'A password is required',
+            'identity.required' => 'An email address or phone number is required.',
+            'password.required' => 'A password is required.',
         ];
     }
 }

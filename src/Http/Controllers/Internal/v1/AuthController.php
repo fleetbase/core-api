@@ -46,14 +46,31 @@ class AuthController extends Controller
         $password  = $request->input('password');
         $authToken = $request->input('authToken');
 
-        // if attempting to authenticate with auth token validate it first against database and respond with it
+        // If an existing auth token is provided, attempt to re-authenticate with it.
+        // The token must be valid AND must belong to the user identified by the
+        // 'identity' field in this request, preventing token-swap attacks where a
+        // token from one user could be used to authenticate as another.
         if ($authToken) {
             $personalAccessToken = PersonalAccessToken::findToken($authToken);
-            $personalAccessToken->loadMissing('tokenable');
 
             if ($personalAccessToken) {
-                return response()->json(['token' => $authToken, 'type' => $personalAccessToken->tokenable instanceof User ? $personalAccessToken->tokenable->getType() : null]);
+                $personalAccessToken->loadMissing('tokenable');
+                $tokenOwner = $personalAccessToken->tokenable;
+
+                if (
+                    $tokenOwner instanceof User &&
+                    ($tokenOwner->email === $identity || $tokenOwner->phone === $identity)
+                ) {
+                    return response()->json([
+                        'token' => $authToken,
+                        'type'  => $tokenOwner->getType(),
+                    ]);
+                }
             }
+
+            // If the token is invalid or does not match the claimed identity, fall
+            // through silently to normal password-based authentication. Do not
+            // return an error here to avoid leaking whether the token exists.
         }
 
         // Find the user using the identity provided
@@ -61,8 +78,10 @@ class AuthController extends Controller
             $query->where('email', $identity)->orWhere('phone', $identity);
         })->first();
 
-        if (!$user) {
-            return response()->error('No user found by the provided identity.', 401, ['code' => 'no_user']);
+        // Use a generic error message for both non-existent user and wrong password
+        // to prevent user enumeration via differential error responses.
+        if (!$user || Auth::isInvalidPassword($password, $user->password)) {
+            return response()->error('These credentials do not match our records.', 401, ['code' => 'invalid_credentials']);
         }
 
         // Check if 2FA enabled
@@ -78,10 +97,6 @@ class AuthController extends Controller
         // If no password prompt user to reset password
         if (empty($user->password)) {
             return response()->error('Password reset required to continue.', 400, ['code' => 'reset_password']);
-        }
-
-        if (Auth::isInvalidPassword($password, $user->password)) {
-            return response()->error('Authentication failed using password provided.', 401, ['code' => 'invalid_password']);
         }
 
         if ($user->isNotVerified() && $user->isNotAdmin()) {
@@ -274,13 +289,13 @@ class AuthController extends Controller
 
         // Send user their verification code
         try {
-            Twilio::message($queryPhone, shell_exec('Your Fleetbase authentication code is ') . $verifyCode);
+            Twilio::message($queryPhone, 'Your Fleetbase authentication code is ' . $verifyCode);
         } catch (\Exception|\Twilio\Exceptions\RestException $e) {
             return response()->json(['error' => $e->getMessage()], 400);
         }
 
-        // Store verify code for this number
-        Redis::set($verifyCodeKey, $verifyCode);
+        // Store verify code for this number with a 10-minute TTL to prevent replay attacks
+        Redis::setex($verifyCodeKey, 600, $verifyCode);
 
         // 200 OK
         return response()->json(['status' => 'OK']);
@@ -308,11 +323,22 @@ class AuthController extends Controller
         $verifyCode    = $request->input('code');
         $verifyCodeKey =  Str::slug($queryPhone . '_verify_code', '_');
 
-        // Generate hto
+        // Retrieve the stored verification code from Redis
         $storedVerifyCode = Redis::get($verifyCodeKey);
 
-        // Verify
-        if ($verifyCode !== '000999' && $verifyCode !== $storedVerifyCode) {
+        // Retrieve the optional testing bypass code from configuration.
+        // This is configurable via the SMS_AUTH_BYPASS_CODE environment variable
+        // and is intended for development/testing environments only.
+        // It MUST be left unset (null) in production deployments.
+        $bypassCode = config('fleetbase.sms_auth_bypass_code');
+
+        // Verify the submitted code against the stored OTP using a constant-time
+        // comparison to prevent timing attacks. If a bypass code is configured
+        // and the environment is not production, also allow that code.
+        $isValidOtp    = !empty($storedVerifyCode) && hash_equals((string) $storedVerifyCode, (string) $verifyCode);
+        $isBypassValid = !empty($bypassCode) && !app()->environment('production') && hash_equals((string) $bypassCode, (string) $verifyCode);
+
+        if (!$isValidOtp && !$isBypassValid) {
             return response()->error('Invalid verification code');
         }
 

@@ -404,10 +404,27 @@ class UserController extends FleetbaseController
             return response()->error('No user to deactivate', 401);
         }
 
-        $user = User::where('uuid', $id)->first();
+        $currentUser = request()->user();
+
+        // Scope the lookup to the current company to prevent cross-organization IDOR.
+        $user = User::where('uuid', $id)
+            ->whereHas('companyUsers', function ($query) {
+                $query->where('company_uuid', session('company'));
+            })
+            ->first();
 
         if (!$user) {
-            return response()->error('No user found', 401);
+            return response()->error('No user found', 404);
+        }
+
+        // Prevent a user from deactivating their own account via this endpoint.
+        if ($currentUser && $currentUser->uuid === $user->uuid) {
+            return response()->error('You cannot deactivate your own account.', 403);
+        }
+
+        // Prevent non-administrators from deactivating administrator accounts.
+        if ($user->isAdmin() && $currentUser && !$currentUser->isAdmin()) {
+            return response()->error('Insufficient permissions to deactivate this user.', 403);
         }
 
         $user->deactivate();
