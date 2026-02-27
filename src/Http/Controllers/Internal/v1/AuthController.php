@@ -78,6 +78,15 @@ class AuthController extends Controller
             $query->where('email', $identity)->orWhere('phone', $identity);
         })->first();
 
+        // If the user exists but has no password set (e.g. SSO-invited or provisioned
+        // accounts), silently fall through to the generic credentials error below.
+        // This guard MUST come before isInvalidPassword() which has a strict string
+        // type declaration on $hashedPassword and would throw a TypeError on null.
+        // We do NOT return a distinct error here to avoid leaking account state.
+        if ($user && empty($user->password)) {
+            $user = null;
+        }
+
         // Use a generic error message for both non-existent user and wrong password
         // to prevent user enumeration via differential error responses.
         if (!$user || Auth::isInvalidPassword($password, $user->password)) {
@@ -92,11 +101,6 @@ class AuthController extends Controller
                 'twoFaSession' => $twoFaSession,
                 'isEnabled'    => true,
             ]);
-        }
-
-        // If no password prompt user to reset password
-        if (empty($user->password)) {
-            return response()->error('Password reset required to continue.', 400, ['code' => 'reset_password']);
         }
 
         if ($user->isNotVerified() && $user->isNotAdmin()) {
