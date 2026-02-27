@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Models;
 
+use Fleetbase\Scopes\CompanyScope;
 use Fleetbase\Traits\ClearsHttpCache;
 use Fleetbase\Traits\Expandable;
 use Fleetbase\Traits\Filterable;
@@ -64,6 +65,27 @@ class Model extends EloquentModel
      * @var string
      */
     public $incrementing = false;
+
+    /**
+     * Boot the model and register global scopes.
+     *
+     * The CompanyScope is registered here so that every subclass automatically
+     * inherits tenant isolation on all Eloquent queries.  The scope is
+     * self-guarding: it only activates when a company UUID is present in the
+     * session and the model's table has a `company_uuid` column, so models
+     * without that column (User, Company, Setting, etc.) are unaffected.
+     *
+     * To bypass the scope for a specific query (e.g. super-admin tooling):
+     *   Model::withoutCompanyScope()->where(...)->get();
+     *
+     * @return void
+     */
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::addGlobalScope(new CompanyScope());
+    }
 
     /**
      * Determines if model is searchable.

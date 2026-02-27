@@ -29,6 +29,11 @@ class UserFilter extends Filter
         $this->builder->where('type', '!=', 'admin');
     }
 
+    public function isUser()
+    {
+        $this->builder->whereIn('type', ['user', 'admin']);
+    }
+
     public function query(?string $query)
     {
         $this->builder->search($query);
@@ -51,8 +56,11 @@ class UserFilter extends Filter
 
     public function role(?string $roleId)
     {
-        $this->builder->whereHas('roles', function ($query) use ($roleId) {
-            $query->where('id', $roleId);
+        $this->builder->whereHas('companyUsers', function ($query) use ($roleId) {
+            $query->where('company_uuid', session('company'));
+            $query->whereHas('roles', function ($query) use ($roleId) {
+                $query->where('id', $roleId);
+            });
         });
     }
 }

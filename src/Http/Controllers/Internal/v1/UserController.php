@@ -14,6 +14,7 @@ use Fleetbase\Http\Requests\Internal\InviteUserRequest;
 use Fleetbase\Http\Requests\Internal\ResendUserInvite;
 use Fleetbase\Http\Requests\Internal\UpdatePasswordRequest;
 use Fleetbase\Http\Requests\Internal\ValidatePasswordRequest;
+use Fleetbase\Http\Requests\UpdateUserRequest;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\Invite;
@@ -56,6 +57,16 @@ class UserController extends FleetbaseController
      * @var CreateUserRequest
      */
     public $createRequest = CreateUserRequest::class;
+
+    /**
+     * Update user request.
+     *
+     * Enforces that email and phone cannot be set to an empty string
+     * and that uniqueness constraints are respected on update.
+     *
+     * @var UpdateUserRequest
+     */
+    public $updateRequest = UpdateUserRequest::class;
 
     /**
      * Creates a record with request payload.
@@ -126,6 +137,11 @@ class UserController extends FleetbaseController
      */
     public function updateRecord(Request $request, string $id)
     {
+        // Run the UpdateUserRequest validation rules before delegating to the
+        // model trait. This prevents email/phone being set to an empty string
+        // and enforces uniqueness constraints on partial (PATCH) updates.
+        $this->validateRequest($request);
+
         try {
             $record = $this->model->updateRecordFromRequest($request, $id, function (&$request, &$user) {
                 // Assign role if set
@@ -182,7 +198,7 @@ class UserController extends FleetbaseController
 
         // Try to get from server cache
         $companyId  = session('company');
-        $cachedData = UserCacheService::get($user->id, $companyId);
+        $cachedData = UserCacheService::get($user, $companyId);
 
         if ($cachedData) {
             // Return cached data with cache headers
@@ -202,7 +218,7 @@ class UserController extends FleetbaseController
         $userArray = $userData->toArray($request);
 
         // Store in cache
-        UserCacheService::put($user->id, $companyId, $userArray);
+        UserCacheService::put($user, $companyId, $userArray);
 
         // Return with cache headers
         return response()->json(['user' => $userArray])
@@ -404,18 +420,56 @@ class UserController extends FleetbaseController
             return response()->error('No user to deactivate', 401);
         }
 
-        $user = User::where('uuid', $id)->first();
+        $currentUser = request()->user();
+
+        // Scope the lookup to the current company to prevent cross-organization IDOR.
+        $user = User::where('uuid', $id)
+            ->whereHas('companyUsers', function ($query) {
+                $query->where('company_uuid', session('company'));
+            })
+            ->first();
 
         if (!$user) {
-            return response()->error('No user found', 401);
+            return response()->error('No user found', 404);
         }
 
-        $user->deactivate();
-        $user = $user->refresh();
+        // Prevent a user from deactivating their own account via this endpoint.
+        if ($currentUser && $currentUser->uuid === $user->uuid) {
+            return response()->error('You cannot deactivate your own account.', 403);
+        }
+
+        // Layered privilege check:
+        //
+        // Tier 1 — System admins (isAdmin()) can deactivate anyone except other
+        //           system admins.  This is the highest privilege tier.
+        if ($user->isAdmin()) {
+            return response()->error('Insufficient permissions to deactivate this user.', 403);
+        }
+
+        // Tier 2 — Users holding the 'Administrator' role can only be deactivated
+        //           by a system admin (handled above).  A regular user or another
+        //           role-based Administrator cannot deactivate them.
+        if ($user->hasRole('Administrator') && $currentUser && !$currentUser->isAdmin()) {
+            return response()->error('Insufficient permissions to deactivate this user.', 403);
+        }
+
+        // Only deactivate the CompanyUser record for the current organisation.
+        // Calling User::deactivate() would set the user's global status to
+        // 'inactive', locking them out of every organisation they belong to.
+        // Instead we update only the pivot record so the user remains active
+        // in any other organisations they are a member of.
+        $companyUser = $user->companyUsers()->where('company_uuid', session('company'))->first();
+
+        if (!$companyUser) {
+            return response()->error('User is not a member of this organisation.', 404);
+        }
+
+        $companyUser->status = 'inactive';
+        $companyUser->save();
 
         return response()->json([
             'message' => 'User deactivated',
-            'status'  => $user->session_status,
+            'status'  => $companyUser->status,
         ]);
     }
 
@@ -430,12 +484,24 @@ class UserController extends FleetbaseController
             return response()->error('No user to activate', 401);
         }
 
-        $user = User::where('uuid', $id)->first();
+        $currentUser = request()->user();
+
+        // Scope the lookup to the current company to prevent cross-organisation IDOR.
+        $user = User::where('uuid', $id)
+            ->whereHas('companyUsers', function ($query) {
+                $query->where('company_uuid', session('company'));
+            })
+            ->first();
 
         if (!$user) {
-            return response()->error('No user found', 401);
+            return response()->error('No user found', 404);
         }
 
+        // Activate both the User record and the CompanyUser record.
+        // Unlike deactivation (which is scoped to the current organisation only),
+        // activation must also update users.status because a newly created user
+        // starts with a global status of 'inactive' and needs to be unblocked
+        // at the user level before they can access any organisation.
         $user->activate();
         $user = $user->refresh();
 

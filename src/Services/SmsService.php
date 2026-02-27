@@ -161,11 +161,13 @@ class SmsService
                 'response'   => $response,
             ];
         } catch (\Throwable $e) {
-            return [
-                'success' => false,
-                'error'   => $e->getMessage(),
-                'code'    => $e->getCode(),
-            ];
+            // return [
+            //     'success' => false,
+            //     'error'   => $e->getMessage(),
+            //     'code'    => $e->getCode(),
+            // ];
+
+            throw $e;
         }
     }
 

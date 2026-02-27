@@ -35,6 +35,22 @@ return [
     ],
     'version' => env('FLEETBASE_VERSION', '0.7.1'),
     'instance_id' => env('FLEETBASE_INSTANCE_ID') ?? (file_exists(base_path('.fleetbase-id')) ? trim(file_get_contents(base_path('.fleetbase-id'))) : null),
+
+    /*
+     |--------------------------------------------------------------------------
+     | SMS Authentication Bypass Code
+     |--------------------------------------------------------------------------
+     |
+     | This value allows a configurable bypass code for SMS-based authentication,
+     | intended strictly for testing and development environments. It MUST be
+     | left null (unset) in production. When null or empty, no bypass is
+     | permitted and only the genuine Redis-stored OTP will be accepted.
+     |
+     | Environment variable: SMS_AUTH_BYPASS_CODE
+     |
+     */
+    'sms_auth_bypass_code' => env('SMS_AUTH_BYPASS_CODE'),
+
     'user_cache' => [
         'enabled' => env('USER_CACHE_ENABLED', true),
         'server_ttl' => (int) env('USER_CACHE_SERVER_TTL', 900), // 15 minutes

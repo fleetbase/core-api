@@ -1343,6 +1343,8 @@ class User extends Authenticatable
             $this->companyUser->assignSingleRole($role);
 
             // Invalidate user cache after role change
+            // Note: With updated_at in cache key, this provides immediate invalidation
+            // while the timestamp-based key provides automatic cache busting
             \Fleetbase\Services\UserCacheService::invalidateUser($this);
 
             return $this;

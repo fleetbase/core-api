@@ -373,6 +373,14 @@ trait HasApiModelBehavior
                 $q->orWhere($publicIdColumn, $id);
             }
         });
+
+        // Defence-in-depth: scope update to the caller's company to prevent
+        // cross-tenant modification (GHSA-3wj9-hh56-7fw7).
+        $companyUuid = session('company');
+        if ($companyUuid && $this->isColumn($this->qualifyColumn('company_uuid'))) {
+            $builder->where($this->qualifyColumn('company_uuid'), $companyUuid);
+        }
+
         $builder = $this->applyDirectivesToQuery($request, $builder);
         $record  = $builder->first();
 
@@ -483,6 +491,13 @@ trait HasApiModelBehavior
                 $q->orWhereIn($publicIdColumn, $ids);
             }
         });
+
+        // Defence-in-depth: scope bulk delete to the caller's company to prevent
+        // cross-tenant deletion (GHSA-3wj9-hh56-7fw7).
+        $companyUuid = session('company');
+        if ($companyUuid && $this->isColumn($this->qualifyColumn('company_uuid'))) {
+            $records->where($this->qualifyColumn('company_uuid'), $companyUuid);
+        }
 
         if (!$records) {
             return false;
@@ -721,6 +736,12 @@ trait HasApiModelBehavior
     /**
      * Retrieves a record based on primary key id.
      *
+     * The query is automatically scoped to the current company via the
+     * CompanyScope global scope registered on the base Model.  This method
+     * adds an explicit defence-in-depth company_uuid check as well so that
+     * the constraint is visible at the call-site and survives any future
+     * withoutGlobalScope() calls higher up the stack.
+     *
      * @param string  $id      - The ID
      * @param Request $request - HTTP Request
      *
@@ -736,6 +757,15 @@ trait HasApiModelBehavior
                 $q->orWhere($publicIdColumn, $id);
             }
         });
+
+        // Defence-in-depth: explicitly scope to the caller's company when the
+        // model has a company_uuid column and a session company is available.
+        // The CompanyScope global scope provides the primary protection; this
+        // explicit clause ensures the constraint survives withoutGlobalScope().
+        $companyUuid = session('company');
+        if ($companyUuid && $this->isColumn($this->qualifyColumn('company_uuid'))) {
+            $builder->where($this->qualifyColumn('company_uuid'), $companyUuid);
+        }
 
         if (is_callable($queryCallback)) {
             $queryCallback($builder, $request);
@@ -1300,7 +1330,7 @@ trait HasApiModelBehavior
         // has internal id?
         $hasInternalId = in_array('internal_id', $instance->getFillable());
 
-        // create query
+        // create query — CompanyScope global scope is applied automatically
         $query = static::query()
             ->select($columns)
             ->with($with)
@@ -1313,6 +1343,13 @@ trait HasApiModelBehavior
                     }
                 }
             );
+
+        // Defence-in-depth: explicitly scope to the caller's company when the
+        // model's table has a company_uuid column and a session is active.
+        $companyUuid = session('company');
+        if ($companyUuid && Schema::hasColumn($instance->getTable(), 'company_uuid')) {
+            $query->where($instance->qualifyColumn('company_uuid'), $companyUuid);
+        }
 
         // more query modifications if callback supplied
         if (is_callable($queryCallback)) {

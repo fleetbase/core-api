@@ -4,6 +4,7 @@ namespace Fleetbase\Http\Requests\Internal;
 
 use Fleetbase\Http\Requests\FleetbaseRequest;
 use Illuminate\Contracts\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
 
 class ConfirmCurrentPassword implements Rule
 {
@@ -57,8 +58,19 @@ class ValidatePasswordRequest extends FleetbaseRequest
     public function rules()
     {
         return [
-            'password'                   => ['required', 'string', 'min:4', 'max:24', 'confirmed', new ConfirmCurrentPassword($this->user())],
-            'password_confirmation'      => ['required', 'string'],
+            'password' => [
+                'required',
+                'string',
+                'confirmed',
+                Password::min(8)
+                    ->mixedCase()
+                    ->letters()
+                    ->numbers()
+                    ->symbols()
+                    ->uncompromised(),
+                new ConfirmCurrentPassword($this->user()),
+            ],
+            'password_confirmation' => ['required', 'string'],
         ];
     }
 
@@ -70,9 +82,14 @@ class ValidatePasswordRequest extends FleetbaseRequest
     public function messages()
     {
         return [
-            'password.required' => 'The current password is required.',
-            'password.string'   => 'The current password must be a string.',
-            'password.min'      => 'The current password must be at least 8 characters.',
+            'password.required'      => 'The current password is required.',
+            'password.string'        => 'The current password must be a string.',
+            'password.min'           => 'Password must be at least 8 characters.',
+            'password.mixed'         => 'Password must contain both uppercase and lowercase letters.',
+            'password.letters'       => 'Password must contain at least one letter.',
+            'password.numbers'       => 'Password must contain at least one number.',
+            'password.symbols'       => 'Password must contain at least one symbol.',
+            'password.uncompromised' => 'This password has appeared in a data breach. Please choose a different one.',
         ];
     }
 }

@@ -145,9 +145,18 @@ abstract class Filter
                 }
             }
 
-            // Check if it's an expansion (only if method not found)
-            if (!$this->methodCache[$cacheKey] && static::isExpansion($name)) {
-                $this->methodCache[$cacheKey] = $name;
+            // Check if it's an expansion (only if method not found).
+            // Expansions are registered under their PHP method name (camelCase), so we must
+            // check both the raw param name (e.g. 'doesnt_have_driver') and its camelCase
+            // equivalent (e.g. 'doesntHaveDriver') to correctly resolve snake_case query
+            // params that map to camelCase expansion methods.
+            if (!$this->methodCache[$cacheKey]) {
+                $camelName = Str::camel($name);
+                if (static::isExpansion($name)) {
+                    $this->methodCache[$cacheKey] = $name;
+                } elseif (static::isExpansion($camelName)) {
+                    $this->methodCache[$cacheKey] = $camelName;
+                }
             }
         }
 
