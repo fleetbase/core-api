@@ -437,12 +437,23 @@ class UserController extends FleetbaseController
             return response()->error('Insufficient permissions to deactivate this user.', 403);
         }
 
-        $user->deactivate();
-        $user = $user->refresh();
+        // Only deactivate the CompanyUser record for the current organisation.
+        // Calling User::deactivate() would set the user's global status to
+        // 'inactive', locking them out of every organisation they belong to.
+        // Instead we update only the pivot record so the user remains active
+        // in any other organisations they are a member of.
+        $companyUser = $user->companyUsers()->where('company_uuid', session('company'))->first();
+
+        if (!$companyUser) {
+            return response()->error('User is not a member of this organisation.', 404);
+        }
+
+        $companyUser->status = 'inactive';
+        $companyUser->save();
 
         return response()->json([
             'message' => 'User deactivated',
-            'status'  => $user->session_status,
+            'status'  => $companyUser->status,
         ]);
     }
 
@@ -457,18 +468,33 @@ class UserController extends FleetbaseController
             return response()->error('No user to activate', 401);
         }
 
-        $user = User::where('uuid', $id)->first();
+        $currentUser = request()->user();
+
+        // Scope the lookup to the current company to prevent cross-organisation IDOR.
+        $user = User::where('uuid', $id)
+            ->whereHas('companyUsers', function ($query) {
+                $query->where('company_uuid', session('company'));
+            })
+            ->first();
 
         if (!$user) {
-            return response()->error('No user found', 401);
+            return response()->error('No user found', 404);
         }
 
-        $user->activate();
-        $user = $user->refresh();
+        // Only activate the CompanyUser record for the current organisation,
+        // mirroring the scoped deactivate behaviour above.
+        $companyUser = $user->companyUsers()->where('company_uuid', session('company'))->first();
+
+        if (!$companyUser) {
+            return response()->error('User is not a member of this organisation.', 404);
+        }
+
+        $companyUser->status = 'active';
+        $companyUser->save();
 
         return response()->json([
             'message' => 'User activated',
-            'status'  => $user->session_status,
+            'status'  => $companyUser->status,
         ]);
     }
 
