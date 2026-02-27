@@ -8,6 +8,7 @@ use Fleetbase\Exceptions\FleetbaseRequestValidationException;
 use Fleetbase\Exports\UserExport;
 use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Http\Requests\CreateUserRequest;
+use Fleetbase\Http\Requests\UpdateUserRequest;
 use Fleetbase\Http\Requests\ExportRequest;
 use Fleetbase\Http\Requests\Internal\AcceptCompanyInvite;
 use Fleetbase\Http\Requests\Internal\InviteUserRequest;
@@ -56,6 +57,16 @@ class UserController extends FleetbaseController
      * @var CreateUserRequest
      */
     public $createRequest = CreateUserRequest::class;
+
+    /**
+     * Update user request.
+     *
+     * Enforces that email and phone cannot be set to an empty string
+     * and that uniqueness constraints are respected on update.
+     *
+     * @var UpdateUserRequest
+     */
+    public $updateRequest = UpdateUserRequest::class;
 
     /**
      * Creates a record with request payload.
@@ -126,6 +137,11 @@ class UserController extends FleetbaseController
      */
     public function updateRecord(Request $request, string $id)
     {
+        // Run the UpdateUserRequest validation rules before delegating to the
+        // model trait. This prevents email/phone being set to an empty string
+        // and enforces uniqueness constraints on partial (PATCH) updates.
+        $this->validateRequest($request);
+
         try {
             $record = $this->model->updateRecordFromRequest($request, $id, function (&$request, &$user) {
                 // Assign role if set
