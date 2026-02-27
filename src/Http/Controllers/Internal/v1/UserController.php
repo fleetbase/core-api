@@ -481,20 +481,17 @@ class UserController extends FleetbaseController
             return response()->error('No user found', 404);
         }
 
-        // Only activate the CompanyUser record for the current organisation,
-        // mirroring the scoped deactivate behaviour above.
-        $companyUser = $user->companyUsers()->where('company_uuid', session('company'))->first();
-
-        if (!$companyUser) {
-            return response()->error('User is not a member of this organisation.', 404);
-        }
-
-        $companyUser->status = 'active';
-        $companyUser->save();
+        // Activate both the User record and the CompanyUser record.
+        // Unlike deactivation (which is scoped to the current organisation only),
+        // activation must also update users.status because a newly created user
+        // starts with a global status of 'inactive' and needs to be unblocked
+        // at the user level before they can access any organisation.
+        $user->activate();
+        $user = $user->refresh();
 
         return response()->json([
             'message' => 'User activated',
-            'status'  => $companyUser->status,
+            'status'  => $user->session_status,
         ]);
     }
 
