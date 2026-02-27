@@ -78,6 +78,18 @@ class AuthController extends Controller
             $query->where('email', $identity)->orWhere('phone', $identity);
         })->first();
 
+        // If the user exists but has no password set (e.g. invited via SSO or
+        // created without a password), prompt them to go through the forgot-password
+        // flow.  This guard MUST come before isInvalidPassword() which has a strict
+        // string type declaration and would throw a TypeError on a null value.
+        if ($user && empty($user->password)) {
+            return response()->error(
+                'No password is set for this account. Please use the forgot password flow to set one.',
+                400,
+                ['code' => 'reset_password']
+            );
+        }
+
         // Use a generic error message for both non-existent user and wrong password
         // to prevent user enumeration via differential error responses.
         if (!$user || Auth::isInvalidPassword($password, $user->password)) {
@@ -92,11 +104,6 @@ class AuthController extends Controller
                 'twoFaSession' => $twoFaSession,
                 'isEnabled'    => true,
             ]);
-        }
-
-        // If no password prompt user to reset password
-        if (empty($user->password)) {
-            return response()->error('Password reset required to continue.', 400, ['code' => 'reset_password']);
         }
 
         if ($user->isNotVerified() && $user->isNotAdmin()) {
