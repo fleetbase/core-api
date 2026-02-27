@@ -422,8 +422,18 @@ class UserController extends FleetbaseController
             return response()->error('You cannot deactivate your own account.', 403);
         }
 
-        // Prevent non-administrators from deactivating administrator accounts.
-        if ($user->isAdmin() && $currentUser && !$currentUser->isAdmin()) {
+        // Layered privilege check:
+        //
+        // Tier 1 — System admins (isAdmin()) can deactivate anyone except other
+        //           system admins.  This is the highest privilege tier.
+        if ($user->isAdmin()) {
+            return response()->error('Insufficient permissions to deactivate this user.', 403);
+        }
+
+        // Tier 2 — Users holding the 'Administrator' role can only be deactivated
+        //           by a system admin (handled above).  A regular user or another
+        //           role-based Administrator cannot deactivate them.
+        if ($user->hasRole('Administrator') && $currentUser && !$currentUser->isAdmin()) {
             return response()->error('Insufficient permissions to deactivate this user.', 403);
         }
 
