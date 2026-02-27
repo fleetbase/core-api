@@ -1347,7 +1347,7 @@ trait HasApiModelBehavior
         // Defence-in-depth: explicitly scope to the caller's company when the
         // model's table has a company_uuid column and a session is active.
         $companyUuid = session('company');
-        if ($companyUuid && \Illuminate\Support\Facades\Schema::hasColumn($instance->getTable(), 'company_uuid')) {
+        if ($companyUuid && Schema::hasColumn($instance->getTable(), 'company_uuid')) {
             $query->where($instance->qualifyColumn('company_uuid'), $companyUuid);
         }
 

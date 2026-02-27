@@ -26,10 +26,6 @@ class UserCacheService
     /**
      * Generate cache key for a user and company.
      * Includes the user's updated_at timestamp for automatic cache busting.
-     *
-     * @param User $user
-     * @param string $companyId
-     * @return string
      */
     public static function getCacheKey(User $user, string $companyId): string
     {
@@ -38,10 +34,6 @@ class UserCacheService
 
     /**
      * Get cached user data.
-     *
-     * @param User $user
-     * @param string $companyId
-     * @return array|null
      */
     public static function get(User $user, string $companyId): ?array
     {
@@ -72,12 +64,6 @@ class UserCacheService
 
     /**
      * Store user data in cache.
-     *
-     * @param User $user
-     * @param string $companyId
-     * @param array $data
-     * @param int|null $ttl
-     * @return bool
      */
     public static function put(User $user, string $companyId, array $data, ?int $ttl = null): bool
     {
@@ -149,10 +135,6 @@ class UserCacheService
 
     /**
      * Invalidate cache for a specific user and company.
-     *
-     * @param User $user
-     * @param string $companyId
-     * @return void
      */
     public static function invalidate(User $user, string $companyId): void
     {

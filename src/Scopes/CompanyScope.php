@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Session;
 
 /**
- * CompanyScope — Tenant Isolation Global Scope
+ * CompanyScope — Tenant Isolation Global Scope.
  *
  * Automatically constrains every Eloquent query on models that carry a
  * `company_uuid` column to the company that is stored in the current
@@ -108,8 +108,6 @@ class CompanyScope implements Scope
     /**
      * Flush the column existence cache.
      * Useful in tests where tables may be created/dropped between cases.
-     *
-     * @return void
      */
     public static function flushColumnCache(): void
     {

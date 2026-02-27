@@ -58,8 +58,8 @@ class AuthController extends Controller
                 $tokenOwner = $personalAccessToken->tokenable;
 
                 if (
-                    $tokenOwner instanceof User &&
-                    ($tokenOwner->email === $identity || $tokenOwner->phone === $identity)
+                    $tokenOwner instanceof User
+                    && ($tokenOwner->email === $identity || $tokenOwner->phone === $identity)
                 ) {
                     return response()->json([
                         'token' => $authToken,
