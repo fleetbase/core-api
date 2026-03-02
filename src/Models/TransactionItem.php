@@ -3,6 +3,7 @@
 namespace Fleetbase\Models;
 
 use Fleetbase\Casts\Json;
+use Fleetbase\Casts\Money;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasMetaAttributes;
 use Fleetbase\Traits\HasPublicId;
@@ -17,7 +18,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * of a transaction's total — e.g. base fare, surcharges, taxes, discounts.
  *
  * All monetary values (amount, unit_price, tax_amount) are stored as integers
- * in the smallest currency unit (cents).
+ * in the smallest currency unit (cents) and cast via Fleetbase\Casts\Money.
  */
 class TransactionItem extends Model
 {
@@ -60,9 +61,9 @@ class TransactionItem extends Model
      * The attributes that should be cast to native types.
      */
     protected $casts = [
-        'amount'     => 'integer',
-        'unit_price' => 'integer',
-        'tax_amount' => 'integer',
+        'amount'     => Money::class,
+        'unit_price' => Money::class,
+        'tax_amount' => Money::class,
         'quantity'   => 'integer',
         'tax_rate'   => 'decimal:2',
         'sort_order' => 'integer',
@@ -72,7 +73,7 @@ class TransactionItem extends Model
     /**
      * Dynamic attributes appended to the model's JSON form.
      */
-    protected $appends = ['formatted_amount'];
+    protected $appends = [];
 
     /**
      * The attributes excluded from the model's JSON form.
@@ -92,17 +93,8 @@ class TransactionItem extends Model
     }
 
     // =========================================================================
-    // Accessors and Helpers
+    // Helpers
     // =========================================================================
-
-    /**
-     * Get the amount formatted as a human-readable decimal string.
-     * e.g. 1050 cents -> "10.50"
-     */
-    public function getFormattedAmountAttribute(): string
-    {
-        return number_format($this->amount / 100, 2);
-    }
 
     /**
      * Calculate the line total: quantity * unit_price (in cents).

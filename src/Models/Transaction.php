@@ -3,6 +3,7 @@
 namespace Fleetbase\Models;
 
 use Fleetbase\Casts\Json;
+use Fleetbase\Casts\Money;
 use Fleetbase\Casts\PolymorphicType;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasApiModelCache;
@@ -135,12 +136,12 @@ class Transaction extends Model
      * The attributes that should be cast to native types.
      */
     protected $casts = [
-        'amount'           => 'integer',
-        'fee_amount'       => 'integer',
-        'tax_amount'       => 'integer',
-        'net_amount'       => 'integer',
-        'balance_after'    => 'integer',
-        'settled_amount'   => 'integer',
+        'amount'           => Money::class,
+        'fee_amount'       => Money::class,
+        'tax_amount'       => Money::class,
+        'net_amount'       => Money::class,
+        'balance_after'    => Money::class,
+        'settled_amount'   => Money::class,
         'exchange_rate'    => 'decimal:8',
         'gateway_response' => Json::class,
         'tags'             => Json::class,
@@ -160,7 +161,7 @@ class Transaction extends Model
     /**
      * Dynamic attributes appended to the model's JSON form.
      */
-    protected $appends = ['formatted_amount'];
+    protected $appends = [];
 
     /**
      * The attributes excluded from the model's JSON form.
@@ -412,17 +413,8 @@ class Transaction extends Model
     }
 
     // =========================================================================
-    // Accessors and Helpers
+    // Helpers
     // =========================================================================
-
-    /**
-     * Get the amount formatted as a human-readable decimal string.
-     * e.g. 1050 cents -> "10.50"
-     */
-    public function getFormattedAmountAttribute(): string
-    {
-        return number_format($this->amount / 100, 2);
-    }
 
     /**
      * Whether this transaction is a credit (money in to subject).
