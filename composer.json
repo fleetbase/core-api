@@ -55,7 +55,9 @@
         "spatie/laravel-schedule-monitor": "^3.7",
         "spatie/laravel-sluggable": "^3.5",
         "sqids/sqids": "^0.4.1",
-        "xantios/mimey": "^2.2.0"
+        "xantios/mimey": "^2.2.0",
+        "spatie/laravel-pdf": "^2.0",
+        "mossadal/math-parser": "^2.0"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.34.1",
