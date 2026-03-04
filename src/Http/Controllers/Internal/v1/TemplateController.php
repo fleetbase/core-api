@@ -10,6 +10,7 @@ use Fleetbase\Models\TemplateQuery;
 use Fleetbase\Services\TemplateRenderService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Http\Response;
 use Illuminate\Support\Str;
 
@@ -41,7 +42,7 @@ class TemplateController extends FleetbaseController
      *
      * POST /templates
      */
-    public function createRecord(Request $request): JsonResponse
+    public function createRecord(Request $request): JsonResource|JsonResponse
     {
         // Let the standard behaviour create the template record
         $response = parent::createRecord($request);
@@ -64,7 +65,7 @@ class TemplateController extends FleetbaseController
      *
      * PUT /templates/{id}
      */
-    public function updateRecord(Request $request, string $id): JsonResponse
+    public function updateRecord(Request $request, string $id): JsonResource|JsonResponse
     {
         $response = parent::updateRecord($request, $id);
 
