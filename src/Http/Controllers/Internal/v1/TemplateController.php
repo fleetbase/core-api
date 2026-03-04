@@ -78,6 +78,74 @@ class TemplateController extends FleetbaseController
     // -------------------------------------------------------------------------
 
     /**
+     * Render an unsaved template payload to HTML for preview.
+     *
+     * POST /templates/preview  (no {id} — template has not been persisted yet)
+     *
+     * Body:
+     *   template (object) — the full template payload from the builder
+     *     .name, .content, .context_type, .width, .height, .unit,
+     *     .orientation, .margins, .styles, .queries (array, optional)
+     *   subject_type (string, optional) — fully-qualified model class
+     *   subject_id   (string, optional) — UUID or public_id of the subject record
+     */
+    public function previewUnsaved(Request $request): JsonResponse
+    {
+        $payload = $request->input('template', []);
+
+        // Hydrate a transient (non-persisted) Template model from the payload.
+        // fill() respects $fillable so unknown keys are silently ignored.
+        $template = new Template();
+        $template->fill([
+            'name'         => data_get($payload, 'name', 'Preview'),
+            'content'      => data_get($payload, 'content', []),
+            'context_type' => data_get($payload, 'context_type', 'generic'),
+            'width'        => data_get($payload, 'width'),
+            'height'       => data_get($payload, 'height'),
+            'unit'         => data_get($payload, 'unit', 'mm'),
+            'orientation'  => data_get($payload, 'orientation', 'portrait'),
+            'margins'      => data_get($payload, 'margins', []),
+            'styles'       => data_get($payload, 'styles', []),
+        ]);
+
+        // Hydrate transient TemplateQuery objects so the render pipeline can
+        // execute them without any DB records existing yet.
+        $rawQueries = data_get($payload, 'queries', []);
+        $queryModels = collect($rawQueries)->map(function ($q) {
+            $tq = new TemplateQuery();
+            $tq->fill([
+                'label'         => data_get($q, 'label'),
+                'variable_name' => data_get($q, 'variable_name'),
+                'model_type'    => data_get($q, 'model_type'),
+                'conditions'    => data_get($q, 'conditions', []),
+                'sort'          => data_get($q, 'sort', []),
+                'limit'         => data_get($q, 'limit'),
+                'with'          => data_get($q, 'with', []),
+            ]);
+
+            return $tq;
+        });
+
+        // Set the queries relation directly so buildContext() can iterate them
+        // without calling loadMissing() against the database.
+        $template->setRelation('queries', $queryModels);
+
+        $subjectType = $request->input('subject_type');
+        $subjectId   = $request->input('subject_id');
+        $subject     = null;
+
+        if ($subjectType && $subjectId && class_exists($subjectType)) {
+            $subject = $subjectType::where('uuid', $subjectId)
+                ->orWhere('public_id', $subjectId)
+                ->first();
+        }
+
+        $html = $this->renderService->renderToHtml($template, $subject);
+
+        return response()->json(['html' => $html]);
+    }
+
+    /**
      * Render a template to HTML for preview.
      *
      * POST /templates/{id}/preview
