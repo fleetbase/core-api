@@ -137,7 +137,11 @@ class TemplateRenderService
         }
 
         // Tier 3: Query-based collections
-        $template->loadMissing('queries');
+        // Skip loadMissing when the relation has already been set in-memory
+        // (e.g. for a transient/unsaved template hydrated from a request payload).
+        if (!$template->relationLoaded('queries')) {
+            $template->loadMissing('queries');
+        }
         foreach ($template->queries as $templateQuery) {
             $results = $templateQuery->execute();
             $context[$templateQuery->variable_name] = $results->map(fn ($item) => $this->modelToArray($item))->toArray();

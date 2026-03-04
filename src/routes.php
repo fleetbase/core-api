@@ -317,6 +317,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 $router->fleetbaseRoutes('schedule-constraints');
                                 $router->fleetbaseRoutes('templates', null, [], function ($router, $controller) {
                                     $router->get('context-schemas', $controller('contextSchemas'));
+                                    $router->post('preview', $controller('previewUnsaved'));
                                     $router->post('{id}/preview', $controller('preview'));
                                     $router->post('{id}/render', $controller('render'));
                                 });
