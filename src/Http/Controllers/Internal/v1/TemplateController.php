@@ -4,13 +4,11 @@ namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Http\Requests\Internal\CreateTemplateRequest;
-use Fleetbase\Http\Resources\Template as TemplateResource;
 use Fleetbase\Models\Template;
 use Fleetbase\Models\TemplateQuery;
 use Fleetbase\Services\TemplateRenderService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Http\Response;
 use Illuminate\Support\Str;
 
@@ -37,48 +35,47 @@ class TemplateController extends FleetbaseController
         $this->renderService = $renderService;
     }
 
+    // -------------------------------------------------------------------------
+    // Lifecycle hooks — called automatically by HasApiControllerBehavior
+    // -------------------------------------------------------------------------
+
     /**
-     * Create a template, then upsert any nested queries included in the payload.
+     * Called by HasApiControllerBehavior::createRecord() after the template
+     * record has been persisted. Syncs the nested queries array included in
+     * the request payload.
      *
-     * POST /templates
+     * Signature expected by getControllerCallback(): ($request, $record, $input)
+     *
+     * @param Request  $request
+     * @param Template $record
+     * @param array    $input
      */
-    public function createRecord(Request $request): JsonResource|JsonResponse
+    public function onAfterCreate(Request $request, Template $record, array $input): void
     {
-        // Let the standard behaviour create the template record
-        $response = parent::createRecord($request);
-
-        // Retrieve the newly-created template from the response resource
-        $template = $this->_templateFromResponse($response);
-        if ($template) {
-            $this->_syncQueries($template, $request->input('queries', []));
-            // Re-load queries so the response includes them
-            $template->load('queries');
-            TemplateResource::wrap('template');
-            return new TemplateResource($template);
-        }
-
-        return $response;
+        $this->_syncQueries($record, $request->input('queries', []));
+        $record->load('queries');
     }
 
     /**
-     * Update a template, then upsert any nested queries included in the payload.
+     * Called by HasApiControllerBehavior::updateRecord() after the template
+     * record has been updated. Syncs the nested queries array included in
+     * the request payload.
      *
-     * PUT /templates/{id}
+     * Signature expected by getControllerCallback(): ($request, $record, $input)
+     *
+     * @param Request  $request
+     * @param Template $record
+     * @param array    $input
      */
-    public function updateRecord(Request $request, string $id): JsonResource|JsonResponse
+    public function onAfterUpdate(Request $request, Template $record, array $input): void
     {
-        $response = parent::updateRecord($request, $id);
-
-        $template = $this->_templateFromResponse($response);
-        if ($template) {
-            $this->_syncQueries($template, $request->input('queries', []));
-            $template->load('queries');
-            TemplateResource::wrap('template');
-            return new TemplateResource($template);
-        }
-
-        return $response;
+        $this->_syncQueries($record, $request->input('queries', []));
+        $record->load('queries');
     }
+
+    // -------------------------------------------------------------------------
+    // Custom endpoints
+    // -------------------------------------------------------------------------
 
     /**
      * Render a template to HTML for preview.
@@ -180,15 +177,15 @@ class TemplateController extends FleetbaseController
             return;
         }
 
-        $companyUuid     = session('company');
-        $createdByUuid   = session('user');
-        $incomingUuids   = [];
+        $companyUuid   = session('company');
+        $createdByUuid = session('user');
+        $incomingUuids = [];
 
         foreach ($queries as $queryData) {
             $uuid = data_get($queryData, 'uuid');
 
-            // Skip client-side temporary IDs (prefixed with _unsaved_)
-            if ($uuid && Str::startsWith($uuid, '_unsaved_')) {
+            // Skip client-side temporary IDs (prefixed with _new_ or _unsaved_)
+            if ($uuid && (Str::startsWith($uuid, '_new_') || Str::startsWith($uuid, '_unsaved_'))) {
                 $uuid = null;
             }
 
@@ -215,17 +212,17 @@ class TemplateController extends FleetbaseController
             } else {
                 // Create new query
                 $newQuery = TemplateQuery::create([
-                    'template_uuid'  => $template->uuid,
-                    'company_uuid'   => $companyUuid,
-                    'created_by_uuid'=> $createdByUuid,
-                    'label'          => data_get($queryData, 'label'),
-                    'variable_name'  => data_get($queryData, 'variable_name'),
-                    'description'    => data_get($queryData, 'description'),
-                    'model_type'     => data_get($queryData, 'model_type'),
-                    'conditions'     => data_get($queryData, 'conditions', []),
-                    'sort'           => data_get($queryData, 'sort', []),
-                    'limit'          => data_get($queryData, 'limit'),
-                    'with'           => data_get($queryData, 'with', []),
+                    'template_uuid'   => $template->uuid,
+                    'company_uuid'    => $companyUuid,
+                    'created_by_uuid' => $createdByUuid,
+                    'label'           => data_get($queryData, 'label'),
+                    'variable_name'   => data_get($queryData, 'variable_name'),
+                    'description'     => data_get($queryData, 'description'),
+                    'model_type'      => data_get($queryData, 'model_type'),
+                    'conditions'      => data_get($queryData, 'conditions', []),
+                    'sort'            => data_get($queryData, 'sort', []),
+                    'limit'           => data_get($queryData, 'limit'),
+                    'with'            => data_get($queryData, 'with', []),
                 ]);
 
                 $incomingUuids[] = $newQuery->uuid;
@@ -237,26 +234,5 @@ class TemplateController extends FleetbaseController
         $template->queries()
             ->whereNotIn('uuid', $incomingUuids)
             ->delete();
-    }
-
-    /**
-     * Extract the Template model from a JsonResponse that wraps a TemplateResource.
-     */
-    protected function _templateFromResponse($response): ?Template
-    {
-        if ($response instanceof TemplateResource) {
-            return $response->resource;
-        }
-
-        // The parent returns a TemplateResource directly (not wrapped in JsonResponse)
-        // when it's an internal request. Try to get the underlying model.
-        if (method_exists($response, 'resource') || property_exists($response, 'resource')) {
-            $model = $response->resource ?? null;
-            if ($model instanceof Template) {
-                return $model;
-            }
-        }
-
-        return null;
     }
 }
