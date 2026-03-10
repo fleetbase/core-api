@@ -373,7 +373,7 @@ class TemplateRenderService
      */
     protected function processIterationBlocks(string $html, array $context): string
     {
-        $pattern = '/\{\{#each\s+(\w+)\}\}(.*?)\{\{\/each\}\}/s';
+        $pattern = '/\{\{#each\s+([\w.]+)\}\}(.*?)\{\{\/each\}\}/s';
 
         return preg_replace_callback($pattern, function (array $matches) use ($context) {
             $variableName = $matches[1];
