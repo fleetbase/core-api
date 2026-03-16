@@ -16,7 +16,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
- * Transaction
+ * Transaction.
  *
  * The platform-wide financial transaction primitive. Every monetary movement
  * on the Fleetbase platform — dispatch charges, wallet operations, gateway
@@ -293,7 +293,7 @@ class Transaction extends Model
     }
 
     /**
-     * @deprecated Use subject() instead.
+     * @deprecated use subject() instead
      */
     public function owner(): MorphTo
     {
@@ -493,8 +493,8 @@ class Transaction extends Model
      */
     public function isExpired(): bool
     {
-        return $this->status === self::STATUS_EXPIRED ||
-               ($this->expires_at !== null && $this->expires_at->isPast());
+        return $this->status === self::STATUS_EXPIRED
+               || ($this->expires_at !== null && $this->expires_at->isPast());
     }
 
     // =========================================================================

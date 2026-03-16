@@ -4,14 +4,13 @@ namespace Fleetbase\Services;
 
 use Fleetbase\Models\Template;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Str;
 
 /**
- * TemplateRenderService
+ * TemplateRenderService.
  *
  * Responsible for rendering a Template model into HTML or PDF output.
  *
@@ -47,8 +46,8 @@ class TemplateRenderService
     /**
      * Register a context type so the frontend variable picker knows about it.
      *
-     * @param string $slug        e.g. 'invoice', 'order', 'shipping_label'
-     * @param array  $definition  Keys: label, description, model (FQCN), variables (array of { name, path, type, description })
+     * @param string $slug       e.g. 'invoice', 'order', 'shipping_label'
+     * @param array  $definition Keys: label, description, model (FQCN), variables (array of { name, path, type, description })
      */
     public static function registerContextType(string $slug, array $definition): void
     {
@@ -73,7 +72,7 @@ class TemplateRenderService
     /**
      * Render a template to an HTML string.
      *
-     * @param Template   $template The template to render.
+     * @param Template   $template the template to render
      * @param Model|null $subject  The primary data subject (e.g. an Invoice or Order model instance).
      */
     public function renderToHtml(Template $template, ?Model $subject = null): string
@@ -89,9 +88,6 @@ class TemplateRenderService
 
     /**
      * Render a template to a PDF response using spatie/laravel-pdf.
-     *
-     * @param Template   $template
-     * @param Model|null $subject
      *
      * @return \Spatie\LaravelPdf\PdfBuilder
      */
@@ -132,7 +128,7 @@ class TemplateRenderService
 
         // Tier 2: Primary subject context
         if ($subject !== null) {
-            $subjectKey = $template->context_type !== 'generic' ? $template->context_type : $this->guessContextKey($subject);
+            $subjectKey           = $template->context_type !== 'generic' ? $template->context_type : $this->guessContextKey($subject);
             $context[$subjectKey] = $this->modelToArray($subject);
         }
 
@@ -143,7 +139,7 @@ class TemplateRenderService
             $template->loadMissing('queries');
         }
         foreach ($template->queries as $templateQuery) {
-            $results = $templateQuery->execute();
+            $results                                = $templateQuery->execute();
             $context[$templateQuery->variable_name] = $results->map(fn ($item) => $this->modelToArray($item))->toArray();
         }
 
@@ -201,8 +197,8 @@ class TemplateRenderService
             ['name' => 'Current Time',         'path' => 'time',         'type' => 'string',  'description' => 'Current time in H:i:s format.'],
             ['name' => 'Current Year',         'path' => 'year',         'type' => 'integer', 'description' => 'Current 4-digit year.'],
             ['name' => 'Company Name',         'path' => 'company.name', 'type' => 'string',  'description' => 'Name of the current organisation.'],
-            ['name' => 'Company Email',        'path' => 'company.email','type' => 'string',  'description' => 'Primary email of the current organisation.'],
-            ['name' => 'Company Phone',        'path' => 'company.phone','type' => 'string',  'description' => 'Phone number of the current organisation.'],
+            ['name' => 'Company Email',        'path' => 'company.email', 'type' => 'string',  'description' => 'Primary email of the current organisation.'],
+            ['name' => 'Company Phone',        'path' => 'company.phone', 'type' => 'string',  'description' => 'Phone number of the current organisation.'],
             ['name' => 'Company Address',      'path' => 'company.address', 'type' => 'string', 'description' => 'Street address of the current organisation.'],
             ['name' => 'User Name',            'path' => 'user.name',    'type' => 'string',  'description' => 'Full name of the authenticated user.'],
             ['name' => 'User Email',           'path' => 'user.email',   'type' => 'string',  'description' => 'Email address of the authenticated user.'],
@@ -330,7 +326,7 @@ class TemplateRenderService
             $label      = data_get($col, 'label', '');
             $colWidth   = data_get($col, 'width', 'auto');
             $colStyle   = $colWidth !== 'auto' ? " style=\"width:{$colWidth}\"" : '';
-            $html      .= "<th{$colStyle}>{$label}</th>\n";
+            $html .= "<th{$colStyle}>{$label}</th>\n";
         }
 
         $html .= "</tr>\n</thead>\n<tbody>\n";
@@ -509,7 +505,7 @@ class TemplateRenderService
         $left = $this->parseMulDiv($expr, $pos);
 
         while ($pos < strlen($expr) && in_array($expr[$pos], ['+', '-'])) {
-            $op = $expr[$pos++];
+            $op    = $expr[$pos++];
             $right = $this->parseMulDiv($expr, $pos);
             $left  = $op === '+' ? $left + $right : $left - $right;
         }
@@ -619,7 +615,7 @@ HTML;
 
     /**
      * Guess the context key (namespace) for a model instance from its class name.
-     * e.g. App\Models\Invoice → 'invoice'
+     * e.g. App\Models\Invoice → 'invoice'.
      */
     protected function guessContextKey(Model $model): string
     {

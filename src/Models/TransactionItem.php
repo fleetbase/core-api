@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
- * TransactionItem
+ * TransactionItem.
  *
  * A line item belonging to a Transaction. Stores the individual components
  * of a transaction's total — e.g. base fare, surcharges, taxes, discounts.

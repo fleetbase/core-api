@@ -45,10 +45,6 @@ class TemplateController extends FleetbaseController
      * the request payload.
      *
      * Signature expected by getControllerCallback(): ($request, $record, $input)
-     *
-     * @param Request  $request
-     * @param Template $record
-     * @param array    $input
      */
     public function onAfterCreate(Request $request, Template $record, array $input): void
     {
@@ -62,10 +58,6 @@ class TemplateController extends FleetbaseController
      * the request payload.
      *
      * Signature expected by getControllerCallback(): ($request, $record, $input)
-     *
-     * @param Request  $request
-     * @param Template $record
-     * @param array    $input
      */
     public function onAfterUpdate(Request $request, Template $record, array $input): void
     {
@@ -110,7 +102,7 @@ class TemplateController extends FleetbaseController
 
         // Hydrate transient TemplateQuery objects so the render pipeline can
         // execute them without any DB records existing yet.
-        $rawQueries = data_get($payload, 'queries', []);
+        $rawQueries  = data_get($payload, 'queries', []);
         $queryModels = collect($rawQueries)->map(function ($q) {
             $tq = new TemplateQuery();
             $tq->fill([
@@ -235,9 +227,6 @@ class TemplateController extends FleetbaseController
      *   1. Collect the UUIDs present in the incoming payload.
      *   2. Soft-delete any existing queries NOT in that set (removed by the user).
      *   3. For each incoming query: update if UUID exists, create if not.
-     *
-     * @param Template $template
-     * @param array    $queries
      */
     protected function _syncQueries(Template $template, array $queries): void
     {
