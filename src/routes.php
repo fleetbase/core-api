@@ -315,6 +315,14 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 $router->fleetbaseRoutes('schedule-templates');
                                 $router->fleetbaseRoutes('schedule-availability');
                                 $router->fleetbaseRoutes('schedule-constraints');
+                                $router->fleetbaseRoutes('templates', function ($router, $controller) {
+                                    $router->get('context-schemas', $controller('contextSchemas'));
+                                    $router->post('preview', $controller('previewUnsaved'));
+                                    $router->delete('bulk-delete', $controller('bulkDelete'));
+                                    $router->post('{id}/preview', $controller('preview'));
+                                    $router->post('{id}/render', $controller('render'));
+                                });
+                                $router->fleetbaseRoutes('template-queries');
                             }
                         );
                     }

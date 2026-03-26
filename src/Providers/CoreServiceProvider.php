@@ -140,6 +140,11 @@ class CoreServiceProvider extends ServiceProvider
         $this->app->singleton(\Fleetbase\Services\FileResolverService::class, function ($app) {
             return new \Fleetbase\Services\FileResolverService();
         });
+
+        // register template render service
+        $this->app->singleton(\Fleetbase\Services\TemplateRenderService::class, function ($app) {
+            return new \Fleetbase\Services\TemplateRenderService();
+        });
     }
 
     /**
