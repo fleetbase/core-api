@@ -95,6 +95,13 @@ class ScheduleService
         return DB::transaction(function () use ($data) {
             $item = ScheduleItem::create($data);
 
+            // Activate the parent schedule if it is still in draft state
+            if (!empty($data['schedule_uuid'])) {
+                Schedule::where('uuid', $data['schedule_uuid'])
+                    ->where('status', 'draft')
+                    ->update(['status' => 'active']);
+            }
+
             activity()
                 ->performedOn($item)
                 ->causedBy(auth()->user())
@@ -261,6 +268,11 @@ class ScheduleService
 
             // Immediately materialize the newly applied template
             $created = $this->materializeTemplate($applied, $schedule);
+
+            // Activate the schedule if it was still in draft state
+            if ($schedule->status === 'draft') {
+                $schedule->update(['status' => 'active']);
+            }
 
             activity()
                 ->performedOn($schedule)
@@ -460,7 +472,7 @@ class ScheduleService
                     'end_at'         => $endAt,
                     'break_start_at' => $breakStartAt,
                     'break_end_at'   => $breakEndAt,
-                    'status'         => 'pending',
+                    'status'         => 'scheduled',
                     'is_exception'   => false,
                 ]);
 
