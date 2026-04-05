@@ -3,6 +3,7 @@
 namespace Fleetbase\Models;
 
 use Fleetbase\Casts\Json;
+use Fleetbase\Casts\PolymorphicType;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasMetaAttributes;
 use Fleetbase\Traits\HasPublicId;
@@ -102,6 +103,7 @@ class ScheduleTemplate extends Model
         'duration'       => 'integer',
         'break_duration' => 'integer',
         'meta'           => Json::class,
+        'subject_type'   => PolymorphicType::class,
     ];
 
     /**

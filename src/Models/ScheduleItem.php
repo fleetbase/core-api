@@ -3,6 +3,7 @@
 namespace Fleetbase\Models;
 
 use Fleetbase\Casts\Json;
+use Fleetbase\Casts\PolymorphicType;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasMetaAttributes;
 use Fleetbase\Traits\HasPublicId;
@@ -107,6 +108,7 @@ class ScheduleItem extends Model
         'duration'       => 'integer',
         'is_exception'   => 'boolean',
         'meta'           => Json::class,
+        'assignee_type'  => PolymorphicType::class,
     ];
 
     /**

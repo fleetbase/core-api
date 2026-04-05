@@ -362,6 +362,7 @@ class ScheduleService
     public function materializeTemplate(ScheduleTemplate $template, Schedule $schedule, ?Carbon $horizon = null): int
     {
         if (!$template->hasRrule()) {
+            Log::debug('[materializeTemplate] no rrule on template', ['template_uuid' => $template->uuid]);
             return 0;
         }
 
@@ -369,8 +370,26 @@ class ScheduleService
         $from     = Carbon::today();
         $timezone = $schedule->getEffectiveTimezone();
 
+        Log::debug('[materializeTemplate] starting', [
+            'template_uuid'      => $template->uuid,
+            'rrule'              => $template->rrule,
+            'start_time'         => $template->start_time,
+            'subject_type'       => $template->subject_type,
+            'subject_uuid'       => $template->subject_uuid,
+            'from'               => $from->toDateString(),
+            'horizon'            => $horizon->toDateString(),
+            'timezone'           => $timezone,
+            'rrule_class_exists' => class_exists('RRule\\RRule'),
+        ]);
+
         // Get all RRULE occurrences in the window
         $occurrences = $template->getOccurrencesBetween($from, $horizon, $timezone);
+
+        Log::debug('[materializeTemplate] occurrences', [
+            'template_uuid' => $template->uuid,
+            'count'         => count($occurrences),
+            'first_3'       => array_map(fn($c) => $c->toDateTimeString(), array_slice($occurrences, 0, 3)),
+        ]);
 
         if (empty($occurrences)) {
             return 0;

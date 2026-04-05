@@ -3,6 +3,7 @@
 namespace Fleetbase\Models;
 
 use Fleetbase\Casts\Json;
+use Fleetbase\Casts\PolymorphicType;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasMetaAttributes;
 use Fleetbase\Traits\HasPublicId;
@@ -97,6 +98,7 @@ class Schedule extends Model
         'last_materialized_at'   => 'datetime',
         'materialization_horizon' => 'date',
         'meta'                   => Json::class,
+        'subject_type'           => PolymorphicType::class,
     ];
 
     /**

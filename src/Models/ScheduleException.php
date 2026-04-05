@@ -112,6 +112,13 @@ class ScheduleException extends Model
     ];
 
     /**
+     * The accessors to append to the model's array form.
+     *
+     * @var array
+     */
+    protected $appends = ['type_label', 'is_pending'];
+
+    /**
      * Valid exception types.
      */
     const TYPES = ['time_off', 'sick', 'holiday', 'swap', 'training', 'other'];
@@ -235,6 +242,37 @@ class ScheduleException extends Model
     {
         return $query->where('start_at', '<=', $date)
                      ->where('end_at', '>=', $date);
+    }
+
+    // ─── Accessors ────────────────────────────────────────────────────────────
+
+    /**
+     * Get a human-readable label for the exception type.
+     *
+     * @return string
+     */
+    public function getTypeLabelAttribute(): string
+    {
+        $labels = [
+            'time_off'  => 'Time Off',
+            'sick'      => 'Sick Leave',
+            'holiday'   => 'Holiday',
+            'swap'      => 'Shift Swap',
+            'training'  => 'Training',
+            'other'     => 'Other',
+        ];
+
+        return $labels[$this->type] ?? ucfirst(str_replace('_', ' ', $this->type ?? ''));
+    }
+
+    /**
+     * Determine whether this exception is in pending status.
+     *
+     * @return bool
+     */
+    public function getIsPendingAttribute(): bool
+    {
+        return $this->status === 'pending';
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
