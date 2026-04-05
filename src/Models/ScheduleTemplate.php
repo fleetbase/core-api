@@ -39,6 +39,7 @@ use RRule\RRule;
  * @property int|null $duration       shift duration in minutes
  * @property int|null $break_duration break duration in minutes
  * @property string|null $rrule       RFC 5545 RRULE string e.g. "FREQ=WEEKLY;BYDAY=MO,TU,TH"
+ * @property string|null $color       Hex colour for calendar rendering e.g. "#6366f1"
  */
 class ScheduleTemplate extends Model
 {
@@ -88,6 +89,7 @@ class ScheduleTemplate extends Model
         'duration',
         'break_duration',
         'rrule',
+        'color',
         'meta',
     ];
 
@@ -305,6 +307,7 @@ class ScheduleTemplate extends Model
             'duration'      => $this->duration,
             'break_duration' => $this->break_duration,
             'rrule'         => $this->rrule,
+            'color'         => $this->color,
             'meta'          => $this->meta,
         ]);
     }
