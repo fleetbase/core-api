@@ -3,6 +3,7 @@
 namespace Fleetbase\Http\Filter;
 
 use Fleetbase\Models\Schedule;
+use Fleetbase\Support\Utils;
 use Illuminate\Support\Str;
 
 class ScheduleItemFilter extends Filter
@@ -47,6 +48,40 @@ class ScheduleItemFilter extends Filter
                 $this->builder->whereRaw('1 = 0');
             }
         }
+    }
+
+    /**
+     * Filter by assignee_type — resolves short aliases like 'fleet-ops:driver'
+     * to the full PHP class name stored in the database.
+     */
+    public function assigneeType(?string $type)
+    {
+        if (empty($type)) {
+            return;
+        }
+
+        if (Str::contains($type, '\\')) {
+            $this->builder->where('assignee_type', $type);
+            return;
+        }
+
+        try {
+            $resolved = Utils::getMutationType($type);
+            $this->builder->where('assignee_type', $resolved);
+        } catch (\Throwable $e) {
+            $this->builder->where('assignee_type', $type);
+        }
+    }
+
+    /**
+     * Filter by assignee_uuid.
+     */
+    public function assigneeUuid(?string $uuid)
+    {
+        if (empty($uuid)) {
+            return;
+        }
+        $this->builder->where('assignee_uuid', $uuid);
     }
 
     /**

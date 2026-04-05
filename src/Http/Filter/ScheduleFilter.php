@@ -2,15 +2,13 @@
 
 namespace Fleetbase\Http\Filter;
 
-use Fleetbase\Models\Schedule;
 use Fleetbase\Support\Utils;
 use Illuminate\Support\Str;
 
-class ScheduleExceptionFilter extends Filter
+class ScheduleFilter extends Filter
 {
     public function queryForInternal()
     {
-        // Scope to the authenticated company — schedule_exceptions has company_uuid directly
         $companyUuid = $this->session->get('company');
         if ($companyUuid) {
             $this->builder->where('company_uuid', $companyUuid);
@@ -23,34 +21,11 @@ class ScheduleExceptionFilter extends Filter
     }
 
     /**
-     * Filter by schedule_uuid — accepts either a raw UUID or a public_id.
-     *
-     * The frontend sends `this.schedule.id` which is the public_id
-     * (e.g. 'schedule_fpQgvKtGVx'). We resolve it to the internal UUID here.
-     */
-    public function scheduleUuid(?string $id)
-    {
-        if (empty($id)) {
-            return;
-        }
-
-        if (Str::isUuid($id)) {
-            $this->builder->where('schedule_uuid', $id);
-        } else {
-            // Resolve public_id to uuid via a subquery
-            $uuid = Schedule::where('public_id', $id)->value('uuid');
-            if ($uuid) {
-                $this->builder->where('schedule_uuid', $uuid);
-            } else {
-                // No matching schedule — return empty result set
-                $this->builder->whereRaw('1 = 0');
-            }
-        }
-    }
-
-    /**
      * Filter by subject_type — resolves short aliases like 'fleet-ops:driver'
      * to the full PHP class name stored in the database.
+     *
+     * The frontend sends 'fleet-ops:driver' but the DB stores
+     * 'Fleetbase\FleetOps\Models\Driver' (via PolymorphicType cast on write).
      */
     public function subjectType(?string $type)
     {
@@ -58,15 +33,18 @@ class ScheduleExceptionFilter extends Filter
             return;
         }
 
+        // If it already looks like a fully-qualified class name, use as-is
         if (Str::contains($type, '\\')) {
             $this->builder->where('subject_type', $type);
             return;
         }
 
+        // Resolve alias (e.g. 'fleet-ops:driver') to FQCN
         try {
             $resolved = Utils::getMutationType($type);
             $this->builder->where('subject_type', $resolved);
         } catch (\Throwable $e) {
+            // Fallback: filter with the raw value so we don't silently skip
             $this->builder->where('subject_type', $type);
         }
     }
@@ -80,5 +58,16 @@ class ScheduleExceptionFilter extends Filter
             return;
         }
         $this->builder->where('subject_uuid', $uuid);
+    }
+
+    /**
+     * Filter by status.
+     */
+    public function status(?string $status)
+    {
+        if (empty($status)) {
+            return;
+        }
+        $this->builder->where('status', $status);
     }
 }
