@@ -246,7 +246,22 @@ class ScheduleTemplate extends Model
             $tz
         );
 
-        $rruleString = 'DTSTART=' . $dtStart->format('Ymd\THis') . "\n" . $this->rrule;
+        // Build a valid RFC 5545 two-line string:
+        //   DTSTART;TZID=<tz>:<date>\nRRULE:<rule>   (for named timezones)
+        //   DTSTART:<date>Z\nRRULE:<rule>             (for UTC)
+        // The DTSTART property uses a colon separator, NOT an equals sign.
+        // The RRULE property must also carry its "RRULE:" prefix.
+        // Strip any existing "RRULE:" prefix from the stored value so we don't double it.
+        $rruleValue = preg_replace('/^RRULE:/i', '', trim($this->rrule));
+
+        if ($tz === 'UTC') {
+            $dtStartStr = 'DTSTART:' . $dtStart->format('Ymd\THis') . 'Z';
+        } else {
+            // Named timezone — use TZID parameter syntax
+            $dtStartStr = 'DTSTART;TZID=' . $tz . ':' . $dtStart->format('Ymd\THis');
+        }
+
+        $rruleString = $dtStartStr . "\n" . 'RRULE:' . $rruleValue;
 
         // Guard: if php-rrule is not installed the class will not exist.
         // Throw a clear RuntimeException so the API returns a 500 with a
@@ -259,11 +274,22 @@ class ScheduleTemplate extends Model
 
         try {
             return new RRule($rruleString);
+        } catch (\InvalidArgumentException $e) {
+            // Catches RFC parse errors (e.g. malformed RRULE string)
+            \Log::warning('ScheduleTemplate: invalid RRULE string (RFC parse error)', [
+                'template_uuid' => $this->uuid,
+                'rrule_raw'     => $this->rrule,
+                'rrule_built'   => $rruleString,
+                'error'         => $e->getMessage(),
+            ]);
+
+            return null;
         } catch (\RRule\RRuleException $e) {
             // Invalid RRULE string — log and return null so callers can skip gracefully
             \Log::warning('ScheduleTemplate: invalid RRULE string', [
                 'template_uuid' => $this->uuid,
-                'rrule'         => $this->rrule,
+                'rrule_raw'     => $this->rrule,
+                'rrule_built'   => $rruleString,
                 'error'         => $e->getMessage(),
             ]);
 
