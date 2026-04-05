@@ -38,7 +38,7 @@ class ScheduleTemplateController extends FleetbaseController
      * and immediately materializes it for the rolling 60-day window.
      *
      * POST /schedule-templates/{id}/apply
-     * Body: { "schedule_uuid": "..." }
+     * Body: { "schedule_uuid": "...", "subject_type": "driver", "subject_uuid": "...", "effective_from": "..." }
      */
     public function apply(Request $request, string $id): JsonResponse
     {
@@ -54,12 +54,14 @@ class ScheduleTemplateController extends FleetbaseController
             ->orWhere('public_id', $request->input('schedule_uuid'))
             ->firstOrFail();
 
-        $applied = $this->scheduleService->applyTemplateToSchedule($template, $schedule);
+        // applyTemplateToSchedule now returns ['template' => $applied, 'items_created' => $count]
+        $result  = $this->scheduleService->applyTemplateToSchedule($template, $schedule);
+        $applied = $result['template'];
 
         return response()->json([
             'status'            => 'ok',
             'schedule_template' => new \Fleetbase\Http\Resources\ScheduleTemplate($applied),
-            'items_created'     => $applied->items()->count(),
+            'items_created'     => $result['items_created'],
         ]);
     }
 

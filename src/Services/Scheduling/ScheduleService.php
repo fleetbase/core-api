@@ -252,15 +252,15 @@ class ScheduleService
      * @param ScheduleTemplate $template
      * @param Schedule         $schedule
      *
-     * @return ScheduleTemplate  The newly created applied template
+     * @return array{template: ScheduleTemplate, items_created: int}  The applied template copy and the number of ScheduleItems created
      */
-    public function applyTemplateToSchedule(ScheduleTemplate $template, Schedule $schedule): ScheduleTemplate
+    public function applyTemplateToSchedule(ScheduleTemplate $template, Schedule $schedule): array
     {
         return DB::transaction(function () use ($template, $schedule) {
             $applied = $template->applyToSchedule($schedule);
 
             // Immediately materialize the newly applied template
-            $this->materializeTemplate($applied, $schedule);
+            $created = $this->materializeTemplate($applied, $schedule);
 
             activity()
                 ->performedOn($schedule)
@@ -269,7 +269,7 @@ class ScheduleService
                 ->withProperties(['template_uuid' => $template->uuid])
                 ->log('Schedule template applied');
 
-            return $applied;
+            return ['template' => $applied, 'items_created' => $created];
         });
     }
 
