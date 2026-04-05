@@ -9,12 +9,10 @@ class ScheduleExceptionFilter extends Filter
 {
     public function queryForInternal()
     {
-        // Scope to the authenticated company via the schedule relationship
+        // Scope to the authenticated company — schedule_exceptions has company_uuid directly
         $companyUuid = $this->session->get('company');
         if ($companyUuid) {
-            $this->builder->whereHas('schedule', function ($q) use ($companyUuid) {
-                $q->where('company_uuid', $companyUuid);
-            });
+            $this->builder->where('company_uuid', $companyUuid);
         }
     }
 
