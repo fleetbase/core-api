@@ -246,9 +246,25 @@ class ScheduleTemplate extends Model
 
         $rruleString = 'DTSTART=' . $dtStart->format('Ymd\THis') . "\n" . $this->rrule;
 
+        // Guard: if php-rrule is not installed the class will not exist.
+        // Throw a clear RuntimeException so the API returns a 500 with a
+        // meaningful message instead of silently materialising 0 items.
+        if (!class_exists('RRule\\RRule')) {
+            throw new \RuntimeException(
+                'php-rrule is not installed. Run: composer require rlanvin/php-rrule inside the API container.'
+            );
+        }
+
         try {
             return new RRule($rruleString);
-        } catch (\Exception $e) {
+        } catch (\RRule\RRuleException $e) {
+            // Invalid RRULE string — log and return null so callers can skip gracefully
+            \Log::warning('ScheduleTemplate: invalid RRULE string', [
+                'template_uuid' => $this->uuid,
+                'rrule'         => $this->rrule,
+                'error'         => $e->getMessage(),
+            ]);
+
             return null;
         }
     }
