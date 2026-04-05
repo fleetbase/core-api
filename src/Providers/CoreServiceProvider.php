@@ -164,6 +164,7 @@ class CoreServiceProvider extends ServiceProvider
             $schedule->command('purge:activity-logs --force --no-interaction --days 2')->twiceDaily(1, 13);
             $schedule->command('purge:scheduled-task-logs --force --no-interaction --days 1')->twiceDaily(1, 13);
             $schedule->command('telemetry:ping')->daily();
+            $schedule->job(new \Fleetbase\Jobs\MaterializeSchedulesJob())->dailyAt('01:00')->name('materialize-schedules')->withoutOverlapping();
         });
         $this->registerObservers();
         $this->registerExpansionsFrom();
