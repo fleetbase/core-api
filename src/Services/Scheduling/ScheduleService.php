@@ -464,6 +464,7 @@ class ScheduleService
                 }
 
                 ScheduleItem::create([
+                    'company_uuid'   => $schedule->company_uuid,
                     'schedule_uuid'  => $schedule->uuid,
                     'template_uuid'  => $template->uuid,
                     'assignee_type'  => $template->subject_type,

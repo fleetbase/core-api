@@ -10,11 +10,16 @@ class ScheduleItemFilter extends Filter
 {
     public function queryForInternal()
     {
-        // Scope to the authenticated company via the schedule relationship
+        // Scope to the authenticated company.
+        // Prefer the direct company_uuid column (populated since 2026_04_06 migration);
+        // fall back to the schedule join for older rows that pre-date the column.
         $companyUuid = $this->session->get('company');
         if ($companyUuid) {
-            $this->builder->whereHas('schedule', function ($q) use ($companyUuid) {
-                $q->where('company_uuid', $companyUuid);
+            $this->builder->where(function ($q) use ($companyUuid) {
+                $q->where('company_uuid', $companyUuid)
+                  ->orWhereHas('schedule', function ($sq) use ($companyUuid) {
+                      $sq->where('company_uuid', $companyUuid);
+                  });
             });
         }
     }

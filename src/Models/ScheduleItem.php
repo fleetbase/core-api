@@ -78,6 +78,7 @@ class ScheduleItem extends Model
      */
     protected $fillable = [
         'public_id',
+        'company_uuid',
         'schedule_uuid',
         'template_uuid',
         'assignee_uuid',
@@ -117,6 +118,7 @@ class ScheduleItem extends Model
      * @var array
      */
     protected $filterParams = [
+        'company_uuid',
         'schedule_uuid',
         'template_uuid',
         'assignee_type',
@@ -338,6 +340,21 @@ class ScheduleItem extends Model
     protected static function boot()
     {
         parent::boot();
+
+        // Auto-populate company_uuid from session or parent schedule
+        static::creating(function ($item) {
+            if (empty($item->company_uuid)) {
+                if ($item->schedule_uuid) {
+                    $schedule = \Fleetbase\Models\Schedule::where('uuid', $item->schedule_uuid)->first();
+                    if ($schedule) {
+                        $item->company_uuid = $schedule->company_uuid;
+                    }
+                }
+                if (empty($item->company_uuid)) {
+                    $item->company_uuid = session('company');
+                }
+            }
+        });
 
         // Auto-calculate duration on save if not explicitly provided
         static::saving(function ($item) {
