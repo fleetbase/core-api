@@ -84,6 +84,9 @@ class Schedule extends Model
         'status',
         'last_materialized_at',
         'materialization_horizon',
+        'hos_daily_limit',
+        'hos_weekly_limit',
+        'hos_source',
         'meta',
     ];
 
@@ -99,6 +102,8 @@ class Schedule extends Model
         'materialization_horizon' => 'date',
         'meta'                   => Json::class,
         'subject_type'           => PolymorphicType::class,
+        'hos_daily_limit'        => 'integer',
+        'hos_weekly_limit'       => 'integer',
     ];
 
     /**
