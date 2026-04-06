@@ -37,4 +37,4 @@ The foundational Laravel package (`fleetbase/core-api`) providing models, servic
 - `~/fleetbase-project/docs/ai-rules-workspace.md`
 
 ## Boost gate
-Before first edit: `composer require laravel/boost --dev && php artisan boost:install`, then commit.
+This repo IS host-cloned (unlike `fleetbase/api`), so Boost outputs would land in a place future agents can read. Before first edit: `composer require laravel/boost --dev && php artisan boost:install` from a **real terminal** (the installer is interactive and crashes on `docker compose exec -T`). Then commit.
