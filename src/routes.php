@@ -312,8 +312,16 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 });
                                 $router->fleetbaseRoutes('schedules');
                                 $router->fleetbaseRoutes('schedule-items');
-                                $router->fleetbaseRoutes('schedule-templates');
-                                $router->fleetbaseRoutes('schedule-availability');
+                                $router->fleetbaseRoutes('schedule-templates', function ($router, $controller) {
+                                    $router->post('{id}/apply', $controller('apply'));
+                                    $router->post('{id}/materialize', $controller('materialize'));
+                                });
+                                $router->fleetbaseRoutes('schedule-exceptions', function ($router, $controller) {
+                                    $router->post('{id}/approve', $controller('approve'));
+                                    $router->post('{id}/reject', $controller('reject'));
+                                    $router->get('for-subject', $controller('forSubject'));
+                                });
+                                $router->fleetbaseRoutes('schedule-availabilities');
                                 $router->fleetbaseRoutes('schedule-constraints');
                                 $router->fleetbaseRoutes('templates', function ($router, $controller) {
                                     $router->get('context-schemas', $controller('contextSchemas'));
