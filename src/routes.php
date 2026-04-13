@@ -76,6 +76,19 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                         $router->delete('{id}', 'CommentController@delete');
                     }
                 );
+                // ----------------------------------------------------------------
+                // Document Queue
+                // ----------------------------------------------------------------
+                $router->group(['prefix' => 'document-queue'], function () use ($router) {
+                    $router->get('/', 'DocumentQueueController@queryRecord');
+                    $router->get('{id}', 'DocumentQueueController@findRecord');
+                    $router->put('{id}', 'DocumentQueueController@updateRecord');
+                    $router->delete('{id}', 'DocumentQueueController@deleteRecord');
+                    $router->post('upload', 'DocumentQueueController@upload');
+                    $router->post('{id}/process', 'DocumentQueueController@process');
+                    $router->post('{id}/reprocess', 'DocumentQueueController@reprocess');
+                    $router->post('{id}/manual-match', 'DocumentQueueController@manualMatch');
+                });
             });
 
         /*

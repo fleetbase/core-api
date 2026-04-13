@@ -145,6 +145,9 @@ class CoreServiceProvider extends ServiceProvider
         $this->app->singleton(\Fleetbase\Services\TemplateRenderService::class, function ($app) {
             return new \Fleetbase\Services\TemplateRenderService();
         });
+
+        // register document ingestion service (BUILD-08)
+        $this->app->singleton(\Fleetbase\Services\DocumentIngestionService::class);
     }
 
     /**
