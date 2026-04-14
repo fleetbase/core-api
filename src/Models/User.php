@@ -1400,4 +1400,54 @@ class User extends Authenticatable
 
         return $synced;
     }
+
+    /**
+     * The user's default company.
+     *
+     * Primary: the company linked via a company_users pivot row where
+     * is_default = true.
+     *
+     * Fallback: the legacy users.company_uuid association (the `company()`
+     * BelongsTo) — preserves behavior for users who predate the is_default
+     * backfill.
+     *
+     * Returns null if neither is set (e.g. a user with company_uuid = null
+     * and no pivot rows).
+     */
+    public function defaultCompany(): ?Company
+    {
+        $defaultPivot = $this->companyUsers()
+            ->where('is_default', true)
+            ->first();
+
+        if ($defaultPivot) {
+            return Company::where('uuid', $defaultPivot->company_uuid)->first();
+        }
+
+        return $this->company;
+    }
+
+    /**
+     * Distinct UUIDs of all companies this user has access to via the
+     * company_users pivot. Does NOT include the legacy company_uuid
+     * fallback — accessibility is defined by explicit pivot rows only.
+     */
+    public function accessibleCompanyUuids(): array
+    {
+        return $this->companyUsers()
+            ->pluck('company_uuid')
+            ->unique()
+            ->values()
+            ->toArray();
+    }
+
+    /**
+     * Whether the user has a company_users pivot row for the given company.
+     */
+    public function canAccessCompany(string $companyUuid): bool
+    {
+        return $this->companyUsers()
+            ->where('company_uuid', $companyUuid)
+            ->exists();
+    }
 }
