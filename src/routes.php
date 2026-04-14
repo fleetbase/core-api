@@ -23,6 +23,27 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
 
         /*
         |--------------------------------------------------------------------------
+        | Multi-tenant Org-scoped Routes
+        |--------------------------------------------------------------------------
+        |
+        | Org-scoped CRUD endpoints protected by auth:sanctum and the
+        | company context middleware. The context middleware resolves the
+        | active company (org) from the X-Company-Context header or the
+        | caller's default company and blocks client-role users up-front.
+        */
+        $router->prefix('v1/companies/clients')
+            ->middleware(['auth:sanctum', 'fleetbase.company.context'])
+            ->group(function ($router) {
+                $router->get('/', 'Internal\v1\ClientCompanyController@index');
+                $router->post('/', 'Internal\v1\ClientCompanyController@store');
+                $router->get('{uuid}', 'Internal\v1\ClientCompanyController@show');
+                $router->put('{uuid}', 'Internal\v1\ClientCompanyController@update');
+                $router->patch('{uuid}', 'Internal\v1\ClientCompanyController@update');
+                $router->delete('{uuid}', 'Internal\v1\ClientCompanyController@destroy');
+            });
+
+        /*
+        |--------------------------------------------------------------------------
         | Public/Consumable Routes
         |--------------------------------------------------------------------------
         |
