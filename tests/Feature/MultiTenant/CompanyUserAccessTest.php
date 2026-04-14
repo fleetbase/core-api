@@ -6,46 +6,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /**
- * Fleetbase's base Model mixes in ClearsHttpCache, which registers
- * HttpCacheObserver on every save event. That observer resolves the
- * `responsecache` container binding from Spatie's ResponseCacheServiceProvider,
- * which is not booted in the core-api Testbench bootstrap. Bind a no-op
- * stand-in so CompanyUser::create() can fire its created event.
- *
- * This is test-only infrastructure and does NOT change the CompanyUser
- * model or production observer behavior.
- */
-beforeEach(function () {
-    app()->singleton('responsecache', function () {
-        return new class {
-            public function clear(array $tags = []): self
-            {
-                return $this;
-            }
-
-            public function __call($name, $arguments)
-            {
-                return $this;
-            }
-        };
-    });
-
-    // The User model hardcodes `protected $connection = 'mysql'`,
-    // but the test suite runs against in-memory sqlite. Make the `mysql`
-    // connection name resolve to the same active sqlite PDO instance so
-    // Eloquent relation traversal (user/company) works without a real
-    // MySQL server. Implemented by reaching into the connection manager
-    // and aliasing 'mysql' to the already-booted default sqlite connection.
-    $default = \Illuminate\Support\Facades\DB::connection();
-    $manager = app('db');
-    $ref     = new \ReflectionProperty($manager, 'connections');
-    $ref->setAccessible(true);
-    $connections           = $ref->getValue($manager);
-    $connections['mysql']  = $default;
-    $ref->setValue($manager, $connections);
-});
-
-/**
  * Fixture helper: insert a bare company + user pair via query builder,
  * bypassing Eloquent events.
  */

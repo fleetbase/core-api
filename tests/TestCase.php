@@ -212,4 +212,66 @@ abstract class TestCase extends OrchestraTestCase
         });
     }
 
+    /**
+     * Boot the Testbench application and install two test-only shims that
+     * keep Fleetbase's production models runnable against an in-memory
+     * SQLite database without pulling in the full Fleetbase stack.
+     *
+     * Shim 1 — `responsecache` noop binding:
+     *   Fleetbase's base Eloquent Model mixes in the ClearsHttpCache trait,
+     *   which registers HttpCacheObserver on every save event. That
+     *   observer resolves the `responsecache` container alias from Spatie's
+     *   ResponseCacheServiceProvider, which is intentionally NOT registered
+     *   in this Testbench bootstrap (we don't want response-cache plumbing
+     *   in tests). Without this binding the first Model::create() throws
+     *   `BindingResolutionException: Target class [responsecache] does not
+     *   exist`. The noop stand-in satisfies the observer without side
+     *   effects.
+     *
+     * Shim 2 — alias the `mysql` connection to sqlite:
+     *   `Fleetbase\Models\User` extends Authenticatable (not Fleetbase's
+     *   base Model), so it never receives the constructor override that
+     *   rewrites `$connection` to the test env's sqlite. Any query that
+     *   resolves `$user->getConnectionName() === 'mysql'` would otherwise
+     *   die with `PDOException: Connection refused` trying to reach
+     *   `127.0.0.1:3306`. Point the `mysql` connection name at the already
+     *   booted sqlite connection in the DB manager so relation traversal
+     *   and CompanyUser::create(['user_uuid' => ...]) work.
+     *
+     * Must run from setUp() (not defineEnvironment) so that `$this->app`
+     * is fully booted and the DB manager has an active sqlite connection
+     * to alias against.
+     *
+     * @return void
+     */
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // Shim 1: noop `responsecache` binding for ClearsHttpCache observer.
+        $this->app->singleton('responsecache', function () {
+            return new class {
+                public function clear(array $tags = []): self
+                {
+                    return $this;
+                }
+
+                public function __call($name, $arguments)
+                {
+                    return $this;
+                }
+            };
+        });
+
+        // Shim 2: alias the `mysql` connection to the booted sqlite
+        // connection so User and other Authenticatable-extending models
+        // with hardcoded `$connection = 'mysql'` resolve against sqlite.
+        $default = \Illuminate\Support\Facades\DB::connection();
+        $manager = $this->app->make('db');
+        $ref     = new \ReflectionProperty($manager, 'connections');
+        $ref->setAccessible(true);
+        $connections          = $ref->getValue($manager);
+        $connections['mysql'] = $default;
+        $ref->setValue($manager, $connections);
+    }
 }
