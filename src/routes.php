@@ -44,6 +44,24 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
 
         /*
         |--------------------------------------------------------------------------
+        | Multi-tenant Company Context (stateless)
+        |--------------------------------------------------------------------------
+        |
+        | Read the middleware-resolved company for the current request, or
+        | validate a proposed switch target. Switch is a validation oracle
+        | only — it does not mutate server state; the Ember client uses the
+        | response to decide whether to send the new UUID via the
+        | X-Company-Context header on subsequent requests.
+        */
+        $router->prefix('v1/companies')
+            ->middleware(['auth:sanctum', 'fleetbase.company.context'])
+            ->group(function ($router) {
+                $router->get('current-context', 'Internal\v1\CompanyContextController@current');
+                $router->post('switch-context', 'Internal\v1\CompanyContextController@switch');
+            });
+
+        /*
+        |--------------------------------------------------------------------------
         | Public/Consumable Routes
         |--------------------------------------------------------------------------
         |
