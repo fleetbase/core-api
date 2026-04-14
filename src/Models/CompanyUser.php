@@ -33,6 +33,8 @@ class CompanyUser extends Model
         'user_uuid',
         'status',
         'external',
+        'access_level',
+        'is_default',
     ];
 
     /**
@@ -41,7 +43,8 @@ class CompanyUser extends Model
      * @var array
      */
     protected $casts = [
-        'external'                     => 'boolean',
+        'external'   => 'boolean',
+        'is_default' => 'boolean',
     ];
 
     /**
