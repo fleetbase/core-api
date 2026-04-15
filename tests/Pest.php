@@ -17,4 +17,4 @@
 uses(
     \Fleetbase\Tests\TestCase::class,
     \Illuminate\Foundation\Testing\RefreshDatabase::class,
-)->in('Feature/MultiTenant');
+)->in('Feature/MultiTenant', 'Feature/Settings');
