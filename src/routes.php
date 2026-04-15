@@ -70,7 +70,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
         | Delegates 100% to CompanySettingsResolver (no merge logic here).
         */
         $router->prefix('v1/company-settings')
-            ->middleware(['auth:sanctum'])
+            ->middleware(['auth:sanctum', 'fleetbase.company.context.self'])
             ->group(function ($router) {
                 $router->get('current', 'CompanySettingsController@current');
                 $router->put('current', 'CompanySettingsController@update');

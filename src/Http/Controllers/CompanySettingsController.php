@@ -47,21 +47,6 @@ class CompanySettingsController extends Controller
             }
         }
 
-        // Fallback: resolve the authenticated user's default company when the
-        // company-context middleware did not bind one (this endpoint intentionally
-        // does NOT use fleetbase.company.context because client-role users must be
-        // allowed to read/write their OWN company settings — the org-level guardrail
-        // in that middleware would block self-service here).
-        if (!$company instanceof Company) {
-            $user = $request->user();
-            if ($user !== null && method_exists($user, 'defaultCompany')) {
-                $default = $user->defaultCompany();
-                if ($default instanceof Company) {
-                    $company = $default;
-                }
-            }
-        }
-
         abort_unless($company instanceof Company, 403);
 
         return $company;

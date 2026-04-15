@@ -308,6 +308,11 @@ class CoreServiceProvider extends ServiceProvider
             \Fleetbase\Http\Middleware\CompanyContextResolver::class
         );
 
+        $this->app['router']->aliasMiddleware(
+            'fleetbase.company.context.self',
+            \Fleetbase\Http\Middleware\CompanyContextSelfResolver::class
+        );
+
         foreach ($this->middleware as $group => $middlewares) {
             foreach ($middlewares as $middleware) {
                 $this->app->router->pushMiddlewareToGroup($group, $middleware);
