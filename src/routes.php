@@ -62,6 +62,23 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
 
         /*
         |--------------------------------------------------------------------------
+        | Company Settings (resolved inheritance tree)
+        |--------------------------------------------------------------------------
+        |
+        | Read and write the active company's settings. Writes are strictly
+        | scoped to the active company — parent keyspace is never written.
+        | Delegates 100% to CompanySettingsResolver (no merge logic here).
+        */
+        $router->prefix('v1/company-settings')
+            ->middleware(['auth:sanctum'])
+            ->group(function ($router) {
+                $router->get('current', 'CompanySettingsController@current');
+                $router->put('current', 'CompanySettingsController@update');
+                $router->patch('current', 'CompanySettingsController@update');
+            });
+
+        /*
+        |--------------------------------------------------------------------------
         | Public/Consumable Routes
         |--------------------------------------------------------------------------
         |
