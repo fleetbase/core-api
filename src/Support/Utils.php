@@ -1128,7 +1128,7 @@ class Utils
                 return [
                     'name'     => static::get($country, 'name.common'),
                     'iso2'     => static::get($country, 'cca2'),
-                    'currency' => static::get($country, 'currencies.0'),
+                    'currency' => static::resolveCurrencyCode(static::get($country, 'currencies', [])),
                 ];
             })
             ->values()
@@ -1136,7 +1136,7 @@ class Utils
         $countries = collect($countries);
 
         $data = $countries->first(function ($country) use ($currencyCode) {
-            return strtolower($country['currency']) === strtolower($currencyCode);
+            return is_string($country['currency']) && strtolower($country['currency']) === strtolower($currencyCode);
         });
 
         return static::get($data, 'iso2', $defaultValue);
@@ -1199,7 +1199,7 @@ class Utils
                     'aliases'     => static::get($country, 'alt_spellings', []),
                     'capital'     => static::get($country, 'capital_rinvex'),
                     'geo'         => static::get($country, 'geo'),
-                    'currency'    => Arr::first(static::get($country, 'currencies', [])),
+                    'currency'    => static::resolveCurrencyCode(static::get($country, 'currencies', [])),
                     'dial_code'   => Arr::first(static::get($country, 'calling_codes', [])),
                     'coordinates' => [
                         'longitude' => $longitude,
@@ -1215,6 +1215,53 @@ class Utils
         }
 
         return $data ?? null;
+    }
+
+    /**
+     * Resolve a currency code string from a currencies value returned by the PragmaRX Countries package.
+     *
+     * The package returns currencies in two distinct shapes depending on the data source:
+     *   - A sequential list of ISO 4217 code strings, e.g. ["USD", "EUR"]
+     *   - An associative map keyed by ISO 4217 code, e.g. {"USD": {"name": "...", "symbol": "..."}}
+     *
+     * When the value is a list, Arr::first() correctly returns the first code string.
+     * When the value is a map, Arr::first() returns the first *value* (an array), not the key.
+     * This method normalises both shapes and always returns the first currency code as a string,
+     * or null when no currencies are present.
+     *
+     * @param mixed $currencies the raw currencies value from the countries package
+     *
+     * @return string|null the first ISO 4217 currency code, or null if unavailable
+     */
+    public static function resolveCurrencyCode($currencies): ?string
+    {
+        if (empty($currencies)) {
+            return null;
+        }
+
+        // Convert Coollection / Eloquent Collection objects to a plain array so that
+        // both array_is_list() and array_key_first() work reliably.
+        if (is_object($currencies) && method_exists($currencies, 'toArray')) {
+            $currencies = $currencies->toArray();
+        }
+
+        if (!is_array($currencies)) {
+            return null;
+        }
+
+        // Sequential list shape: ["USD", "EUR", ...]
+        // The first element is already the ISO 4217 code string.
+        if (array_is_list($currencies)) {
+            $code = Arr::first($currencies);
+
+            return is_string($code) ? $code : null;
+        }
+
+        // Associative map shape: {"USD": {"name": "...", "symbol": "..."}, ...}
+        // The keys are the ISO 4217 code strings; the values are detail objects.
+        $code = array_key_first($currencies);
+
+        return is_string($code) ? $code : null;
     }
 
     /**
