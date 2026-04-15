@@ -1,6 +1,6 @@
 {
     "name": "fleetbase/core-api",
-    "version": "1.6.38",
+    "version": "1.6.39",
     "description": "Core Framework and Resources for Fleetbase API",
     "keywords": [
         "fleetbase",
@@ -57,7 +57,8 @@
         "sqids/sqids": "^0.4.1",
         "xantios/mimey": "^2.2.0",
         "spatie/laravel-pdf": "^1.9",
-        "mossadal/math-parser": "^1.3"
+        "mossadal/math-parser": "^1.3",
+        "rlanvin/php-rrule": "^2.4"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.34.1",
