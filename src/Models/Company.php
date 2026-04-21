@@ -43,16 +43,6 @@ class Company extends Model
     protected $connection = 'mysql';
 
     /**
-     * Always use the production database connection.
-     *
-     * @return string
-     */
-    public function getConnectionName(): string
-    {
-        return env('DB_CONNECTION', 'mysql');
-    }
-
-    /**
      * The database table used by the model.
      *
      * @var string

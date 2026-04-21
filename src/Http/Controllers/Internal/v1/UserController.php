@@ -69,6 +69,40 @@ class UserController extends FleetbaseController
     public $updateRequest = UpdateUserRequest::class;
 
     /**
+     * Query users always against the production database.
+     *
+     * Users are authoritative in production. The sandbox database contains
+     * only a mirrored copy. Temporarily restoring the production connection
+     * for this query ensures the IAM list is correct regardless of whether
+     * the console is in sandbox mode, without affecting any other sandbox
+     * queries in the same request lifecycle.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function queryRecord(Request $request)
+    {
+        $isSandbox = config('fleetbase.connection.db') === 'sandbox';
+
+        if ($isSandbox) {
+            config([
+                'database.default'        => env('DB_CONNECTION', 'mysql'),
+                'fleetbase.connection.db' => env('DB_CONNECTION', 'mysql'),
+            ]);
+        }
+
+        $response = parent::queryRecord($request);
+
+        if ($isSandbox) {
+            config([
+                'database.default'        => 'sandbox',
+                'fleetbase.connection.db' => 'sandbox',
+            ]);
+        }
+
+        return $response;
+    }
+
+    /**
      * Creates a record with request payload.
      *
      * If the supplied email address already belongs to an existing user the
