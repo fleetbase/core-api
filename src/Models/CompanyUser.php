@@ -24,6 +24,16 @@ class CompanyUser extends Model
     protected $table = 'company_users';
 
     /**
+     * Always use the production database connection.
+     *
+     * @return string
+     */
+    public function getConnectionName(): string
+    {
+        return env('DB_CONNECTION', 'mysql');
+    }
+
+    /**
      * The attributes that are mass assignable.
      *
      * @var array

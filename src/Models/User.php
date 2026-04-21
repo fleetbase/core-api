@@ -75,6 +75,20 @@ class User extends Authenticatable
     protected $connection = 'mysql';
 
     /**
+     * Always use the production database connection.
+     *
+     * User records are authoritative in production and are only mirrored
+     * (read-only) to sandbox via sandbox:sync. Reads and writes must always
+     * target production regardless of whether sandbox mode is active.
+     *
+     * @return string
+     */
+    public function getConnectionName(): string
+    {
+        return env('DB_CONNECTION', 'mysql');
+    }
+
+    /**
      * Override the default primary key.
      *
      * @var string
