@@ -31,6 +31,20 @@ class Model extends EloquentModel
     public const PUBLIC_ID_COLUMN = 'public_id';
 
     /**
+     * Create a new instance of the model.
+     *
+     * @param array $attributes the attributes to set on the model
+     *
+     * @return void
+     */
+    public function __construct(array $attributes = [])
+    {
+        parent::__construct($attributes);
+
+        $this->connection = config('fleetbase.connection.db', 'mysql');
+    }
+
+    /**
      * The primary key for the model.
      *
      * @var string
