@@ -81,6 +81,7 @@ class Invite extends Model
         'protocol',
         'recipients',
         'reason',
+        'role_uuid',
     ];
 
     /**

@@ -346,6 +346,7 @@ class UserController extends FleetbaseController
             'protocol'        => 'email',
             'recipients'      => [$user->email],
             'reason'          => 'join_company',
+            'role_uuid'       => $request->input('user.role_uuid') ?? $request->input('user.role'),
         ]);
 
         $user->notify(new UserInvited($invitation));
@@ -388,6 +389,7 @@ class UserController extends FleetbaseController
             'protocol'        => 'email',
             'recipients'      => [$user->email],
             'reason'          => 'join_company',
+            'role_uuid'       => $request->input('user.role_uuid') ?? $request->input('user.role'),
         ]);
 
         $user->notify(new UserInvited($invitation));
@@ -467,10 +469,20 @@ class UserController extends FleetbaseController
             ->exists();
 
         if (!$alreadyMember) {
-            CompanyUser::create([
-                'user_uuid'    => $user->uuid,
-                'company_uuid' => $company->uuid,
-            ]);
+            // Use Company::addUser() so that role assignment is handled in
+            // one place. The role stored on the invite takes precedence;
+            // if none was set the default 'Administrator' role is used.
+            $roleIdentifier = $invite->role_uuid ?? 'Administrator';
+            $companyUser    = $company->addUser($user, $roleIdentifier);
+            $user->setRelation('companyUser', $companyUser);
+        } else {
+            // User is already a member — ensure the companyUser relation is
+            // loaded so that role assignment below can still be applied if
+            // the invite carries a role (e.g. re-sent invite with a new role).
+            $user->loadCompanyUser();
+            if ($user->companyUser && $invite->role_uuid) {
+                $user->companyUser->assignSingleRole($invite->role_uuid);
+            }
         }
 
         // Switch the user's active company to the one they just joined.
