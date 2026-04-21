@@ -383,19 +383,21 @@ class UserController extends FleetbaseController
             $user->assignSingleRole($request->input('user.role_uuid'));
         }
 
-        $invitation = Invite::create([
-            'company_uuid'    => $company->uuid,
-            'created_by_uuid' => session('user'),
-            'subject_uuid'    => $company->uuid,
-            'subject_type'    => Utils::getMutationType($company),
-            'protocol'        => 'email',
-            'recipients'      => [$user->email],
-            'reason'          => 'join_company',
-            'meta'            => array_filter(['role_uuid' => $request->input('user.role_uuid') ?? $request->input('user.role')]),
-            'expires_at'      => now()->addHours(48),
-        ]);
+        if (!Invite::isAlreadySentToJoinCompany($user, $company)) {
+            $invitation = Invite::create([
+                'company_uuid'    => $company->uuid,
+                'created_by_uuid' => session('user'),
+                'subject_uuid'    => $company->uuid,
+                'subject_type'    => Utils::getMutationType($company),
+                'protocol'        => 'email',
+                'recipients'      => [$user->email],
+                'reason'          => 'join_company',
+                'meta'            => array_filter(['role_uuid' => $request->input('user.role_uuid') ?? $request->input('user.role')]),
+                'expires_at'      => now()->addHours(48),
+            ]);
 
-        $user->notify(new UserInvited($invitation));
+            $user->notify(new UserInvited($invitation));
+        }
 
         return response()->json(['user' => new $this->resource($user)]);
     }
