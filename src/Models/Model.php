@@ -31,35 +31,6 @@ class Model extends EloquentModel
     public const PUBLIC_ID_COLUMN = 'public_id';
 
     /**
-     * Create a new instance of the model.
-     *
-     * @param array $attributes the attributes to set on the model
-     *
-     * @return void
-     */
-    public function __construct(array $attributes = [])
-    {
-        parent::__construct($attributes);
-
-        // Resolve the configured production DB connection name.
-        // The correct config key is `fleetbase.connection.db`; the previously
-        // used key `fleetbase.db.connection` was a typo that returned null,
-        // causing every model to silently fall back to `database.default`.
-        // When sandbox mode is active `database.default` is switched to
-        // `sandbox`, which meant models with an explicit `$connection = 'mysql'`
-        // (e.g. Invite) were still written to the sandbox database because the
-        // parent constructor overwrote the child's property with null.
-        //
-        // Only apply the override when the child class has NOT declared its own
-        // explicit $connection, so models that intentionally pin themselves to
-        // a specific connection (e.g. `protected $connection = 'mysql'`) are
-        // left untouched.
-        if (empty($this->connection)) {
-            $this->connection = config('fleetbase.connection.db', config('database.connections.mysql') ? 'mysql' : config('database.default'));
-        }
-    }
-
-    /**
      * The primary key for the model.
      *
      * @var string

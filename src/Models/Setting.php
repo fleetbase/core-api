@@ -21,27 +21,6 @@ class Setting extends EloquentModel
     use Filterable;
 
     /**
-     * Create a new instance of the model.
-     *
-     * @param array $attributes the attributes to set on the model
-     *
-     * @return void
-     */
-    public function __construct(array $attributes = [])
-    {
-        parent::__construct($attributes);
-
-        // Settings must always read/write from the production database.
-        // Do not overwrite the explicit $connection = 'mysql' declared below;
-        // the previously used config key `fleetbase.db.connection` was a typo
-        // (correct key: `fleetbase.connection.db`) that returned null and caused
-        // this model to silently follow `database.default` into the sandbox DB.
-        if (empty($this->connection)) {
-            $this->connection = config('fleetbase.connection.db', 'mysql');
-        }
-    }
-
-    /**
      * No timestamp columns.
      *
      * @var bool
