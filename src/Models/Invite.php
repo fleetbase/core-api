@@ -41,20 +41,20 @@ class Invite extends Model
     /**
      * Invites must always be stored in the production database.
      *
-     * Sandbox mode switches `database.default` to `sandbox` and the base
-     * Model constructor sets `$this->connection` from config, which means
-     * any model without an explicit override would write to the sandbox DB.
-     * Overriding getConnectionName() here ensures that no matter what the
-     * runtime config state is, Invite records are always read from and
-     * written to the production connection. This is intentional: invite
-     * codes must be resolvable when the invited user accepts the link,
-     * which always happens outside of sandbox context.
+     * setSandboxSession() switches both `database.default` and
+     * `fleetbase.connection.db` to 'sandbox' when sandbox mode is active.
+     * Overriding getConnectionName() here hard-pins this model to the
+     * production DB connection name sourced directly from the environment
+     * config (DB_CONNECTION), bypassing any runtime config changes made
+     * by sandbox session switching. Invite codes must be resolvable when
+     * the invited user accepts the link, which always happens outside of
+     * sandbox context.
      *
      * @return string
      */
     public function getConnectionName(): string
     {
-        return config('fleetbase.connection.db', 'mysql');
+        return env('DB_CONNECTION', 'mysql');
     }
 
     /**
