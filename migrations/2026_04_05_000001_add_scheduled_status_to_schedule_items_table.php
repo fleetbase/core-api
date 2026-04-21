@@ -13,8 +13,7 @@ use Illuminate\Support\Facades\DB;
  * 'pending' is retained for backwards compatibility (e.g. manually-created items
  * that have not yet been confirmed).
  */
-return new class extends Migration
-{
+return new class extends Migration {
     public function up(): void
     {
         DB::statement("

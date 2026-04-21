@@ -69,13 +69,72 @@ class UserController extends FleetbaseController
     public $updateRequest = UpdateUserRequest::class;
 
     /**
+     * Query users always against the production database.
+     *
+     * Users are authoritative in production. The sandbox database contains
+     * only a mirrored copy. Temporarily restoring the production connection
+     * for this query ensures the IAM list is correct regardless of whether
+     * the console is in sandbox mode, without affecting any other sandbox
+     * queries in the same request lifecycle.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function queryRecord(Request $request)
+    {
+        $isSandbox = config('fleetbase.connection.db') === 'sandbox';
+
+        if ($isSandbox) {
+            config([
+                'database.default'        => env('DB_CONNECTION', 'mysql'),
+                'fleetbase.connection.db' => env('DB_CONNECTION', 'mysql'),
+            ]);
+        }
+
+        $response = parent::queryRecord($request);
+
+        if ($isSandbox) {
+            config([
+                'database.default'        => 'sandbox',
+                'fleetbase.connection.db' => 'sandbox',
+            ]);
+        }
+
+        return $response;
+    }
+
+    /**
      * Creates a record with request payload.
+     *
+     * If the supplied email address already belongs to an existing user the
+     * request is treated as a cross-organisation invitation rather than a
+     * duplicate-creation attempt. The existing user is invited to join the
+     * current company and the response includes `invited: true` so the
+     * frontend can display the appropriate success message.
      *
      * @return \Illuminate\Http\Response
      */
     public function createRecord(Request $request)
     {
         $this->validateRequest($request);
+
+        // Detect whether the email already belongs to an existing user.
+        // If so, redirect to the cross-organisation invite flow instead of
+        // attempting to create a duplicate user record.
+        $email        = strtolower((string) $request->input('user.email', ''));
+        $existingUser = $email ? User::where('email', $email)->whereNull('deleted_at')->first() : null;
+
+        if ($existingUser) {
+            // Guard: the user is already a member of the current organisation.
+            $alreadyMember = $existingUser->companyUsers()
+                ->where('company_uuid', session('company'))
+                ->exists();
+
+            if ($alreadyMember) {
+                return response()->error('This user is already a member of your organisation.');
+            }
+
+            return $this->inviteExistingUser($existingUser, $request);
+        }
 
         try {
             $record = $this->model->createRecordFromRequest($request, function (&$request, &$input) {
@@ -268,61 +327,124 @@ class UserController extends FleetbaseController
     }
 
     /**
-     * Creates a user, adds the user to company and sends an email to user about being added.
+     * Invite a user (new or existing) to join the current organisation.
+     *
+     * - If the email belongs to an existing user in another organisation, a
+     *   cross-organisation invitation is issued without creating a new user.
+     * - If the email is brand-new, a pending user record is created and the
+     *   invitation email is sent so they can set a password on acceptance.
      *
      * @return \Illuminate\Http\Response
      */
     #[SkipAuthorizationCheck]
     public function inviteUser(InviteUserRequest $request)
     {
-        // $data = $request->input(['name', 'email', 'phone', 'status', 'country', 'date_of_birth']);
-        $data  = $request->input('user');
-        $email = strtolower($data['email']);
+        $data    = $request->input('user');
+        $email   = strtolower($data['email']);
+        $company = Auth::getCompany();
 
-        // set company
-        $data['company_uuid'] = session('company');
-        $data['status']       = 'pending'; // pending acceptance
-        $data['type']         = 'user'; // set type as regular user
-        $data['created_at']   = Carbon::now(); // jic
-
-        // make sure user isn't already invited
-        $isAlreadyInvited = Invite::where([
-            'company_uuid' => session('company'),
-            'subject_uuid' => session('company'),
-            'protocol'     => 'email',
-            'reason'       => 'join_company',
-        ])->whereJsonContains('recipients', $email)->exists();
-
-        if ($isAlreadyInvited) {
-            return response()->error('This user has already been invited to join this organization.');
+        if (!$company) {
+            return response()->error('Unable to determine the current organisation.');
         }
 
-        // get the company inviting
-        $company = Company::where('uuid', session('company'))->first();
+        // Check if user already exists in the system.
+        $user = User::where('email', $email)->whereNull('deleted_at')->first();
 
-        // check if user exists already
-        $user = User::where('email', $email)->first();
+        if ($user) {
+            // Guard: already a member of this organisation.
+            $alreadyMember = $user->companyUsers()
+                ->where('company_uuid', $company->uuid)
+                ->exists();
 
-        // if new user, create user
-        if (!$user) {
-            $user = User::create($data);
+            if ($alreadyMember) {
+                return response()->error('This user is already a member of your organisation.');
+            }
+
+            // Existing user from another org — issue a cross-org invite.
+            return $this->inviteExistingUser($user, $request);
         }
 
-        // create invitation
+        // Brand-new user — create a pending record then invite.
+        $data['company_uuid'] = $company->uuid;
+        $data['status']       = 'pending';
+        $data['type']         = 'user';
+        $data['created_at']   = Carbon::now();
+
+        $user = User::create($data);
+
+        // Set user type
+        $user->setUserType('user');
+
+        // Assign to user
+        $user->assignCompany($company, $request->input('user.role_uuid'));
+
+        // Assign role if set
+        if ($request->filled('user.role_uuid')) {
+            $user->assignSingleRole($request->input('user.role_uuid'));
+        }
+
         $invitation = Invite::create([
-            'company_uuid'    => session('company'),
+            'company_uuid'    => $company->uuid,
             'created_by_uuid' => session('user'),
             'subject_uuid'    => $company->uuid,
             'subject_type'    => Utils::getMutationType($company),
             'protocol'        => 'email',
             'recipients'      => [$user->email],
             'reason'          => 'join_company',
+            'meta'            => array_filter(['role_uuid' => $request->input('user.role_uuid') ?? $request->input('user.role')]),
+            'expires_at'      => now()->addHours(48),
         ]);
 
-        // notify user
         $user->notify(new UserInvited($invitation));
 
         return response()->json(['user' => new $this->resource($user)]);
+    }
+
+    /**
+     * Issue a join-company invitation to a user who already exists in the
+     * system but belongs to a different organisation.
+     *
+     * This private helper is shared by both `createRecord()` (which detects
+     * an existing email during the standard "New User" flow) and `inviteUser()`
+     * (the dedicated invite endpoint). Keeping the logic in one place ensures
+     * both paths behave identically.
+     *
+     * @param User    $user    the existing user to invite
+     * @param Request $request the originating HTTP request
+     */
+    private function inviteExistingUser(User $user, Request $request): \Illuminate\Http\JsonResponse
+    {
+        $company = Auth::getCompany();
+
+        if (!$company) {
+            return response()->error('Unable to determine the current organisation.');
+        }
+
+        // Guard: prevent duplicate invitations using the model helper.
+        if (Invite::isAlreadySentToJoinCompany($user, $company)) {
+            return response()->error('This user has already been invited to join your organisation.');
+        }
+
+        $invitation = Invite::create([
+            'company_uuid'    => $company->uuid,
+            'created_by_uuid' => session('user'),
+            'subject_uuid'    => $company->uuid,
+            'subject_type'    => Utils::getMutationType($company),
+            'protocol'        => 'email',
+            'recipients'      => [$user->email],
+            'reason'          => 'join_company',
+            'meta'            => array_filter(['role_uuid' => $request->input('user.role_uuid') ?? $request->input('user.role')]),
+            'expires_at'      => now()->addHours(48),
+        ]);
+
+        $user->notify(new UserInvited($invitation));
+
+        // Return `invited: true` so the frontend can distinguish between
+        // a newly created user and a cross-organisation invite.
+        return response()->json([
+            'user'    => new $this->resource($user),
+            'invited' => true,
+        ]);
     }
 
     /**
@@ -345,6 +467,7 @@ class UserController extends FleetbaseController
             'protocol'        => 'email',
             'recipients'      => [$user->email],
             'reason'          => 'join_company',
+            'expires_at'      => now()->addHours(48),
         ]);
 
         // notify user
@@ -384,11 +507,40 @@ class UserController extends FleetbaseController
         // determine if user needs to set password (when status pending)
         $isPending = $needsPassword = $user->status === 'pending';
 
-        // add user to company
-        CompanyUser::create([
-            'user_uuid'    => $user->uuid,
-            'company_uuid' => $company->uuid,
-        ]);
+        // Add user to company only if they are not already a member.
+        // This guards against double-acceptance (e.g. clicking the invite
+        // link twice) creating a duplicate company_users row.
+        $alreadyMember = CompanyUser::where('user_uuid', $user->uuid)
+            ->where('company_uuid', $company->uuid)
+            ->exists();
+
+        if (!$alreadyMember) {
+            // Use Company::addUser() so that role assignment is handled in
+            // one place. The role stored in the invite meta takes precedence;
+            // if none was set the default 'Administrator' role is used.
+            $roleIdentifier = $invite->getMeta('role_uuid', 'Administrator');
+            $companyUser    = $company->addUser($user, $roleIdentifier);
+            $user->setRelation('companyUser', $companyUser);
+        } else {
+            // User is already a member — ensure the companyUser relation is
+            // loaded so that role assignment below can still be applied if
+            // the invite carries a role (e.g. re-sent invite with a new role).
+            $user->loadCompanyUser();
+            $roleUuid = $invite->getMeta('role_uuid');
+            if ($user->companyUser && $roleUuid) {
+                $user->companyUser->assignSingleRole($roleUuid);
+            }
+        }
+
+        // Delete the invite
+        $invite->delete();
+
+        // Switch the user's active company to the one they just joined.
+        // This ensures that subsequent calls to /users/me resolve the
+        // companyUser relationship (and therefore role/policies) against
+        // the correct company rather than the user's previous company.
+        $user->company_uuid = $company->uuid;
+        $user->save();
 
         // activate user
         if ($isPending) {

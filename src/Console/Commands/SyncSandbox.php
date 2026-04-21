@@ -56,10 +56,13 @@ class SyncSandbox extends Command
             DB::connection('sandbox')
                 ->table('api_credentials')
                 ->truncate();
+            DB::connection('sandbox')
+                ->table('company_users')
+                ->truncate();
         }
 
         // Models that need to be synced from Production to Sandbox
-        $syncable = [\Fleetbase\Models\User::class, \Fleetbase\Models\Company::class, \Fleetbase\Models\ApiCredential::class];
+        $syncable = [\Fleetbase\Models\User::class, \Fleetbase\Models\Company::class, \Fleetbase\Models\CompanyUser::class, \Fleetbase\Models\ApiCredential::class];
 
         // Sync each syncable data model
         foreach ($syncable as $model) {

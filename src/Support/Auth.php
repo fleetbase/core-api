@@ -148,7 +148,15 @@ class Auth extends Authentication
 
         // if is sandbox environment switch to the sandbox database
         if ($isSandbox) {
-            config(['database.default' => 'sandbox']);
+            config([
+                // Switch the default Laravel connection so models without an
+                // explicit $connection declaration use the sandbox database.
+                'database.default'      => 'sandbox',
+                // Also update the Fleetbase-specific connection key so that
+                // the base Model constructor (which reads this config value)
+                // resolves to the sandbox connection rather than production.
+                'fleetbase.connection.db' => 'sandbox',
+            ]);
             $sandboxSession['is_sandbox'] = (bool) $isSandbox;
 
             if ($apiCredentialId) {

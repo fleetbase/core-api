@@ -36,6 +36,7 @@ class ScheduleFilter extends Filter
         // If it already looks like a fully-qualified class name, use as-is
         if (Str::contains($type, '\\')) {
             $this->builder->where('subject_type', $type);
+
             return;
         }
 

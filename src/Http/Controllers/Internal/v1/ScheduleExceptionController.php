@@ -19,8 +19,6 @@ class ScheduleExceptionController extends FleetbaseController
 
     /**
      * The ScheduleService instance.
-     *
-     * @var ScheduleService
      */
     protected ScheduleService $scheduleService;
 
