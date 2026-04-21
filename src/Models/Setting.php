@@ -21,17 +21,13 @@ class Setting extends EloquentModel
     use Filterable;
 
     /**
-     * Create a new instance of the model.
-     *
-     * @param array $attributes the attributes to set on the model
-     *
-     * @return void
+     * Get the correct current connection to use.
+     * NOTE FOR LATER: Perhaps system level settings should always write to main connection,
+     * but allow organization level settings to write to sandbox connection.
      */
-    public function __construct(array $attributes = [])
+    public function getConnectionName()
     {
-        parent::__construct($attributes);
-
-        $this->connection = config('fleetbase.connection.db', 'mysql');
+        return $this->connection ?: config('fleetbase.connection.db', 'mysql');
     }
 
     /**
