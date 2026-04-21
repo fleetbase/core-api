@@ -65,10 +65,6 @@ class ApiCredentialController extends FleetbaseController
      * This is a targeted, on-demand version of the `sandbox:sync` Artisan command,
      * scoped only to the records needed to satisfy the foreign key constraints when
      * inserting a new test-mode `api_credentials` row.
-     *
-     * @param Request $request
-     *
-     * @return void
      */
     protected function syncCurrentSessionToSandbox(Request $request): void
     {
@@ -116,10 +112,6 @@ class ApiCredentialController extends FleetbaseController
      * reduces the record to its fillable attributes, normalises datetime
      * fields to strings, JSON-encodes any Json-cast columns, then performs
      * an `updateOrInsert` keyed on `uuid`.
-     *
-     * @param \Illuminate\Database\Eloquent\Model $model
-     *
-     * @return void
      */
     protected function upsertModelToSandbox(\Illuminate\Database\Eloquent\Model $model): void
     {
