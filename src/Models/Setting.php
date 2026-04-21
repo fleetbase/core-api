@@ -31,7 +31,14 @@ class Setting extends EloquentModel
     {
         parent::__construct($attributes);
 
-        $this->connection = config('fleetbase.db.connection');
+        // Settings must always read/write from the production database.
+        // Do not overwrite the explicit $connection = 'mysql' declared below;
+        // the previously used config key `fleetbase.db.connection` was a typo
+        // (correct key: `fleetbase.connection.db`) that returned null and caused
+        // this model to silently follow `database.default` into the sandbox DB.
+        if (empty($this->connection)) {
+            $this->connection = config('fleetbase.connection.db', 'mysql');
+        }
     }
 
     /**

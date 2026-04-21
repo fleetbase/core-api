@@ -41,7 +41,22 @@ class Model extends EloquentModel
     {
         parent::__construct($attributes);
 
-        $this->connection = config('fleetbase.db.connection');
+        // Resolve the configured production DB connection name.
+        // The correct config key is `fleetbase.connection.db`; the previously
+        // used key `fleetbase.db.connection` was a typo that returned null,
+        // causing every model to silently fall back to `database.default`.
+        // When sandbox mode is active `database.default` is switched to
+        // `sandbox`, which meant models with an explicit `$connection = 'mysql'`
+        // (e.g. Invite) were still written to the sandbox database because the
+        // parent constructor overwrote the child's property with null.
+        //
+        // Only apply the override when the child class has NOT declared its own
+        // explicit $connection, so models that intentionally pin themselves to
+        // a specific connection (e.g. `protected $connection = 'mysql'`) are
+        // left untouched.
+        if (empty($this->connection)) {
+            $this->connection = config('fleetbase.connection.db', config('database.connections.mysql') ? 'mysql' : config('database.default'));
+        }
     }
 
     /**
