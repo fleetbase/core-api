@@ -22,19 +22,19 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * expands their RRULEs using rlanvin/php-rrule, and writes ScheduleItem rows for a rolling
  * window. The last_materialized_at and materialization_horizon columns track the engine's progress.
  *
- * @property string $uuid
- * @property string $public_id
- * @property string $company_uuid
- * @property string $subject_uuid
- * @property string $subject_type
- * @property string|null $name
- * @property string|null $description
+ * @property string              $uuid
+ * @property string              $public_id
+ * @property string              $company_uuid
+ * @property string              $subject_uuid
+ * @property string              $subject_type
+ * @property string|null         $name
+ * @property string|null         $description
  * @property \Carbon\Carbon|null $start_date
  * @property \Carbon\Carbon|null $end_date
- * @property string|null $timezone
- * @property string $status
+ * @property string|null         $timezone
+ * @property string              $status
  * @property \Carbon\Carbon|null $last_materialized_at
- * @property string|null $materialization_horizon
+ * @property string|null         $materialization_horizon
  */
 class Schedule extends Model
 {
@@ -96,14 +96,14 @@ class Schedule extends Model
      * @var array
      */
     protected $casts = [
-        'start_date'             => 'date',
-        'end_date'               => 'date',
-        'last_materialized_at'   => 'datetime',
+        'start_date'              => 'date',
+        'end_date'                => 'date',
+        'last_materialized_at'    => 'datetime',
         'materialization_horizon' => 'date',
-        'meta'                   => Json::class,
-        'subject_type'           => PolymorphicType::class,
-        'hos_daily_limit'        => 'integer',
-        'hos_weekly_limit'       => 'integer',
+        'meta'                    => Json::class,
+        'subject_type'            => PolymorphicType::class,
+        'hos_daily_limit'         => 'integer',
+        'hos_weekly_limit'        => 'integer',
     ];
 
     /**
@@ -238,10 +238,6 @@ class Schedule extends Model
 
     /**
      * Determine whether this schedule needs materialization up to the given date.
-     *
-     * @param \Carbon\Carbon $upTo
-     *
-     * @return bool
      */
     public function needsMaterializationUpTo(\Carbon\Carbon $upTo): bool
     {
@@ -251,8 +247,6 @@ class Schedule extends Model
 
     /**
      * Get the effective timezone for this schedule, falling back to UTC.
-     *
-     * @return string
      */
     public function getEffectiveTimezone(): string
     {

@@ -51,8 +51,6 @@ class Invite extends Model
      * by sandbox session switching. Invite codes must be resolvable when
      * the invited user accepts the link, which always happens outside of
      * sandbox context.
-     *
-     * @return string
      */
     public function getConnectionName(): string
     {

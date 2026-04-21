@@ -24,22 +24,22 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * and exception_for_date records the original RRULE occurrence date. The materialization
  * engine will never overwrite items where is_exception = true.
  *
- * @property string $uuid
- * @property string $public_id
- * @property string|null $schedule_uuid
- * @property string|null $template_uuid
- * @property string|null $assignee_uuid
- * @property string|null $assignee_type
- * @property string|null $resource_uuid
- * @property string|null $resource_type
+ * @property string              $uuid
+ * @property string              $public_id
+ * @property string|null         $schedule_uuid
+ * @property string|null         $template_uuid
+ * @property string|null         $assignee_uuid
+ * @property string|null         $assignee_type
+ * @property string|null         $resource_uuid
+ * @property string|null         $resource_type
  * @property \Carbon\Carbon|null $start_at
  * @property \Carbon\Carbon|null $end_at
- * @property int|null $duration
+ * @property int|null            $duration
  * @property \Carbon\Carbon|null $break_start_at
  * @property \Carbon\Carbon|null $break_end_at
- * @property string $status
- * @property bool $is_exception
- * @property string|null $exception_for_date
+ * @property string              $status
+ * @property bool                $is_exception
+ * @property string|null         $exception_for_date
  */
 class ScheduleItem extends Model
 {
@@ -293,8 +293,6 @@ class ScheduleItem extends Model
 
     /**
      * Calculate the duration in minutes from start_at and end_at.
-     *
-     * @return int
      */
     public function calculateDuration(): int
     {
@@ -325,8 +323,6 @@ class ScheduleItem extends Model
 
     /**
      * Determine whether this item is currently active (in progress).
-     *
-     * @return bool
      */
     public function isActive(): bool
     {
@@ -345,7 +341,7 @@ class ScheduleItem extends Model
         static::creating(function ($item) {
             if (empty($item->company_uuid)) {
                 if ($item->schedule_uuid) {
-                    $schedule = \Fleetbase\Models\Schedule::where('uuid', $item->schedule_uuid)->first();
+                    $schedule = Schedule::where('uuid', $item->schedule_uuid)->first();
                     if ($schedule) {
                         $item->company_uuid = $schedule->company_uuid;
                     }
@@ -366,7 +362,7 @@ class ScheduleItem extends Model
         // When a materialized item is manually updated, flag it as an exception
         static::updating(function ($item) {
             if ($item->template_uuid && !$item->is_exception) {
-                $dirty = $item->getDirty();
+                $dirty          = $item->getDirty();
                 $scheduleFields = ['start_at', 'end_at', 'break_start_at', 'break_end_at', 'status'];
                 if (count(array_intersect(array_keys($dirty), $scheduleFields)) > 0) {
                     $item->is_exception       = true;

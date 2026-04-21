@@ -27,20 +27,20 @@ use RRule\RRule;
  * to the driver's Schedule. This ensures that editing a driver's applied template does not
  * affect the original library template or other drivers using it.
  *
- * @property string $uuid
- * @property string $public_id
- * @property string $company_uuid
+ * @property string      $uuid
+ * @property string      $public_id
+ * @property string      $company_uuid
  * @property string|null $schedule_uuid
  * @property string|null $subject_uuid
  * @property string|null $subject_type
- * @property string $name
+ * @property string      $name
  * @property string|null $description
- * @property string|null $start_time  e.g. "08:00"
- * @property string|null $end_time    e.g. "16:00"
- * @property int|null $duration       shift duration in minutes
- * @property int|null $break_duration break duration in minutes
- * @property string|null $rrule       RFC 5545 RRULE string e.g. "FREQ=WEEKLY;BYDAY=MO,TU,TH"
- * @property string|null $color       Hex colour for calendar rendering e.g. "#6366f1"
+ * @property string|null $start_time     e.g. "08:00"
+ * @property string|null $end_time       e.g. "16:00"
+ * @property int|null    $duration       shift duration in minutes
+ * @property int|null    $break_duration break duration in minutes
+ * @property string|null $rrule          RFC 5545 RRULE string e.g. "FREQ=WEEKLY;BYDAY=MO,TU,TH"
+ * @property string|null $color          Hex colour for calendar rendering e.g. "#6366f1"
  */
 class ScheduleTemplate extends Model
 {
@@ -213,8 +213,6 @@ class ScheduleTemplate extends Model
 
     /**
      * Determine whether this template has a valid RRULE string.
-     *
-     * @return bool
      */
     public function hasRrule(): bool
     {
@@ -225,10 +223,8 @@ class ScheduleTemplate extends Model
      * Parse the RRULE string and return an RRule instance.
      * The DTSTART is synthesized from the template's start_time and the given reference date.
      *
-     * @param \Carbon\Carbon|null $referenceDate  The date from which to start the rule (defaults to today)
-     * @param string|null         $timezone       Timezone to use (defaults to UTC)
-     *
-     * @return \RRule\RRule|null
+     * @param \Carbon\Carbon|null $referenceDate The date from which to start the rule (defaults to today)
+     * @param string|null         $timezone      Timezone to use (defaults to UTC)
      */
     public function getRruleInstance(?\Carbon\Carbon $referenceDate = null, ?string $timezone = null): ?RRule
     {
@@ -267,9 +263,7 @@ class ScheduleTemplate extends Model
         // Throw a clear RuntimeException so the API returns a 500 with a
         // meaningful message instead of silently materialising 0 items.
         if (!class_exists('RRule\\RRule')) {
-            throw new \RuntimeException(
-                'php-rrule is not installed. Run: composer require rlanvin/php-rrule inside the API container.'
-            );
+            throw new \RuntimeException('php-rrule is not installed. Run: composer require rlanvin/php-rrule inside the API container.');
         }
 
         try {
@@ -300,10 +294,6 @@ class ScheduleTemplate extends Model
     /**
      * Get all occurrence dates between two Carbon dates.
      *
-     * @param \Carbon\Carbon $from
-     * @param \Carbon\Carbon $to
-     * @param string|null    $timezone
-     *
      * @return \Carbon\Carbon[]
      */
     public function getOccurrencesBetween(\Carbon\Carbon $from, \Carbon\Carbon $to, ?string $timezone = null): array
@@ -331,28 +321,24 @@ class ScheduleTemplate extends Model
     /**
      * Apply this library template to a given Schedule, creating a driver-specific copy.
      *
-     * @param Schedule    $schedule
-     * @param string|null $subjectType
-     * @param string|null $subjectUuid
-     *
      * @return static
      */
     public function applyToSchedule(Schedule $schedule, ?string $subjectType = null, ?string $subjectUuid = null): self
     {
         return static::create([
-            'company_uuid' => $this->company_uuid,
-            'schedule_uuid' => $schedule->uuid,
-            'subject_type'  => $subjectType ?? $schedule->subject_type,
-            'subject_uuid'  => $subjectUuid ?? $schedule->subject_uuid,
-            'name'          => $this->name,
-            'description'   => $this->description,
-            'start_time'    => $this->start_time,
-            'end_time'      => $this->end_time,
-            'duration'      => $this->duration,
+            'company_uuid'   => $this->company_uuid,
+            'schedule_uuid'  => $schedule->uuid,
+            'subject_type'   => $subjectType ?? $schedule->subject_type,
+            'subject_uuid'   => $subjectUuid ?? $schedule->subject_uuid,
+            'name'           => $this->name,
+            'description'    => $this->description,
+            'start_time'     => $this->start_time,
+            'end_time'       => $this->end_time,
+            'duration'       => $this->duration,
             'break_duration' => $this->break_duration,
-            'rrule'         => $this->rrule,
-            'color'         => $this->color,
-            'meta'          => $this->meta,
+            'rrule'          => $this->rrule,
+            'color'          => $this->color,
+            'meta'           => $this->meta,
         ]);
     }
 }

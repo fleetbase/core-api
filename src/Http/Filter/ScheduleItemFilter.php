@@ -67,6 +67,7 @@ class ScheduleItemFilter extends Filter
 
         if (Str::contains($type, '\\')) {
             $this->builder->where('assignee_type', $type);
+
             return;
         }
 

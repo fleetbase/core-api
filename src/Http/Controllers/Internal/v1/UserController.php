@@ -372,6 +372,17 @@ class UserController extends FleetbaseController
 
         $user = User::create($data);
 
+        // Set user type
+        $user->setUserType('user');
+
+        // Assign to user
+        $user->assignCompany($company, $request->input('user.role_uuid'));
+
+        // Assign role if set
+        if ($request->filled('user.role_uuid')) {
+            $user->assignSingleRole($request->input('user.role_uuid'));
+        }
+
         $invitation = Invite::create([
             'company_uuid'    => $company->uuid,
             'created_by_uuid' => session('user'),
@@ -381,6 +392,7 @@ class UserController extends FleetbaseController
             'recipients'      => [$user->email],
             'reason'          => 'join_company',
             'meta'            => array_filter(['role_uuid' => $request->input('user.role_uuid') ?? $request->input('user.role')]),
+            'expires_at'      => now()->addHours(48),
         ]);
 
         $user->notify(new UserInvited($invitation));
@@ -397,10 +409,8 @@ class UserController extends FleetbaseController
      * (the dedicated invite endpoint). Keeping the logic in one place ensures
      * both paths behave identically.
      *
-     * @param User    $user    The existing user to invite.
-     * @param Request $request The originating HTTP request.
-     *
-     * @return \Illuminate\Http\JsonResponse
+     * @param User    $user    the existing user to invite
+     * @param Request $request the originating HTTP request
      */
     private function inviteExistingUser(User $user, Request $request): \Illuminate\Http\JsonResponse
     {
@@ -424,6 +434,7 @@ class UserController extends FleetbaseController
             'recipients'      => [$user->email],
             'reason'          => 'join_company',
             'meta'            => array_filter(['role_uuid' => $request->input('user.role_uuid') ?? $request->input('user.role')]),
+            'expires_at'      => now()->addHours(48),
         ]);
 
         $user->notify(new UserInvited($invitation));
@@ -456,6 +467,7 @@ class UserController extends FleetbaseController
             'protocol'        => 'email',
             'recipients'      => [$user->email],
             'reason'          => 'join_company',
+            'expires_at'      => now()->addHours(48),
         ]);
 
         // notify user
@@ -519,6 +531,9 @@ class UserController extends FleetbaseController
                 $user->companyUser->assignSingleRole($roleUuid);
             }
         }
+
+        // Delete the invite
+        $invite->delete();
 
         // Switch the user's active company to the one they just joined.
         // This ensures that subsequent calls to /users/me resolve the
