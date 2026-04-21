@@ -5,6 +5,7 @@ namespace Fleetbase\Models;
 use Fleetbase\Casts\Json;
 use Fleetbase\Traits\Expirable;
 use Fleetbase\Traits\HasApiModelBehavior;
+use Fleetbase\Traits\HasMetaAttributes;
 use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasUuid;
 use Illuminate\Support\Carbon;
@@ -16,6 +17,7 @@ class Invite extends Model
     use HasPublicId;
     use Expirable;
     use HasApiModelBehavior;
+    use HasMetaAttributes;
 
     /**
      * The database table used by the model.
@@ -81,7 +83,7 @@ class Invite extends Model
         'protocol',
         'recipients',
         'reason',
-        'role_uuid',
+        'meta',
     ];
 
     /**
@@ -105,6 +107,7 @@ class Invite extends Model
      */
     protected $casts = [
         'recipients' => Json::class,
+        'meta'       => Json::class,
     ];
 
     /**

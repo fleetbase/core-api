@@ -8,16 +8,17 @@ return new class extends Migration {
     /**
      * Run the migrations.
      *
-     * Adds a nullable `role_uuid` column to the `invites` table so that the
-     * intended role for an invited user can be stored on the invite record and
-     * applied when the user accepts the invitation.
+     * Adds a nullable JSON `meta` column to the `invites` table so that
+     * arbitrary key-value data (e.g. role_uuid for user invitations) can be
+     * stored on an invite record without requiring dedicated columns for each
+     * use-case. The HasMetaAttributes trait is used to read and write values.
      *
      * @return void
      */
     public function up()
     {
         Schema::table('invites', function (Blueprint $table) {
-            $table->char('role_uuid', 36)->nullable()->after('reason');
+            $table->json('meta')->nullable()->after('reason');
         });
     }
 
@@ -29,7 +30,7 @@ return new class extends Migration {
     public function down()
     {
         Schema::table('invites', function (Blueprint $table) {
-            $table->dropColumn('role_uuid');
+            $table->dropColumn('meta');
         });
     }
 };
