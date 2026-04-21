@@ -5,7 +5,6 @@ namespace Fleetbase\Http\Requests;
 use Fleetbase\Rules\EmailDomainExcluded;
 use Fleetbase\Rules\ExcludeWords;
 use Fleetbase\Rules\ValidPhoneNumber;
-use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 
 class CreateUserRequest extends FleetbaseRequest
@@ -30,14 +29,24 @@ class CreateUserRequest extends FleetbaseRequest
     /**
      * Get the validation rules that apply to the request.
      *
+     * Note: email uniqueness is intentionally NOT enforced here. When an email
+     * already exists in the system the controller detects this and redirects to
+     * the cross-organisation invite flow rather than attempting to create a
+     * duplicate user. Enforcing uniqueness at the request layer would prevent
+     * that branch from ever being reached.
+     *
+     * Phone is marked `sometimes` because invited users (both new and existing)
+     * may not supply a phone number at invite time; they complete their profile
+     * after accepting the invitation.
+     *
      * @return array
      */
     public function rules()
     {
         return [
             'name'                  => ['required', 'min:2', 'max:50', 'regex:/^(?!.*\b[a-z0-9]+(?:\.[a-z0-9]+){1,}\b)[a-zA-ZÀ-ÿ\'\-\s\.]+$/u', new ExcludeWords($this->excludedWords)],
-            'email'                 => ['required', 'email', Rule::unique('users', 'email')->whereNull('deleted_at'), new EmailDomainExcluded()],
-            'phone'                 => ['required', new ValidPhoneNumber(), Rule::unique('users', 'phone')->whereNull('deleted_at')],
+            'email'                 => ['required', 'email', new EmailDomainExcluded()],
+            'phone'                 => ['sometimes', 'nullable', new ValidPhoneNumber()],
             'password'              => ['sometimes', 'confirmed', 'string', Password::min(8)->mixedCase()->letters()->numbers()->symbols()->uncompromised()],
             'password_confirmation' => ['sometimes', 'min:4', 'max:64'],
         ];
@@ -53,8 +62,6 @@ class CreateUserRequest extends FleetbaseRequest
         return [
             '*.required'             => 'Your :attribute is required',
             'email'                  => 'You must enter a valid :attribute',
-            'email.unique'           => 'An account with this email address already exists',
-            'phone.unique'           => 'An account with this phone number already exists',
             'password.required'      => 'You must enter a password.',
             'password.mixed'         => 'Password must contain both uppercase and lowercase letters.',
             'password.letters'       => 'Password must contain at least 1 letter.',
