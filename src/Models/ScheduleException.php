@@ -17,19 +17,19 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * When the materialization engine generates ScheduleItem records from a ScheduleTemplate's RRULE,
  * it checks this table and skips (or cancels) any occurrence that falls within an approved exception window.
  *
- * @property string $uuid
- * @property string $public_id
- * @property string $company_uuid
- * @property string $subject_uuid
- * @property string $subject_type
- * @property string|null $schedule_uuid
+ * @property string              $uuid
+ * @property string              $public_id
+ * @property string              $company_uuid
+ * @property string              $subject_uuid
+ * @property string              $subject_type
+ * @property string|null         $schedule_uuid
  * @property \Carbon\Carbon|null $start_at
  * @property \Carbon\Carbon|null $end_at
- * @property string|null $type
- * @property string $status
- * @property string|null $reason
- * @property string|null $notes
- * @property string|null $reviewed_by_uuid
+ * @property string|null         $type
+ * @property string              $status
+ * @property string|null         $reason
+ * @property string|null         $notes
+ * @property string|null         $reviewed_by_uuid
  * @property \Carbon\Carbon|null $reviewed_at
  */
 class ScheduleException extends Model
@@ -121,12 +121,12 @@ class ScheduleException extends Model
     /**
      * Valid exception types.
      */
-    const TYPES = ['time_off', 'sick', 'holiday', 'swap', 'training', 'other'];
+    public const TYPES = ['time_off', 'sick', 'holiday', 'swap', 'training', 'other'];
 
     /**
      * Valid workflow statuses.
      */
-    const STATUSES = ['pending', 'approved', 'rejected', 'cancelled'];
+    public const STATUSES = ['pending', 'approved', 'rejected', 'cancelled'];
 
     // ─── Relationships ────────────────────────────────────────────────────────
 
@@ -190,7 +190,6 @@ class ScheduleException extends Model
      * Scope: filter by exception type.
      *
      * @param \Illuminate\Database\Eloquent\Builder $query
-     * @param string                                $type
      *
      * @return \Illuminate\Database\Eloquent\Builder
      */
@@ -203,8 +202,6 @@ class ScheduleException extends Model
      * Scope: filter by subject (polymorphic).
      *
      * @param \Illuminate\Database\Eloquent\Builder $query
-     * @param string                                $type
-     * @param string                                $uuid
      *
      * @return \Illuminate\Database\Eloquent\Builder
      */
@@ -248,8 +245,6 @@ class ScheduleException extends Model
 
     /**
      * Get a human-readable label for the exception type.
-     *
-     * @return string
      */
     public function getTypeLabelAttribute(): string
     {
@@ -267,8 +262,6 @@ class ScheduleException extends Model
 
     /**
      * Determine whether this exception is in pending status.
-     *
-     * @return bool
      */
     public function getIsPendingAttribute(): bool
     {
@@ -279,8 +272,6 @@ class ScheduleException extends Model
 
     /**
      * Approve this exception.
-     *
-     * @param string|null $reviewerUuid
      *
      * @return $this
      */
@@ -298,8 +289,6 @@ class ScheduleException extends Model
     /**
      * Reject this exception.
      *
-     * @param string|null $reviewerUuid
-     *
      * @return $this
      */
     public function reject(?string $reviewerUuid = null): self
@@ -315,8 +304,6 @@ class ScheduleException extends Model
 
     /**
      * Determine whether this exception is currently active (approved and covering now).
-     *
-     * @return bool
      */
     public function isActive(): bool
     {

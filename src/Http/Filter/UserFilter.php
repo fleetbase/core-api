@@ -6,15 +6,29 @@ class UserFilter extends Filter
 {
     public function queryForInternal()
     {
+        $companyUuid = $this->session->get('company');
+
         $this->builder->where(
-            function ($query) {
-                $query
-                    ->whereHas(
-                        'companyUsers',
-                        function ($query) {
-                            $query->where('company_uuid', $this->session->get('company'));
-                        }
-                    );
+            function ($query) use ($companyUuid) {
+                // Include users who are already members of the company.
+                $query->whereHas(
+                    'companyUsers',
+                    function ($q) use ($companyUuid) {
+                        $q->where('company_uuid', $companyUuid);
+                    }
+                )
+                // Also include users who have a pending invite to join the company
+                // but have not yet accepted (no CompanyUser row exists yet).
+                // The invites table has no user_uuid; the link is via the user's
+                // email stored in the JSON recipients column.
+                ->orWhereExists(function ($q) use ($companyUuid) {
+                    $q->selectRaw(1)
+                      ->from('invites')
+                      ->whereRaw('JSON_CONTAINS(invites.recipients, JSON_QUOTE(users.email))')
+                      ->where('invites.company_uuid', $companyUuid)
+                      ->where('invites.reason', 'join_company')
+                      ->whereNull('invites.deleted_at');
+                });
             }
         );
     }

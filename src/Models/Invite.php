@@ -5,6 +5,7 @@ namespace Fleetbase\Models;
 use Fleetbase\Casts\Json;
 use Fleetbase\Traits\Expirable;
 use Fleetbase\Traits\HasApiModelBehavior;
+use Fleetbase\Traits\HasMetaAttributes;
 use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasUuid;
 use Illuminate\Support\Carbon;
@@ -16,6 +17,7 @@ class Invite extends Model
     use HasPublicId;
     use Expirable;
     use HasApiModelBehavior;
+    use HasMetaAttributes;
 
     /**
      * The database table used by the model.
@@ -37,6 +39,23 @@ class Invite extends Model
      * @var string
      */
     protected $connection = 'mysql';
+
+    /**
+     * Invites must always be stored in the production database.
+     *
+     * setSandboxSession() switches both `database.default` and
+     * `fleetbase.connection.db` to 'sandbox' when sandbox mode is active.
+     * Overriding getConnectionName() here hard-pins this model to the
+     * production DB connection name sourced directly from the environment
+     * config (DB_CONNECTION), bypassing any runtime config changes made
+     * by sandbox session switching. Invite codes must be resolvable when
+     * the invited user accepts the link, which always happens outside of
+     * sandbox context.
+     */
+    public function getConnectionName(): string
+    {
+        return env('DB_CONNECTION', 'mysql');
+    }
 
     /**
      * These attributes that can be queried.
@@ -62,6 +81,7 @@ class Invite extends Model
         'protocol',
         'recipients',
         'reason',
+        'meta',
     ];
 
     /**
@@ -85,6 +105,7 @@ class Invite extends Model
      */
     protected $casts = [
         'recipients' => Json::class,
+        'meta'       => Json::class,
     ];
 
     /**

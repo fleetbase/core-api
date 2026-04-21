@@ -2,8 +2,6 @@
 
 namespace Fleetbase\Http\Resources;
 
-use Fleetbase\Http\Resources\FleetbaseResource;
-
 class ScheduleTemplate extends FleetbaseResource
 {
     /**

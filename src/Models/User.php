@@ -1149,6 +1149,7 @@ class User extends Authenticatable
             'protocol'        => 'email',
             'recipients'      => [$this->email],
             'reason'          => 'join_company',
+            'expires_at'      => now()->addHours(48),
         ]);
 
         // notify user

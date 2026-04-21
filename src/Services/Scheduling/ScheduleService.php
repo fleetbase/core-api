@@ -17,7 +17,7 @@ class ScheduleService
      * The number of days ahead to materialize shifts for.
      * The rolling window will always extend at least this many days from today.
      */
-    const MATERIALIZATION_WINDOW_DAYS = 60;
+    public const MATERIALIZATION_WINDOW_DAYS = 60;
 
     // ─── Schedule CRUD ────────────────────────────────────────────────────────
 
@@ -256,10 +256,7 @@ class ScheduleService
      * This creates a driver-specific copy of the template linked to the schedule,
      * then immediately materializes it for the rolling window.
      *
-     * @param ScheduleTemplate $template
-     * @param Schedule         $schedule
-     *
-     * @return array{template: ScheduleTemplate, items_created: int}  The applied template copy and the number of ScheduleItems created
+     * @return array{template: ScheduleTemplate, items_created: int} The applied template copy and the number of ScheduleItems created
      */
     public function applyTemplateToSchedule(ScheduleTemplate $template, Schedule $schedule): array
     {
@@ -328,10 +325,9 @@ class ScheduleService
     /**
      * Materialize a single Schedule up to the given horizon date.
      *
-     * @param Schedule    $schedule
-     * @param Carbon|null $horizon  Defaults to today + MATERIALIZATION_WINDOW_DAYS
+     * @param Carbon|null $horizon Defaults to today + MATERIALIZATION_WINDOW_DAYS
      *
-     * @return int  Number of ScheduleItem records created
+     * @return int Number of ScheduleItem records created
      */
     public function materializeSchedule(Schedule $schedule, ?Carbon $horizon = null): int
     {
@@ -365,16 +361,13 @@ class ScheduleService
      *      - A ScheduleItem already exists for that date (idempotency)
      *   5. Creates a new ScheduleItem for each remaining occurrence
      *
-     * @param ScheduleTemplate $template
-     * @param Schedule         $schedule
-     * @param Carbon|null      $horizon
-     *
-     * @return int  Number of ScheduleItem records created
+     * @return int Number of ScheduleItem records created
      */
     public function materializeTemplate(ScheduleTemplate $template, Schedule $schedule, ?Carbon $horizon = null): int
     {
         if (!$template->hasRrule()) {
             Log::debug('[materializeTemplate] no rrule on template', ['template_uuid' => $template->uuid]);
+
             return 0;
         }
 
@@ -400,7 +393,7 @@ class ScheduleService
         Log::debug('[materializeTemplate] occurrences', [
             'template_uuid' => $template->uuid,
             'count'         => count($occurrences),
-            'first_3'       => array_map(fn($c) => $c->toDateTimeString(), array_slice($occurrences, 0, 3)),
+            'first_3'       => array_map(fn ($c) => $c->toDateTimeString(), array_slice($occurrences, 0, 3)),
         ]);
 
         if (empty($occurrences)) {
@@ -531,12 +524,6 @@ class ScheduleService
     /**
      * Get the active shift for a specific assignee on a given date.
      * Returns null if the assignee has no shift on that date or has an approved exception.
-     *
-     * @param string $assigneeType
-     * @param string $assigneeUuid
-     * @param Carbon $date
-     *
-     * @return ScheduleItem|null
      */
     public function getActiveShiftFor(string $assigneeType, string $assigneeUuid, Carbon $date): ?ScheduleItem
     {

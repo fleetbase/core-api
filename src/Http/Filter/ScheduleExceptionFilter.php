@@ -60,6 +60,7 @@ class ScheduleExceptionFilter extends Filter
 
         if (Str::contains($type, '\\')) {
             $this->builder->where('subject_type', $type);
+
             return;
         }
 

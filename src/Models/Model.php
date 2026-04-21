@@ -31,17 +31,11 @@ class Model extends EloquentModel
     public const PUBLIC_ID_COLUMN = 'public_id';
 
     /**
-     * Create a new instance of the model.
-     *
-     * @param array $attributes the attributes to set on the model
-     *
-     * @return void
+     * Get the correct current connection to use.
      */
-    public function __construct(array $attributes = [])
+    public function getConnectionName()
     {
-        parent::__construct($attributes);
-
-        $this->connection = config('fleetbase.db.connection');
+        return $this->connection ?: config('fleetbase.connection.db', 'mysql');
     }
 
     /**
