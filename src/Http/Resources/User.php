@@ -31,7 +31,7 @@ class User extends FleetbaseResource
             'timezone'                                                                 => $this->timezone,
             'avatar_url'                                                               => $this->avatar_url,
             'meta'                                                                     => data_get($this, 'meta', Utils::createObject()),
-            'role'                                                                     => $this->when(Http::isInternalRequest(), new Role($this->role), null),
+            'role'                                                                     => $this->when(Http::isInternalRequest(), $this->role ? new Role($this->role) : null, null),
             'policies'                                                                 => $this->when(Http::isInternalRequest(), Policy::collection($this->policies), []),
             'permissions'                                                              => $this->when(Http::isInternalRequest(), $this->serializePermissions($this->permissions), []),
             'role_name'                                                                => $this->when(Http::isInternalRequest(), $this->role ? $this->role->name : null),

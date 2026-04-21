@@ -473,6 +473,13 @@ class UserController extends FleetbaseController
             ]);
         }
 
+        // Switch the user's active company to the one they just joined.
+        // This ensures that subsequent calls to /users/me resolve the
+        // companyUser relationship (and therefore role/policies) against
+        // the correct company rather than the user's previous company.
+        $user->company_uuid = $company->uuid;
+        $user->save();
+
         // activate user
         if ($isPending) {
             $user->update(['email_verified_at' => now()]);
