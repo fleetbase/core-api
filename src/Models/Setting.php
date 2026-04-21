@@ -31,7 +31,7 @@ class Setting extends EloquentModel
     {
         parent::__construct($attributes);
 
-        $this->connection = config('fleetbase.db.connection');
+        $this->connection = config('fleetbase.connection.db', 'mysql');
     }
 
     /**
