@@ -165,6 +165,13 @@ class CoreServiceProvider extends ServiceProvider
             $schedule->command('purge:scheduled-task-logs --force --no-interaction --days 1')->twiceDaily(1, 13);
             $schedule->command('telemetry:ping')->daily();
             $schedule->job(new \Fleetbase\Jobs\MaterializeSchedulesJob())->dailyAt('01:00')->name('materialize-schedules')->withoutOverlapping();
+            // Keep sandbox users/companies in sync with production so that
+            // test-mode API key creation (and other sandbox operations) never
+            // fail due to missing foreign-key referenced rows. Hourly cadence
+            // is a good balance: frequent enough that new users/companies are
+            // available in sandbox within an hour of being created in
+            // production, but infrequent enough to avoid unnecessary DB load.
+            $schedule->command('sandbox:sync')->hourly()->name('sandbox-sync')->withoutOverlapping();
         });
         $this->registerObservers();
         $this->registerExpansionsFrom();
