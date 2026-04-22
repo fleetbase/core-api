@@ -79,7 +79,7 @@ class SyncSandbox extends Command
             foreach ($all as $record) {
                 // Clone record
                 $clone = collect($record->toArray())
-                    ->only($record->getFillable())
+                    ->only(['uuid', 'created_at', 'updated_at', ...$record->getFillable()])
                     ->toArray();
 
                 if (!isset($clone['uuid']) || !is_string($clone['uuid'])) {
