@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
+use Fleetbase\Events\UserCreatedNewCompany;
 use Fleetbase\Exceptions\InvalidVerificationCodeException;
 use Fleetbase\Http\Controllers\Controller;
 use Fleetbase\Http\Requests\AdminRequest;
@@ -799,7 +800,22 @@ class AuthController extends Controller
 
         try {
             $company = Company::create($input);
-            $company->assignUser($user, 'Administrator');
+
+            // Set company owner
+            $company->setOwner($user)->save();
+
+            // Assign user to organization
+            $user->assignCompany($company, 'Administrator');
+            $user->assignSingleRole('Administrator');
+
+            // Company onboarding is not necessary - set correct flags
+            $company->update([
+                'onboarding_completed_at'      => now(),
+                'onboarding_completed_by_uuid' => $user->uuid,
+            ]);
+
+            // Fire event that user created a new organization
+            event(new UserCreatedNewCompany($user, $company));
         } catch (\Throwable $e) {
             return response()->error($e->getMessage());
         }
