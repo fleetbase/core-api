@@ -32,7 +32,7 @@ class UpdateUserRequest extends FleetbaseRequest
     {
         // Resolve the target user UUID from the route parameter so that the
         // uniqueness rules can correctly ignore the user's own current value.
-        $userId = $this->route('id');
+        $userId = $this->route('user') ?? $this->route('id');
 
         return [
             'name'  => ['sometimes', 'required', 'string', 'min:2', 'max:100'],
