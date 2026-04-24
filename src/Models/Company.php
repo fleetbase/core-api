@@ -100,6 +100,11 @@ class Company extends Model
         'trial_ends_at',
         'onboarding_completed_at',
         'onboarding_completed_by_uuid',
+        'parent_company_uuid',
+        'company_type',
+        'is_client',
+        'client_code',
+        'client_settings',
     ];
 
     /**
@@ -126,6 +131,8 @@ class Company extends Model
         'meta'                      => Json::class,
         'trial_ends_at'             => 'datetime',
         'onboarding_completed_at'   => 'datetime',
+        'is_client'                 => 'boolean',
+        'client_settings'           => 'array',
     ];
 
     /**
@@ -533,5 +540,72 @@ class Company extends Model
         $id = $user instanceof User ? $user->uuid : $user;
 
         return CompanyUser::where(['company_uuid' => $this->uuid, 'user_uuid' => $id])->first();
+    }
+
+    /**
+     * Parent organization this client company belongs to.
+     */
+    public function parentCompany()
+    {
+        return $this->belongsTo(Company::class, 'parent_company_uuid', 'uuid');
+    }
+
+    /**
+     * Client companies owned by this organization.
+     */
+    public function clientCompanies()
+    {
+        return $this->hasMany(Company::class, 'parent_company_uuid', 'uuid');
+    }
+
+    /**
+     * Scope: only client companies.
+     */
+    public function scopeClients($query)
+    {
+        return $query->where('is_client', true);
+    }
+
+    /**
+     * Scope: only organization (parent) companies.
+     */
+    public function scopeOrganizations($query)
+    {
+        return $query->where('company_type', 'organization');
+    }
+
+    /**
+     * Whether this company is a client (flagged via column or type).
+     */
+    public function isClient(): bool
+    {
+        return (bool) $this->is_client || $this->company_type === 'client';
+    }
+
+    /**
+     * Whether this company is an organization (parent-level).
+     */
+    public function isOrganization(): bool
+    {
+        return $this->company_type === 'organization';
+    }
+
+    /**
+     * UUIDs this company's context can access.
+     * - Organization: self + all direct client children.
+     * - Client (or any non-organization): self only.
+     */
+    public function getAccessibleCompanyUuids(): array
+    {
+        $uuids = [$this->uuid];
+
+        if ($this->isOrganization()) {
+            $uuids = array_merge(
+                $uuids,
+                $this->clientCompanies()->pluck('uuid')->toArray()
+            );
+        }
+
+        return array_values(array_unique($uuids));
     }
 }

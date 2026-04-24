@@ -23,6 +23,62 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
 
         /*
         |--------------------------------------------------------------------------
+        | Multi-tenant Org-scoped Routes
+        |--------------------------------------------------------------------------
+        |
+        | Org-scoped CRUD endpoints protected by auth:sanctum and the
+        | company context middleware. The context middleware resolves the
+        | active company (org) from the X-Company-Context header or the
+        | caller's default company and blocks client-role users up-front.
+        */
+        $router->prefix('v1/companies/clients')
+            ->middleware(['auth:sanctum', 'fleetbase.company.context'])
+            ->group(function ($router) {
+                $router->get('/', 'Internal\v1\ClientCompanyController@index');
+                $router->post('/', 'Internal\v1\ClientCompanyController@store');
+                $router->get('{uuid}', 'Internal\v1\ClientCompanyController@show');
+                $router->put('{uuid}', 'Internal\v1\ClientCompanyController@update');
+                $router->patch('{uuid}', 'Internal\v1\ClientCompanyController@update');
+                $router->delete('{uuid}', 'Internal\v1\ClientCompanyController@destroy');
+            });
+
+        /*
+        |--------------------------------------------------------------------------
+        | Multi-tenant Company Context (stateless)
+        |--------------------------------------------------------------------------
+        |
+        | Read the middleware-resolved company for the current request, or
+        | validate a proposed switch target. Switch is a validation oracle
+        | only — it does not mutate server state; the Ember client uses the
+        | response to decide whether to send the new UUID via the
+        | X-Company-Context header on subsequent requests.
+        */
+        $router->prefix('v1/companies')
+            ->middleware(['auth:sanctum', 'fleetbase.company.context'])
+            ->group(function ($router) {
+                $router->get('current-context', 'Internal\v1\CompanyContextController@current');
+                $router->post('switch-context', 'Internal\v1\CompanyContextController@switch');
+            });
+
+        /*
+        |--------------------------------------------------------------------------
+        | Company Settings (resolved inheritance tree)
+        |--------------------------------------------------------------------------
+        |
+        | Read and write the active company's settings. Writes are strictly
+        | scoped to the active company — parent keyspace is never written.
+        | Delegates 100% to CompanySettingsResolver (no merge logic here).
+        */
+        $router->prefix('v1/company-settings')
+            ->middleware(['auth:sanctum', 'fleetbase.company.context.self'])
+            ->group(function ($router) {
+                $router->get('current', 'CompanySettingsController@current');
+                $router->put('current', 'CompanySettingsController@update');
+                $router->patch('current', 'CompanySettingsController@update');
+            });
+
+        /*
+        |--------------------------------------------------------------------------
         | Public/Consumable Routes
         |--------------------------------------------------------------------------
         |
@@ -76,6 +132,19 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                         $router->delete('{id}', 'CommentController@delete');
                     }
                 );
+                // ----------------------------------------------------------------
+                // Document Queue
+                // ----------------------------------------------------------------
+                $router->group(['prefix' => 'document-queue'], function () use ($router) {
+                    $router->get('/', 'DocumentQueueController@queryRecord');
+                    $router->get('{id}', 'DocumentQueueController@findRecord');
+                    $router->put('{id}', 'DocumentQueueController@updateRecord');
+                    $router->delete('{id}', 'DocumentQueueController@deleteRecord');
+                    $router->post('upload', 'DocumentQueueController@upload');
+                    $router->post('{id}/process', 'DocumentQueueController@process');
+                    $router->post('{id}/reprocess', 'DocumentQueueController@reprocess');
+                    $router->post('{id}/manual-match', 'DocumentQueueController@manualMatch');
+                });
             });
 
         /*

@@ -145,6 +145,9 @@ class CoreServiceProvider extends ServiceProvider
         $this->app->singleton(\Fleetbase\Services\TemplateRenderService::class, function ($app) {
             return new \Fleetbase\Services\TemplateRenderService();
         });
+
+        // register document ingestion service (BUILD-08)
+        $this->app->singleton(\Fleetbase\Services\DocumentIngestionService::class);
     }
 
     /**
@@ -307,6 +310,16 @@ class CoreServiceProvider extends ServiceProvider
                 $kernel->pushMiddleware($middleware);
             }
         }
+
+        $this->app['router']->aliasMiddleware(
+            'fleetbase.company.context',
+            \Fleetbase\Http\Middleware\CompanyContextResolver::class
+        );
+
+        $this->app['router']->aliasMiddleware(
+            'fleetbase.company.context.self',
+            \Fleetbase\Http\Middleware\CompanyContextSelfResolver::class
+        );
 
         foreach ($this->middleware as $group => $middlewares) {
             foreach ($middlewares as $middleware) {
