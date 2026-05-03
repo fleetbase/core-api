@@ -326,6 +326,15 @@ trait HasApiModelBehavior
             return $record;
         }
 
+        if (is_callable($onAfter)) {
+            $after = $onAfter($request, $record, $input);
+            if ($after instanceof JsonResponse) {
+                return $after;
+            }
+        }
+
+        $record->refresh();
+
         // PERFORMANCE OPTIMIZATION: Use load() instead of re-querying the database
         // This avoids an unnecessary second database query
         $with = $request->or(['with', 'expand'], []);
@@ -337,13 +346,6 @@ trait HasApiModelBehavior
         $withCount = $request->array('with_count', []);
         if (!empty($withCount)) {
             $record->loadCount($withCount);
-        }
-
-        if (is_callable($onAfter)) {
-            $after = $onAfter($request, $record, $input);
-            if ($after instanceof JsonResponse) {
-                return $after;
-            }
         }
 
         return static::mutateModelWithRequest($request, $record);
@@ -418,6 +420,15 @@ trait HasApiModelBehavior
             return $record;
         }
 
+        if (is_callable($onAfter)) {
+            $after = $onAfter($request, $record, $input);
+            if ($after instanceof JsonResponse) {
+                return $after;
+            }
+        }
+
+        $record->refresh();
+
         // PERFORMANCE OPTIMIZATION: Use load() instead of re-querying the database
         // This avoids an unnecessary second database query
         $with = $request->or(['with', 'expand'], []);
@@ -429,13 +440,6 @@ trait HasApiModelBehavior
         $withCount = $request->array('with_count', []);
         if (!empty($withCount)) {
             $record->loadCount($withCount);
-        }
-
-        if (is_callable($onAfter)) {
-            $after = $onAfter($request, $record, $input);
-            if ($after instanceof JsonResponse) {
-                return $after;
-            }
         }
 
         return static::mutateModelWithRequest($request, $record);
