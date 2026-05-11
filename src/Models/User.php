@@ -7,6 +7,7 @@ use Fleetbase\Exceptions\InvalidVerificationCodeException;
 use Fleetbase\Notifications\UserCreated;
 use Fleetbase\Notifications\UserInvited;
 use Fleetbase\Support\NotificationRegistry;
+use Fleetbase\Support\Timezone;
 use Fleetbase\Support\Utils;
 use Fleetbase\Traits\ClearsHttpCache;
 use Fleetbase\Traits\Expandable;
@@ -1220,7 +1221,14 @@ class User extends Authenticatable
      */
     public static function applyUserInfoFromRequest($request, array $attributes = []): array
     {
-        $info = null;
+        $info         = null;
+        $timezone     = Timezone::firstValid([
+            $request->input('timezone'),
+            $request->input('whois.timezone'),
+            $request->input('whois.time_zone.name'),
+            data_get($attributes, 'timezone'),
+        ]);
+
         // Lookup user default details
         try {
             $info = \Fleetbase\Support\Http::lookupIp($request);
@@ -1230,10 +1238,16 @@ class User extends Authenticatable
         if ($info) {
             $attributes['country']    = data_get($info, 'country_code');
             $attributes['ip_address'] = data_get($info, 'ip', $request->ip());
-            $tzInfo                   = data_get($info, 'time_zone.name', $request->input('timezone'));
-            if ($tzInfo) {
-                $attributes['timezone'] = $tzInfo;
+            $timezone                 = $timezone ?: Timezone::firstValid([
+                data_get($info, 'time_zone.name'),
+                data_get($info, 'timezone'),
+                data_get($info, 'timezone_name'),
+            ]);
+
+            if ($timezone) {
+                $attributes['timezone'] = $timezone;
             }
+
             $attributes['meta'] = [
                 'areacode'   => data_get($info, 'calling_code'),
                 'currency'   => data_get($info, 'currency.code'),
@@ -1243,6 +1257,10 @@ class User extends Authenticatable
                 'latitude'   => data_get($info, 'latitude'),
                 'longitude'  => data_get($info, 'longitude'),
             ];
+        }
+
+        if ($timezone) {
+            $attributes['timezone'] = $timezone;
         }
 
         return $attributes;
