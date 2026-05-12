@@ -90,6 +90,18 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                 $router->prefix('v1')->namespace('v1')->group(
                     function ($router) {
                         $router->fleetbaseAuthRoutes();
+                        // OAuth Console login (issue #453) — public, throttled, pre-auth.
+                        // Each provider has its own POST endpoint matching the verifier
+                        // class in Fleetbase\Auth (Google, Facebook, Office365, Apple).
+                        $router->group(
+                            ['prefix' => 'auth/oauth', 'middleware' => [Fleetbase\Http\Middleware\ThrottleRequests::class]],
+                            function ($router) {
+                                $router->post('google',    'AuthController@loginWithGoogle');
+                                $router->post('facebook',  'AuthController@loginWithFacebook');
+                                $router->post('office365', 'AuthController@loginWithOffice365');
+                                $router->post('apple',     'AuthController@loginWithApple');
+                            }
+                        );
                         $router->group(
                             ['prefix' => 'installer', 'middleware' => [Fleetbase\Http\Middleware\ThrottleRequests::class]],
                             function ($router) {
