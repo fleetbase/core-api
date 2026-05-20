@@ -3,6 +3,7 @@
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Http\Controllers\Controller;
+use Fleetbase\Support\FleetbaseBlog;
 use Fleetbase\Support\Http;
 use Fleetbase\Types\Country;
 use Fleetbase\Types\Currency;
@@ -186,8 +187,8 @@ class LookupController extends Controller
      */
     public function fleetbaseBlog(Request $request)
     {
-        $limit    = $request->integer('limit', 6);
-        $cacheKey = "fleetbase_blog_posts_{$limit}";
+        $limit    = max(1, min($request->integer('limit', 6), 20));
+        $cacheKey = $this->getFleetbaseBlogCacheKey($limit);
         $cacheTTL = now()->addDays(4); // 4 days as requested
 
         // Try to get from cache
@@ -212,7 +213,8 @@ class LookupController extends Controller
      */
     protected function fetchBlogPosts(int $limit): array
     {
-        $rssUrl = 'https://www.fleetbase.io/post/rss.xml';
+        $limit  = max(1, min($limit, 20));
+        $rssUrl = $this->getFleetbaseBlogFeedUrl();
         $posts  = [];
 
         try {
@@ -230,31 +232,7 @@ class LookupController extends Controller
                 return [];
             }
 
-            // Parse XML
-            $rss = simplexml_load_string($response->body());
-
-            if (!$rss || !isset($rss->channel->item)) {
-                Log::error('[Blog] Invalid RSS feed structure');
-
-                return [];
-            }
-
-            foreach ($rss->channel->item as $item) {
-                $posts[] = [
-                    'title'           => (string) $item->title,
-                    'link'            => (string) $item->link,
-                    'guid'            => (string) $item->guid,
-                    'description'     => (string) $item->description,
-                    'pubDate'         => (string) $item->pubDate,
-                    'media_content'   => (string) data_get($item, 'media:content.url'),
-                    'media_thumbnail' => (string) data_get($item, 'media:thumbnail.url'),
-                ];
-
-                // Early exit if we have enough
-                if (count($posts) >= $limit) {
-                    break;
-                }
-            }
+            $posts = $this->parseBlogPostsFromRss($response->body(), $limit);
 
             Log::info('[Blog] Successfully fetched blog posts', ['count' => count($posts)]);
         } catch (\Exception $e) {
@@ -268,6 +246,48 @@ class LookupController extends Controller
     }
 
     /**
+     * Parse blog posts from an RSS payload.
+     */
+    protected function parseBlogPostsFromRss(string $rssXml, int $limit): array
+    {
+        return FleetbaseBlog::parseRss($rssXml, $limit, $this->getFleetbaseBlogUrl());
+    }
+
+    /**
+     * Get the cache key for the Fleetbase blog feed.
+     */
+    protected function getFleetbaseBlogCacheKey(int $limit): string
+    {
+        $sourceHash = md5($this->getFleetbaseBlogFeedUrl() . '|' . $this->getFleetbaseBlogUrl());
+
+        return "fleetbase_blog_posts_{$limit}_{$sourceHash}";
+    }
+
+    /**
+     * Get the public Fleetbase blog RSS feed URL.
+     */
+    protected function getFleetbaseBlogFeedUrl(): string
+    {
+        return FleetbaseBlog::getFeedUrl();
+    }
+
+    /**
+     * Get the canonical Fleetbase blog URL.
+     */
+    protected function getFleetbaseBlogUrl(): string
+    {
+        return FleetbaseBlog::getBlogUrl();
+    }
+
+    /**
+     * Rewrite Ghost publication links to the canonical Fleetbase.io blog URL.
+     */
+    protected function normalizeFleetbaseBlogLink(?string $link): string
+    {
+        return FleetbaseBlog::normalizeLink($link, $this->getFleetbaseBlogUrl());
+    }
+
+    /**
      * Manually refresh blog cache (can be called via webhook or admin panel).
      *
      * @return \Illuminate\Http\Response
@@ -275,13 +295,13 @@ class LookupController extends Controller
     public function refreshBlogCache()
     {
         // Clear all blog caches
-        Cache::forget('fleetbase_blog_posts_6');
-        Cache::forget('fleetbase_blog_posts_10');
-        Cache::forget('fleetbase_blog_posts_20');
+        Cache::forget($this->getFleetbaseBlogCacheKey(6));
+        Cache::forget($this->getFleetbaseBlogCacheKey(10));
+        Cache::forget($this->getFleetbaseBlogCacheKey(20));
 
         // Warm up cache with default limit
         $posts = $this->fetchBlogPosts(6);
-        Cache::put('fleetbase_blog_posts_6', $posts, now()->addDays(4));
+        Cache::put($this->getFleetbaseBlogCacheKey(6), $posts, now()->addDays(4));
 
         return response()->json([
             'status'      => 'success',
