@@ -20,7 +20,7 @@ class CallProSmsService
     {
         $this->apiKey  = config('services.callpromn.api_key', '');
         $this->from    = config('services.callpromn.from', '');
-        $this->baseUrl = config('services.callpromn.base_url', 'https://api.messagepro.mn');
+        $this->baseUrl = config('services.callpromn.base_url', 'https://api-text.callpro.mn/v1/sms');
 
         Log::info('CallProSmsService initialized', [
             'base_url' => $this->baseUrl,
