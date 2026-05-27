@@ -115,7 +115,7 @@ class SmsService
             return $this->sendViaTwilio($to, $text, $options);
         }
 
-        // Extract the last 8 digits for CallPro (Mongolia format)
+        // Keep Mongolia routing backward compatible while allowing documented international format.
         $toNumber = $this->extractCallProNumber($to);
 
         // CallPro does NOT support alphanumeric sender IDs (Twilio-specific)
@@ -128,7 +128,12 @@ class SmsService
             $from = null; // Let CallPro use its configured default
         }
 
-        return $callProService->send($toNumber, $text, $from);
+        $callProOptions = array_filter([
+            'brand'     => data_get($options, 'brand'),
+            'unique_id' => data_get($options, 'unique_id'),
+        ], static fn ($value) => $value !== null && $value !== '');
+
+        return $callProService->send($toNumber, $text, $from, $callProOptions);
     }
 
     /**
@@ -223,10 +228,13 @@ class SmsService
      */
     protected function extractCallProNumber(string $phoneNumber): string
     {
-        // Remove + and country code, get last 8 digits
         $digits = preg_replace('/[^0-9]/', '', $phoneNumber);
 
-        return substr($digits, -8);
+        if (strlen($digits) === 11 && str_starts_with($digits, '976')) {
+            return substr($digits, -8);
+        }
+
+        return $digits;
     }
 
     /**
