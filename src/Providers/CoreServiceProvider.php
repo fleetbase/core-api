@@ -42,6 +42,7 @@ class CoreServiceProvider extends ServiceProvider
         \Fleetbase\Http\Middleware\RequestTimer::class,
         \Fleetbase\Http\Middleware\ResetJsonResourceWrap::class,
         \Fleetbase\Http\Middleware\MergeConfigFromSettings::class,
+        \Fleetbase\Http\Middleware\EnsureFleetbaseConfigured::class,
         \Fleetbase\Http\Middleware\AttachCacheHeaders::class,
     ];
 
@@ -85,6 +86,7 @@ class CoreServiceProvider extends ServiceProvider
         \Fleetbase\Console\Commands\InitializeSandboxKeyColumn::class,
         \Fleetbase\Console\Commands\SyncSandbox::class,
         \Fleetbase\Console\Commands\CreatePermissions::class,
+        \Fleetbase\Console\Commands\NotifyInstalled::class,
         \Fleetbase\Console\Commands\FixUserCompanies::class,
         \Fleetbase\Console\Commands\PurgeApiLogs::class,
         \Fleetbase\Console\Commands\PurgeWebhookLogs::class,

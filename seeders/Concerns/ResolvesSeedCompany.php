@@ -8,7 +8,7 @@ trait ResolvesSeedCompany
 {
     protected function resolveSeedCompany(?string $fallbackUuidEnv = null, ?string $fallbackPublicIdEnv = null): ?Company
     {
-        $companyUuid = env('SEED_COMPANY_UUID') ?: ($fallbackUuidEnv ? env($fallbackUuidEnv) : null);
+        $companyUuid     = env('SEED_COMPANY_UUID') ?: ($fallbackUuidEnv ? env($fallbackUuidEnv) : null);
         $companyPublicId = env('SEED_COMPANY_PUBLIC_ID') ?: ($fallbackPublicIdEnv ? env($fallbackPublicIdEnv) : null);
 
         if ($companyUuid) {

@@ -28,7 +28,6 @@ use Fleetbase\Twilio\Support\Laravel\Facade as Twilio;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Str;
@@ -218,37 +217,9 @@ class AuthController extends Controller
                 ->distinct()
                 ->get();
 
-            // Get installer status (cached separately)
-            $installer = Cache::remember('installer_status', now()->addHour(), function () {
-                $shouldInstall = false;
-                $shouldOnboard = false;
-
-                try {
-                    DB::connection()->getPdo();
-                    if (DB::connection()->getDatabaseName()) {
-                        if (\Illuminate\Support\Facades\Schema::hasTable('companies')) {
-                            $shouldOnboard = !DB::table('companies')->exists();
-                        } else {
-                            $shouldInstall = true;
-                        }
-                    } else {
-                        $shouldInstall = true;
-                    }
-                } catch (\Exception $e) {
-                    $shouldInstall = true;
-                }
-
-                return [
-                    'shouldInstall' => $shouldInstall,
-                    'shouldOnboard' => $shouldOnboard,
-                    'defaultTheme'  => \Fleetbase\Models\Setting::lookup('branding.default_theme', 'dark'),
-                ];
-            });
-
             return [
                 'session'       => $session,
                 'organizations' => Organization::collection($organizations),
-                'installer'     => $installer,
             ];
         });
 
