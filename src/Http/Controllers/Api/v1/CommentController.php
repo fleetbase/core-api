@@ -23,10 +23,10 @@ class CommentController extends Controller
     {
         $content = $request->input('content');
         $subject = $request->input('subject', [
-            'id'   => $request->input('subject_id'),
+            'id'   => $request->input('subject_id') ?: $request->input('subject_uuid'),
             'type' => $request->input('subject_type'),
         ]);
-        $parent = $request->input('parent');
+        $parent = $request->input('parent') ?: $request->input('parent_comment_uuid');
 
         // Prepare comment creation data
         $data = [
@@ -38,7 +38,14 @@ class CommentController extends Controller
         // Resolve the parent
         $parentComment = null;
         if ($parent) {
-            $parentComment = Comment::where(['public_id' => $parent, 'company_uuid' => session('company')])->first();
+            $parentComment = Comment::where('company_uuid', session('company'))
+                ->where(function ($query) use ($parent) {
+                    $query->where('uuid', $parent)
+                        ->orWhere('public_id', $parent)
+                        ->orWhere('id', $parent);
+                })
+                ->first();
+
             if ($parentComment) {
                 $data['parent_comment_uuid'] = $parentComment->uuid;
                 $data['subject_uuid']        = $parentComment->subject_uuid;
@@ -47,14 +54,19 @@ class CommentController extends Controller
         }
 
         // Resolve the subject
-        if ($subject && !$parentComment) {
+        if ($subject && data_get($subject, 'id') && data_get($subject, 'type') && !$parentComment) {
             $subjectClass = Utils::getMutationType(data_get($subject, 'type'));
             $subjectUuid  = null;
             if ($subjectClass) {
-                $subjectUuid = Utils::getUuid(app($subjectClass)->getTable(), [
-                    'public_id'          => data_get($subject, 'id'),
-                    'company_uuid'       => session('company'),
-                ]);
+                $subjectId   = data_get($subject, 'id');
+                $subjectUuid = app($subjectClass)
+                    ->newQuery()
+                    ->where('company_uuid', session('company'))
+                    ->where(function ($query) use ($subjectId) {
+                        $query->where('uuid', $subjectId)
+                            ->orWhere('public_id', $subjectId);
+                    })
+                    ->value('uuid');
             }
 
             // If on subject found
@@ -64,6 +76,10 @@ class CommentController extends Controller
 
             $data['subject_uuid'] =  $subjectUuid;
             $data['subject_type'] =  $subjectClass;
+        }
+
+        if (empty($data['subject_uuid']) || empty($data['subject_type'])) {
+            return response()->apiError('Invalid subject provided for comment.');
         }
 
         // create the comment

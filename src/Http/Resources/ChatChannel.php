@@ -28,7 +28,7 @@ class ChatChannel extends FleetbaseResource
             'created_by'                         => $this->when(Http::isPublicRequest(), fn () => $this->createdBy ? $this->createdBy->public_id : null),
             'name'                               => $this->name,
             'title'                              => $this->title,
-            'last_message'                       => new ChatMessage($this->last_message),
+            'last_message'                       => $this->last_message ? new ChatMessage($this->last_message) : null,
             'unread_count'                       => $this->when($user, fn () => $this->getUnreadMessageCountForUser($user)),
             'slug'                               => $this->slug,
             'feed'                               => $this->resource_feed,

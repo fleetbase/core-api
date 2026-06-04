@@ -37,12 +37,18 @@ class SendResourceLifecycleWebhook implements ShouldQueue
         $apiEnvironment  = session()->get('api_environment', $event->apiEnvironment ?? 'live');
         $isSandbox       = session()->get('is_sandbox', $event->isSandbox);
 
+        // Compute the event payload exactly once so the persisted ApiEvent record and the
+        // outbound webhook body are guaranteed to be identical. $event->getEventData() resolves
+        // the model live at handle time, whereas $event->data is a snapshot frozen at dispatch
+        // time; using each in a different place lets the DB record and the webhook diverge.
+        $payload = $event->getEventData();
+
         // Prepare event
         $eventData = [
             'company_uuid'        => $companyId,
             'event'               => $event->broadcastAs(),
             'source'              => $apiCredentialId ? 'api' : 'console',
-            'data'                => $event->getEventData(),
+            'data'                => $payload,
             'method'              => $event->requestMethod,
             'description'         => $this->getHumanReadableEventDescription($event),
         ];
@@ -100,7 +106,7 @@ class SendResourceLifecycleWebhook implements ShouldQueue
                         'sent_at'             => Carbon::now(),
                     ])
                     ->url($webhook->url)
-                    ->payload($event->data)
+                    ->payload($payload)
                     ->useSecret($apiSecret)
                     ->dispatch();
             } catch (\Exception|\Aws\Sqs\Exception\SqsException $exception) {
