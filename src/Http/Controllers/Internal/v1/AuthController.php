@@ -61,6 +61,10 @@ class AuthController extends Controller
                     $tokenOwner instanceof User
                     && ($tokenOwner->email === $identity || $tokenOwner->phone === $identity)
                 ) {
+                    if ($tokenOwner->type === 'customer') {
+                        return response()->error('Customer accounts must sign in through the customer portal.', 403, ['code' => 'customer_login_not_allowed']);
+                    }
+
                     return response()->json([
                         'token' => $authToken,
                         'type'  => $tokenOwner->getType(),
@@ -77,6 +81,10 @@ class AuthController extends Controller
         $user = User::where(function ($query) use ($identity) {
             $query->where('email', $identity)->orWhere('phone', $identity);
         })->first();
+
+        if ($user && $user->type === 'customer') {
+            return response()->error('Customer accounts must sign in through the customer portal.', 403, ['code' => 'customer_login_not_allowed']);
+        }
 
         // If the user exists but has no password set (e.g. SSO-invited or provisioned
         // accounts), silently fall through to the generic credentials error below.

@@ -30,6 +30,13 @@ class CommentFilter extends Filter
         $this->builder->where('subject_uuid', $id);
     }
 
+    public function subjectType(string $type)
+    {
+        $resolved = Utils::getMutationType($type);
+
+        $this->builder->where('subject_type', $resolved ?: $type);
+    }
+
     public function parent(string $id)
     {
         if (Str::isUuid($id)) {

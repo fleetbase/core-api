@@ -3,7 +3,10 @@
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Http\Controllers\FleetbaseController;
+use Fleetbase\Http\Resources\User as UserResource;
 use Fleetbase\Models\ChatChannel;
+use Fleetbase\Models\ChatParticipant;
+use Fleetbase\Models\User;
 use Illuminate\Http\Request;
 
 class ChatChannelController extends FleetbaseController
@@ -14,6 +17,75 @@ class ChatChannelController extends FleetbaseController
      * @var string
      */
     public $resource = 'chat_channel';
+
+    /**
+     * Creates a chat channel and optional initial participants.
+     *
+     * @return \Fleetbase\Http\Resources\ChatChannel|\Illuminate\Http\Response
+     */
+    public function createRecord(Request $request)
+    {
+        try {
+            $name         = $request->input('chatChannel.name');
+            $meta         = $request->input('chatChannel.meta', []);
+            $participants = $request->array('chatChannel.participants');
+
+            $chatChannel = ChatChannel::create([
+                'company_uuid'    => session('company'),
+                'created_by_uuid' => session('user'),
+                'name'            => $name,
+                'meta'            => $meta,
+            ]);
+
+            foreach ($participants as $userId) {
+                $user = User::where('uuid', $userId)->orWhere('public_id', $userId)->first();
+
+                if (!$user || $user->uuid === session('user')) {
+                    continue;
+                }
+
+                ChatParticipant::firstOrCreate([
+                    'company_uuid'      => session('company'),
+                    'user_uuid'         => $user->uuid,
+                    'chat_channel_uuid' => $chatChannel->uuid,
+                ]);
+            }
+
+            $chatChannel->load(['participants.user', 'lastMessage']);
+            $this->resource::wrap($this->resourceSingularlName);
+
+            return new $this->resource($chatChannel);
+        } catch (\Exception $e) {
+            return response()->error(app()->hasDebugModeEnabled() ? $e->getMessage() : 'Unable to create chat channel.');
+        }
+    }
+
+    /**
+     * Query users available for a new or existing chat channel.
+     *
+     * @return \Fleetbase\Http\Resources\UserCollection
+     */
+    public function getAvailableParticipants(Request $request)
+    {
+        $query         = $request->input('query');
+        $chatChannelId = $request->input('channel');
+        $chatChannel   = $chatChannelId ? ChatChannel::where('uuid', $chatChannelId)->orWhere('public_id', $chatChannelId)->first() : null;
+
+        $users = User::whereHas('companyUsers', function ($query) {
+            $query->where('company_uuid', session('company'));
+        })
+            ->where('uuid', '!=', session('user'))
+            ->when($query, function ($builder) use ($query) {
+                $builder->search($query);
+            });
+
+        if ($chatChannel) {
+            $participantUserUuids = $chatChannel->participants()->pluck('user_uuid');
+            $users->whereNotIn('uuid', $participantUserUuids);
+        }
+
+        return UserResource::collection($users->limit(25)->get());
+    }
 
     /**
      * Retrieves the unread message count for a specific chat channel.

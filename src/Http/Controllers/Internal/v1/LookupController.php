@@ -189,7 +189,7 @@ class LookupController extends Controller
     {
         $limit    = max(1, min($request->integer('limit', 6), 20));
         $cacheKey = $this->getFleetbaseBlogCacheKey($limit);
-        $cacheTTL = now()->addDays(4); // 4 days as requested
+        $cacheTTL = now()->addDays(1);
 
         // Try to get from cache
         $posts = Cache::remember($cacheKey, $cacheTTL, function () use ($limit) {
