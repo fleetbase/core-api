@@ -169,7 +169,21 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 );
                                 $router->fleetbaseRoutes('metrics', null, [], function ($router, $controller) {
                                     $router->get('iam', $controller('iam'));
-                                    $router->get('iam-dashboard', $controller('iamDashboard'));
+                                    $router->get('iam/kpis', 'IamMetricsController@kpis');
+                                    $router->get('iam/identity-health', 'IamMetricsController@identityHealth');
+                                    $router->get('iam/access-coverage', 'IamMetricsController@accessCoverage');
+                                    $router->get('iam/privileged-access', 'IamMetricsController@privilegedAccess');
+                                    $router->get('iam/policy-surface', 'IamMetricsController@policySurface');
+                                    $router->get('iam/group-coverage', 'IamMetricsController@groupCoverage');
+                                    $router->get('iam/user-lifecycle', 'IamMetricsController@userLifecycle');
+                                    $router->get('iam/activity', 'IamMetricsController@activity');
+                                    $router->get('dev/kpis', 'DeveloperMetricsController@kpis');
+                                    $router->get('dev/api-traffic', 'DeveloperMetricsController@apiTraffic');
+                                    $router->get('dev/webhook-delivery', 'DeveloperMetricsController@webhookDelivery');
+                                    $router->get('dev/credentials', 'DeveloperMetricsController@credentials');
+                                    $router->get('dev/events', 'DeveloperMetricsController@events');
+                                    $router->get('dev/endpoint-health', 'DeveloperMetricsController@endpointHealth');
+                                    $router->get('dev/activity', 'DeveloperMetricsController@activity');
                                 }
                                 );
                                 $router->fleetbaseRoutes('settings', null, [], function ($router, $controller) {
