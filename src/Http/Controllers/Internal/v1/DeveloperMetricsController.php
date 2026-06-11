@@ -39,14 +39,14 @@ class DeveloperMetricsController extends Controller
         return response()->json([
             'period'  => $this->periodPayload($start, $end),
             'metrics' => [
-                'api_requests' => $this->metric('API Requests', $apiTotal, 'count', false, $this->deltaPercent($apiTotal, $previousApiTotal)),
-                'api_error_rate' => $this->metric('API Error Rate', $currentApiErrorRate, 'percent', true, $this->deltaPercent($currentApiErrorRate, $previousApiErrorRate)),
-                'avg_api_latency' => $this->metric('Avg API Latency', $this->milliseconds($avgLatency), 'duration', true, $this->deltaPercent($avgLatency, $previousLatency)),
+                'api_requests'         => $this->metric('API Requests', $apiTotal, 'count', false, $this->deltaPercent($apiTotal, $previousApiTotal)),
+                'api_error_rate'       => $this->metric('API Error Rate', $currentApiErrorRate, 'percent', true, $this->deltaPercent($currentApiErrorRate, $previousApiErrorRate)),
+                'avg_api_latency'      => $this->metric('Avg API Latency', $this->milliseconds($avgLatency), 'duration', true, $this->deltaPercent($avgLatency, $previousLatency)),
                 'webhook_success_rate' => $this->metric('Webhook Success Rate', $currentWebhookSuccessRate, 'percent', false, $this->deltaPercent($currentWebhookSuccessRate, $previousWebhookSuccessRate)),
-                'active_api_keys' => $this->metric('Active API Keys', ApiCredential::where('company_uuid', $companyUuid)->whereNull('deleted_at')->count()),
-                'active_webhooks' => $this->metric('Active Webhooks', WebhookEndpoint::where('company_uuid', $companyUuid)->whereNull('deleted_at')->where('status', 'enabled')->count()),
-                'webhook_failures' => $this->metric('Webhook Failures', $webhookFailures, 'count', true, $this->deltaPercent($webhookFailures, $previousWebhookFailures)),
-                'events_emitted' => $this->metric('Events Emitted', $eventsTotal, 'count', false, $this->deltaPercent($eventsTotal, $previousEventsTotal)),
+                'active_api_keys'      => $this->metric('Active API Keys', ApiCredential::where('company_uuid', $companyUuid)->whereNull('deleted_at')->count()),
+                'active_webhooks'      => $this->metric('Active Webhooks', WebhookEndpoint::where('company_uuid', $companyUuid)->whereNull('deleted_at')->where('status', 'enabled')->count()),
+                'webhook_failures'     => $this->metric('Webhook Failures', $webhookFailures, 'count', true, $this->deltaPercent($webhookFailures, $previousWebhookFailures)),
+                'events_emitted'       => $this->metric('Events Emitted', $eventsTotal, 'count', false, $this->deltaPercent($eventsTotal, $previousEventsTotal)),
             ],
         ]);
     }
@@ -96,7 +96,7 @@ class DeveloperMetricsController extends Controller
                 'average_attempts'    => round((float) $this->webhookRequests($companyUuid, $start, $end)->avg('attempt'), 2),
                 'average_duration_ms' => $this->milliseconds((float) $this->webhookRequests($companyUuid, $start, $end)->avg('duration')),
             ],
-            'labels' => array_keys($labels),
+            'labels'   => array_keys($labels),
             'datasets' => [
                 ['label' => 'Sent', 'data' => $sent],
                 ['label' => 'Succeeded', 'data' => $succeeded],
@@ -135,9 +135,9 @@ class DeveloperMetricsController extends Controller
         $events        = ApiEvent::where('company_uuid', $companyUuid)->whereBetween('created_at', [$start, $end]);
 
         return response()->json([
-            'period' => $this->periodPayload($start, $end),
-            'total'  => (clone $events)->count(),
-            'types'  => (clone $events)->selectRaw('event, COUNT(*) as count')->groupBy('event')->orderByDesc('count')->limit(10)->get()->map(fn ($row) => ['label' => $row->event ?: 'unknown', 'value' => (int) $row->count]),
+            'period'  => $this->periodPayload($start, $end),
+            'total'   => (clone $events)->count(),
+            'types'   => (clone $events)->selectRaw('event, COUNT(*) as count')->groupBy('event')->orderByDesc('count')->limit(10)->get()->map(fn ($row) => ['label' => $row->event ?: 'unknown', 'value' => (int) $row->count]),
             'sources' => (clone $events)->selectRaw('source, COUNT(*) as count')->groupBy('source')->orderByDesc('count')->limit(6)->get()->map(fn ($row) => ['label' => $row->source ?: 'unknown', 'value' => (int) $row->count]),
         ]);
     }
@@ -218,10 +218,10 @@ class DeveloperMetricsController extends Controller
     private function periods(Request $request): array
     {
         $days = match ((string) $request->input('period', '30d')) {
-            '7d' => 7,
-            '90d' => 90,
-            '180d' => 180,
-            '365d' => 365,
+            '7d'    => 7,
+            '90d'   => 90,
+            '180d'  => 180,
+            '365d'  => 365,
             default => 30,
         };
         $end           = Carbon::now()->endOfDay();

@@ -41,4 +41,55 @@ class CompanyFilter extends Filter
     {
         $this->builder->searchWhere('country', $country);
     }
+
+    public function status(?string $status)
+    {
+        $this->builder->searchWhere('status', $status);
+    }
+
+    public function ownerEmail(?string $email)
+    {
+        $this->builder->whereHas('owner', function ($query) use ($email) {
+            $query->searchWhere('email', $email);
+        });
+    }
+
+    public function onboardingCompleted($completed)
+    {
+        if ($completed === null || $completed === '') {
+            return;
+        }
+
+        $isCompleted = filter_var($completed, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+
+        if ($isCompleted === true) {
+            $this->builder->whereNotNull('onboarding_completed_at');
+        } elseif ($isCompleted === false) {
+            $this->builder->whereNull('onboarding_completed_at');
+        }
+    }
+
+    public function billingStatus(?string $status)
+    {
+        if (!$status) {
+            return;
+        }
+
+        if (class_exists('\\Fleetbase\\Billing\\Models\\Subscription')) {
+            $this->builder->whereHas('billingSubscriptions', function ($query) use ($status) {
+                $query->where('payment_gateway_status', $status);
+            });
+        } elseif ($status === 'legacy') {
+            $this->builder->whereNotNull('plan');
+        }
+    }
+
+    public function createdAt(?string $date)
+    {
+        if (!$date) {
+            return;
+        }
+
+        $this->builder->whereDate('created_at', $date);
+    }
 }

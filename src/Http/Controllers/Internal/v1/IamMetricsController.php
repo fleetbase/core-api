@@ -29,16 +29,16 @@ class IamMetricsController extends Controller
         $mfaCoverage = $this->mfaCoverage($companyUuid, $totalUsers);
 
         return response()->json([
-            'active_users' => $this->metric('Active Users', (clone $users)->where('company_users.status', 'active')->count(), 'users'),
+            'active_users'    => $this->metric('Active Users', (clone $users)->where('company_users.status', 'active')->count(), 'users'),
             'pending_invites' => $this->metric('Pending Invites', (clone $users)->where(function ($query) {
                 $query->where('company_users.status', 'pending')->orWhereNull('users.email_verified_at');
             })->count(), 'users'),
             'inactive_users' => $this->metric('Inactive Users', (clone $users)->where('company_users.status', 'inactive')->count(), 'users'),
-            'dormant_users' => $this->metric('Dormant Users', $this->dormantUsersQuery($companyUuid)->count(), 'users', true),
+            'dormant_users'  => $this->metric('Dormant Users', $this->dormantUsersQuery($companyUuid)->count(), 'users', true),
             'verified_users' => $this->metric('Verified Users', (clone $users)->whereNotNull('users.email_verified_at')->count(), 'users'),
-            'mfa_coverage' => $this->metric('MFA Coverage', $mfaCoverage['value'], $mfaCoverage['format'], false, ['available' => $mfaCoverage['available']]),
-            'roles' => $this->metric('Roles', Role::where('company_uuid', $companyUuid)->count(), 'roles'),
-            'policies' => $this->metric('Policies', Policy::where('company_uuid', $companyUuid)->count(), 'policies'),
+            'mfa_coverage'   => $this->metric('MFA Coverage', $mfaCoverage['value'], $mfaCoverage['format'], false, ['available' => $mfaCoverage['available']]),
+            'roles'          => $this->metric('Roles', Role::where('company_uuid', $companyUuid)->count(), 'roles'),
+            'policies'       => $this->metric('Policies', Policy::where('company_uuid', $companyUuid)->count(), 'policies'),
         ]);
     }
 
@@ -50,15 +50,15 @@ class IamMetricsController extends Controller
         $mfaCoverage = $this->mfaCoverage($companyUuid, $totalUsers);
 
         return response()->json([
-            'total_users' => $totalUsers,
-            'status' => $this->statusCounts($companyUuid),
+            'total_users'  => $totalUsers,
+            'status'       => $this->statusCounts($companyUuid),
             'verification' => [
-                'verified' => (clone $users)->whereNotNull('users.email_verified_at')->count(),
+                'verified'   => (clone $users)->whereNotNull('users.email_verified_at')->count(),
                 'unverified' => (clone $users)->whereNull('users.email_verified_at')->count(),
             ],
-            'mfa' => $mfaCoverage,
+            'mfa'     => $mfaCoverage,
             'dormant' => [
-                'count' => $this->dormantUsersQuery($companyUuid)->count(),
+                'count'          => $this->dormantUsersQuery($companyUuid)->count(),
                 'threshold_days' => self::DORMANT_DAYS,
             ],
         ]);
@@ -78,13 +78,13 @@ class IamMetricsController extends Controller
         $assigned         = $roleUserUuids->merge($policyUserUuids)->merge($directUserUuids)->merge($groupUserUuids)->unique()->count();
 
         return response()->json([
-            'total_users' => $total,
-            'with_roles' => $roleUserUuids->count(),
-            'with_groups' => $groupUserUuids->count(),
-            'with_policies' => $policyUserUuids->count(),
+            'total_users'             => $total,
+            'with_roles'              => $roleUserUuids->count(),
+            'with_groups'             => $groupUserUuids->count(),
+            'with_policies'           => $policyUserUuids->count(),
             'with_direct_permissions' => $directUserUuids->count(),
-            'without_assignments' => max(0, $total - $assigned),
-            'coverage' => $this->percent($assigned, $total),
+            'without_assignments'     => max(0, $total - $assigned),
+            'coverage'                => $this->percent($assigned, $total),
         ]);
     }
 
@@ -102,9 +102,9 @@ class IamMetricsController extends Controller
             ->limit(10)
             ->get(['id', 'name', 'company_uuid'])
             ->map(fn ($role) => [
-                'id' => $role->id,
-                'name' => $role->name,
-                'type' => empty($role->company_uuid) ? 'Fleetbase Managed' : 'Organization Managed',
+                'id'                => $role->id,
+                'name'              => $role->name,
+                'type'              => empty($role->company_uuid) ? 'Fleetbase Managed' : 'Organization Managed',
                 'permissions_count' => $role->permissions_count,
             ]);
 
@@ -116,19 +116,19 @@ class IamMetricsController extends Controller
             ->limit(10)
             ->get(['id', 'name', 'company_uuid', 'service'])
             ->map(fn ($policy) => [
-                'id' => $policy->id,
-                'name' => $policy->name,
-                'service' => $policy->service,
-                'type' => empty($policy->company_uuid) ? 'Fleetbase Managed' : 'Organization Managed',
+                'id'                => $policy->id,
+                'name'              => $policy->name,
+                'service'           => $policy->service,
+                'type'              => empty($policy->company_uuid) ? 'Fleetbase Managed' : 'Organization Managed',
                 'permissions_count' => $policy->permissions_count,
             ]);
 
         return response()->json([
-            'privileged_roles_count' => $privilegedRoles->count(),
-            'wildcard_policies_count' => $wildcardPolicies->count(),
+            'privileged_roles_count'   => $privilegedRoles->count(),
+            'wildcard_policies_count'  => $wildcardPolicies->count(),
             'direct_privileged_grants' => $this->directPrivilegedGrantCount($companyUuid),
-            'roles' => $privilegedRoles,
-            'policies' => $wildcardPolicies,
+            'roles'                    => $privilegedRoles,
+            'policies'                 => $wildcardPolicies,
         ]);
     }
 
@@ -146,10 +146,10 @@ class IamMetricsController extends Controller
             ->map(fn ($row) => ['label' => $row->service ?: 'core', 'value' => (int) $row->count]);
 
         return response()->json([
-            'total' => $byService->sum('value'),
+            'total'                => $byService->sum('value'),
             'organization_managed' => Policy::where('company_uuid', $companyUuid)->count(),
-            'fleetbase_managed' => Policy::whereNull('company_uuid')->count(),
-            'by_service' => $byService,
+            'fleetbase_managed'    => Policy::whereNull('company_uuid')->count(),
+            'by_service'           => $byService,
         ]);
     }
 
@@ -159,17 +159,17 @@ class IamMetricsController extends Controller
         $groups      = Group::where('company_uuid', $companyUuid)->withCount('users')->get(['uuid', 'name']);
 
         return response()->json([
-            'total_groups' => $groups->count(),
-            'empty_groups' => $groups->where('users_count', 0)->count(),
+            'total_groups'      => $groups->count(),
+            'empty_groups'      => $groups->where('users_count', 0)->count(),
             'total_memberships' => $this->groupMembershipsQuery($companyUuid)->count(),
-            'buckets' => [
+            'buckets'           => [
                 ['label' => 'Empty', 'value' => $groups->where('users_count', 0)->count()],
                 ['label' => '1-5 members', 'value' => $groups->filter(fn ($group) => $group->users_count >= 1 && $group->users_count <= 5)->count()],
                 ['label' => '6-20 members', 'value' => $groups->filter(fn ($group) => $group->users_count >= 6 && $group->users_count <= 20)->count()],
                 ['label' => '20+ members', 'value' => $groups->filter(fn ($group) => $group->users_count > 20)->count()],
             ],
             'largest_groups' => $groups->sortByDesc('users_count')->take(6)->values()->map(fn ($group) => [
-                'name' => $group->name,
+                'name'    => $group->name,
                 'members' => $group->users_count,
             ]),
         ]);
@@ -186,22 +186,76 @@ class IamMetricsController extends Controller
         $cursor        = $start->copy();
 
         while ($cursor->lte($end)) {
-            $dayStart = $cursor->copy()->startOfDay();
-            $dayEnd   = $cursor->copy()->endOfDay();
-            $labels[] = $cursor->format('M j');
-            $created[] = (clone $this->companyUsersQuery($companyUuid))->whereBetween('company_users.created_at', [$dayStart, $dayEnd])->count();
-            $pending[] = (clone $this->companyUsersQuery($companyUuid))->where('company_users.status', 'pending')->whereBetween('company_users.created_at', [$dayStart, $dayEnd])->count();
+            $dayStart   = $cursor->copy()->startOfDay();
+            $dayEnd     = $cursor->copy()->endOfDay();
+            $labels[]   = $cursor->format('M j');
+            $created[]  = (clone $this->companyUsersQuery($companyUuid))->whereBetween('company_users.created_at', [$dayStart, $dayEnd])->count();
+            $pending[]  = (clone $this->companyUsersQuery($companyUuid))->where('company_users.status', 'pending')->whereBetween('company_users.created_at', [$dayStart, $dayEnd])->count();
             $inactive[] = (clone $this->companyUsersQuery($companyUuid))->where('company_users.status', 'inactive')->whereBetween('company_users.updated_at', [$dayStart, $dayEnd])->count();
             $cursor->addDay();
         }
 
         return response()->json([
-            'labels' => $labels,
+            'labels'   => $labels,
             'datasets' => [
                 ['label' => 'Created', 'data' => $created],
                 ['label' => 'Pending', 'data' => $pending],
                 ['label' => 'Inactive', 'data' => $inactive],
             ],
+        ]);
+    }
+
+    public function usersByTypeCreated(Request $request): JsonResponse
+    {
+        [$start, $end] = $this->period($request);
+        $companyUuid   = session('company');
+        $labels        = [];
+        $types         = (clone $this->companyUsersQuery($companyUuid))
+            ->whereBetween('company_users.created_at', [$start, $end])
+            ->selectRaw('COALESCE(users.type, "user") as type')
+            ->groupBy('type')
+            ->orderBy('type')
+            ->pluck('type')
+            ->values();
+
+        if ($types->isEmpty()) {
+            $types = collect(['user']);
+        }
+
+        $series = $types->mapWithKeys(fn ($type) => [$type => []])->all();
+        $totals = $types->mapWithKeys(fn ($type) => [$type => 0])->all();
+        $cursor = $start->copy();
+
+        while ($cursor->lte($end)) {
+            $dayStart = $cursor->copy()->startOfDay();
+            $dayEnd   = $cursor->copy()->endOfDay();
+            $labels[] = $cursor->format('M j');
+
+            $counts = (clone $this->companyUsersQuery($companyUuid))
+                ->whereBetween('company_users.created_at', [$dayStart, $dayEnd])
+                ->selectRaw('COALESCE(users.type, "user") as type, COUNT(*) as count')
+                ->groupBy('type')
+                ->pluck('count', 'type');
+
+            $types->each(function ($type) use (&$series, &$totals, $counts) {
+                $count           = (int) ($counts[$type] ?? 0);
+                $series[$type][] = $count;
+                $totals[$type] += $count;
+            });
+
+            $cursor->addDay();
+        }
+
+        return response()->json([
+            'labels'   => $labels,
+            'datasets' => $types->values()->map(fn ($type, $index) => [
+                'label'           => $this->userTypeLabel($type),
+                'data'            => $series[$type],
+                'backgroundColor' => $this->chartColor($index, 0.72),
+                'borderColor'     => $this->chartColor($index),
+                'borderWidth'     => 1,
+            ]),
+            'totals' => collect($totals)->mapWithKeys(fn ($count, $type) => [$this->userTypeLabel($type) => $count]),
         ]);
     }
 
@@ -222,12 +276,12 @@ class IamMetricsController extends Controller
             ->limit($limit)
             ->get()
             ->map(fn ($activity) => [
-                'id' => $activity->id,
-                'description' => $activity->description,
-                'event' => $activity->event,
+                'id'           => $activity->id,
+                'description'  => $activity->description,
+                'event'        => $activity->event,
                 'subject_type' => $activity->humanized_subject_type,
-                'causer_name' => data_get($activity, 'causer.name'),
-                'created_at' => optional($activity->created_at)->toISOString(),
+                'causer_name'  => data_get($activity, 'causer.name'),
+                'created_at'   => optional($activity->created_at)->toISOString(),
             ]);
 
         return response()->json(['items' => $items]);
@@ -301,8 +355,8 @@ class IamMetricsController extends Controller
             ->pluck('count', 'status');
 
         return [
-            'active' => (int) ($counts['active'] ?? 0),
-            'pending' => (int) ($counts['pending'] ?? 0),
+            'active'   => (int) ($counts['active'] ?? 0),
+            'pending'  => (int) ($counts['pending'] ?? 0),
             'inactive' => (int) ($counts['inactive'] ?? 0),
         ];
     }
@@ -324,14 +378,14 @@ class IamMetricsController extends Controller
         $available = $enabledUsers > 0;
 
         return [
-            'available' => $available,
-            'enabled_users' => $enabledUsers,
-            'total_users' => $totalUsers,
-            'value' => $available ? $this->percent($enabledUsers, $totalUsers) : null,
-            'format' => $available ? 'percent' : 'unavailable',
-            'system_enabled' => (bool) data_get($system?->value, 'enabled', false),
-            'system_enforced' => (bool) data_get($system?->value, 'enforced', false),
-            'company_enabled' => (bool) data_get($company?->value, 'enabled', false),
+            'available'        => $available,
+            'enabled_users'    => $enabledUsers,
+            'total_users'      => $totalUsers,
+            'value'            => $available ? $this->percent($enabledUsers, $totalUsers) : null,
+            'format'           => $available ? 'percent' : 'unavailable',
+            'system_enabled'   => (bool) data_get($system?->value, 'enabled', false),
+            'system_enforced'  => (bool) data_get($system?->value, 'enforced', false),
+            'company_enabled'  => (bool) data_get($company?->value, 'enabled', false),
             'company_enforced' => (bool) data_get($company?->value, 'enforced', false),
         ];
     }
@@ -339,11 +393,31 @@ class IamMetricsController extends Controller
     private function metric(string $label, mixed $value, string $format = 'count', bool $inverse = false, array $extra = []): array
     {
         return [
-            'label' => $label,
-            'value' => $value,
-            'format' => $format,
+            'label'   => $label,
+            'value'   => $value,
+            'format'  => $format,
             'inverse' => $inverse,
         ] + $extra;
+    }
+
+    private function userTypeLabel(?string $type): string
+    {
+        return str($type ?: 'user')->replace(['-', '_'], ' ')->title()->toString();
+    }
+
+    private function chartColor(int $index, float $alpha = 1): string
+    {
+        $colors = [
+            [37, 99, 235],
+            [5, 150, 105],
+            [245, 158, 11],
+            [139, 92, 246],
+            [244, 63, 94],
+            [15, 118, 110],
+        ];
+        $color = $colors[$index % count($colors)];
+
+        return sprintf('rgba(%d, %d, %d, %s)', $color[0], $color[1], $color[2], rtrim(rtrim((string) $alpha, '0'), '.'));
     }
 
     private function percent(int|float|null $value, int|float|null $total): int
@@ -358,10 +432,10 @@ class IamMetricsController extends Controller
     private function period(Request $request): array
     {
         $days = match ($request->string('period')->toString()) {
-            '7d' => 7,
-            '90d' => 90,
-            '180d' => 180,
-            '365d' => 365,
+            '7d'    => 7,
+            '90d'   => 90,
+            '180d'  => 180,
+            '365d'  => 365,
             default => 30,
         };
 

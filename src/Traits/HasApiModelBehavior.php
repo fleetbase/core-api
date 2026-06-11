@@ -400,6 +400,10 @@ trait HasApiModelBehavior
             }
         }
 
+        if (($options['allow_slug_update'] ?? false) !== true && $this->isColumn('slug')) {
+            unset($input['slug']);
+        }
+
         $keys = array_keys($input);
 
         foreach ($keys as $key) {
