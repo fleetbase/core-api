@@ -156,7 +156,8 @@ class Company extends Model
     {
         return SlugOptions::create()
             ->generateSlugsFrom('name')
-            ->saveSlugsTo('slug');
+            ->saveSlugsTo('slug')
+            ->doNotGenerateSlugsOnUpdate();
     }
 
     public function creator(): BelongsTo|Builder
@@ -169,6 +170,11 @@ class Company extends Model
     public function owner(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function billingSubscriptions(): HasMany
+    {
+        return $this->hasMany('\\Fleetbase\\Billing\\Models\\Subscription', 'company_uuid', 'uuid');
     }
 
     public function users(): BelongsToMany

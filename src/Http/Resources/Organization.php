@@ -8,6 +8,18 @@ use Fleetbase\Support\Utils;
 
 class Organization extends FleetbaseResource
 {
+    protected function getBillingStatus(): ?string
+    {
+        if (!class_exists('\\Fleetbase\\Billing\\Models\\Subscription')) {
+            return $this->plan ? 'legacy' : null;
+        }
+
+        $subscriptionClass = '\\Fleetbase\\Billing\\Models\\Subscription';
+        $subscription      = $subscriptionClass::where('company_uuid', $this->uuid)->latest('created_at')->first();
+
+        return $subscription?->payment_gateway_status ?? ($this->plan ? 'legacy' : null);
+    }
+
     /**
      * Transform the resource into an array.
      *
@@ -30,6 +42,8 @@ class Organization extends FleetbaseResource
             'timezone'             => $this->timezone,
             'country'              => $this->country,
             'currency'             => $this->currency,
+            'plan'                 => $this->when(Http::isInternalRequest(), $this->plan),
+            'trial_ends_at'        => $this->when(Http::isInternalRequest(), $this->trial_ends_at),
             'logo_url'             => $this->logo_url,
             'backdrop_url'         => $this->backdrop_url,
             'branding'             => Setting::getBranding(),
@@ -37,6 +51,7 @@ class Organization extends FleetbaseResource
             'owner'                => $this->owner ? new User($this->owner) : null,
             'slug'                 => $this->slug,
             'status'               => $this->status,
+            'billing_status'       => $this->when(Http::isInternalRequest(), $this->getBillingStatus()),
             'onboarding_completed' => $this->when(Http::isInternalRequest(), $this->onboarding_completed_at !== null),
             'joined_at'            => $this->when(Http::isInternalRequest() && $request->hasSession() && $request->session()->has('user'), function () {
                 if ($this->resource->joined_at) {

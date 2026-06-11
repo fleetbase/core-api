@@ -51,6 +51,7 @@ class ChatChannelController extends FleetbaseController
                 ]);
             }
 
+            $chatChannel->refresh();
             $chatChannel->load(['participants.user', 'lastMessage']);
             $this->resource::wrap($this->resourceSingularlName);
 
