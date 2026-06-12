@@ -236,17 +236,17 @@ class AdminMetricsController extends Controller
             'icon'     => 'heart-pulse',
             'empty'    => 'No diagnostics available.',
             'items'    => [
-                $this->diagnosticItem('Mail', config('mail.default'), 'envelope'),
-                $this->diagnosticItem('Filesystem', config('filesystems.default'), 'hard-drive'),
-                $this->diagnosticItem('Queue', config('queue.default'), 'list-check'),
-                $this->diagnosticItem('Socket', config('broadcasting.default'), 'tower-broadcast'),
-                $this->diagnosticItem('Notifications', config('fleetbase.notifications.default_channel', 'configured'), 'bell'),
-                $this->diagnosticItem('Scheduler', config('schedule-monitor.enabled', true) ? 'configured' : null, 'calendar-check'),
+                $this->diagnosticItem('Mail', config('mail.default'), 'envelope', 'console.admin.config.mail'),
+                $this->diagnosticItem('Filesystem', config('filesystems.default'), 'hard-drive', 'console.admin.config.filesystem'),
+                $this->diagnosticItem('Queue', config('queue.default'), 'list-check', 'console.admin.config.queue'),
+                $this->diagnosticItem('Socket', config('broadcasting.default'), 'tower-broadcast', 'console.admin.config.socket'),
+                $this->diagnosticItem('Notifications', config('fleetbase.notifications.default_channel', 'configured'), 'bell', 'console.admin.config.notification-channels'),
+                $this->diagnosticItem('Scheduler', config('schedule-monitor.enabled', true) ? 'configured' : null, 'calendar-check', 'console.admin.schedule-monitor'),
             ],
         ];
     }
 
-    private function diagnosticItem(string $title, mixed $value, string $icon): array
+    private function diagnosticItem(string $title, mixed $value, string $icon, ?string $route = null): array
     {
         $configured = filled($value);
 
@@ -256,6 +256,7 @@ class AdminMetricsController extends Controller
             'value'       => $configured ? 'OK' : 'Missing',
             'status'      => $configured ? 'success' : 'danger',
             'icon'        => $icon,
+            'route'       => $route,
         ];
     }
 
@@ -288,6 +289,8 @@ class AdminMetricsController extends Controller
                 'value'       => $activity->event,
                 'status'      => str_contains((string) $activity->description, 'password') ? 'warning' : 'info',
                 'icon'        => 'clock-rotate-left',
+                'route'       => $activity->subject_type === Company::class && $activity->subject?->public_id ? 'console.admin.organizations.details.activity' : null,
+                'routeModels' => $activity->subject_type === Company::class && $activity->subject?->public_id ? [$activity->subject->public_id] : [],
             ])
             ->values();
 
@@ -297,6 +300,7 @@ class AdminMetricsController extends Controller
             'icon'     => 'clock-rotate-left',
             'empty'    => 'No recent sensitive admin activity.',
             'items'    => $items,
+            'route'    => 'console.admin.organizations.index',
         ];
     }
 
@@ -320,26 +324,30 @@ class AdminMetricsController extends Controller
                     'value'       => $reason,
                     'status'      => $reason === 'Status review' ? 'danger' : 'warning',
                     'icon'        => 'building',
+                    'route'       => 'console.admin.organizations.details',
+                    'routeModels' => [$company->public_id],
                 ];
             })
             ->values();
 
         return [
-            'title'    => 'Organization Risk Queue',
-            'subtitle' => 'Organizations needing operator review',
-            'icon'     => 'building-shield',
-            'empty'    => 'No organizations currently need review.',
-            'items'    => $items,
+            'title'       => 'Organization Risk Queue',
+            'subtitle'    => 'Organizations needing operator review',
+            'icon'        => 'building-shield',
+            'empty'       => 'No organizations currently need review.',
+            'items'       => $items,
+            'route'       => 'console.admin.organizations.index',
+            'queryParams' => ['needs_attention' => 1],
         ];
     }
 
     private function configurationGapsSummary(): array
     {
         $items = collect([
-            $this->configGapItem('Mail driver', config('mail.default'), 'envelope'),
-            $this->configGapItem('Queue driver', config('queue.default'), 'list-check'),
-            $this->configGapItem('Filesystem disk', config('filesystems.default'), 'hard-drive'),
-            $this->configGapItem('Broadcast driver', config('broadcasting.default'), 'tower-broadcast'),
+            $this->configGapItem('Mail driver', config('mail.default'), 'envelope', 'console.admin.config.mail'),
+            $this->configGapItem('Queue driver', config('queue.default'), 'list-check', 'console.admin.config.queue'),
+            $this->configGapItem('Filesystem disk', config('filesystems.default'), 'hard-drive', 'console.admin.config.filesystem'),
+            $this->configGapItem('Broadcast driver', config('broadcasting.default'), 'tower-broadcast', 'console.admin.config.socket'),
         ])->filter()->values();
 
         return [
@@ -348,10 +356,11 @@ class AdminMetricsController extends Controller
             'icon'     => 'screwdriver-wrench',
             'empty'    => 'No configuration gaps detected.',
             'items'    => $items,
+            'route'    => 'console.admin.config',
         ];
     }
 
-    private function configGapItem(string $title, mixed $value, string $icon): ?array
+    private function configGapItem(string $title, mixed $value, string $icon, ?string $route = null): ?array
     {
         if (filled($value)) {
             return null;
@@ -363,6 +372,7 @@ class AdminMetricsController extends Controller
             'value'       => 'Missing',
             'status'      => 'danger',
             'icon'        => $icon,
+            'route'       => $route,
         ];
     }
 }

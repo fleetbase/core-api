@@ -245,6 +245,14 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     $router->post('transfer-ownership', $controller('transferOwnership'));
                                     $router->post('leave', $controller('leaveOrganization'));
                                     $router->match(['get', 'post'], 'export', $controller('export'));
+                                    $router->get('{id}/extensions', $controller('extensions'));
+                                    $router->patch('{id}/status', $controller('setAdminStatus'));
+                                    $router->patch('{id}/onboarding', $controller('setAdminOnboarding'));
+                                    $router->post('{id}/transfer-ownership', $controller('transferOwnershipAdmin'));
+                                    $router->patch('{id}/users/{user}/activate', $controller('activateAdminUser'));
+                                    $router->patch('{id}/users/{user}/deactivate', $controller('deactivateAdminUser'));
+                                    $router->patch('{id}/users/{user}/verify', $controller('verifyAdminUser'));
+                                    $router->delete('{id}/users/{user}', $controller('removeAdminUser'));
                                     $router->get('{id}/users', $controller('users'));
                                 });
                                 $router->fleetbaseRoutes('users', null, [], function ($router, $controller) {

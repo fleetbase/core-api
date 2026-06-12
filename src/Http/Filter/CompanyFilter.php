@@ -54,6 +54,35 @@ class CompanyFilter extends Filter
         });
     }
 
+    public function needsAttention($value)
+    {
+        if (!filter_var($value, FILTER_VALIDATE_BOOLEAN)) {
+            return;
+        }
+
+        $this->builder->where(function ($query) {
+            $query->whereNull('onboarding_completed_at')
+                ->orWhereNull('owner_uuid')
+                ->orWhere(function ($query) {
+                    $query->whereNotNull('status')->where('status', '!=', 'active');
+                });
+        });
+    }
+
+    public function missingOwner($value)
+    {
+        if (filter_var($value, FILTER_VALIDATE_BOOLEAN)) {
+            $this->builder->whereNull('owner_uuid');
+        }
+    }
+
+    public function inactiveStatus($value)
+    {
+        if (filter_var($value, FILTER_VALIDATE_BOOLEAN)) {
+            $this->builder->whereNotNull('status')->where('status', '!=', 'active');
+        }
+    }
+
     public function onboardingCompleted($completed)
     {
         if ($completed === null || $completed === '') {
