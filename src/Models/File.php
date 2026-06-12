@@ -91,7 +91,8 @@ class File extends Model
     {
         return SlugOptions::create()
             ->generateSlugsFrom('original_filename')
-            ->saveSlugsTo('slug');
+            ->saveSlugsTo('slug')
+            ->doNotGenerateSlugsOnUpdate();
     }
 
     /**
