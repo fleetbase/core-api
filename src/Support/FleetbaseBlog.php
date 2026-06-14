@@ -62,7 +62,7 @@ class FleetbaseBlog
         $host = parse_url($link, PHP_URL_HOST);
         $path = trim((string) parse_url($link, PHP_URL_PATH), '/');
 
-        if ($host && Str::contains($host, 'ghost.io') && $path) {
+        if ($host && (Str::contains($host, 'ghost.io') || $host === 'blog.fleetbase.io') && $path) {
             return $blogUrl . '/' . $path;
         }
 
@@ -74,7 +74,7 @@ class FleetbaseBlog
      */
     public static function getFeedUrl(?string $feedUrl = null): string
     {
-        return rtrim($feedUrl ?: getenv('FLEETBASE_BLOG_FEED_URL') ?: 'https://fleetbase.ghost.io/rss/', '/') . '/';
+        return rtrim($feedUrl ?: getenv('FLEETBASE_BLOG_FEED_URL') ?: 'https://blog.fleetbase.io/rss/', '/') . '/';
     }
 
     /**

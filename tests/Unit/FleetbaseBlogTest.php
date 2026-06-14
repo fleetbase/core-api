@@ -11,7 +11,7 @@ function fleetbaseBlogRssFixture(): string
     <item>
       <title><![CDATA[First Ghost Post]]></title>
       <description><![CDATA[<p>First excerpt.</p>]]></description>
-      <link>https://fleetbase.ghost.io/first-ghost-post/</link>
+      <link>https://blog.fleetbase.io/first-ghost-post/</link>
       <guid isPermaLink="false">ghost-post-1</guid>
       <dc:creator><![CDATA[Fleetbase Team]]></dc:creator>
       <pubDate>Wed, 06 May 2026 14:31:46 GMT</pubDate>
@@ -21,7 +21,7 @@ function fleetbaseBlogRssFixture(): string
     <item>
       <title><![CDATA[Second Ghost Post]]></title>
       <description><![CDATA[<p>Second excerpt.</p>]]></description>
-      <link>https://fleetbase.ghost.io/second-ghost-post/</link>
+      <link>https://blog.fleetbase.io/second-ghost-post/</link>
       <guid isPermaLink="false">ghost-post-2</guid>
       <dc:creator><![CDATA[Fleetbase Team]]></dc:creator>
       <pubDate>Wed, 06 May 2026 14:30:46 GMT</pubDate>
@@ -63,5 +63,6 @@ test('fleetbase blog parser returns an empty array for malformed rss', function 
 
 test('fleetbase blog link normalization keeps non ghost links unchanged', function () {
     expect(FleetbaseBlog::normalizeLink('https://www.fleetbase.io/blog/already-canonical'))->toBe('https://www.fleetbase.io/blog/already-canonical')
-        ->and(FleetbaseBlog::normalizeLink('https://fleetbase.ghost.io/ghost-post/'))->toBe('https://www.fleetbase.io/blog/ghost-post');
+        ->and(FleetbaseBlog::normalizeLink('https://fleetbase.ghost.io/legacy-ghost-post/'))->toBe('https://www.fleetbase.io/blog/legacy-ghost-post')
+        ->and(FleetbaseBlog::normalizeLink('https://blog.fleetbase.io/ghost-post/'))->toBe('https://www.fleetbase.io/blog/ghost-post');
 });
