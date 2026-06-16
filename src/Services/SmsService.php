@@ -11,8 +11,13 @@ class SmsService
     /**
      * Available SMS providers.
      */
-    public const PROVIDER_TWILIO  = 'twilio';
-    public const PROVIDER_CALLPRO = 'callpro';
+    public const PROVIDER_TWILIO      = 'twilio';
+    public const PROVIDER_CALLPRO     = 'callpro';
+    public const PROVIDER_VONAGE      = 'vonage';
+    public const PROVIDER_MESSAGEBIRD = 'messagebird';
+    public const PROVIDER_AWS_SNS     = 'aws_sns';
+    public const PROVIDER_SMPP        = 'smpp';
+    public const PROVIDER_CUSTOM_HTTP = 'custom_http';
 
     /**
      * Default SMS provider.
@@ -70,9 +75,14 @@ class SmsService
 
         try {
             $result = match ($selectedProvider) {
-                self::PROVIDER_CALLPRO => $this->sendViaCallPro($normalizedPhone, $text, $options),
-                self::PROVIDER_TWILIO  => $this->sendViaTwilio($normalizedPhone, $text, $options),
-                default                => throw new \InvalidArgumentException("Unsupported SMS provider: {$selectedProvider}"),
+                self::PROVIDER_CALLPRO     => $this->sendViaCallPro($normalizedPhone, $text, $options),
+                self::PROVIDER_TWILIO      => $this->sendViaTwilio($normalizedPhone, $text, $options),
+                self::PROVIDER_VONAGE      => $this->sendViaVonage($normalizedPhone, $text, $options),
+                self::PROVIDER_MESSAGEBIRD => $this->sendViaMessageBird($normalizedPhone, $text, $options),
+                self::PROVIDER_AWS_SNS     => $this->sendViaAwsSns($normalizedPhone, $text, $options),
+                self::PROVIDER_SMPP        => $this->sendViaSmpp($normalizedPhone, $text, $options),
+                self::PROVIDER_CUSTOM_HTTP => $this->sendViaCustomHttp($normalizedPhone, $text, $options),
+                default                    => throw new \InvalidArgumentException("Unsupported SMS provider: {$selectedProvider}"),
             };
 
             $result['provider'] = $selectedProvider;
@@ -177,6 +187,56 @@ class SmsService
     }
 
     /**
+     * Send SMS via Vonage.
+     */
+    protected function sendViaVonage(string $to, string $text, array $options = []): array
+    {
+        $service = new VonageSmsService();
+
+        return $service->send($to, $text, data_get($options, 'from'), $options);
+    }
+
+    /**
+     * Send SMS via MessageBird.
+     */
+    protected function sendViaMessageBird(string $to, string $text, array $options = []): array
+    {
+        $service = new MessageBirdSmsService();
+
+        return $service->send($to, $text, data_get($options, 'from', data_get($options, 'originator')), $options);
+    }
+
+    /**
+     * Send SMS via AWS SNS.
+     */
+    protected function sendViaAwsSns(string $to, string $text, array $options = []): array
+    {
+        $service = new AwsSnsSmsService();
+
+        return $service->send($to, $text, data_get($options, 'from', data_get($options, 'sender_id')), $options);
+    }
+
+    /**
+     * Send SMS via SMPP gateway.
+     */
+    protected function sendViaSmpp(string $to, string $text, array $options = []): array
+    {
+        $service = new SmppSmsService();
+
+        return $service->send($to, $text, data_get($options, 'from', data_get($options, 'source_addr')), $options);
+    }
+
+    /**
+     * Send SMS via custom HTTP gateway.
+     */
+    protected function sendViaCustomHttp(string $to, string $text, array $options = []): array
+    {
+        $service = new CustomHttpSmsService();
+
+        return $service->send($to, $text, data_get($options, 'from'), $options);
+    }
+
+    /**
      * Determine which provider to use based on phone number.
      *
      * @param string $phoneNumber Normalized phone number
@@ -255,6 +315,31 @@ class SmsService
         $providers[self::PROVIDER_CALLPRO] = [
             'name'      => 'CallPro/MessagePro.mn',
             'available' => $callProService->isConfigured(),
+        ];
+
+        $providers[self::PROVIDER_VONAGE] = [
+            'name'      => 'Vonage',
+            'available' => (new VonageSmsService())->isConfigured(),
+        ];
+
+        $providers[self::PROVIDER_MESSAGEBIRD] = [
+            'name'      => 'MessageBird',
+            'available' => (new MessageBirdSmsService())->isConfigured(),
+        ];
+
+        $providers[self::PROVIDER_AWS_SNS] = [
+            'name'      => 'AWS SNS',
+            'available' => (new AwsSnsSmsService())->isConfigured(),
+        ];
+
+        $providers[self::PROVIDER_SMPP] = [
+            'name'      => 'SMPP Gateway',
+            'available' => (new SmppSmsService())->isConfigured(),
+        ];
+
+        $providers[self::PROVIDER_CUSTOM_HTTP] = [
+            'name'      => 'Custom HTTP Gateway',
+            'available' => (new CustomHttpSmsService())->isConfigured(),
         ];
 
         return $providers;

@@ -18,9 +18,11 @@ class CallProSmsService
      */
     public function __construct()
     {
-        $this->apiKey  = config('services.callpromn.api_key', '');
-        $this->from    = config('services.callpromn.from', '');
-        $this->baseUrl = config('services.callpromn.base_url', 'https://api-text.callpro.mn/v1/sms');
+        $config = array_replace_recursive(config('services.callpromn', []), config('services.sms.providers.callpro', []));
+
+        $this->apiKey  = data_get($config, 'api_key', '');
+        $this->from    = data_get($config, 'from', '');
+        $this->baseUrl = data_get($config, 'base_url', 'https://api-text.callpro.mn/v1/sms');
 
         Log::info('CallProSmsService initialized', [
             'base_url' => $this->baseUrl,
