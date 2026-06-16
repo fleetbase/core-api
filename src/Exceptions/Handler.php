@@ -4,7 +4,9 @@ namespace Fleetbase\Exceptions;
 
 use Fleetbase\Support\Utils;
 use Illuminate\Auth\AuthenticationException;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
+use Illuminate\Support\Str;
 
 class Handler extends ExceptionHandler
 {
@@ -136,7 +138,7 @@ class Handler extends ExceptionHandler
     private function shouldManuallyHandleException(\Throwable $exception): bool
     {
         $type       = Utils::classBasename($exception);
-        $exceptions = ['TokenMismatchException', 'ThrottleRequestsException', 'AuthenticationException', 'NotFoundHttpException', 'FleetbaseRequestValidationException'];
+        $exceptions = ['TokenMismatchException', 'ThrottleRequestsException', 'AuthenticationException', 'NotFoundHttpException', 'FleetbaseRequestValidationException', 'ModelNotFoundException'];
 
         return in_array($type, $exceptions);
     }
@@ -165,6 +167,9 @@ class Handler extends ExceptionHandler
             case 'NotFoundHttpException':
                 return response()->error('There is nothing to see here.');
 
+            case 'ModelNotFoundException':
+                return response()->error($this->modelNotFoundMessage($exception), 404);
+
             case 'FleetbaseRequestValidationException':
                 /** @var FleetbaseRequestValidationException $exception */
                 return response()->error($exception->getErrors());
@@ -172,5 +177,14 @@ class Handler extends ExceptionHandler
             default:
                 return response()->error($exception->getMessage());
         }
+    }
+
+    private function modelNotFoundMessage(\Throwable $exception): string
+    {
+        if ($exception instanceof ModelNotFoundException && $exception->getModel()) {
+            return Str::headline(class_basename($exception->getModel())) . ' not found.';
+        }
+
+        return 'Requested resource not found.';
     }
 }

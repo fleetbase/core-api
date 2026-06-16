@@ -7,6 +7,7 @@ use Fleetbase\Http\Requests\AdminRequest;
 use Fleetbase\Models\File;
 use Fleetbase\Models\Setting;
 use Fleetbase\Notifications\TestPushNotification;
+use Fleetbase\Services\SmsService;
 use Fleetbase\Support\Utils;
 use Illuminate\Http\Request;
 use Illuminate\Notifications\AnonymousNotifiable;
@@ -461,6 +462,7 @@ class SettingController extends Controller
         $twilioSid   = config('services.twilio.sid', env('TWILIO_SID'));
         $twilioToken = config('services.twilio.token', env('TWILIO_TOKEN'));
         $twilioFrom  = config('services.twilio.from', env('TWILIO_FROM'));
+        $sms         = $this->getSmsServicesConfig();
 
         /** sentry service */
         $sentryDsn = config('sentry.dsn', env('SENTRY_LARAVEL_DSN', env('SENTRY_DSN')));
@@ -475,6 +477,7 @@ class SettingController extends Controller
             'twilioSid'        => $twilioSid,
             'twilioToken'      => $twilioToken,
             'twilioFrom'       => $twilioFrom,
+            'sms'              => $sms,
             'sentryDsn'        => $sentryDsn,
         ]);
     }
@@ -486,22 +489,71 @@ class SettingController extends Controller
      */
     public function saveServicesConfig(AdminRequest $request)
     {
-        $aws        = $request->input('aws', config('services.aws'));
-        $ipinfo     = $request->input('ipinfo', config('services.ipinfo'));
-        $googleMaps = $request->input('googleMaps', config('services.google_maps'));
-        $twilio     = $request->input('twilio', config('services.twilio'));
-        $sentry     = $request->input('sentry', config('sentry.dsn'));
+        $aws                = $request->input('aws', config('services.aws'));
+        $ipinfo             = $request->input('ipinfo', config('services.ipinfo'));
+        $googleMaps         = $request->input('googleMaps', config('services.google_maps'));
+        $twilio             = $request->input('twilio', config('services.twilio'));
+        $sentry             = $request->input('sentry', config('sentry.dsn'));
+        $smsProviders       = $request->input('sms.providers', config('services.sms.providers', config('sms.providers', [])));
+        $smsDefaultProvider = $request->input('sms.defaultProvider', config('sms.default_provider'));
+        $smsRoutingRules    = $request->input('sms.routingRules', config('sms.routing_rules', []));
 
         Setting::configureSystem('services.aws', array_merge(config('services.aws', []), $aws));
         Setting::configureSystem('services.ipinfo', array_merge(config('services.ipinfo', []), $ipinfo));
         Setting::configureSystem('services.google_maps', array_merge(config('services.google_maps', []), $googleMaps));
         Setting::configureSystem('services.twilio', array_merge(config('services.twilio', []), $twilio));
+        Setting::configureSystem('services.sms', array_merge(config('services.sms', []), [
+            'providers' => $smsProviders,
+        ]));
+        Setting::configureSystem('sms.default_provider', $smsDefaultProvider);
+        Setting::configureSystem('sms.routing_rules', $smsRoutingRules);
         Setting::configureSystem('services.sentry', array_merge(config('sentry', []), $sentry));
 
         // Refresh config
         $this->refreshConfigCache();
 
         return response()->json(['status' => 'OK']);
+    }
+
+    /**
+     * Sends a test SMS message using any configured SMS provider.
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function testSmsProviderConfig(AdminRequest $request)
+    {
+        $provider = $request->input('provider', config('sms.default_provider', SmsService::PROVIDER_TWILIO));
+        $phone    = $request->input('phone');
+        $message  = $request->input('message', 'This is a Fleetbase SMS test.');
+        $config   = $request->input('config', []);
+
+        if (!$phone) {
+            return response()->json(['status' => 'error', 'message' => 'No test phone number provided!']);
+        }
+
+        $this->setTemporarySmsProviderConfig($provider, is_array($config) ? $config : []);
+
+        $status          = 'success';
+        $responseMessage = 'SMS configuration is successful, SMS sent to ' . $phone . '.';
+        $result          = null;
+
+        try {
+            $result = (new SmsService())->send($phone, $message, [], $provider);
+            if (is_array($result) && data_get($result, 'success') === false) {
+                $status          = 'error';
+                $responseMessage = data_get($result, 'error', 'SMS provider returned an error.');
+            }
+        } catch (\Throwable $e) {
+            $responseMessage = $e->getMessage();
+            $status          = 'error';
+        }
+
+        return response()->json([
+            'status'   => $status,
+            'message'  => $responseMessage,
+            'provider' => $provider,
+            'result'   => $result,
+        ]);
     }
 
     /**
@@ -764,6 +816,48 @@ class SettingController extends Controller
         }
 
         return response()->json(['status' => $status, 'message' => $message]);
+    }
+
+    protected function getSmsServicesConfig(): array
+    {
+        $providers = array_replace_recursive(config('sms.providers', []), config('services.sms.providers', []));
+
+        if (!isset($providers[SmsService::PROVIDER_TWILIO])) {
+            $providers[SmsService::PROVIDER_TWILIO] = [];
+        }
+
+        $providers[SmsService::PROVIDER_TWILIO] = array_replace_recursive($providers[SmsService::PROVIDER_TWILIO], config('services.twilio', []));
+
+        return [
+            'defaultProvider' => config('sms.default_provider', SmsService::PROVIDER_TWILIO),
+            'routingRules'    => config('sms.routing_rules', []),
+            'providers'       => $providers,
+            'available'       => (new SmsService())->getAvailableProviders(),
+        ];
+    }
+
+    protected function setTemporarySmsProviderConfig(string $provider, array $providerConfig): void
+    {
+        $providers            = array_replace_recursive(config('sms.providers', []), config('services.sms.providers', []));
+        $providers[$provider] = array_replace_recursive($providers[$provider] ?? [], $providerConfig);
+
+        config([
+            'services.sms.providers' => $providers,
+            'sms.providers'          => array_replace_recursive(config('sms.providers', []), $providers),
+        ]);
+
+        if ($provider === SmsService::PROVIDER_TWILIO) {
+            config([
+                'services.twilio'                  => array_replace_recursive(config('services.twilio', []), $providerConfig),
+                'twilio.twilio.connections.twilio' => array_replace_recursive(config('twilio.twilio.connections.twilio', []), $providerConfig),
+            ]);
+        }
+
+        if ($provider === SmsService::PROVIDER_CALLPRO) {
+            config([
+                'services.callpromn' => array_replace_recursive(config('services.callpromn', []), $providerConfig),
+            ]);
+        }
     }
 
     /**
