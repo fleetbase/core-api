@@ -82,6 +82,7 @@ class Transaction extends Model
         'type',
         'direction',
         'status',
+        'settlement_status',
 
         // Monetary (all in smallest currency unit / cents)
         'amount',
@@ -189,6 +190,16 @@ class Transaction extends Model
     public const STATUS_CANCELLED = 'cancelled';
     public const STATUS_VOIDED    = 'voided';
     public const STATUS_EXPIRED   = 'expired';
+
+    // =========================================================================
+    // Settlement Status Constants
+    // =========================================================================
+
+    public const SETTLEMENT_STATUS_UNPAID             = 'unpaid';
+    public const SETTLEMENT_STATUS_PARTIALLY_PAID     = 'partially_paid';
+    public const SETTLEMENT_STATUS_PAID               = 'paid';
+    public const SETTLEMENT_STATUS_PARTIALLY_REFUNDED = 'partially_refunded';
+    public const SETTLEMENT_STATUS_REFUNDED           = 'refunded';
 
     // =========================================================================
     // Type Constants — Platform-wide taxonomy
@@ -353,6 +364,14 @@ class Transaction extends Model
     }
 
     /**
+     * Scope to paid or otherwise settled transactions.
+     */
+    public function scopeSettled($query)
+    {
+        return $query->where('settlement_status', self::SETTLEMENT_STATUS_PAID);
+    }
+
+    /**
      * Scope to a specific transaction type.
      */
     public function scopeOfType($query, string $type)
@@ -485,7 +504,34 @@ class Transaction extends Model
      */
     public function isSettled(): bool
     {
-        return $this->settled_at !== null;
+        return $this->settlement_status === self::SETTLEMENT_STATUS_PAID || $this->settled_at !== null;
+    }
+
+    /**
+     * Whether this transaction has not been settled.
+     */
+    public function isUnpaid(): bool
+    {
+        return $this->settlement_status === self::SETTLEMENT_STATUS_UNPAID;
+    }
+
+    /**
+     * Whether this transaction has been partially settled.
+     */
+    public function isPartiallyPaid(): bool
+    {
+        return $this->settlement_status === self::SETTLEMENT_STATUS_PARTIALLY_PAID;
+    }
+
+    /**
+     * Whether this transaction has been partially or fully refunded.
+     */
+    public function isRefunded(): bool
+    {
+        return in_array($this->settlement_status, [
+            self::SETTLEMENT_STATUS_PARTIALLY_REFUNDED,
+            self::SETTLEMENT_STATUS_REFUNDED,
+        ], true);
     }
 
     /**
