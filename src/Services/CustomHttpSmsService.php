@@ -28,7 +28,9 @@ class CustomHttpSmsService
         ];
 
         $url     = $this->renderTemplate((string) data_get($this->config, 'url'), $variables);
+        $method  = strtoupper((string) data_get($this->config, 'method', 'POST'));
         $headers = $this->renderTemplateValues((array) data_get($this->config, 'headers', []), $variables);
+        $queryParams = $this->renderTemplateValues((array) data_get($this->config, 'query_params', []), $variables);
         $body    = $this->renderTemplateValues((array) data_get($this->config, 'body', [
             'to'   => '{{to}}',
             'text' => '{{text}}',
@@ -43,7 +45,12 @@ class CustomHttpSmsService
 
         Log::info('Sending SMS via custom HTTP gateway', ['to' => $to, 'url' => $url]);
 
-        $response = Http::withHeaders($headers)->asJson()->post($url, $body);
+        $request = Http::withHeaders($headers);
+        $response = match ($method) {
+            'GET'   => $request->get($url, $queryParams),
+            'POST'  => $request->asJson()->post($this->appendQueryParams($url, $queryParams), $body),
+            default => throw new \InvalidArgumentException("Unsupported custom HTTP SMS method: {$method}"),
+        };
         $payload  = $response->json();
 
         if ($response->successful()) {
@@ -82,6 +89,11 @@ class CustomHttpSmsService
         if (empty($text)) {
             throw new \InvalidArgumentException('Message text cannot be empty');
         }
+
+        $method = strtoupper((string) data_get($this->config, 'method', 'POST'));
+        if (!in_array($method, ['GET', 'POST'], true)) {
+            throw new \InvalidArgumentException('Custom HTTP SMS method must be GET or POST');
+        }
     }
 
     protected function renderTemplateValues(array $values, array $variables): array
@@ -104,5 +116,15 @@ class CustomHttpSmsService
         }
 
         return $template;
+    }
+
+    protected function appendQueryParams(string $url, array $queryParams = []): string
+    {
+        $queryParams = array_filter($queryParams, static fn ($value) => $value !== null && $value !== '');
+        if (empty($queryParams)) {
+            return $url;
+        }
+
+        return $url . (str_contains($url, '?') ? '&' : '?') . http_build_query($queryParams);
     }
 }

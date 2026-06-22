@@ -17,6 +17,19 @@ use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\Facades\Http;
 use Psr\Log\NullLogger;
 
+if (!function_exists('config')) {
+    function config($key = null, $default = null)
+    {
+        $config = Container::getInstance()->make('config');
+
+        if ($key === null) {
+            return $config;
+        }
+
+        return $config->get($key, $default);
+    }
+}
+
 beforeEach(function () {
     $app = new Container();
 
@@ -55,6 +68,7 @@ beforeEach(function () {
                         'source_addr' => 'FLEETBASE',
                     ],
                     'custom_http' => [
+                        'method'      => 'POST',
                         'url'         => 'https://sms-gateway.test/send',
                         'from'        => 'Fleetbase',
                         'auth_header' => 'Authorization',
@@ -62,6 +76,7 @@ beforeEach(function () {
                         'headers'     => [
                             'X-Tenant' => 'fleetbase',
                         ],
+                        'query_params' => [],
                         'body' => [
                             'recipient' => '{{to}}',
                             'message'   => '{{text}}',
@@ -150,7 +165,7 @@ test('messagebird sms service sends json payload and maps message id', function 
     });
 });
 
-test('custom http sms service renders configured templates', function () {
+test('custom http sms service renders configured post templates', function () {
     Http::fake([
         'https://sms-gateway.test/send' => Http::response([
             'message_id' => 'custom-message-id',
@@ -169,13 +184,65 @@ test('custom http sms service renders configured templates', function () {
     ]);
 
     Http::assertSent(function ($request) {
-        return $request->url() === 'https://sms-gateway.test/send'
+        return $request->method() === 'POST'
+            && $request->url() === 'https://sms-gateway.test/send'
             && $request->hasHeader('Authorization', 'Bearer token')
             && $request->hasHeader('X-Tenant', 'fleetbase')
             && $request['recipient'] === '+15551234567'
             && $request['message'] === 'Hello'
             && $request['sender'] === 'Fleetbase'
             && $request['reference'] === 'custom-123';
+    });
+});
+
+test('custom http sms service supports get method with rendered query params', function () {
+    Http::fake([
+        'https://sms-gateway.test/send*' => Http::response([
+            'message_id' => 'custom-get-message-id',
+            'status'     => 'queued',
+        ], 200),
+    ]);
+
+    $result = (new CustomHttpSmsService([
+        'method'      => 'GET',
+        'url'         => 'https://sms-gateway.test/send',
+        'from'        => 'Fleetbase',
+        'auth_header' => 'Authorization',
+        'auth_token'  => 'Bearer {{unique_id}}',
+        'headers'     => [
+            'X-Recipient' => '{{to}}',
+        ],
+        'query_params' => [
+            'recipient' => '{{to}}',
+            'message'   => '{{text}}',
+            'sender'    => '{{from}}',
+            'reference' => '{{unique_id}}',
+        ],
+        'body' => [
+            'should_not_send' => '{{text}}',
+        ],
+    ]))->send('+15551234567', 'Hello', null, [
+        'unique_id' => 'custom-get-123',
+    ]);
+
+    expect($result)->toMatchArray([
+        'success'    => true,
+        'message_id' => 'custom-get-message-id',
+        'status'     => 'queued',
+    ]);
+
+    Http::assertSent(function ($request) {
+        parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+
+        return $request->method() === 'GET'
+            && str_starts_with($request->url(), 'https://sms-gateway.test/send?')
+            && $request->hasHeader('Authorization', 'Bearer custom-get-123')
+            && $request->hasHeader('X-Recipient', '+15551234567')
+            && $query['recipient'] === '+15551234567'
+            && $query['message'] === 'Hello'
+            && $query['sender'] === 'Fleetbase'
+            && $query['reference'] === 'custom-get-123'
+            && !isset($request['should_not_send']);
     });
 });
 

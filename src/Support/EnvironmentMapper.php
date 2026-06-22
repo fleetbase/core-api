@@ -52,6 +52,7 @@ class EnvironmentMapper
         'SMPP_PASSWORD'                        => 'services.sms.providers.smpp.password',
         'SMPP_SOURCE_ADDR'                     => 'services.sms.providers.smpp.source_addr',
         'CUSTOM_HTTP_SMS_URL'                  => 'services.sms.providers.custom_http.url',
+        'CUSTOM_HTTP_SMS_METHOD'               => 'services.sms.providers.custom_http.method',
         'CUSTOM_HTTP_SMS_AUTH_HEADER'          => 'services.sms.providers.custom_http.auth_header',
         'CUSTOM_HTTP_SMS_AUTH_TOKEN'           => 'services.sms.providers.custom_http.auth_token',
         'GOOGLE_MAPS_API_KEY'                  => 'services.google_maps.api_key',
