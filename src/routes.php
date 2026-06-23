@@ -162,7 +162,6 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 $router->fleetbaseRoutes(
                                     'api-credentials',
                                     function ($router, $controller) {
-                                        $router->delete('bulk-delete', $controller('bulkDelete'));
                                         $router->patch('roll/{id}', $controller('roll'));
                                         $router->get('export', $controller('export'));
                                     }
@@ -263,7 +262,6 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     $router->patch('activate/{id}', $controller('activate'));
                                     $router->patch('verify/{id}', $controller('verify'));
                                     $router->delete('remove-from-company/{id}', $controller('removeFromCompany'));
-                                    $router->delete('bulk-delete', $controller('bulkDelete'));
                                     $router->post('invite-user', $controller('inviteUser'));
                                     $router->post('resend-invite', $controller('resendInvitation'));
                                     $router->post('set-password', $controller('setCurrentUserPassword'));
@@ -309,7 +307,6 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     $router->get('get-settings', $controller('getSettings'));
                                     $router->put('mark-as-read', $controller('markAsRead'));
                                     $router->put('mark-all-read', $controller('markAllAsRead'));
-                                    $router->delete('bulk-delete', $controller('bulkDelete'));
                                     $router->post('save-settings', $controller('saveSettings'));
                                 });
                                 $router->fleetbaseRoutes('dashboards', function ($router, $controller) {
@@ -348,7 +345,6 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 $router->fleetbaseRoutes('templates', function ($router, $controller) {
                                     $router->get('context-schemas', $controller('contextSchemas'));
                                     $router->post('preview', $controller('previewUnsaved'));
-                                    $router->delete('bulk-delete', $controller('bulkDelete'));
                                     $router->post('{id}/preview', $controller('preview'));
                                     $router->post('{id}/render', $controller('render'));
                                 });

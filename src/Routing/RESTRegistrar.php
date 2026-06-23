@@ -13,7 +13,7 @@ class RESTRegistrar extends ResourceRegistrar
      *
      * @var string[]
      */
-    protected $resourceDefaults = ['query', 'find', 'create', 'update', 'delete'];
+    protected $resourceDefaults = ['query', 'create', 'bulkDelete', 'find', 'update', 'delete'];
 
     /**
      * Build a set of prefixed resource routes.
@@ -83,6 +83,31 @@ class RESTRegistrar extends ResourceRegistrar
         $uniqueName = $this->getUniqueRouteName(['find', 'get'], $name, $options);
 
         return $this->router->get($uri, $action)->name($uniqueName);
+    }
+
+    /**
+     * Add the bulk delete method for a resourceful route.
+     *
+     * DELETE /resource/bulk-delete
+     *
+     * @param string $name
+     * @param string $id
+     * @param string $controller
+     * @param array  $options
+     *
+     * @return \Illuminate\Routing\Route
+     */
+    protected function addResourceBulkDelete($name, $id, $controller, $options)
+    {
+        $name = $this->getShallowName($name, $options);
+
+        $uri = $this->getResourceUri($name) . '/bulk-delete';
+
+        $action = $this->getResourceAction($name, $controller, 'bulkDelete', $options);
+
+        $uniqueName = $this->getUniqueRouteName(['bulk-delete', 'delete'], $name, $options);
+
+        return $this->router->delete($uri, $action)->name($uniqueName);
     }
 
     /**
