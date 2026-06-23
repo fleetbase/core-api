@@ -27,11 +27,11 @@ class CustomHttpSmsService
             'unique_id' => data_get($options, 'unique_id', data_get($options, 'reference', '')),
         ];
 
-        $url     = $this->renderTemplate((string) data_get($this->config, 'url'), $variables);
-        $method  = strtoupper((string) data_get($this->config, 'method', 'POST'));
-        $headers = $this->renderTemplateValues((array) data_get($this->config, 'headers', []), $variables);
+        $url         = $this->renderTemplate((string) data_get($this->config, 'url'), $variables);
+        $method      = strtoupper((string) data_get($this->config, 'method', 'POST'));
+        $headers     = $this->renderTemplateValues((array) data_get($this->config, 'headers', []), $variables);
         $queryParams = $this->renderTemplateValues((array) data_get($this->config, 'query_params', []), $variables);
-        $body    = $this->renderTemplateValues((array) data_get($this->config, 'body', [
+        $body        = $this->renderTemplateValues((array) data_get($this->config, 'body', [
             'to'   => '{{to}}',
             'text' => '{{text}}',
             'from' => '{{from}}',
@@ -45,7 +45,7 @@ class CustomHttpSmsService
 
         Log::info('Sending SMS via custom HTTP gateway', ['to' => $to, 'url' => $url]);
 
-        $request = Http::withHeaders($headers);
+        $request  = Http::withHeaders($headers);
         $response = match ($method) {
             'GET'   => $request->get($url, $queryParams),
             'POST'  => $request->asJson()->post($this->appendQueryParams($url, $queryParams), $body),

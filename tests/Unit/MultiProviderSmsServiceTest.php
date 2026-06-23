@@ -77,7 +77,7 @@ beforeEach(function () {
                             'X-Tenant' => 'fleetbase',
                         ],
                         'query_params' => [],
-                        'body' => [
+                        'body'         => [
                             'recipient' => '{{to}}',
                             'message'   => '{{text}}',
                             'sender'    => '{{from}}',
