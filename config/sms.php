@@ -110,11 +110,13 @@ return [
 
         'custom_http' => [
             'enabled'     => env('CUSTOM_HTTP_SMS_ENABLED', false),
+            'method'      => env('CUSTOM_HTTP_SMS_METHOD', 'POST'),
             'url'         => env('CUSTOM_HTTP_SMS_URL', ''),
             'from'        => env('CUSTOM_HTTP_SMS_FROM', ''),
             'auth_header' => env('CUSTOM_HTTP_SMS_AUTH_HEADER', ''),
             'auth_token'  => env('CUSTOM_HTTP_SMS_AUTH_TOKEN', ''),
             'headers'     => [],
+            'query_params' => [],
             'body'        => [
                 'to'   => '{{to}}',
                 'text' => '{{text}}',

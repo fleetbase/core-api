@@ -486,7 +486,10 @@ class UserController extends FleetbaseController
     #[SkipAuthorizationCheck]
     public function acceptCompanyInvite(AcceptCompanyInvite $request)
     {
-        $invite = Invite::where('code', $request->input('code'))->with(['subject'])->first();
+        $invite = $this->findCompanyInvite($request->input('code'));
+        if (!$invite) {
+            return response()->error('This invitation has already been accepted or is no longer available.');
+        }
 
         // get invited email
         $email = Arr::first($invite->recipients);
@@ -561,6 +564,11 @@ class UserController extends FleetbaseController
             'token'          => $token->plainTextToken,
             'needs_password' => $needsPassword,
         ]);
+    }
+
+    protected function findCompanyInvite(string $code): ?Invite
+    {
+        return Invite::where('code', $code)->with(['subject'])->first();
     }
 
     /**
