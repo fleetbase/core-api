@@ -2,6 +2,10 @@
 
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
+use Fleetbase\Auth\AppleVerifier;
+use Fleetbase\Auth\FacebookVerifier;
+use Fleetbase\Auth\GoogleVerifier;
+use Fleetbase\Auth\Office365Verifier;
 use Fleetbase\Events\UserCreatedNewCompany;
 use Fleetbase\Exceptions\InvalidVerificationCodeException;
 use Fleetbase\Http\Controllers\Controller;
@@ -933,5 +937,237 @@ class AuthController extends Controller
         }
 
         return response()->json(['status' => 'ok', 'token' => $token->plainTextToken]);
+    }
+
+    // -----------------------------------------------------------------------
+    // OAuth Console login (issue #453)
+    // -----------------------------------------------------------------------
+    //
+    // Four POST endpoints — one per supported identity provider. The client
+    // (Console) obtains a provider-issued token via the provider's JS SDK
+    // and POSTs it here; we verify with the corresponding Verifier class
+    // and issue a Sanctum personal-access token matching the native login
+    // response shape (`{token, type}`).
+    //
+    // Account-linking policy: if a verified email or provider user-id
+    // matches an existing User, we link the OAuth identity to that user
+    // (stamping the `<provider>_user_id` column when previously null). If
+    // no match exists, we create a new User with `email_verified_at = now()`
+    // (the IdP already attested the email) and an empty `company_uuid` —
+    // the Console UI routes new users into join-or-create-org from there.
+    //
+    // 2FA: when 2FA is enabled on the user record, OAuth login still goes
+    // through the 2FA challenge — consistent with password login (§AC of
+    // the parent issue does not exempt OAuth from 2FA).
+
+    /**
+     * Authenticate a Console user via a Google ID token.
+     *
+     * Request body:
+     *   - idToken  (string, required): the Google ID token issued client-side
+     *   - clientId (string, required): the Google OAuth client_id the token
+     *                                  was issued for. The server verifies
+     *                                  the token's `aud` claim against it.
+     */
+    public function loginWithGoogle(Request $request)
+    {
+        $idToken  = $request->input('idToken');
+        $clientId = $request->input('clientId');
+        if (!$idToken || !$clientId) {
+            return response()->error('Missing required Google authentication parameters.', 400);
+        }
+
+        $payload = GoogleVerifier::verifyIdToken($idToken, $clientId);
+        if (!$payload) {
+            return response()->error('Google Sign-In authentication is not valid.', 400);
+        }
+
+        return $this->oauthRespond(
+            providerColumn: 'google_user_id',
+            providerUserId: (string) data_get($payload, 'sub'),
+            email:           data_get($payload, 'email'),
+            name:            data_get($payload, 'name'),
+        );
+    }
+
+    /**
+     * Authenticate a Console user via a Facebook access token.
+     *
+     * Request body:
+     *   - accessToken (string, required): the Facebook access token from the
+     *                                     client-side JS SDK
+     *   - appId       (string, optional): the client's Facebook app_id;
+     *                                     when present, must match the
+     *                                     server's configured app_id
+     */
+    public function loginWithFacebook(Request $request)
+    {
+        $accessToken = $request->input('accessToken');
+        $appId       = $request->input('appId');
+        if (!$accessToken) {
+            return response()->error('Missing required Facebook authentication parameters.', 400);
+        }
+
+        $payload = FacebookVerifier::verifyAccessToken($accessToken, $appId);
+        if (!$payload) {
+            return response()->error('Facebook Sign-In authentication is not valid.', 400);
+        }
+
+        return $this->oauthRespond(
+            providerColumn: 'facebook_user_id',
+            providerUserId: (string) $payload['user_id'],
+            email:           $payload['email'] ?? null,
+            name:            $payload['name'] ?? null,
+        );
+    }
+
+    /**
+     * Authenticate a Console user via a Microsoft / Office365 ID token.
+     *
+     * Request body:
+     *   - idToken (string, required): the Microsoft ID token from MSAL.js
+     *
+     * Audience + issuer are validated server-side against
+     * `services.microsoft.client_id` and `services.microsoft.tenant`.
+     */
+    public function loginWithOffice365(Request $request)
+    {
+        $idToken = $request->input('idToken');
+        if (!$idToken) {
+            return response()->error('Missing required Office365 authentication parameters.', 400);
+        }
+
+        $payload = Office365Verifier::verifyIdToken($idToken);
+        if (!$payload) {
+            return response()->error('Office365 Sign-In authentication is not valid.', 400);
+        }
+
+        return $this->oauthRespond(
+            providerColumn: 'microsoft_user_id',
+            providerUserId: (string) $payload['user_id'],
+            email:           $payload['email'] ?? null,
+            name:            $payload['name'] ?? null,
+        );
+    }
+
+    /**
+     * Authenticate a Console user via Apple Sign-In.
+     *
+     * Request body:
+     *   - identityToken (string, required): the Apple identity JWT
+     *   - appleUserId   (string, required): the stable `sub` Apple assigns
+     *   - email         (string, optional): provided by Apple on first login
+     *                                       only — pass through from client
+     *   - name          (string, optional): provided by Apple on first login
+     *                                       only
+     */
+    public function loginWithApple(Request $request)
+    {
+        $identityToken = $request->input('identityToken');
+        $appleUserId   = $request->input('appleUserId');
+        $email         = $request->input('email');
+        $name          = $request->input('name');
+
+        if (!$identityToken || !$appleUserId) {
+            return response()->error('Missing required Apple authentication parameters.', 400);
+        }
+
+        // AppleVerifier::verifyAppleJwt lets parse / signature failures bubble
+        // up as exceptions (unlike Google/Facebook/Office365 verifiers, which
+        // return null on any failure). Wrap so malformed input becomes the
+        // same 400 the other three providers return instead of a 500.
+        try {
+            $appleVerified = AppleVerifier::verifyAppleJwt($identityToken);
+        } catch (\Throwable $e) {
+            logger()->info('Apple Sign-In verification raised an exception: ' . $e->getMessage());
+            $appleVerified = false;
+        }
+        if (!$appleVerified) {
+            return response()->error('Apple Sign-In authentication is not valid.', 400);
+        }
+
+        return $this->oauthRespond(
+            providerColumn: 'apple_user_id',
+            providerUserId: (string) $appleUserId,
+            email:           $email,
+            name:            $name,
+        );
+    }
+
+    /**
+     * Shared finalisation for all four OAuth providers.
+     *
+     * Looks up an existing user by verified email OR provider user-id;
+     * links the identity onto the existing user if found; otherwise creates
+     * a fresh user with the IdP-attested email already verified. Then runs
+     * the same 2FA + verification gate password login uses and issues a
+     * Sanctum token.
+     */
+    protected function oauthRespond(
+        string $providerColumn,
+        string $providerUserId,
+        ?string $email,
+        ?string $name
+    ) {
+        // Normalise email to lowercase before any lookup — User::create
+        // and Auth::register both do this on the password path, and we
+        // must match so case-variant duplicates can't sneak in.
+        if ($email) {
+            $email = strtolower($email);
+        }
+
+        $user = User::where(function ($query) use ($email, $providerColumn, $providerUserId) {
+            if ($email) {
+                $query->where('email', $email);
+                $query->orWhere($providerColumn, $providerUserId);
+            } else {
+                $query->where($providerColumn, $providerUserId);
+            }
+        })->first();
+
+        if (!$user) {
+            // New user via OAuth — IdP has attested the email so we stamp
+            // email_verified_at. No password is set; the account will only
+            // be usable via the same OAuth provider until the user opts in
+            // to set one. company_uuid is left null; the Console join /
+            // create-org flow picks them up.
+            $attributes = [
+                'email'             => $email,
+                'name'              => $name,
+                $providerColumn     => $providerUserId,
+                'email_verified_at' => $email ? now() : null,
+            ];
+            $user = User::create($attributes);
+        } elseif (!$user->{$providerColumn}) {
+            // Existing user — link the OAuth identity if not already stamped.
+            $user->{$providerColumn} = $providerUserId;
+            $user->save();
+        }
+
+        // 2FA is honoured on OAuth login too — consistent with password login.
+        if (TwoFactorAuth::isEnabled($user)) {
+            $twoFaSession = TwoFactorAuth::start($user);
+
+            return response()->json([
+                'twoFaSession' => $twoFaSession,
+                'isEnabled'    => true,
+            ]);
+        }
+
+        // Email verification is automatic for OAuth (IdP attested), but a
+        // user record could theoretically pre-exist as unverified (created
+        // by an admin invitation that didn't complete). Match the native
+        // login policy: admins bypass, everyone else needs a verified email.
+        if ($user->isNotVerified() && $user->isNotAdmin()) {
+            return response()->error('User is not verified.', 400, ['code' => 'not_verified']);
+        }
+
+        $user->updateLastLogin();
+        $token = $user->createToken($user->uuid);
+
+        return response()->json([
+            'token' => $token->plainTextToken,
+            'type'  => $user->getType(),
+        ]);
     }
 }
