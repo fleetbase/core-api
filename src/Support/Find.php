@@ -106,7 +106,7 @@ class Find
         }
 
         if ($requestNamespace === null) {
-            $requestNamespace = $requestNS . '\\' . Str::studly(ucfirst(Http::action()) . ucfirst($modelName) . 'Request');
+            $requestNamespace = $requestNS . Str::studly(ucfirst(Http::action()) . ucfirst($modelName) . 'Request');
         }
 
         if (!Utils::classExists($requestNamespace)) {
