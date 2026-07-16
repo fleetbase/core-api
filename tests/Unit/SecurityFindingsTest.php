@@ -24,6 +24,13 @@ namespace Illuminate\Foundation\Http {
     }
 }
 
+namespace Fleetbase\Tests\SecurityFixtures {
+    class TemplateQueryTenantModel extends \Fleetbase\Models\Model
+    {
+        protected $table = 'template_query_tenant_models';
+    }
+}
+
 namespace {
     use Fleetbase\Http\Controllers\Internal\v1\ApiCredentialController;
     use Fleetbase\Http\Controllers\Internal\v1\ChatChannelController;
@@ -39,7 +46,13 @@ namespace {
     use Fleetbase\Http\Controllers\Internal\v1\UserController;
     use Fleetbase\Http\Requests\Internal\UserForgotPasswordRequest;
     use Fleetbase\Http\Requests\Internal\WebhookEndpointRequest;
+    use Fleetbase\Models\Company;
+    use Fleetbase\Models\TemplateQuery;
     use Fleetbase\Rules\PublicWebhookUrl;
+    use Fleetbase\Services\TemplateRenderService;
+    use Fleetbase\Tests\SecurityFixtures\TemplateQueryTenantModel;
+    use Illuminate\Config\Repository;
+    use Illuminate\Container\Container;
 
     function controller_source(string $class): string
     {
@@ -47,6 +60,18 @@ namespace {
 
         return file_get_contents($reflection->getFileName());
     }
+
+    function bind_security_findings_config(array $values = []): void
+    {
+        Container::getInstance()->instance('config', new Repository($values));
+    }
+
+    beforeEach(function () {
+        bind_security_findings_config([
+            'fleetbase.template_query_models'        => [],
+            'fleetbase.template_global_query_models' => [],
+        ]);
+    });
 
     test('forgot password request does not expose a registered email oracle', function () {
         $rules = (new UserForgotPasswordRequest())->rules();
@@ -153,6 +178,50 @@ namespace {
             ->and($templateSource)->not->toContain('$subjectType::where(\'uuid\', $subjectId)')
             ->and($reportSource)->toContain('reportQuery')
             ->and($reportSource)->toContain("->where('company_uuid', session('company'))");
+    });
+
+    test('template query model allowlist excludes company by default', function () {
+        TemplateRenderService::registerContextType('security_fixture_tenant_model', [
+            'label'       => 'Security Fixture',
+            'description' => 'Security fixture for template query allowlist tests.',
+            'model'       => TemplateQueryTenantModel::class,
+            'variables'   => [],
+        ]);
+
+        expect(TemplateRenderService::isTemplateQueryModelAllowed(TemplateQueryTenantModel::class))->toBeTrue()
+            ->and(TemplateRenderService::isTemplateQueryModelAllowed(Company::class))->toBeFalse();
+    });
+
+    test('template query execution rejects the reported company model vector', function () {
+        $query = new TemplateQuery();
+        $query->fill([
+            'company_uuid'    => 'company-current',
+            'variable_name'   => 'orgs',
+            'model_type'      => Company::class,
+            'conditions'      => [],
+            'limit'           => 500,
+        ]);
+
+        expect($query->execute())->toBeEmpty();
+    });
+
+    test('template query execution enforces allowlist and schema backed tenant scoping', function () {
+        $source = file_get_contents((new ReflectionClass(TemplateQuery::class))->getFileName());
+
+        expect($source)->toContain('TemplateRenderService::isTemplateQueryModelAllowed($modelClass)')
+            ->and($source)->toContain('modelHasCompanyColumn')
+            ->and($source)->toContain("\$companyUuid = \$this->company_uuid ?: session('company')")
+            ->and($source)->toContain("\$model->qualifyColumn('company_uuid')")
+            ->and($source)->toContain('TemplateRenderService::isTemplateQueryModelGloballyQueryable($modelClass)')
+            ->and($source)->not->toContain('getFillable()');
+    });
+
+    test('unsaved template preview binds transient queries to the active company', function () {
+        $templateSource = controller_source(TemplateController::class);
+
+        expect($templateSource)->toContain("'company_uuid'   => session('company')")
+            ->and($templateSource)->toContain("'model_type'")
+            ->and($templateSource)->toContain("data_get(\$q, 'model_type')");
     });
 
     test('chat custom actions bind users and channels to active company membership', function () {

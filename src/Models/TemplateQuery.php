@@ -3,12 +3,15 @@
 namespace Fleetbase\Models;
 
 use Fleetbase\Casts\Json;
+use Fleetbase\Services\TemplateRenderService;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\TracksApiCredential;
+use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Schema;
 
 class TemplateQuery extends Model
 {
@@ -102,15 +105,26 @@ class TemplateQuery extends Model
     {
         $modelClass = $this->model_type;
 
-        if (!class_exists($modelClass)) {
+        if (!TemplateRenderService::isTemplateQueryModelAllowed($modelClass) || !class_exists($modelClass)) {
+            return collect();
+        }
+
+        $model = new $modelClass();
+        if (!$model instanceof EloquentModel) {
             return collect();
         }
 
         $query = $modelClass::query();
 
-        // Apply company scope if the model supports it
-        if (isset((new $modelClass())->fillable) && in_array('company_uuid', (new $modelClass())->getFillable())) {
-            $query->where('company_uuid', $this->company_uuid);
+        if ($this->modelHasCompanyColumn($model)) {
+            $companyUuid = $this->company_uuid ?: session('company');
+            if (empty($companyUuid)) {
+                return collect();
+            }
+
+            $query->where($model->qualifyColumn('company_uuid'), $companyUuid);
+        } elseif (!TemplateRenderService::isTemplateQueryModelGloballyQueryable($modelClass)) {
+            return collect();
         }
 
         // Apply filter conditions
@@ -168,5 +182,12 @@ class TemplateQuery extends Model
         }
 
         return $query->get();
+    }
+
+    protected function modelHasCompanyColumn(EloquentModel $model): bool
+    {
+        $connection = $model->getConnectionName() ?: config('database.default');
+
+        return Schema::connection($connection)->hasColumn($model->getTable(), 'company_uuid');
     }
 }

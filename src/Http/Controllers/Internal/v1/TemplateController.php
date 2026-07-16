@@ -108,13 +108,14 @@ class TemplateController extends FleetbaseController
         $queryModels = collect($rawQueries)->map(function ($q) {
             $tq = new TemplateQuery();
             $tq->fill([
-                'label'         => data_get($q, 'label'),
-                'variable_name' => data_get($q, 'variable_name'),
-                'model_type'    => data_get($q, 'model_type'),
-                'conditions'    => data_get($q, 'conditions', []),
-                'sort'          => data_get($q, 'sort', []),
-                'limit'         => data_get($q, 'limit'),
-                'with'          => data_get($q, 'with', []),
+                'company_uuid'   => session('company'),
+                'label'          => data_get($q, 'label'),
+                'variable_name'  => data_get($q, 'variable_name'),
+                'model_type'     => data_get($q, 'model_type'),
+                'conditions'     => data_get($q, 'conditions', []),
+                'sort'           => data_get($q, 'sort', []),
+                'limit'          => data_get($q, 'limit'),
+                'with'           => data_get($q, 'with', []),
             ]);
 
             return $tq;
