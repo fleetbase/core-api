@@ -30,7 +30,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
         */
         $router->prefix('v1')
             ->namespace('Api\v1')
-            ->middleware([Fleetbase\Http\Middleware\ThrottleRequests::class])
+            ->middleware(['fleetbase.platform-api'])
             ->group(function ($router) {
                 $router->get('organizations', 'OrganizationController@listOrganizations');
             });
@@ -200,6 +200,9 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 );
                                 $router->fleetbaseRoutes('settings', null, [], function ($router, $controller) {
                                     $router->get('overview', $controller('adminOverview'));
+                                    $router->get('platform-api-token', $controller('getPlatformApiToken'));
+                                    $router->post('platform-api-token', $controller('rotatePlatformApiToken'));
+                                    $router->delete('platform-api-token', $controller('revokePlatformApiToken'));
                                     $router->get('filesystem-config', $controller('getFilesystemConfig'));
                                     $router->post('filesystem-config', $controller('saveFilesystemConfig'));
                                     $router->post('test-filesystem-config', $controller('testFilesystemConfig'));
