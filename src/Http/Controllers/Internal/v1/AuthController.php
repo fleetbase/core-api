@@ -564,8 +564,21 @@ class AuthController extends Controller
      */
     public function createPasswordReset(UserForgotPasswordRequest $request)
     {
-        $email = strtolower((string) $request->input('email'));
-        $user  = User::where('email', $email)->first();
+        $email    = strtolower(trim((string) $request->input('email')));
+        $response = ['status' => 'ok'];
+        $user     = User::where('email', $email)->whereNull('deleted_at')->first();
+
+        if (!$user) {
+            return response()->json($response);
+        }
+
+        $dedupeTtlSeconds = 300;
+        $emailKey         = 'password-reset:email:' . sha1($email);
+        $ipKey            = 'password-reset:ip:' . sha1((string) $request->ip());
+
+        if (!Cache::add($emailKey, true, $dedupeTtlSeconds) || !Cache::add($ipKey, true, $dedupeTtlSeconds)) {
+            return response()->json($response);
+        }
 
         VerificationCode::where('subject_uuid', $user->uuid)
             ->where('for', 'password_reset')
@@ -585,7 +598,7 @@ class AuthController extends Controller
         // notify user of password reset
         $user->notify(new UserForgotPassword($verificationCode));
 
-        return response()->json(['status' => 'ok']);
+        return response()->json($response);
     }
 
     /**

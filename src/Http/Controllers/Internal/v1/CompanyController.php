@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
+use Fleetbase\Exceptions\FleetbaseRequestValidationException;
 use Fleetbase\Exports\CompanyExport;
 use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Http\Requests\AdminRequest;
@@ -17,6 +18,7 @@ use Fleetbase\Support\Auth;
 use Fleetbase\Support\TwoFactorAuth;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use Maatwebsite\Excel\Facades\Excel;
 
@@ -28,6 +30,75 @@ class CompanyController extends FleetbaseController
      * @var string
      */
     public $resource = 'company';
+
+    /**
+     * Find an organization visible to the current session company.
+     *
+     * @return \Illuminate\Http\Response|array
+     */
+    public function findRecord(Request $request, $id)
+    {
+        $company = $this->resolveVisibleCompany($id);
+
+        if (!$company) {
+            return response()->error('Organization not found.', 404);
+        }
+
+        return [$this->resourceSingularlName => new $this->resource($company)];
+    }
+
+    /**
+     * Update only the current session organization through generic REST.
+     *
+     * @return \Illuminate\Http\Response|array
+     */
+    public function updateRecord(Request $request, string $id)
+    {
+        $company = $this->resolveVisibleCompany($id);
+
+        if (!$company) {
+            return response()->error('Organization not found.', 404);
+        }
+
+        try {
+            $input = $this->model->getApiPayloadFromRequest($request);
+            $input = $this->model->fillSessionAttributes($input, [], ['updated_by_uuid']);
+
+            if ($this->model->isColumn('slug')) {
+                unset($input['slug']);
+            }
+
+            foreach (array_keys($input) as $key) {
+                if ($this->model->isInvalidUpdateParam($key)) {
+                    throw new \Exception('Invalid param "' . $key . '" in update request!');
+                }
+            }
+
+            $company->update(Arr::except($input, ['uuid', 'public_id', 'deleted_at', 'updated_at', 'created_at']));
+
+            return [$this->resourceSingularlName => new $this->resource($company->refresh())];
+        } catch (\Illuminate\Database\QueryException $e) {
+            return response()->error($e->getMessage());
+        } catch (FleetbaseRequestValidationException $e) {
+            return response()->error($e->getErrors());
+        } catch (\Exception $e) {
+            return response()->error($e->getMessage());
+        }
+    }
+
+    /**
+     * Disable generic organization deletion.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function deleteRecord($id, Request $request)
+    {
+        if (!$this->resolveVisibleCompany($id)) {
+            return response()->error('Organization not found.', 404);
+        }
+
+        return response()->error('Generic organization deletion is not supported.', 403);
+    }
 
     /**
      * Find company by public_id or invitation code.
@@ -176,6 +247,21 @@ class CompanyController extends FleetbaseController
             return Company::where('uuid', $id)->orWhere('public_id', $id)->first();
         }
 
+        $sessionCompany = session('company');
+
+        if (!$sessionCompany) {
+            return null;
+        }
+
+        return Company::where('uuid', $sessionCompany)
+            ->where(function ($query) use ($id) {
+                $query->where('uuid', $id)->orWhere('public_id', $id);
+            })
+            ->first();
+    }
+
+    private function resolveVisibleCompany(string $id): ?Company
+    {
         $sessionCompany = session('company');
 
         if (!$sessionCompany) {
