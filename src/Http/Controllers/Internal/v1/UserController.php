@@ -22,6 +22,7 @@ use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\Invite;
 use Fleetbase\Models\Permission;
 use Fleetbase\Models\Policy;
+use Fleetbase\Models\Role;
 use Fleetbase\Models\Setting;
 use Fleetbase\Models\User;
 use Fleetbase\Models\VerificationCode;
@@ -33,6 +34,7 @@ use Fleetbase\Support\Auth;
 use Fleetbase\Support\NotificationRegistry;
 use Fleetbase\Support\TwoFactorAuth;
 use Fleetbase\Support\Utils;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Notifications\AnonymousNotifiable;
 use Illuminate\Support\Arr;
@@ -178,6 +180,10 @@ class UserController extends FleetbaseController
             return $this->inviteExistingUser($existingUser, $request);
         }
 
+        if ($request->filled('user.role_uuid') && !$this->resolveAssignableRole($request->input('user.role_uuid'))) {
+            return response()->error('The selected role is not available for this organisation.', 404);
+        }
+
         try {
             $record = $this->model->createRecordFromRequest($request, function (&$request, &$input) {
                 // Get user properties
@@ -200,12 +206,14 @@ class UserController extends FleetbaseController
                 // Set user type
                 $user->setUserType('user');
 
+                $role = $this->resolveAssignableRole($request->input('user.role_uuid'));
+
                 // Assign to user
-                $user->assignCompany($company, $request->input('user.role_uuid'));
+                $user->assignCompany($company, $role ? $role->id : 'Administrator');
 
                 // Assign role if set
-                if ($request->filled('user.role_uuid')) {
-                    $user->assignSingleRole($request->input('user.role_uuid'));
+                if ($role) {
+                    $user->assignSingleRole($role);
                 }
 
                 // Sync Permissions
@@ -216,7 +224,7 @@ class UserController extends FleetbaseController
 
                 // Sync Policies
                 if ($request->isArray('user.policies')) {
-                    $policies = Policy::whereIn('id', $request->array('user.policies'))->get();
+                    $policies = $this->getAssignablePolicies($request->array('user.policies'));
                     $user->syncPolicies($policies);
                 }
             });
@@ -271,7 +279,12 @@ class UserController extends FleetbaseController
 
             // Assign role if set
             if ($request->filled('user.role')) {
-                $record->assignSingleRole($request->input('user.role'));
+                $role = $this->resolveAssignableRole($request->input('user.role'));
+                if (!$role) {
+                    return response()->error('The selected role is not available for this organisation.', 404);
+                }
+
+                $record->assignSingleRole($role);
             }
 
             // Sync Permissions
@@ -282,7 +295,7 @@ class UserController extends FleetbaseController
 
             // Sync Policies
             if ($request->isArray('user.policies')) {
-                $policies = Policy::whereIn('id', $request->array('user.policies'))->get();
+                $policies = $this->getAssignablePolicies($request->array('user.policies'));
                 $record->syncPolicies($policies);
             }
 
@@ -411,6 +424,51 @@ class UserController extends FleetbaseController
         }
 
         return (string) $incoming === (string) $current;
+    }
+
+    /**
+     * Resolve a role assignable by the active company.
+     */
+    private function resolveAssignableRole(string|Role|null $role, ?string $companyUuid = null): ?Role
+    {
+        $companyUuid ??= session('company');
+
+        if (!$role) {
+            return null;
+        }
+
+        if ($role instanceof Role) {
+            return $this->roleBelongsToCompany($role, $companyUuid) ? $role : null;
+        }
+
+        $query = Role::where(function (Builder $query) use ($role) {
+            $query->where('id', $role)->orWhere('name', $role);
+        });
+
+        $query->where(function (Builder $query) use ($companyUuid) {
+            $query->where('company_uuid', $companyUuid)
+                ->orWhereNull('company_uuid');
+        });
+
+        return $query->first();
+    }
+
+    /**
+     * Resolve policies assignable by the active company.
+     */
+    private function getAssignablePolicies(array $ids)
+    {
+        return Policy::whereIn('id', $ids)
+            ->where(function (Builder $query) {
+                $query->where('company_uuid', session('company'))
+                    ->orWhereNull('company_uuid');
+            })
+            ->get();
+    }
+
+    private function roleBelongsToCompany(Role $role, ?string $companyUuid): bool
+    {
+        return empty($role->company_uuid) || $role->company_uuid === $companyUuid;
     }
 
     /**
@@ -628,6 +686,10 @@ class UserController extends FleetbaseController
             return response()->error('Unable to determine the current organisation.');
         }
 
+        if ($request->filled('user.role_uuid') && !$this->resolveAssignableRole($request->input('user.role_uuid'))) {
+            return response()->error('The selected role is not available for this organisation.', 404);
+        }
+
         // Check if user already exists in the system.
         $user = User::where('email', $email)->whereNull('deleted_at')->first();
 
@@ -656,12 +718,14 @@ class UserController extends FleetbaseController
         // Set user type
         $user->setUserType('user');
 
+        $role = $this->resolveAssignableRole($request->input('user.role_uuid'));
+
         // Assign to user
-        $user->assignCompany($company, $request->input('user.role_uuid'));
+        $user->assignCompany($company, $role ? $role->id : 'Administrator');
 
         // Assign role if set
-        if ($request->filled('user.role_uuid')) {
-            $user->assignSingleRole($request->input('user.role_uuid'));
+        if ($role) {
+            $user->assignSingleRole($role);
         }
 
         if (!Invite::isAlreadySentToJoinCompany($user, $company)) {
@@ -708,6 +772,11 @@ class UserController extends FleetbaseController
             return response()->error('This user has already been invited to join your organisation.');
         }
 
+        $roleIdentifier = $request->input('user.role_uuid') ?? $request->input('user.role');
+        if ($roleIdentifier && !$this->resolveAssignableRole($roleIdentifier)) {
+            return response()->error('The selected role is not available for this organisation.', 404);
+        }
+
         $invitation = Invite::create([
             'company_uuid'    => $company->uuid,
             'created_by_uuid' => session('user'),
@@ -716,7 +785,7 @@ class UserController extends FleetbaseController
             'protocol'        => 'email',
             'recipients'      => [$user->email],
             'reason'          => 'join_company',
-            'meta'            => array_filter(['role_uuid' => $request->input('user.role_uuid') ?? $request->input('user.role')]),
+            'meta'            => array_filter(['role_uuid' => $roleIdentifier]),
             'expires_at'      => now()->addHours(48),
         ]);
 
@@ -740,6 +809,10 @@ class UserController extends FleetbaseController
     {
         $user    = User::where('uuid', $request->input('user'))->first();
         $company = Company::where('uuid', session('company'))->first();
+
+        if (!$user || !$company || !$this->canResendInvitationForCompany($user, $company)) {
+            return response()->error('Unable to resend invitation.', 404);
+        }
 
         // create invitation
         $invitation = Invite::create([
@@ -804,7 +877,8 @@ class UserController extends FleetbaseController
             // Use Company::addUser() so that role assignment is handled in
             // one place. The role stored in the invite meta takes precedence;
             // if none was set the default 'Administrator' role is used.
-            $roleIdentifier = $invite->getMeta('role_uuid', 'Administrator');
+            $role           = $this->resolveAssignableRole($invite->getMeta('role_uuid'), $company->uuid);
+            $roleIdentifier = $role ? $role->id : 'Administrator';
             $companyUser    = $company->addUser($user, $roleIdentifier);
             $user->setRelation('companyUser', $companyUser);
         } else {
@@ -812,9 +886,9 @@ class UserController extends FleetbaseController
             // loaded so that role assignment below can still be applied if
             // the invite carries a role (e.g. re-sent invite with a new role).
             $user->loadCompanyUser();
-            $roleUuid = $invite->getMeta('role_uuid');
-            if ($user->companyUser && $roleUuid) {
-                $user->companyUser->assignSingleRole($roleUuid);
+            $role = $this->resolveAssignableRole($invite->getMeta('role_uuid'), $company->uuid);
+            if ($user->companyUser && $role) {
+                $user->companyUser->assignSingleRole($role);
             }
         }
 
@@ -850,6 +924,19 @@ class UserController extends FleetbaseController
     protected function findCompanyInvite(string $code): ?Invite
     {
         return Invite::where('code', $code)->with(['subject'])->first();
+    }
+
+    private function canResendInvitationForCompany(User $user, Company $company): bool
+    {
+        $isMember = $user->companyUsers()
+            ->where('company_uuid', $company->uuid)
+            ->exists();
+
+        if ($isMember) {
+            return true;
+        }
+
+        return Invite::isAlreadySentToJoinCompany($user, $company);
     }
 
     /**
@@ -965,7 +1052,7 @@ class UserController extends FleetbaseController
             return response()->error('No user to activate', 401);
         }
 
-        $user = User::where('uuid', $id)->first();
+        $user = $this->resolveVisibleUser($id, request());
 
         if (!$user) {
             return response()->error('No user found', 401);
@@ -993,7 +1080,7 @@ class UserController extends FleetbaseController
         }
 
         // get user to remove from company
-        $user = User::where('uuid', $id)->first();
+        $user = $this->resolveVisibleUser($id, request());
 
         if (!$user) {
             return response()->error('No user found', 401);
@@ -1010,7 +1097,7 @@ class UserController extends FleetbaseController
         $userCompanies = $user->companyUsers()->get();
 
         // only a member to one company then delete the user
-        if ($userCompanies->count() === 1) {
+        if ($userCompanies->count() === 1 && $userCompanies->first()?->company_uuid === $company->uuid) {
             $user->delete();
         } else {
             $user->companyUsers()->where('company_uuid', $company->uuid)->delete();

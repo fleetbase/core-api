@@ -5,6 +5,7 @@ namespace Fleetbase\Http\Controllers\Internal\v1;
 use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Models\Notification;
 use Fleetbase\Models\Setting;
+use Fleetbase\Models\User;
 use Fleetbase\Support\NotificationRegistry;
 use Illuminate\Http\Request;
 
@@ -34,7 +35,7 @@ class NotificationController extends FleetbaseController
         $read          = [];
 
         foreach ($notifications as $id) {
-            $notification = Notification::where('id', $id)->first();
+            $notification = $this->notificationQuery()->where('id', $id)->first();
 
             if ($notification) {
                 $read[] = $notification->markAsRead();
@@ -56,7 +57,7 @@ class NotificationController extends FleetbaseController
      */
     public function markAllAsRead()
     {
-        $notifications = Notification::where('notifiable_id', session('user'))->get();
+        $notifications = $this->notificationQuery()->get();
 
         foreach ($notifications as $notification) {
             $notification->markAsRead();
@@ -77,7 +78,7 @@ class NotificationController extends FleetbaseController
      */
     public function deleteNotification($notificationId)
     {
-        $notification = Notification::find($notificationId);
+        $notification = $this->notificationQuery()->where('id', $notificationId)->first();
 
         if ($notification) {
             $notification->deleteNotification();
@@ -100,15 +101,44 @@ class NotificationController extends FleetbaseController
         $notifications = $request->input('notifications');
 
         if (empty($notifications)) {
-            Notification::where('notifiable_id', session('user'))->delete();
+            $this->notificationQuery()->delete();
         } else {
-            Notification::whereIn('id', $notifications)->delete();
+            $this->notificationQuery()->whereIn('id', $notifications)->delete();
         }
 
         return response()->json([
             'status'  => 'ok',
             'message' => 'Selected notifications deleted successfully',
         ]);
+    }
+
+    /**
+     * Deletes a notification belonging to the authenticated user.
+     *
+     * @param string|int $id the ID of the notification to delete
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function deleteRecord($id, Request $request)
+    {
+        $notification = $this->notificationQuery()->where('id', $id)->first();
+
+        if (!$notification) {
+            return response()->json(['error' => 'Notification not found'], 404);
+        }
+
+        $notification->deleteNotification();
+
+        return response()->json(['message' => 'Notification deleted successfully'], 200);
+    }
+
+    /**
+     * Base query for notifications owned by the authenticated user.
+     */
+    protected function notificationQuery()
+    {
+        return Notification::where('notifiable_id', session('user'))
+            ->where('notifiable_type', User::class);
     }
 
     /**

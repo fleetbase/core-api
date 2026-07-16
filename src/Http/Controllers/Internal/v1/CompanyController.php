@@ -544,11 +544,21 @@ class CompanyController extends FleetbaseController
         $companyId      = $request->input('company');
         $newOwnerId     = $request->input('newOwner');
         $leave          = $request->boolean('leave');
+        $sessionCompany = session('company');
+        $currentUser    = $request->user();
+
+        if (!$currentUser || !$sessionCompany || ($companyId && $companyId !== $sessionCompany)) {
+            return response()->error('No organization found to transfer ownership for.');
+        }
 
         // Get and validate organization
-        $company = Company::where('uuid', $companyId)->first();
+        $company = Company::where('uuid', $sessionCompany)->first();
         if (!$company) {
             return response()->error('No organization found to transfer ownership for.');
+        }
+
+        if (!$company->isOwner($currentUser)) {
+            return response()->error('Only the organization owner can transfer ownership.', 403);
         }
 
         // Get and validate the new owner
@@ -557,22 +567,23 @@ class CompanyController extends FleetbaseController
             return response()->error('The new owner provided could not be found for transfer of ownership.');
         }
 
+        if ($leave && $newOwner->uuid === $currentUser->uuid) {
+            return response()->error('Select a different organization member before leaving.', 422);
+        }
+
         // Change the company owner
         $company->assignOwner($newOwner);
 
         // If the current user has opted to leave, remove them from the organization
         if ($leave) {
-            $currentUser = $request->user();
-            if ($currentUser) {
-                $currentCompanyUser = $company->getCompanyUserPivot($currentUser);
-                if ($currentCompanyUser) {
-                    $currentCompanyUser->delete();
-                }
-                // Switch organization
-                $nextOrganization = $currentUser->companies()->where('companies.uuid', '!=', $company->uuid)->first();
-                if ($nextOrganization) {
-                    $currentUser->setCompany($nextOrganization);
-                }
+            $currentCompanyUser = $company->getCompanyUserPivot($currentUser);
+            if ($currentCompanyUser) {
+                $currentCompanyUser->delete();
+            }
+            // Switch organization
+            $nextOrganization = $currentUser->companies()->where('companies.uuid', '!=', $company->uuid)->first();
+            if ($nextOrganization) {
+                $currentUser->setCompany($nextOrganization);
             }
         }
 
@@ -591,18 +602,22 @@ class CompanyController extends FleetbaseController
     public function leaveOrganization(Request $request)
     {
         $companyId        = $request->input('company');
-        $currentUserId    = $request->input('user');
-        $currentUser      = Str::isUuid($currentUserId) ? User::where('uuid', $currentUserId)->first() : Auth::getUserFromSession($request);
+        $sessionCompany   = session('company');
+        $currentUser      = $request->user() ?? Auth::getUserFromSession($request);
 
         // If not current user - error
-        if (!$currentUser) {
+        if (!$currentUser || !$sessionCompany || ($companyId && $companyId !== $sessionCompany)) {
             return response()->error('Unable to leave organization.');
         }
 
         // Get and validate organization
-        $company = Company::where('uuid', $companyId)->first();
+        $company = Company::where('uuid', $sessionCompany)->first();
         if (!$company) {
             return response()->error('No organization found for user to leave.');
+        }
+
+        if ($company->isOwner($currentUser)) {
+            return response()->error('Transfer ownership before leaving the organization.', 403);
         }
 
         $currentCompanyUser = $company->getCompanyUserPivot($currentUser);
