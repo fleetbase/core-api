@@ -42,3 +42,12 @@ jobs:
 
     - name: Run Tests
       run: composer test:unit
+
+    - name: Generate Coverage Baseline
+      run: composer coverage:baseline
+
+    - name: Upload Coverage Baseline
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-baseline
+        path: coverage/clover.xml
