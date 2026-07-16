@@ -3,6 +3,7 @@
 namespace Fleetbase\Http\Resources;
 
 use Fleetbase\Http\Resources\Json\FleetbasePaginatedResourceResponse;
+use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Http\Resources\Json\ResourceCollection;
 use Illuminate\Support\Arr;
 
@@ -78,7 +79,7 @@ class FleetbaseResourceCollection extends ResourceCollection
     {
         return $this->collection->map(function ($item) use ($request) {
             // If the item is already a resource and has ->without(), use it.
-            if (is_object($item) && method_exists($item, 'toArray')) {
+            if ($item instanceof JsonResource) {
                 if (method_exists($item, 'without')) {
                     /** @var object $item */
                     $array = $item->without($this->excluded)->toArray($request);
@@ -92,7 +93,7 @@ class FleetbaseResourceCollection extends ResourceCollection
                 return $this->applyArrayExclusions($array);
             }
 
-            // If $collects is set, wrap the raw item in the resource class.
+            // If $collects is set, wrap raw models/arrays in the resource class.
             if (is_string($this->collects) && class_exists($this->collects)) {
                 $resource = new $this->collects($item);
 
@@ -104,6 +105,12 @@ class FleetbaseResourceCollection extends ResourceCollection
                 }
 
                 return $array;
+            }
+
+            if (is_object($item) && method_exists($item, 'toArray')) {
+                $array = $item->toArray();
+
+                return $this->applyArrayExclusions($array);
             }
 
             // Fallback: treat as plain array/object and filter keys.

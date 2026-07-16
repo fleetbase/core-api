@@ -34,7 +34,7 @@ class IAM
         ],
         [
             'name'    => 'user',
-            'actions' => ['deactivate', 'activate', 'verify', 'export', 'change-password-for'],
+            'actions' => ['deactivate', 'activate', 'verify', 'export', 'change-password-for', 'change-email-for'],
         ],
         [
             'name'    => 'role',

@@ -102,18 +102,19 @@ class CompanyController extends FleetbaseController
      */
     public function users(string $id, Request $request)
     {
+        $company = $this->resolveVisibleCompanyForUsers($id, $request);
+
+        if (!$company) {
+            return response()->json(['error' => 'Organization not found.'], 404);
+        }
+
         $searchQuery = $request->searchQuery();
         $limit       = $request->input(['limit', 'nestedLimit'], 20);
         $paginate    = $request->boolean('paginate');
         $exclude     = $request->array('exclude');
 
         // Start user query
-        $usersQuery = CompanyUser::whereHas('company',
-            function ($query) use ($id) {
-                $query->where('public_id', $id);
-                $query->orWhere('uuid', $id);
-            }
-        )
+        $usersQuery = CompanyUser::where('company_uuid', $company->uuid)
         ->whereHas('user')
         ->whereNotIn('user_uuid', $exclude)
         ->with(['user']);
@@ -165,6 +166,27 @@ class CompanyController extends FleetbaseController
         });
 
         return UserResource::collection($users);
+    }
+
+    private function resolveVisibleCompanyForUsers(string $id, Request $request): ?Company
+    {
+        $user = $request->user();
+
+        if ($user && $user->isAdmin()) {
+            return Company::where('uuid', $id)->orWhere('public_id', $id)->first();
+        }
+
+        $sessionCompany = session('company');
+
+        if (!$sessionCompany) {
+            return null;
+        }
+
+        return Company::where('uuid', $sessionCompany)
+            ->where(function ($query) use ($id) {
+                $query->where('uuid', $id)->orWhere('public_id', $id);
+            })
+            ->first();
     }
 
     public function extensions(string $id, AdminRequest $request): JsonResponse

@@ -12,6 +12,26 @@ use Laravel\Sanctum\PersonalAccessToken;
 
 class OrganizationController extends Controller
 {
+    public function listOrganizations(Request $request)
+    {
+        $limit = max(1, min((int) $request->input('limit', 10), 100));
+
+        $organizations = Company::query()
+            ->select(['name', 'public_id'])
+            ->whereHas('users')
+            ->limit($limit)
+            ->get()
+            ->map(function (Company $company) {
+                return [
+                    'name'      => $company->name,
+                    'public_id' => $company->public_id,
+                ];
+            })
+            ->values();
+
+        return response()->json($organizations);
+    }
+
     public function getCurrent(Request $request)
     {
         $token       = $request->bearerToken();

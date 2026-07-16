@@ -10,6 +10,8 @@ use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Http\Requests\CreateUserRequest;
 use Fleetbase\Http\Requests\ExportRequest;
 use Fleetbase\Http\Requests\Internal\AcceptCompanyInvite;
+use Fleetbase\Http\Requests\Internal\ChangeCurrentUserEmailRequest;
+use Fleetbase\Http\Requests\Internal\ChangeUserEmailRequest;
 use Fleetbase\Http\Requests\Internal\InviteUserRequest;
 use Fleetbase\Http\Requests\Internal\ResendUserInvite;
 use Fleetbase\Http\Requests\Internal\UpdatePasswordRequest;
@@ -22,7 +24,9 @@ use Fleetbase\Models\Permission;
 use Fleetbase\Models\Policy;
 use Fleetbase\Models\Setting;
 use Fleetbase\Models\User;
+use Fleetbase\Models\VerificationCode;
 use Fleetbase\Notifications\UserAcceptedCompanyInvite;
+use Fleetbase\Notifications\UserEmailChange;
 use Fleetbase\Notifications\UserInvited;
 use Fleetbase\Services\UserCacheService;
 use Fleetbase\Support\Auth;
@@ -30,6 +34,7 @@ use Fleetbase\Support\NotificationRegistry;
 use Fleetbase\Support\TwoFactorAuth;
 use Fleetbase\Support\Utils;
 use Illuminate\Http\Request;
+use Illuminate\Notifications\AnonymousNotifiable;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
@@ -196,6 +201,16 @@ class UserController extends FleetbaseController
      */
     public function updateRecord(Request $request, string $id)
     {
+        $record = $this->model->getById($id, null, $request);
+
+        if (!$record) {
+            return response()->error('User not found.', 404);
+        }
+
+        if (!$this->stripUnchangedIdentityFields($request, $record)) {
+            return response()->error('Login identity fields cannot be updated from this endpoint.', 422);
+        }
+
         // Run the UpdateUserRequest validation rules before delegating to the
         // model trait. This prevents email/phone being set to an empty string
         // and enforces uniqueness constraints on partial (PATCH) updates.
@@ -229,6 +244,170 @@ class UserController extends FleetbaseController
         } catch (FleetbaseRequestValidationException $e) {
             return response()->error($e->getErrors());
         }
+    }
+
+    private function stripUnchangedIdentityFields(Request $request, User $user): bool
+    {
+        $payload = $this->model->getApiPayloadFromRequest($request);
+
+        $identityFields = [
+            'email',
+            'email_verified_at',
+            'password',
+            'password_confirmation',
+            'remember_token',
+            'secret',
+            'type',
+            'apple_user_id',
+            'facebook_user_id',
+            'google_user_id',
+        ];
+
+        foreach ($identityFields as $field) {
+            if (!array_key_exists($field, $payload)) {
+                continue;
+            }
+
+            if (!$this->identityValueMatches($field, $payload[$field], $user->getAttribute($field))) {
+                return false;
+            }
+
+            unset($payload[$field]);
+        }
+
+        if ($request->has($this->model->getSingularName())) {
+            $request->merge([$this->model->getSingularName() => $payload]);
+        } elseif ($request->has(Str::camel($this->model->getSingularName()))) {
+            $request->merge([Str::camel($this->model->getSingularName()) => $payload]);
+        } else {
+            $request->replace($payload);
+        }
+
+        return true;
+    }
+
+    private function identityValueMatches(string $field, mixed $incoming, mixed $current): bool
+    {
+        if ($field === 'email') {
+            return strtolower((string) $incoming) === strtolower((string) $current);
+        }
+
+        if (str_ends_with($field, '_at')) {
+            if ($incoming === null && $current === null) {
+                return true;
+            }
+
+            if (!$incoming || !$current) {
+                return false;
+            }
+
+            try {
+                return Carbon::parse($incoming)->equalTo(Carbon::parse($current));
+            } catch (\Exception $e) {
+                return false;
+            }
+        }
+
+        return (string) $incoming === (string) $current;
+    }
+
+    /**
+     * Request an email change for a user in the current organisation.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    #[SkipAuthorizationCheck]
+    public function changeEmail(ChangeUserEmailRequest $request, string $id)
+    {
+        $actor = Auth::getUserFromSession($request);
+        if (!$actor) {
+            return response()->error('Not authorized to change user email.', 401);
+        }
+
+        $canChangeEmail = $actor->isAdmin() || $actor->hasRole('Administrator') || $actor->hasPermissionTo('iam change-email-for user');
+        if (!$canChangeEmail) {
+            return response()->error('Not authorized to change user email.', 401);
+        }
+
+        $targetUser = User::where('uuid', $id)
+            ->whereHas('anyCompanyUser', function ($query) {
+                $query->where('company_uuid', session('company'));
+            })
+            ->first();
+
+        if (!$targetUser) {
+            return response()->error('User not found to change email for.', 404);
+        }
+
+        $newEmail = strtolower((string) $request->input('email'));
+        $oldEmail = strtolower((string) $targetUser->email);
+
+        if ($newEmail === $oldEmail) {
+            return response()->error('The new email address must be different from the current email address.');
+        }
+
+        $this->sendEmailChangeVerification($targetUser, $actor, $newEmail, $oldEmail);
+
+        return response()->json([
+            'status' => 'pending',
+        ]);
+    }
+
+    /**
+     * Request an email change for the current user.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    #[SkipAuthorizationCheck]
+    public function changeCurrentUserEmail(ChangeCurrentUserEmailRequest $request)
+    {
+        $user = Auth::getUserFromSession($request);
+        if (!$user) {
+            return response()->error('No user session found', 401);
+        }
+
+        $newEmail = strtolower((string) $request->input('email'));
+        $oldEmail = strtolower((string) $user->email);
+
+        if ($newEmail === $oldEmail) {
+            return response()->error('The new email address must be different from the current email address.');
+        }
+
+        $this->sendEmailChangeVerification($user, $user, $newEmail, $oldEmail);
+
+        return response()->json([
+            'status' => 'pending',
+        ]);
+    }
+
+    /**
+     * Send an email change verification link to a pending new email address.
+     */
+    protected function sendEmailChangeVerification(User $targetUser, User $actor, string $newEmail, string $oldEmail): VerificationCode
+    {
+        VerificationCode::where('subject_uuid', $targetUser->uuid)
+            ->where('for', 'email_change')
+            ->where('status', 'active')
+            ->delete();
+
+        $verificationCode = VerificationCode::create([
+            'subject_uuid' => $targetUser->uuid,
+            'subject_type' => Utils::getModelClassName($targetUser),
+            'for'          => 'email_change',
+            'expires_at'   => Carbon::now()->addHour(),
+            'meta'         => [
+                'old_email'         => $oldEmail,
+                'new_email'         => $newEmail,
+                'requested_by_uuid' => $actor->uuid,
+            ],
+            'status'       => 'active',
+        ]);
+
+        (new AnonymousNotifiable())
+            ->route('mail', $newEmail)
+            ->notify(new UserEmailChange($verificationCode));
+
+        return $verificationCode;
     }
 
     /**

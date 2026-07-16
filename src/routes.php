@@ -30,6 +30,13 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
         */
         $router->prefix('v1')
             ->namespace('Api\v1')
+            ->middleware([Fleetbase\Http\Middleware\ThrottleRequests::class])
+            ->group(function ($router) {
+                $router->get('organizations', 'OrganizationController@listOrganizations');
+            });
+
+        $router->prefix('v1')
+            ->namespace('Api\v1')
             ->middleware(['fleetbase.api'])
             ->group(function ($router) {
                 $router->group(
@@ -262,6 +269,8 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     $router->patch('activate/{id}', $controller('activate'));
                                     $router->patch('verify/{id}', $controller('verify'));
                                     $router->delete('remove-from-company/{id}', $controller('removeFromCompany'));
+                                    $router->post('change-email', $controller('changeCurrentUserEmail'));
+                                    $router->post('{id}/change-email', $controller('changeEmail'));
                                     $router->post('invite-user', $controller('inviteUser'));
                                     $router->post('resend-invite', $controller('resendInvitation'));
                                     $router->post('set-password', $controller('setCurrentUserPassword'));
