@@ -1,29 +1,5 @@
 <?php
 
-namespace Illuminate\Foundation\Auth\Access {
-    trait AuthorizesRequests
-    {
-    }
-}
-
-namespace Illuminate\Foundation\Bus {
-    trait DispatchesJobs
-    {
-    }
-}
-
-namespace Illuminate\Foundation\Validation {
-    trait ValidatesRequests
-    {
-    }
-}
-
-namespace Illuminate\Foundation\Http {
-    class FormRequest extends \Illuminate\Http\Request
-    {
-    }
-}
-
 namespace Fleetbase\Tests\SecurityFixtures {
     class TemplateQueryTenantModel extends \Fleetbase\Models\Model
     {
