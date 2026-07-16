@@ -14,11 +14,15 @@ class OrganizationController extends Controller
 {
     public function listOrganizations(Request $request)
     {
-        $limit = max(1, min((int) $request->input('limit', 10), 100));
+        $limit       = max(1, min((int) $request->input('limit', 10), 100));
+        $searchQuery = trim((string) $request->input('query', ''));
 
         $organizations = Company::query()
             ->select(['name', 'public_id'])
             ->whereHas('users')
+            ->when($searchQuery !== '', function ($query) use ($searchQuery) {
+                $query->where('companies.name', 'LIKE', '%' . $searchQuery . '%');
+            })
             ->limit($limit)
             ->get()
             ->map(function (Company $company) {
