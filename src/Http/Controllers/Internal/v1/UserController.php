@@ -108,6 +108,43 @@ class UserController extends FleetbaseController
     }
 
     /**
+     * Scope generic user list requests to users joined to the current company.
+     */
+    public function onQueryRecord($query, Request $request): void
+    {
+        if ($this->canAccessUsersAcrossCompanies($request)) {
+            return;
+        }
+
+        $companyUuid = session('company');
+        if (!$companyUuid) {
+            $query->whereRaw('1 = 0');
+
+            return;
+        }
+
+        $query->whereHas('companyUsers', function ($companyUserQuery) use ($companyUuid) {
+            $companyUserQuery->where('company_uuid', $companyUuid);
+        });
+    }
+
+    /**
+     * Find a user visible to the current session company.
+     *
+     * @return \Illuminate\Http\Response|array
+     */
+    public function findRecord(Request $request, $id)
+    {
+        $record = $this->resolveVisibleUser($id, $request);
+
+        if ($record) {
+            return [$this->resourceSingularlName => new $this->resource($record)];
+        }
+
+        return response()->error('User not found', 404);
+    }
+
+    /**
      * Creates a record with request payload.
      *
      * If the supplied email address already belongs to an existing user the
@@ -201,7 +238,7 @@ class UserController extends FleetbaseController
      */
     public function updateRecord(Request $request, string $id)
     {
-        $record = $this->model->getById($id, null, $request);
+        $record = $this->resolveVisibleUser($id, $request);
 
         if (!$record) {
             return response()->error('User not found.', 404);
@@ -217,24 +254,39 @@ class UserController extends FleetbaseController
         $this->validateRequest($request);
 
         try {
-            $record = $this->model->updateRecordFromRequest($request, $id, function (&$request, &$user) {
-                // Assign role if set
-                if ($request->filled('user.role')) {
-                    $user->assignSingleRole($request->input('user.role'));
-                }
+            $input = $this->model->getApiPayloadFromRequest($request);
+            $input = $this->model->fillSessionAttributes($input, [], ['updated_by_uuid']);
 
-                // Sync Permissions
-                if ($request->isArray('user.permissions')) {
-                    $permissions = Permission::whereIn('id', $request->array('user.permissions'))->get();
-                    $user->syncPermissions($permissions);
-                }
+            if ($this->model->isColumn('slug')) {
+                unset($input['slug']);
+            }
 
-                // Sync Policies
-                if ($request->isArray('user.policies')) {
-                    $policies = Policy::whereIn('id', $request->array('user.policies'))->get();
-                    $user->syncPolicies($policies);
+            foreach (array_keys($input) as $key) {
+                if ($this->model->isInvalidUpdateParam($key)) {
+                    throw new \Exception('Invalid param "' . $key . '" in update request!');
                 }
-            });
+            }
+
+            $record->update(Arr::except($input, ['uuid', 'public_id', 'deleted_at', 'updated_at', 'created_at']));
+
+            // Assign role if set
+            if ($request->filled('user.role')) {
+                $record->assignSingleRole($request->input('user.role'));
+            }
+
+            // Sync Permissions
+            if ($request->isArray('user.permissions')) {
+                $permissions = Permission::whereIn('id', $request->array('user.permissions'))->get();
+                $record->syncPermissions($permissions);
+            }
+
+            // Sync Policies
+            if ($request->isArray('user.policies')) {
+                $policies = Policy::whereIn('id', $request->array('user.policies'))->get();
+                $record->syncPolicies($policies);
+            }
+
+            $record = $record->refresh();
 
             return ['user' => new $this->resource($record)];
         } catch (\Exception $e) {
@@ -244,6 +296,56 @@ class UserController extends FleetbaseController
         } catch (FleetbaseRequestValidationException $e) {
             return response()->error($e->getErrors());
         }
+    }
+
+    /**
+     * Disable the generic user delete endpoint for org-scoped callers.
+     *
+     * User removal from an organization must use the dedicated
+     * remove-from-company action so multi-organization users are not globally
+     * deleted by accident.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function deleteRecord($id, Request $request)
+    {
+        if (!$this->resolveVisibleUser($id, $request)) {
+            return response()->error('User not found', 404);
+        }
+
+        return response()->error('Use the remove-from-company endpoint to remove users from an organization.', 403);
+    }
+
+    private function resolveVisibleUser(string $id, Request $request): ?User
+    {
+        $query = User::where(function ($query) use ($id) {
+            $query->where('uuid', $id)
+                ->orWhere('public_id', $id);
+        });
+
+        if (!$this->canAccessUsersAcrossCompanies($request)) {
+            $companyUuid = session('company');
+            if (!$companyUuid) {
+                return null;
+            }
+
+            $query->whereHas('companyUsers', function ($companyUserQuery) use ($companyUuid) {
+                $companyUserQuery->where('company_uuid', $companyUuid);
+            });
+        }
+
+        $query = $this->model->withCounts($request, $query);
+        $query = $this->model->withRelationships($request, $query);
+        $query = $this->model->applyDirectivesToQuery($request, $query);
+
+        return $query->first();
+    }
+
+    private function canAccessUsersAcrossCompanies(Request $request): bool
+    {
+        $user = Auth::getUserFromSession($request) ?? $request->user();
+
+        return $user instanceof User && $user->isAdmin();
     }
 
     private function stripUnchangedIdentityFields(Request $request, User $user): bool
