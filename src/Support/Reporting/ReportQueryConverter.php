@@ -127,6 +127,83 @@ class ReportQueryConverter
     }
 
     /**
+     * Export the query results in the requested format.
+     */
+    public function export(string $format, array $options = []): array
+    {
+        $result = $this->execute();
+
+        if (!($result['success'] ?? false)) {
+            return $result;
+        }
+
+        $columns = array_map(
+            fn (array $column) => array_merge(['key' => $column['name']], $column),
+            $result['columns'] ?? []
+        );
+
+        return (new ReportQueryExporter(
+            $result['data'] ?? [],
+            $columns,
+            $result['meta'] ?? [],
+            $this->queryConfig['table']['name'] ?? 'report'
+        ))->export($format, $options);
+    }
+
+    /**
+     * Get supported export formats for report results.
+     */
+    public function getAvailableExportFormats(): array
+    {
+        return ReportQueryExporter::getSupportedFormats();
+    }
+
+    /**
+     * Return structural query analysis without executing the query.
+     */
+    public function getQueryAnalysis(): array
+    {
+        $joinsCount           = count($this->queryConfig['joins'] ?? []);
+        $selectedColumnsCount = count($this->queryConfig['columns'] ?? []) + count($this->queryConfig['computed_columns'] ?? []);
+        $conditionsCount      = $this->countConfiguredConditions($this->queryConfig['conditions'] ?? []);
+        $groupByCount         = count($this->queryConfig['groupBy'] ?? []);
+        $sortByCount          = count($this->queryConfig['sortBy'] ?? []);
+        $complexityScore      = $joinsCount + $groupByCount + intdiv($selectedColumnsCount, 10) + intdiv($conditionsCount, 5);
+
+        return [
+            'table_name'             => $this->queryConfig['table']['name'] ?? null,
+            'complexity'             => $complexityScore >= 3 ? 'complex' : ($complexityScore >= 1 ? 'moderate' : 'simple'),
+            'joins_count'            => $joinsCount,
+            'selected_columns_count' => $selectedColumnsCount,
+            'conditions_count'       => $conditionsCount,
+            'group_by_count'         => $groupByCount,
+            'sort_by_count'          => $sortByCount,
+            'has_limit'              => isset($this->queryConfig['limit']),
+            'limit'                  => $this->queryConfig['limit'] ?? null,
+        ];
+    }
+
+    /**
+     * Count nested query condition leaves.
+     */
+    protected function countConfiguredConditions(array $conditions): int
+    {
+        $count = 0;
+
+        foreach ($conditions as $condition) {
+            if (isset($condition['conditions']) && is_array($condition['conditions'])) {
+                $count += $this->countConfiguredConditions($condition['conditions']);
+
+                continue;
+            }
+
+            $count++;
+        }
+
+        return $count;
+    }
+
+    /**
      * Build the complete query.
      */
     protected function buildQuery(): Builder
