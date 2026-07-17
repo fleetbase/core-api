@@ -222,7 +222,7 @@ class ChatChannel extends Model
     {
         return $this->messages()->where('sender_uuid', '!=', $chatParticipant->uuid)->whereDoesntHave('receipts', function ($query) use ($chatParticipant) {
             $query->where('participant_uuid', $chatParticipant->uuid);
-        });
+        })->get();
     }
 
     /**
