@@ -307,6 +307,73 @@ test('smpp sms service validates config and delegates to client', function () {
         ->and($client->submitted['to'])->toBe('+15551234567');
 });
 
+test('smpp gateway client encodes configured submit ton and npi values', function () {
+    $sockets = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+    expect($sockets)->not->toBeFalse();
+
+    [$clientSocket, $serverSocket] = $sockets;
+    $client                       = new SmppGatewayClient([
+        'host'                => 'smpp.example.test',
+        'port'                => 2775,
+        'source_addr_ton'     => 1,
+        'source_addr_npi'     => 0,
+        'dest_addr_ton'       => 1,
+        'dest_addr_npi'       => 0,
+        'registered_delivery' => 1,
+        'data_coding'         => 0,
+    ]);
+
+    $socketProperty = new ReflectionProperty($client, 'socket');
+    $socketProperty->setAccessible(true);
+    $socketProperty->setValue($client, $clientSocket);
+
+    fwrite($serverSocket, pack('NNNN', 20, 0x80000004, 0, 1) . "1\0\0\0");
+
+    $messageId = $client->submit('SENDER', '+15551234567', 'This is a Fleetbase SMS test.');
+    $packet    = fread($serverSocket, 4096);
+    $body      = substr($packet, 16);
+
+    expect($messageId)->toBe('1')
+        ->and(unpack('Nlength/Ncommand/Nstatus/Nsequence', substr($packet, 0, 16)))->toMatchArray([
+            'length'  => strlen($packet),
+            'command' => 0x00000004,
+            'status'  => 0,
+            'sequence' => 1,
+        ])
+        ->and(ord($body[1]))->toBe(1)
+        ->and(ord($body[2]))->toBe(0)
+        ->and(substr($body, 3, 7))->toBe("SENDER\0")
+        ->and(ord($body[10]))->toBe(1)
+        ->and(ord($body[11]))->toBe(0)
+        ->and(substr($body, 12, 12))->toBe("15551234567\0");
+
+    fclose($clientSocket);
+    fclose($serverSocket);
+});
+
+test('smpp gateway client reports command-aware submit failures', function () {
+    $sockets = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+    expect($sockets)->not->toBeFalse();
+
+    [$clientSocket, $serverSocket] = $sockets;
+    $client                       = new SmppGatewayClient([
+        'host' => 'smpp.example.test',
+        'port' => 2775,
+    ]);
+
+    $socketProperty = new ReflectionProperty($client, 'socket');
+    $socketProperty->setAccessible(true);
+    $socketProperty->setValue($client, $clientSocket);
+
+    fwrite($serverSocket, pack('NNNN', 16, 0x80000004, 196, 1));
+
+    expect(fn () => $client->submit('SENDER', '+15551234567', 'Test'))
+        ->toThrow(RuntimeException::class, 'submit_sm failed with SMPP status 196 (0x000000C4) from submit_sm_resp');
+
+    fclose($clientSocket);
+    fclose($serverSocket);
+});
+
 test('sms service routes explicit provider and prefix rules to new providers', function () {
     Http::fake([
         'https://rest.messagebird.com/messages' => Http::response([
