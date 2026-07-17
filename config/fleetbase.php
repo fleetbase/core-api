@@ -55,5 +55,8 @@ return [
         'enabled' => env('USER_CACHE_ENABLED', true),
         'server_ttl' => (int) env('USER_CACHE_SERVER_TTL', 900), // 15 minutes
         'browser_ttl' => (int) env('USER_CACHE_BROWSER_TTL', 300), // 5 minutes
-    ]
+    ],
+
+    'template_query_models'        => [],
+    'template_global_query_models' => [],
 ];

@@ -36,8 +36,7 @@ class ScheduleExceptionController extends FleetbaseController
      */
     public function approve(string $id): JsonResponse
     {
-        $exception = ScheduleException::where('uuid', $id)
-            ->orWhere('public_id', $id)
+        $exception = $this->scheduleExceptionQuery($id)
             ->firstOrFail();
 
         $reviewerUuid = auth()->user()?->uuid;
@@ -57,8 +56,7 @@ class ScheduleExceptionController extends FleetbaseController
      */
     public function reject(string $id): JsonResponse
     {
-        $exception = ScheduleException::where('uuid', $id)
-            ->orWhere('public_id', $id)
+        $exception = $this->scheduleExceptionQuery($id)
             ->firstOrFail();
 
         $reviewerUuid = auth()->user()?->uuid;
@@ -89,10 +87,20 @@ class ScheduleExceptionController extends FleetbaseController
 
         $filters = $request->only(['status', 'type', 'start_at', 'end_at']);
 
-        $exceptions = $this->scheduleService->getExceptionsForSubject($subjectType, $subjectUuid, $filters);
+        $exceptions = $this->scheduleService->getExceptionsForSubject($subjectType, $subjectUuid, $filters)
+            ->where('company_uuid', session('company'))
+            ->values();
 
         return response()->json([
             'schedule_exceptions' => \Fleetbase\Http\Resources\ScheduleException::collection($exceptions),
         ]);
+    }
+
+    protected function scheduleExceptionQuery(string $id)
+    {
+        return ScheduleException::where('company_uuid', session('company'))
+            ->where(function ($query) use ($id) {
+                $query->where('uuid', $id)->orWhere('public_id', $id);
+            });
     }
 }

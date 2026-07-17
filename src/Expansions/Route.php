@@ -128,6 +128,7 @@ class Route implements Expansion
                     $router->post('logout', [$authControllerClass, 'logout']);
                     $router->post('get-magic-reset-link', [$authControllerClass, 'createPasswordReset']);
                     $router->post('reset-password', [$authControllerClass, 'resetPassword']);
+                    $router->post('confirm-email-change', [$authControllerClass, 'confirmEmailChange']);
                     $router->post('create-verification-session', [$authControllerClass, 'createVerificationSession']);
                     $router->post('validate-verification-session', [$authControllerClass, 'validateVerificationSession']);
                     $router->post('send-verification-email', [$authControllerClass, 'sendVerificationEmail']);

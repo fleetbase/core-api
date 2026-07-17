@@ -8,6 +8,7 @@ use Fleetbase\Models\File;
 use Fleetbase\Models\Setting;
 use Fleetbase\Notifications\TestPushNotification;
 use Fleetbase\Services\SmsService;
+use Fleetbase\Support\PlatformApi;
 use Fleetbase\Support\Utils;
 use Illuminate\Http\Request;
 use Illuminate\Notifications\AnonymousNotifiable;
@@ -34,6 +35,42 @@ class SettingController extends Controller
         $metrics['total_transactions']  = \Fleetbase\Models\Transaction::all()->count();
 
         return response()->json($metrics);
+    }
+
+    /**
+     * Get platform API token status.
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getPlatformApiToken(AdminRequest $request)
+    {
+        return response()->json(PlatformApi::status());
+    }
+
+    /**
+     * Rotate the platform API token.
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function rotatePlatformApiToken(AdminRequest $request)
+    {
+        $token = PlatformApi::rotateToken();
+
+        return response()->json(array_merge(PlatformApi::status(), [
+            'token' => $token,
+        ]));
+    }
+
+    /**
+     * Revoke the platform API token.
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function revokePlatformApiToken(AdminRequest $request)
+    {
+        PlatformApi::revokeToken();
+
+        return response()->json(PlatformApi::status());
     }
 
     /**

@@ -197,7 +197,7 @@ class ReportController extends FleetbaseController
     public function execute(Request $request, string $id): JsonResponse
     {
         try {
-            $report = Report::where('uuid', $id)->firstOrFail();
+            $report = $this->reportQuery($id)->firstOrFail();
 
             // Validate query configuration before execution
             $validationResult = $this->queryValidator->validate($report->query_config);
@@ -315,7 +315,7 @@ class ReportController extends FleetbaseController
     public function export(Request $request, string $id): JsonResponse
     {
         try {
-            $report  = Report::where('uuid', $id)->firstOrFail();
+            $report  = $this->reportQuery($id)->firstOrFail();
             $format  = $request->input('format', 'csv');
             $options = $request->input('options', []);
 
@@ -672,5 +672,11 @@ class ReportController extends FleetbaseController
                 500
             );
         }
+    }
+
+    protected function reportQuery(string $id)
+    {
+        return Report::where('uuid', $id)
+            ->where('company_uuid', session('company'));
     }
 }

@@ -11,6 +11,7 @@ use Fleetbase\Traits\HasMetaAttributes;
 use Fleetbase\Traits\HasSubject;
 use Fleetbase\Traits\HasUuid;
 use Fleetbase\Twilio\Support\Laravel\Facade as Twilio;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Mail;
 
@@ -122,6 +123,7 @@ class VerificationCode extends Model
         $verificationCode             = static::generateFor($subject, $for, false);
         $verificationCode->expires_at = $expireAfter === null ? Carbon::now()->addHour() : $expireAfter;
         $verificationCode->meta       = data_get($options, 'meta', []);
+        $verificationCode->status     = data_get($options, 'status', 'active');
         $verificationCode->save();
 
         if (isset($subject->email)) {
@@ -141,8 +143,8 @@ class VerificationCode extends Model
             $mail = new VerificationMail($verificationCode, $content);
 
             // Apply any additional Mail facade parameters
-            $mailer = Mail::to($subject);
-            foreach ($options as $key => $value) {
+            $mailer = Mail::to(data_get($options, 'to', $subject));
+            foreach (Arr::except($options, ['content', 'expireAfter', 'messageCallback', 'meta', 'status', 'subject', 'to']) as $key => $value) {
                 if (method_exists($mailer, $key)) {
                     $mailer->$key($value);
                 }

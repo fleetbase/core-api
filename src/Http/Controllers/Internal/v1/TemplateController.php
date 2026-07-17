@@ -7,9 +7,11 @@ use Fleetbase\Http\Requests\Internal\CreateTemplateRequest;
 use Fleetbase\Models\Template;
 use Fleetbase\Models\TemplateQuery;
 use Fleetbase\Services\TemplateRenderService;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class TemplateController extends FleetbaseController
@@ -106,13 +108,14 @@ class TemplateController extends FleetbaseController
         $queryModels = collect($rawQueries)->map(function ($q) {
             $tq = new TemplateQuery();
             $tq->fill([
-                'label'         => data_get($q, 'label'),
-                'variable_name' => data_get($q, 'variable_name'),
-                'model_type'    => data_get($q, 'model_type'),
-                'conditions'    => data_get($q, 'conditions', []),
-                'sort'          => data_get($q, 'sort', []),
-                'limit'         => data_get($q, 'limit'),
-                'with'          => data_get($q, 'with', []),
+                'company_uuid'   => session('company'),
+                'label'          => data_get($q, 'label'),
+                'variable_name'  => data_get($q, 'variable_name'),
+                'model_type'     => data_get($q, 'model_type'),
+                'conditions'     => data_get($q, 'conditions', []),
+                'sort'           => data_get($q, 'sort', []),
+                'limit'          => data_get($q, 'limit'),
+                'with'           => data_get($q, 'with', []),
             ]);
 
             return $tq;
@@ -126,11 +129,7 @@ class TemplateController extends FleetbaseController
         $subjectId   = $request->input('subject_id');
         $subject     = null;
 
-        if ($subjectType && $subjectId && class_exists($subjectType)) {
-            $subject = $subjectType::where('uuid', $subjectId)
-                ->orWhere('public_id', $subjectId)
-                ->first();
-        }
+        $subject = $this->resolveTemplateSubject($subjectType, $subjectId);
 
         $html = $this->renderService->renderToHtml($template, $subject);
 
@@ -148,19 +147,14 @@ class TemplateController extends FleetbaseController
      */
     public function preview(string $id, Request $request): JsonResponse
     {
-        $template = Template::where('uuid', $id)
-            ->orWhere('public_id', $id)
+        $template = $this->templateQuery($id)
             ->firstOrFail();
 
         $subjectType = $request->input('subject_type');
         $subjectId   = $request->input('subject_id');
         $subject     = null;
 
-        if ($subjectType && $subjectId && class_exists($subjectType)) {
-            $subject = $subjectType::where('uuid', $subjectId)
-                ->orWhere('public_id', $subjectId)
-                ->first();
-        }
+        $subject = $this->resolveTemplateSubject($subjectType, $subjectId);
 
         $html = $this->renderService->renderToHtml($template, $subject);
 
@@ -179,8 +173,7 @@ class TemplateController extends FleetbaseController
      */
     public function render(string $id, Request $request): Response
     {
-        $template = Template::where('uuid', $id)
-            ->orWhere('public_id', $id)
+        $template = $this->templateQuery($id)
             ->firstOrFail();
 
         $subjectType = $request->input('subject_type');
@@ -188,11 +181,7 @@ class TemplateController extends FleetbaseController
         $filename    = $request->input('filename', $template->name);
         $subject     = null;
 
-        if ($subjectType && $subjectId && class_exists($subjectType)) {
-            $subject = $subjectType::where('uuid', $subjectId)
-                ->orWhere('public_id', $subjectId)
-                ->first();
-        }
+        $subject = $this->resolveTemplateSubject($subjectType, $subjectId);
 
         $pdf = $this->renderService->renderToPdf($template, $subject);
 
@@ -210,6 +199,51 @@ class TemplateController extends FleetbaseController
         $schemas = $this->renderService->getContextSchemas();
 
         return response()->json(['schemas' => $schemas]);
+    }
+
+    protected function templateQuery(string $id)
+    {
+        return Template::where('company_uuid', session('company'))
+            ->where(function ($query) use ($id) {
+                $query->where('uuid', $id)->orWhere('public_id', $id);
+            });
+    }
+
+    protected function resolveTemplateSubject(?string $subjectType, ?string $subjectId): ?Model
+    {
+        if (!$subjectType || !$subjectId || !$this->isAllowedSubjectModel($subjectType)) {
+            return null;
+        }
+
+        /** @var Model $instance */
+        $instance = new $subjectType();
+        $query    = $subjectType::where(function ($query) use ($subjectId) {
+            $query->where('uuid', $subjectId)->orWhere('public_id', $subjectId);
+        });
+
+        if ($this->modelHasCompanyColumn($instance)) {
+            $query->where($instance->qualifyColumn('company_uuid'), session('company'));
+        }
+
+        return $query->first();
+    }
+
+    protected function isAllowedSubjectModel(string $subjectType): bool
+    {
+        $models = collect($this->renderService->getContextSchemas())
+            ->pluck('model')
+            ->filter()
+            ->values()
+            ->all();
+
+        return in_array($subjectType, $models, true) && is_subclass_of($subjectType, Model::class);
+    }
+
+    protected function modelHasCompanyColumn(Model $model): bool
+    {
+        $connection = $model->getConnectionName() ?: config('database.default');
+
+        return Schema::connection($connection)->hasColumn($model->getTable(), 'company_uuid');
     }
 
     // -------------------------------------------------------------------------

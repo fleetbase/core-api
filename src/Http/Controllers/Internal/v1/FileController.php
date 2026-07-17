@@ -328,8 +328,10 @@ class FileController extends FleetbaseController
             abort(400, 'Missing file identifier.');
         }
 
-        $disk     = $request->input('disk', config('filesystems.default'));
-        $file     = File::where('uuid', $fileId)->firstOrFail();
+        $file     = File::where('uuid', $fileId)
+            ->where('company_uuid', session('company'))
+            ->firstOrFail();
+        $disk     = $file->disk ?: config('filesystems.default');
         $filename = $file->original_filename ?: basename($file->path);
 
         /** @var \Illuminate\Filesystem\FilesystemAdapter $filesystem */

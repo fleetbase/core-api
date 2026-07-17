@@ -13,6 +13,7 @@ use Fleetbase\Http\Requests\JoinOrganizationRequest;
 use Fleetbase\Http\Requests\LoginRequest;
 use Fleetbase\Http\Requests\SignUpRequest;
 use Fleetbase\Http\Requests\SwitchOrganizationRequest;
+use Fleetbase\Http\Resources\AuthOrganization;
 use Fleetbase\Http\Resources\Organization;
 use Fleetbase\Mail\UserCredentialsMail;
 use Fleetbase\Models\Company;
@@ -368,28 +369,27 @@ class AuthController extends Controller
      */
     public function createVerificationSession(Request $request)
     {
-        $send                     = $request->boolean('send');
-        $email                    = $request->input('email');
-        $token                    = Str::random(40);
-        $verificationSessionToken = base64_encode($email . '|' . $token);
+        $send  = $request->boolean('send');
+        $email = strtolower((string) $request->input('email'));
+        $token = Str::random(40);
+        $user  = User::where('email', $email)->first();
+
+        if (!$user) {
+            return response()->error('No user found with provided email address.');
+        }
 
         // If opted to send verification token along with session
         if ($send) {
-            // Get user
-            $user = User::where('email', $email)->first();
-
-            if ($user) {
-                // create verification code
-                VerificationCode::generateEmailVerificationFor($user);
-            } else {
-                Redis::del($token);
-
-                return response()->error('No user found with provided email address.');
-            }
+            VerificationCode::generateEmailVerificationFor($user, 'email_verification', [
+                'meta' => ['email' => $email],
+            ]);
         }
 
         // Store in redis
-        Redis::set($token, $verificationSessionToken, 'EX', now()->addMinutes(10)->timestamp);
+        Redis::set($token, json_encode([
+            'email'     => $email,
+            'user_uuid' => $user->uuid,
+        ]), 'EX', 600);
 
         return response()->json([
             'token'   => $token,
@@ -406,14 +406,8 @@ class AuthController extends Controller
      */
     public function validateVerificationSession(Request $request)
     {
-        $email                    = $request->input('email');
-        $token                    = $request->input('token');
-        $verificationSessionToken = base64_encode($email . '|' . $token);
-        $sessionToken             = Redis::get($token);
-        $isValid                  = $sessionToken === $verificationSessionToken;
-
         return response()->json([
-            'valid' => $isValid,
+            'valid' => $this->getVerificationSession($request) !== null,
         ]);
     }
 
@@ -426,26 +420,16 @@ class AuthController extends Controller
      */
     public function sendVerificationEmail(Request $request)
     {
-        $email                    = $request->input('email');
-        $token                    = $request->input('token');
-        $verificationSessionToken = base64_encode($email . '|' . $token);
-        $sessionToken             = Redis::get($token);
-        $isValid                  = $sessionToken === $verificationSessionToken;
+        $verificationSession = $this->getVerificationSession($request);
 
         // Check in session
-        if (!$isValid) {
+        if (!$verificationSession) {
             return response()->error('Invalid verification session.');
         }
 
-        // Get user
-        $user = User::where('email', $email)->first();
-
-        if ($user) {
-            // create verification code
-            VerificationCode::generateEmailVerificationFor($user);
-        } else {
-            return response()->error('No user found with provided email address.');
-        }
+        VerificationCode::generateEmailVerificationFor($verificationSession['user'], 'email_verification', [
+            'meta' => ['email' => $verificationSession['email']],
+        ]);
 
         return response()->json([
             'status' => 'success',
@@ -461,36 +445,41 @@ class AuthController extends Controller
      */
     public function verifyEmail(Request $request)
     {
-        $authenticate             = $request->boolean('authenticate');
-        $token                    = $request->input('token');
-        $email                    = $request->input('email');
-        $code                     = $request->input('code');
-        $verificationSessionToken = base64_encode($email . '|' . $token);
-        $sessionToken             = Redis::get($token);
-        $isValid                  = $sessionToken === $verificationSessionToken;
+        $authenticate        = $request->boolean('authenticate');
+        $code                = $request->input('code');
+        $verificationSession = $this->getVerificationSession($request);
 
         // Check in session
-        if (!$isValid) {
+        if (!$verificationSession) {
             return response()->error('Invalid verification session.');
         }
 
-        // Check user
-        $user = User::where('email', $email)->first();
-        if (!$user) {
-            return response()->error('No user found with provided email.');
-        }
+        $user = $verificationSession['user'];
 
         // If user is already verified
         if ($user->isVerified()) {
             return response()->error('User is already verified.');
         }
 
+        $verificationCode = VerificationCode::where('subject_uuid', $user->uuid)
+            ->where('for', 'email_verification')
+            ->where('status', 'active')
+            ->where('code', $code)
+            ->first();
+
+        if (!$verificationCode) {
+            return response()->error('Invalid verification code.');
+        }
+
         // Verify the user using the verification code
         try {
-            $user->verify($code);
+            $user->verify($verificationCode);
         } catch (InvalidVerificationCodeException $e) {
             return response()->error('Invalid verification code.');
         }
+
+        $verificationCode->delete();
+        Redis::del($request->input('token'));
 
         // Activate user
         $user->activate();
@@ -575,7 +564,26 @@ class AuthController extends Controller
      */
     public function createPasswordReset(UserForgotPasswordRequest $request)
     {
-        $user = User::where('email', $request->input('email'))->first();
+        $email    = strtolower(trim((string) $request->input('email')));
+        $response = ['status' => 'ok'];
+        $user     = User::where('email', $email)->whereNull('deleted_at')->first();
+
+        if (!$user) {
+            return response()->json($response);
+        }
+
+        $dedupeTtlSeconds = 300;
+        $emailKey         = 'password-reset:email:' . sha1($email);
+        $ipKey            = 'password-reset:ip:' . sha1((string) $request->ip());
+
+        if (!Cache::add($emailKey, true, $dedupeTtlSeconds) || !Cache::add($ipKey, true, $dedupeTtlSeconds)) {
+            return response()->json($response);
+        }
+
+        VerificationCode::where('subject_uuid', $user->uuid)
+            ->where('for', 'password_reset')
+            ->where('status', 'active')
+            ->delete();
 
         // create verification code
         $verificationCode = VerificationCode::create([
@@ -583,13 +591,14 @@ class AuthController extends Controller
             'subject_type' => Utils::getModelClassName($user),
             'for'          => 'password_reset',
             'expires_at'   => Carbon::now()->addMinutes(15),
+            'meta'         => ['email' => $email],
             'status'       => 'active',
         ]);
 
         // notify user of password reset
         $user->notify(new UserForgotPassword($verificationCode));
 
-        return response()->json(['status' => 'ok']);
+        return response()->json($response);
     }
 
     /**
@@ -599,16 +608,16 @@ class AuthController extends Controller
      */
     public function resetPassword(ResetPasswordRequest $request)
     {
-        $verificationCode = VerificationCode::where('code', $request->input('code'))->with(['subject'])->first();
-        $link             = $request->input('link');
-        $password         = $request->input('password');
-        // If link isn't valid
-        if ($verificationCode->uuid !== $link) {
-            return response()->error('Invalid password reset request!');
-        }
+        $verificationCode = VerificationCode::where('uuid', $request->input('link'))
+            ->where('code', $request->input('code'))
+            ->where('for', 'password_reset')
+            ->where('status', 'active')
+            ->with(['subject'])
+            ->first();
+        $password = $request->input('password');
 
         // if no subject error
-        if (!isset($verificationCode->subject)) {
+        if (!$verificationCode || !($verificationCode->subject instanceof User)) {
             return response()->error('Invalid password reset request!');
         }
 
@@ -622,6 +631,96 @@ class AuthController extends Controller
     }
 
     /**
+     * Confirm a pending user email change.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function confirmEmailChange(Request $request)
+    {
+        $verificationCode = VerificationCode::where('uuid', $request->input('link'))
+            ->where('code', $request->input('code'))
+            ->where('for', 'email_change')
+            ->where('status', 'active')
+            ->with(['subject'])
+            ->first();
+
+        if (!$verificationCode || !($verificationCode->subject instanceof User)) {
+            return response()->error('Invalid email change request!');
+        }
+
+        $user     = $verificationCode->subject;
+        $oldEmail = strtolower((string) data_get($verificationCode->meta, 'old_email'));
+        $newEmail = strtolower((string) data_get($verificationCode->meta, 'new_email'));
+
+        if (!$oldEmail || !$newEmail) {
+            return response()->error('Invalid email change request!');
+        }
+
+        if (strtolower((string) $user->email) !== $oldEmail) {
+            return response()->error('This email change request is no longer valid.');
+        }
+
+        $emailAlreadyExists = User::where('email', $newEmail)
+            ->where('uuid', '!=', $user->uuid)
+            ->whereNull('deleted_at')
+            ->exists();
+
+        if ($emailAlreadyExists) {
+            return response()->error('An account with this email address already exists.');
+        }
+
+        $user->email             = $newEmail;
+        $user->email_verified_at = Carbon::now();
+        $user->save();
+
+        VerificationCode::where('subject_uuid', $user->uuid)
+            ->whereIn('for', ['password_reset', 'email_verification', 'email_change'])
+            ->where('status', 'active')
+            ->delete();
+
+        return response()->json([
+            'status'      => 'ok',
+            'verified_at' => $user->email_verified_at,
+        ]);
+    }
+
+    private function getVerificationSession(Request $request): ?array
+    {
+        $email        = strtolower((string) $request->input('email'));
+        $token        = (string) $request->input('token');
+        $sessionToken = $token ? Redis::get($token) : null;
+
+        if (!$email || !$sessionToken) {
+            return null;
+        }
+
+        $payload = json_decode($sessionToken, true);
+
+        if (!is_array($payload)) {
+            return null;
+        }
+
+        $sessionEmail = strtolower((string) data_get($payload, 'email'));
+        $userUuid     = data_get($payload, 'user_uuid');
+
+        if (!$sessionEmail || !$userUuid || !hash_equals($sessionEmail, $email)) {
+            return null;
+        }
+
+        $user = User::where('uuid', $userUuid)->first();
+
+        if (!$user || strtolower((string) $user->email) !== $sessionEmail) {
+            return null;
+        }
+
+        return [
+            'email' => $sessionEmail,
+            'token' => $token,
+            'user'  => $user,
+        ];
+    }
+
+    /**
      * Simple check if verificationc code is still valid.
      *
      * @return \Illuminate\Http\Response
@@ -629,7 +728,14 @@ class AuthController extends Controller
     public function validateVerificationCode(Request $request)
     {
         $id    = $request->input('id');
-        $valid = VerificationCode::where('uuid', $id)->exists();
+        $for   = $request->input('for');
+        $query = VerificationCode::where('uuid', $id);
+
+        if ($for) {
+            $query->where('for', $for)->where('status', 'active');
+        }
+
+        $valid = $query->exists();
 
         return response()->json(['is_valid' => $valid, 'id' => $id]);
     }
@@ -643,30 +749,41 @@ class AuthController extends Controller
     public function getUserOrganizations(Request $request)
     {
         $user     = $request->user();
-        $cacheKey = "user_organizations_{$user->uuid}";
+        $cacheKey = "user_organizations_v2_{$user->uuid}";
 
         // Cache for 30 minutes
         $companies = Cache::remember($cacheKey, 60 * 30, function () use ($user) {
             return Company::select([
+                'companies.id',
                 'companies.uuid',
+                'companies.public_id',
                 'companies.name',
+                'companies.description',
                 'companies.phone',
+                'companies.logo_uuid',
+                'companies.backdrop_uuid',
                 'companies.options',
                 'companies.currency',
+                'companies.country',
                 'companies.timezone',
+                'companies.plan',
+                'companies.trial_ends_at',
                 'companies.status',
                 'companies.type',
+                'companies.slug',
                 'companies.owner_uuid',
+                'companies.onboarding_completed_at',
                 'companies.created_at',
                 'companies.updated_at',
+                'company_users.created_at as joined_at',
             ])
+                ->withCount('users as users_count')
                 ->join('company_users', 'companies.uuid', '=', 'company_users.company_uuid')
                 ->where('company_users.user_uuid', $user->uuid)
                 ->whereNull('company_users.deleted_at')
                 ->whereNotNull('companies.owner_uuid')
                 ->with([
                     'owner:uuid,company_uuid,name,email,updated_at',
-                    'owner.companyUser:uuid,user_uuid,company_uuid,updated_at',
                 ])
                 ->distinct()
                 ->get();
@@ -688,7 +805,7 @@ class AuthController extends Controller
         $etagPayload .= '|count:' . $companies->count();
         $etag = sha1($etagPayload);
 
-        return Organization::collection($companies)
+        return AuthOrganization::collection($companies)
             ->response()
             ->setEtag($etag)
             ->header('Cache-Control', 'private, no-cache, must-revalidate');
@@ -702,6 +819,7 @@ class AuthController extends Controller
     public static function clearUserOrganizationsCache(string $userUuid)
     {
         Cache::forget("user_organizations_{$userUuid}");
+        Cache::forget("user_organizations_v2_{$userUuid}");
     }
 
     /**

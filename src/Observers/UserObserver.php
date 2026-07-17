@@ -63,7 +63,7 @@ class UserObserver
      */
     private function invalidateOrganizationsCache(User $user): void
     {
-        $cacheKey = "user_organizations_{$user->uuid}";
-        Cache::forget($cacheKey);
+        Cache::forget("user_organizations_{$user->uuid}");
+        Cache::forget("user_organizations_v2_{$user->uuid}");
     }
 }

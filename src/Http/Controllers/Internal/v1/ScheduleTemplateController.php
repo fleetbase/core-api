@@ -44,12 +44,10 @@ class ScheduleTemplateController extends FleetbaseController
             'schedule_uuid' => 'required|string',
         ]);
 
-        $template = ScheduleTemplate::where('uuid', $id)
-            ->orWhere('public_id', $id)
+        $template = $this->scheduleTemplateQuery($id)
             ->firstOrFail();
 
-        $schedule = Schedule::where('uuid', $request->input('schedule_uuid'))
-            ->orWhere('public_id', $request->input('schedule_uuid'))
+        $schedule = $this->scheduleQuery($request->input('schedule_uuid'))
             ->firstOrFail();
 
         // applyTemplateToSchedule now returns ['template' => $applied, 'items_created' => $count]
@@ -70,8 +68,7 @@ class ScheduleTemplateController extends FleetbaseController
      */
     public function materialize(string $id): JsonResponse
     {
-        $template = ScheduleTemplate::where('uuid', $id)
-            ->orWhere('public_id', $id)
+        $template = $this->scheduleTemplateQuery($id)
             ->whereNotNull('schedule_uuid')
             ->firstOrFail();
 
@@ -87,5 +84,21 @@ class ScheduleTemplateController extends FleetbaseController
             'status'        => 'ok',
             'items_created' => $created,
         ]);
+    }
+
+    protected function scheduleTemplateQuery(string $id)
+    {
+        return ScheduleTemplate::where('company_uuid', session('company'))
+            ->where(function ($query) use ($id) {
+                $query->where('uuid', $id)->orWhere('public_id', $id);
+            });
+    }
+
+    protected function scheduleQuery(string $id)
+    {
+        return Schedule::where('company_uuid', session('company'))
+            ->where(function ($query) use ($id) {
+                $query->where('uuid', $id)->orWhere('public_id', $id);
+            });
     }
 }

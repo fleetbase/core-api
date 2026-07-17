@@ -10,6 +10,8 @@ use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Http\Requests\CreateUserRequest;
 use Fleetbase\Http\Requests\ExportRequest;
 use Fleetbase\Http\Requests\Internal\AcceptCompanyInvite;
+use Fleetbase\Http\Requests\Internal\ChangeCurrentUserEmailRequest;
+use Fleetbase\Http\Requests\Internal\ChangeUserEmailRequest;
 use Fleetbase\Http\Requests\Internal\InviteUserRequest;
 use Fleetbase\Http\Requests\Internal\ResendUserInvite;
 use Fleetbase\Http\Requests\Internal\UpdatePasswordRequest;
@@ -20,16 +22,21 @@ use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\Invite;
 use Fleetbase\Models\Permission;
 use Fleetbase\Models\Policy;
+use Fleetbase\Models\Role;
 use Fleetbase\Models\Setting;
 use Fleetbase\Models\User;
+use Fleetbase\Models\VerificationCode;
 use Fleetbase\Notifications\UserAcceptedCompanyInvite;
+use Fleetbase\Notifications\UserEmailChange;
 use Fleetbase\Notifications\UserInvited;
 use Fleetbase\Services\UserCacheService;
 use Fleetbase\Support\Auth;
 use Fleetbase\Support\NotificationRegistry;
 use Fleetbase\Support\TwoFactorAuth;
 use Fleetbase\Support\Utils;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Notifications\AnonymousNotifiable;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
@@ -103,6 +110,43 @@ class UserController extends FleetbaseController
     }
 
     /**
+     * Scope generic user list requests to users joined to the current company.
+     */
+    public function onQueryRecord($query, Request $request): void
+    {
+        if ($this->canAccessUsersAcrossCompanies($request)) {
+            return;
+        }
+
+        $companyUuid = session('company');
+        if (!$companyUuid) {
+            $query->whereRaw('1 = 0');
+
+            return;
+        }
+
+        $query->whereHas('companyUsers', function ($companyUserQuery) use ($companyUuid) {
+            $companyUserQuery->where('company_uuid', $companyUuid);
+        });
+    }
+
+    /**
+     * Find a user visible to the current session company.
+     *
+     * @return \Illuminate\Http\Response|array
+     */
+    public function findRecord(Request $request, $id)
+    {
+        $record = $this->resolveVisibleUser($id, $request);
+
+        if ($record) {
+            return [$this->resourceSingularlName => new $this->resource($record)];
+        }
+
+        return response()->error('User not found', 404);
+    }
+
+    /**
      * Creates a record with request payload.
      *
      * If the supplied email address already belongs to an existing user the
@@ -136,6 +180,10 @@ class UserController extends FleetbaseController
             return $this->inviteExistingUser($existingUser, $request);
         }
 
+        if ($request->filled('user.role_uuid') && !$this->resolveAssignableRole($request->input('user.role_uuid'))) {
+            return response()->error('The selected role is not available for this organisation.', 404);
+        }
+
         try {
             $record = $this->model->createRecordFromRequest($request, function (&$request, &$input) {
                 // Get user properties
@@ -158,12 +206,14 @@ class UserController extends FleetbaseController
                 // Set user type
                 $user->setUserType('user');
 
+                $role = $this->resolveAssignableRole($request->input('user.role_uuid'));
+
                 // Assign to user
-                $user->assignCompany($company, $request->input('user.role_uuid'));
+                $user->assignCompany($company, $role ? $role->id : 'Administrator');
 
                 // Assign role if set
-                if ($request->filled('user.role_uuid')) {
-                    $user->assignSingleRole($request->input('user.role_uuid'));
+                if ($role) {
+                    $user->assignSingleRole($role);
                 }
 
                 // Sync Permissions
@@ -174,7 +224,7 @@ class UserController extends FleetbaseController
 
                 // Sync Policies
                 if ($request->isArray('user.policies')) {
-                    $policies = Policy::whereIn('id', $request->array('user.policies'))->get();
+                    $policies = $this->getAssignablePolicies($request->array('user.policies'));
                     $user->syncPolicies($policies);
                 }
             });
@@ -196,30 +246,60 @@ class UserController extends FleetbaseController
      */
     public function updateRecord(Request $request, string $id)
     {
+        $record = $this->resolveVisibleUser($id, $request);
+
+        if (!$record) {
+            return response()->error('User not found.', 404);
+        }
+
+        if (!$this->stripUnchangedIdentityFields($request, $record)) {
+            return response()->error('Login identity fields cannot be updated from this endpoint.', 422);
+        }
+
         // Run the UpdateUserRequest validation rules before delegating to the
         // model trait. This prevents email/phone being set to an empty string
         // and enforces uniqueness constraints on partial (PATCH) updates.
         $this->validateRequest($request);
 
         try {
-            $record = $this->model->updateRecordFromRequest($request, $id, function (&$request, &$user) {
-                // Assign role if set
-                if ($request->filled('user.role')) {
-                    $user->assignSingleRole($request->input('user.role'));
+            $input = $this->model->getApiPayloadFromRequest($request);
+            $input = $this->model->fillSessionAttributes($input, [], ['updated_by_uuid']);
+
+            if ($this->model->isColumn('slug')) {
+                unset($input['slug']);
+            }
+
+            foreach (array_keys($input) as $key) {
+                if ($this->model->isInvalidUpdateParam($key)) {
+                    throw new \Exception('Invalid param "' . $key . '" in update request!');
+                }
+            }
+
+            $record->update(Arr::except($input, ['uuid', 'public_id', 'deleted_at', 'updated_at', 'created_at']));
+
+            // Assign role if set
+            if ($request->filled('user.role')) {
+                $role = $this->resolveAssignableRole($request->input('user.role'));
+                if (!$role) {
+                    return response()->error('The selected role is not available for this organisation.', 404);
                 }
 
-                // Sync Permissions
-                if ($request->isArray('user.permissions')) {
-                    $permissions = Permission::whereIn('id', $request->array('user.permissions'))->get();
-                    $user->syncPermissions($permissions);
-                }
+                $record->assignSingleRole($role);
+            }
 
-                // Sync Policies
-                if ($request->isArray('user.policies')) {
-                    $policies = Policy::whereIn('id', $request->array('user.policies'))->get();
-                    $user->syncPolicies($policies);
-                }
-            });
+            // Sync Permissions
+            if ($request->isArray('user.permissions')) {
+                $permissions = Permission::whereIn('id', $request->array('user.permissions'))->get();
+                $record->syncPermissions($permissions);
+            }
+
+            // Sync Policies
+            if ($request->isArray('user.policies')) {
+                $policies = $this->getAssignablePolicies($request->array('user.policies'));
+                $record->syncPolicies($policies);
+            }
+
+            $record = $record->refresh();
 
             return ['user' => new $this->resource($record)];
         } catch (\Exception $e) {
@@ -229,6 +309,265 @@ class UserController extends FleetbaseController
         } catch (FleetbaseRequestValidationException $e) {
             return response()->error($e->getErrors());
         }
+    }
+
+    /**
+     * Disable the generic user delete endpoint for org-scoped callers.
+     *
+     * User removal from an organization must use the dedicated
+     * remove-from-company action so multi-organization users are not globally
+     * deleted by accident.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function deleteRecord($id, Request $request)
+    {
+        if (!$this->resolveVisibleUser($id, $request)) {
+            return response()->error('User not found', 404);
+        }
+
+        return response()->error('Use the remove-from-company endpoint to remove users from an organization.', 403);
+    }
+
+    private function resolveVisibleUser(string $id, Request $request): ?User
+    {
+        $query = User::where(function ($query) use ($id) {
+            $query->where('uuid', $id)
+                ->orWhere('public_id', $id);
+        });
+
+        if (!$this->canAccessUsersAcrossCompanies($request)) {
+            $companyUuid = session('company');
+            if (!$companyUuid) {
+                return null;
+            }
+
+            $query->whereHas('companyUsers', function ($companyUserQuery) use ($companyUuid) {
+                $companyUserQuery->where('company_uuid', $companyUuid);
+            });
+        }
+
+        $query = $this->model->withCounts($request, $query);
+        $query = $this->model->withRelationships($request, $query);
+        $query = $this->model->applyDirectivesToQuery($request, $query);
+
+        return $query->first();
+    }
+
+    private function canAccessUsersAcrossCompanies(Request $request): bool
+    {
+        $user = Auth::getUserFromSession($request) ?? $request->user();
+
+        return $user instanceof User && $user->isAdmin();
+    }
+
+    private function stripUnchangedIdentityFields(Request $request, User $user): bool
+    {
+        $payload = $this->model->getApiPayloadFromRequest($request);
+
+        $identityFields = [
+            'email',
+            'email_verified_at',
+            'password',
+            'password_confirmation',
+            'remember_token',
+            'secret',
+            'type',
+            'apple_user_id',
+            'facebook_user_id',
+            'google_user_id',
+        ];
+
+        foreach ($identityFields as $field) {
+            if (!array_key_exists($field, $payload)) {
+                continue;
+            }
+
+            if (!$this->identityValueMatches($field, $payload[$field], $user->getAttribute($field))) {
+                return false;
+            }
+
+            unset($payload[$field]);
+        }
+
+        if ($request->has($this->model->getSingularName())) {
+            $request->merge([$this->model->getSingularName() => $payload]);
+        } elseif ($request->has(Str::camel($this->model->getSingularName()))) {
+            $request->merge([Str::camel($this->model->getSingularName()) => $payload]);
+        } else {
+            $request->replace($payload);
+        }
+
+        return true;
+    }
+
+    private function identityValueMatches(string $field, mixed $incoming, mixed $current): bool
+    {
+        if ($field === 'email') {
+            return strtolower((string) $incoming) === strtolower((string) $current);
+        }
+
+        if (str_ends_with($field, '_at')) {
+            if ($incoming === null && $current === null) {
+                return true;
+            }
+
+            if (!$incoming || !$current) {
+                return false;
+            }
+
+            try {
+                return Carbon::parse($incoming)->equalTo(Carbon::parse($current));
+            } catch (\Exception $e) {
+                return false;
+            }
+        }
+
+        return (string) $incoming === (string) $current;
+    }
+
+    /**
+     * Resolve a role assignable by the active company.
+     */
+    private function resolveAssignableRole(string|Role|null $role, ?string $companyUuid = null): ?Role
+    {
+        $companyUuid ??= session('company');
+
+        if (!$role) {
+            return null;
+        }
+
+        if ($role instanceof Role) {
+            return $this->roleBelongsToCompany($role, $companyUuid) ? $role : null;
+        }
+
+        $query = Role::where(function (Builder $query) use ($role) {
+            $query->where('id', $role)->orWhere('name', $role);
+        });
+
+        $query->where(function (Builder $query) use ($companyUuid) {
+            $query->where('company_uuid', $companyUuid)
+                ->orWhereNull('company_uuid');
+        });
+
+        return $query->first();
+    }
+
+    /**
+     * Resolve policies assignable by the active company.
+     */
+    private function getAssignablePolicies(array $ids)
+    {
+        return Policy::whereIn('id', $ids)
+            ->where(function (Builder $query) {
+                $query->where('company_uuid', session('company'))
+                    ->orWhereNull('company_uuid');
+            })
+            ->get();
+    }
+
+    private function roleBelongsToCompany(Role $role, ?string $companyUuid): bool
+    {
+        return empty($role->company_uuid) || $role->company_uuid === $companyUuid;
+    }
+
+    /**
+     * Request an email change for a user in the current organisation.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    #[SkipAuthorizationCheck]
+    public function changeEmail(ChangeUserEmailRequest $request, string $id)
+    {
+        $actor = Auth::getUserFromSession($request);
+        if (!$actor) {
+            return response()->error('Not authorized to change user email.', 401);
+        }
+
+        $canChangeEmail = $actor->isAdmin() || $actor->hasRole('Administrator') || $actor->hasPermissionTo('iam change-email-for user');
+        if (!$canChangeEmail) {
+            return response()->error('Not authorized to change user email.', 401);
+        }
+
+        $targetUser = User::where('uuid', $id)
+            ->whereHas('anyCompanyUser', function ($query) {
+                $query->where('company_uuid', session('company'));
+            })
+            ->first();
+
+        if (!$targetUser) {
+            return response()->error('User not found to change email for.', 404);
+        }
+
+        $newEmail = strtolower((string) $request->input('email'));
+        $oldEmail = strtolower((string) $targetUser->email);
+
+        if ($newEmail === $oldEmail) {
+            return response()->error('The new email address must be different from the current email address.');
+        }
+
+        $this->sendEmailChangeVerification($targetUser, $actor, $newEmail, $oldEmail);
+
+        return response()->json([
+            'status' => 'pending',
+        ]);
+    }
+
+    /**
+     * Request an email change for the current user.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    #[SkipAuthorizationCheck]
+    public function changeCurrentUserEmail(ChangeCurrentUserEmailRequest $request)
+    {
+        $user = Auth::getUserFromSession($request);
+        if (!$user) {
+            return response()->error('No user session found', 401);
+        }
+
+        $newEmail = strtolower((string) $request->input('email'));
+        $oldEmail = strtolower((string) $user->email);
+
+        if ($newEmail === $oldEmail) {
+            return response()->error('The new email address must be different from the current email address.');
+        }
+
+        $this->sendEmailChangeVerification($user, $user, $newEmail, $oldEmail);
+
+        return response()->json([
+            'status' => 'pending',
+        ]);
+    }
+
+    /**
+     * Send an email change verification link to a pending new email address.
+     */
+    protected function sendEmailChangeVerification(User $targetUser, User $actor, string $newEmail, string $oldEmail): VerificationCode
+    {
+        VerificationCode::where('subject_uuid', $targetUser->uuid)
+            ->where('for', 'email_change')
+            ->where('status', 'active')
+            ->delete();
+
+        $verificationCode = VerificationCode::create([
+            'subject_uuid' => $targetUser->uuid,
+            'subject_type' => Utils::getModelClassName($targetUser),
+            'for'          => 'email_change',
+            'expires_at'   => Carbon::now()->addHour(),
+            'meta'         => [
+                'old_email'         => $oldEmail,
+                'new_email'         => $newEmail,
+                'requested_by_uuid' => $actor->uuid,
+            ],
+            'status'       => 'active',
+        ]);
+
+        (new AnonymousNotifiable())
+            ->route('mail', $newEmail)
+            ->notify(new UserEmailChange($verificationCode));
+
+        return $verificationCode;
     }
 
     /**
@@ -347,6 +686,10 @@ class UserController extends FleetbaseController
             return response()->error('Unable to determine the current organisation.');
         }
 
+        if ($request->filled('user.role_uuid') && !$this->resolveAssignableRole($request->input('user.role_uuid'))) {
+            return response()->error('The selected role is not available for this organisation.', 404);
+        }
+
         // Check if user already exists in the system.
         $user = User::where('email', $email)->whereNull('deleted_at')->first();
 
@@ -375,12 +718,14 @@ class UserController extends FleetbaseController
         // Set user type
         $user->setUserType('user');
 
+        $role = $this->resolveAssignableRole($request->input('user.role_uuid'));
+
         // Assign to user
-        $user->assignCompany($company, $request->input('user.role_uuid'));
+        $user->assignCompany($company, $role ? $role->id : 'Administrator');
 
         // Assign role if set
-        if ($request->filled('user.role_uuid')) {
-            $user->assignSingleRole($request->input('user.role_uuid'));
+        if ($role) {
+            $user->assignSingleRole($role);
         }
 
         if (!Invite::isAlreadySentToJoinCompany($user, $company)) {
@@ -427,6 +772,11 @@ class UserController extends FleetbaseController
             return response()->error('This user has already been invited to join your organisation.');
         }
 
+        $roleIdentifier = $request->input('user.role_uuid') ?? $request->input('user.role');
+        if ($roleIdentifier && !$this->resolveAssignableRole($roleIdentifier)) {
+            return response()->error('The selected role is not available for this organisation.', 404);
+        }
+
         $invitation = Invite::create([
             'company_uuid'    => $company->uuid,
             'created_by_uuid' => session('user'),
@@ -435,7 +785,7 @@ class UserController extends FleetbaseController
             'protocol'        => 'email',
             'recipients'      => [$user->email],
             'reason'          => 'join_company',
-            'meta'            => array_filter(['role_uuid' => $request->input('user.role_uuid') ?? $request->input('user.role')]),
+            'meta'            => array_filter(['role_uuid' => $roleIdentifier]),
             'expires_at'      => now()->addHours(48),
         ]);
 
@@ -459,6 +809,10 @@ class UserController extends FleetbaseController
     {
         $user    = User::where('uuid', $request->input('user'))->first();
         $company = Company::where('uuid', session('company'))->first();
+
+        if (!$user || !$company || !$this->canResendInvitationForCompany($user, $company)) {
+            return response()->error('Unable to resend invitation.', 404);
+        }
 
         // create invitation
         $invitation = Invite::create([
@@ -523,7 +877,8 @@ class UserController extends FleetbaseController
             // Use Company::addUser() so that role assignment is handled in
             // one place. The role stored in the invite meta takes precedence;
             // if none was set the default 'Administrator' role is used.
-            $roleIdentifier = $invite->getMeta('role_uuid', 'Administrator');
+            $role           = $this->resolveAssignableRole($invite->getMeta('role_uuid'), $company->uuid);
+            $roleIdentifier = $role ? $role->id : 'Administrator';
             $companyUser    = $company->addUser($user, $roleIdentifier);
             $user->setRelation('companyUser', $companyUser);
         } else {
@@ -531,9 +886,9 @@ class UserController extends FleetbaseController
             // loaded so that role assignment below can still be applied if
             // the invite carries a role (e.g. re-sent invite with a new role).
             $user->loadCompanyUser();
-            $roleUuid = $invite->getMeta('role_uuid');
-            if ($user->companyUser && $roleUuid) {
-                $user->companyUser->assignSingleRole($roleUuid);
+            $role = $this->resolveAssignableRole($invite->getMeta('role_uuid'), $company->uuid);
+            if ($user->companyUser && $role) {
+                $user->companyUser->assignSingleRole($role);
             }
         }
 
@@ -569,6 +924,19 @@ class UserController extends FleetbaseController
     protected function findCompanyInvite(string $code): ?Invite
     {
         return Invite::where('code', $code)->with(['subject'])->first();
+    }
+
+    private function canResendInvitationForCompany(User $user, Company $company): bool
+    {
+        $isMember = $user->companyUsers()
+            ->where('company_uuid', $company->uuid)
+            ->exists();
+
+        if ($isMember) {
+            return true;
+        }
+
+        return Invite::isAlreadySentToJoinCompany($user, $company);
     }
 
     /**
@@ -684,7 +1052,7 @@ class UserController extends FleetbaseController
             return response()->error('No user to activate', 401);
         }
 
-        $user = User::where('uuid', $id)->first();
+        $user = $this->resolveVisibleUser($id, request());
 
         if (!$user) {
             return response()->error('No user found', 401);
@@ -712,7 +1080,7 @@ class UserController extends FleetbaseController
         }
 
         // get user to remove from company
-        $user = User::where('uuid', $id)->first();
+        $user = $this->resolveVisibleUser($id, request());
 
         if (!$user) {
             return response()->error('No user found', 401);
@@ -729,7 +1097,7 @@ class UserController extends FleetbaseController
         $userCompanies = $user->companyUsers()->get();
 
         // only a member to one company then delete the user
-        if ($userCompanies->count() === 1) {
+        if ($userCompanies->count() === 1 && $userCompanies->first()?->company_uuid === $company->uuid) {
             $user->delete();
         } else {
             $user->companyUsers()->where('company_uuid', $company->uuid)->delete();

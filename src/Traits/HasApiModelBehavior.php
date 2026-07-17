@@ -755,7 +755,7 @@ trait HasApiModelBehavior
      *
      * @return \Illuminate\Database\Eloquent\Model|null
      */
-    public function getById($id, ?callable $queryCallback = null, Request $request)
+    public function getById($id, ?callable $queryCallback, Request $request)
     {
         $builder = $this->where(function ($q) use ($id) {
             $publicIdColumn = $this->getQualifiedPublicId();

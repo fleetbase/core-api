@@ -990,6 +990,7 @@ class User extends Authenticatable
     {
         $verifyCode = VerificationCode::where('subject_uuid', $this->uuid)
             ->whereIn('for', $types)
+            ->where('status', 'active')
             ->where('code', $code)
             ->firstOrFail();
 

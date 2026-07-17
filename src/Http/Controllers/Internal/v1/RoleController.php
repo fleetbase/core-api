@@ -6,6 +6,7 @@ use Fleetbase\Exceptions\FleetbaseRequestValidationException;
 use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Models\Permission;
 use Fleetbase\Models\Policy;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
@@ -48,7 +49,7 @@ class RoleController extends FleetbaseController
 
                 // Sync Policies
                 if ($request->isArray('role.policies')) {
-                    $policies = Policy::whereIn('id', $request->array('role.policies'))->get();
+                    $policies = $this->getAssignablePolicies($request->array('role.policies'));
                     $role->syncPolicies($policies);
                 }
             });
@@ -80,7 +81,7 @@ class RoleController extends FleetbaseController
 
                 // Sync Policies
                 if ($request->isArray('role.policies')) {
-                    $policies = Policy::whereIn('id', $request->array('role.policies'))->get();
+                    $policies = $this->getAssignablePolicies($request->array('role.policies'));
                     $role->syncPolicies($policies);
                 }
             });
@@ -93,5 +94,18 @@ class RoleController extends FleetbaseController
         } catch (FleetbaseRequestValidationException $e) {
             return response()->error($e->getErrors());
         }
+    }
+
+    /**
+     * Resolve policies that can be assigned by the active company.
+     */
+    protected function getAssignablePolicies(array $ids)
+    {
+        return Policy::whereIn('id', $ids)
+            ->where(function (Builder $query) {
+                $query->where('company_uuid', session('company'))
+                    ->orWhereNull('company_uuid');
+            })
+            ->get();
     }
 }
