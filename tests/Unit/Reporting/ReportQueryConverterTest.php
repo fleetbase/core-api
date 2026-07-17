@@ -44,6 +44,15 @@ function report_converter_registry_fixture(): ReportSchemaRegistry
             ->relationships([$payload])
     );
 
+    $registry->registerTable(
+        Table::make('payloads')
+            ->columns([
+                Column::make('uuid'),
+                Column::make('description'),
+                Column::make('pickup_uuid'),
+            ])
+    );
+
     return $registry;
 }
 
@@ -69,7 +78,7 @@ function report_converter_database_fixture(?string $companyUuid = 'company-1'): 
     $capsule->bootEloquent();
 
     config([
-        'database.default' => 'testing',
+        'database.default'             => 'testing',
         'database.connections.testing' => $connectionConfig,
     ]);
 
@@ -124,7 +133,7 @@ function report_converter_execute(array $config, ?string $companyUuid = 'company
 
 test('report query converter executes tenant scoped nested auto join queries with computed columns', function () {
     $result = report_converter_execute([
-        'table' => ['name' => 'orders'],
+        'table'   => ['name' => 'orders'],
         'columns' => [
             ['name' => 'tracking_number', 'label' => 'Tracking Number'],
             ['name' => 'payload.description', 'label' => 'Payload'],
@@ -170,7 +179,7 @@ test('report query converter executes tenant scoped nested auto join queries wit
 
 test('report query converter builds grouped aggregate result metadata and skips unsafe group ordering', function () {
     $result = report_converter_execute([
-        'table' => ['name' => 'orders'],
+        'table'   => ['name' => 'orders'],
         'columns' => [
             ['name' => 'status', 'label' => 'Status'],
         ],
@@ -213,9 +222,100 @@ test('report query converter builds grouped aggregate result metadata and skips 
         ]);
 });
 
+test('report query converter applies validator accepted operators and manual join aliases', function () {
+    $result = report_converter_execute([
+        'table'   => ['name' => 'orders'],
+        'columns' => [
+            ['name' => 'tracking_number'],
+            ['name' => 'manual_payload.description', 'alias' => 'manual_description'],
+        ],
+        'joins' => [
+            [
+                'name'       => 'manual_payload',
+                'table'      => 'payloads',
+                'alias'      => 'manual_payload',
+                'type'       => 'left',
+                'localTable' => 'orders',
+                'localKey'   => 'payload_uuid',
+                'foreignKey' => 'uuid',
+            ],
+        ],
+        'conditions' => [
+            [
+                'field'    => ['name' => 'status'],
+                'operator' => ['value' => 'eq'],
+                'value'    => 'dispatched',
+            ],
+            [
+                'field'    => ['name' => 'tracking_number'],
+                'operator' => ['value' => 'starts_with'],
+                'value'    => 'T-00',
+            ],
+            [
+                'field'    => ['name' => 'manual_payload.description'],
+                'operator' => ['value' => 'contains'],
+                'value'    => 'tron',
+            ],
+            [
+                'boolean'    => 'or',
+                'conditions' => [
+                    [
+                        'field'    => ['name' => 'total'],
+                        'operator' => ['value' => 'gte'],
+                        'value'    => 100,
+                    ],
+                    [
+                        'field'    => ['name' => 'tracking_number'],
+                        'operator' => ['value' => 'ends_with'],
+                        'value'    => '001',
+                    ],
+                ],
+            ],
+            [
+                'field'    => ['name' => 'status'],
+                'operator' => ['value' => 'not_in'],
+                'value'    => 'cancelled, failed',
+            ],
+            [
+                'field'    => ['name' => 'payload_uuid'],
+                'operator' => ['value' => 'is_not_null'],
+                'value'    => null,
+            ],
+        ],
+        'sortBy' => [
+            [
+                'column'    => ['name' => 'manual_payload.description'],
+                'direction' => ['value' => 'asc'],
+            ],
+        ],
+        'limit' => 10,
+    ]);
+
+    expect($result['success'])->toBeTrue()
+        ->and($result['data'])->toHaveCount(1)
+        ->and($result['data'][0]->tracking_number)->toBe('T-001')
+        ->and($result['data'][0]->manual_description)->toBe('Electronics')
+        ->and($result['meta']['manual_joins_used'])->toBe([
+            [
+                'table'       => 'payloads',
+                'alias'       => 'manual_payload',
+                'type'        => 'left',
+                'local_key'   => 'payload_uuid',
+                'foreign_key' => 'uuid',
+            ],
+        ])
+        ->and($result['meta']['query_sql'])->toContain('"manual_payload"."description" LIKE ?')
+        ->and($result['meta']['query_sql'])->toContain('"orders"."payload_uuid" is not null')
+        ->and($result['meta']['query_bindings'])->toContain('company-1')
+        ->and($result['meta']['query_bindings'])->toContain('dispatched')
+        ->and($result['meta']['query_bindings'])->toContain('T-00%')
+        ->and($result['meta']['query_bindings'])->toContain('%tron%')
+        ->and($result['meta']['query_bindings'])->toContain(100);
+});
+
 test('report query converter returns structured failures for missing tenant scope and invalid configs', function () {
     $missingCompany = report_converter_execute([
-        'table' => ['name' => 'orders'],
+        'table'   => ['name' => 'orders'],
         'columns' => [
             ['name' => 'tracking_number'],
         ],
@@ -226,8 +326,8 @@ test('report query converter returns structured failures for missing tenant scop
         ->and($missingCompany['meta'])->toHaveKey('execution_time_ms');
 
     $invalidComputedColumn = report_converter_execute([
-        'table' => ['name' => 'orders'],
-        'columns' => [],
+        'table'            => ['name' => 'orders'],
+        'columns'          => [],
         'computed_columns' => [
             ['name' => 'dangerous', 'expression' => 'DROP(status)'],
         ],

@@ -701,37 +701,67 @@ class ReportQueryConverter
 
         // Apply the condition based on operator
         switch ($operator) {
+            case 'eq':
             case '=':
+                $query->where($field, '=', $value, $boolean);
+                break;
+            case 'neq':
             case '!=':
+                $query->where($field, '!=', $value, $boolean);
+                break;
+            case 'gt':
             case '>':
+                $query->where($field, '>', $value, $boolean);
+                break;
+            case 'gte':
             case '>=':
+                $query->where($field, '>=', $value, $boolean);
+                break;
+            case 'lt':
             case '<':
+                $query->where($field, '<', $value, $boolean);
+                break;
+            case 'lte':
             case '<=':
-                $query->where($field, $operator, $value, $boolean);
+                $query->where($field, '<=', $value, $boolean);
                 break;
             case 'like':
+            case 'contains':
                 $query->where($field, 'LIKE', "%{$value}%", $boolean);
                 break;
             case 'not_like':
                 $query->where($field, 'NOT LIKE', "%{$value}%", $boolean);
                 break;
+            case 'starts_with':
+                $query->where($field, 'LIKE', "{$value}%", $boolean);
+                break;
+            case 'ends_with':
+                $query->where($field, 'LIKE', "%{$value}", $boolean);
+                break;
             case 'in':
-                $values = is_array($value) ? $value : explode(',', $value);
+                $values = is_array($value) ? $value : array_map('trim', explode(',', $value));
                 $query->whereIn($field, $values, $boolean);
                 break;
             case 'not_in':
-                $values = is_array($value) ? $value : explode(',', $value);
+                $values = is_array($value) ? $value : array_map('trim', explode(',', $value));
                 $query->whereNotIn($field, $values, $boolean);
                 break;
+            case 'is_null':
             case 'null':
                 $query->whereNull($field, $boolean);
                 break;
+            case 'is_not_null':
             case 'not_null':
                 $query->whereNotNull($field, $boolean);
                 break;
             case 'between':
                 if (is_array($value) && count($value) === 2) {
                     $query->whereBetween($field, $value, $boolean);
+                }
+                break;
+            case 'not_between':
+                if (is_array($value) && count($value) === 2) {
+                    $query->whereNotBetween($field, $value, $boolean);
                 }
                 break;
         }
@@ -1137,7 +1167,7 @@ class ReportQueryConverter
 
         // Validate columns
         foreach ($this->queryConfig['columns'] as $column) {
-            if (!$this->registry->isColumnAllowed($tableName, $column['name'])) {
+            if (!$this->isConfiguredColumnAllowed($tableName, $column['name'])) {
                 throw new \InvalidArgumentException("Column '{$column['name']}' is not allowed for table '{$tableName}'");
             }
         }
@@ -1175,6 +1205,34 @@ class ReportQueryConverter
         //     ));
         //     // (Optional) log/warn that some columns were dropped
         // }
+    }
+
+    protected function isConfiguredColumnAllowed(string $tableName, string $columnName): bool
+    {
+        if ($this->registry->isColumnAllowed($tableName, $columnName)) {
+            return true;
+        }
+
+        if (!str_contains($columnName, '.')) {
+            return false;
+        }
+
+        [$joinAlias, $joinedColumn] = explode('.', $columnName, 2);
+
+        foreach ($this->queryConfig['joins'] ?? [] as $join) {
+            $joinTable = $join['table'] ?? null;
+            $aliases   = array_filter([
+                $join['name'] ?? null,
+                $join['alias'] ?? null,
+                $joinTable,
+            ]);
+
+            if ($joinTable && in_array($joinAlias, $aliases, true)) {
+                return $this->registry->isColumnAllowed($joinTable, $joinedColumn);
+            }
+        }
+
+        return false;
     }
 
     /**
