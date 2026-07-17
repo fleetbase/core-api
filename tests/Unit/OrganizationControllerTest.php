@@ -26,6 +26,7 @@ namespace Illuminate\Foundation\Validation {
 
 namespace {
     use Fleetbase\Http\Controllers\Api\v1\OrganizationController;
+    use Fleetbase\Http\Resources\AuthOrganization;
     use Fleetbase\Http\Resources\Organization;
     use Fleetbase\Models\Company;
     use Illuminate\Container\Container;
@@ -259,6 +260,34 @@ namespace {
             ->and($payload['billing_status'])->toBe('legacy')
             ->and($payload['onboarding_completed'])->toBeTrue()
             ->and((string) $payload['joined_at'])->toContain('2026-07-03');
+    });
+
+    test('auth organization resource returns authenticated organization response contract', function () {
+        organization_controller_database();
+
+        $company = Company::where('uuid', 'company-visible')->first();
+        $company->setAttribute('users_count', 2);
+        $company->setAttribute('joined_at', '2026-07-03 00:00:00');
+        $payload = (new AuthOrganization($company))->resolve(organization_request('GET', '/int/v1/auth/organizations'));
+
+        expect($payload['id'])->toBe(11)
+            ->and($payload['uuid'])->toBe('company-visible')
+            ->and($payload['public_id'])->toBe('org_visible')
+            ->and($payload['name'])->toBe('Visible Logistics')
+            ->and($payload['users_count'])->toBe(2)
+            ->and($payload['branding'])->toMatchArray([
+                'icon_url'      => 'https://assets.test/icon.png',
+                'logo_url'      => 'https://assets.test/logo.png',
+                'default_theme' => 'light',
+            ])
+            ->and($payload['owner'])->toBe([
+                'uuid'  => 'user-owner',
+                'name'  => 'Owner User',
+                'email' => 'owner@example.com',
+            ])
+            ->and($payload['billing_status'])->toBe('legacy')
+            ->and($payload['onboarding_completed'])->toBeTrue()
+            ->and($payload['joined_at'])->toBe('2026-07-03 00:00:00');
     });
 
     test('current organization returns a structured error when no API key is provided', function () {

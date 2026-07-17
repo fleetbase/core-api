@@ -49,11 +49,19 @@ class Category extends FleetbaseResource
                     return $parentCategory->public_id;
                 }
             ),
-            'parent'        => $this->when($request->boolean('with_parent') && !$withoutParent, new Category($this->parentCategory, ['without_subcategories' => true])),
+            'parent'        => $this->when($request->boolean('with_parent') && !$withoutParent, function () use ($request) {
+                if (!Http::isInternalRequest($request)) {
+                    return $this->parentCategory?->public_id;
+                }
+
+                return new Category($this->parentCategory, ['without_subcategories' => true]);
+            }),
             'tags'          => $this->tags ?? [],
             'translations'  => $this->translations ?? [],
             'meta'          => data_get($this, 'meta', Utils::createObject()),
-            'subcategories' => $this->when($request->has('with_subcategories') && !$withoutSubcategories, $this->subCategories->mapInto(Category::class)),
+            'subcategories' => $this->when($request->has('with_subcategories') && !$withoutSubcategories, function () use ($request) {
+                return $this->subCategories->map(fn ($subcategory) => (new Category($subcategory, ['without_subcategories' => true]))->resolve($request));
+            }),
             'for'           => $this->for,
             'order'         => $this->order,
             'slug'          => $this->slug,
