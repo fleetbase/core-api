@@ -1,0 +1,124 @@
+<?php
+
+use Fleetbase\Models\ApiCredential;
+use Fleetbase\Models\WebhookEndpoint;
+use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
+
+class ApiAndWebhookModelsTaggedCacheFake
+{
+    private array $values = [];
+
+    public function tags(array|string $tags): self
+    {
+        return $this;
+    }
+
+    public function get(string $key, mixed $default = null): mixed
+    {
+        return $this->values[$key] ?? $default;
+    }
+
+    public function put(string $key, mixed $value, mixed $ttl = null): bool
+    {
+        $this->values[$key] = $value;
+
+        return true;
+    }
+
+    public function flush(): bool
+    {
+        $this->values = [];
+
+        return true;
+    }
+}
+
+class ApiAndWebhookModelsHashFake
+{
+    public function make(string $value, array $options = []): string
+    {
+        return 'hashed:' . $value;
+    }
+}
+
+it('derives api credential sandbox mode expiration values and generated key prefixes', function () {
+    $container = bind_test_container();
+    $container->instance('hash', new ApiAndWebhookModelsHashFake());
+
+    $sandboxRequest = Request::create('/int/v1/api-credentials', 'POST', [], [], [], [
+        'HTTP_ACCESS_CONSOLE_SANDBOX' => 'true',
+    ]);
+    $container->instance('request', $sandboxRequest);
+
+    $credential = new ApiCredential();
+    $credential->test_mode = false;
+
+    expect($credential->getAttributes()['test_mode'])->toBeTrue();
+
+    Carbon::setTestNow(Carbon::parse('2026-06-04 12:00:00', 'UTC'));
+    $credential->expires_at = 'never';
+    expect($credential->getAttributes()['expires_at'])->toBeNull();
+
+    $credential->expires_at = 'immediately';
+    expect($credential->getAttributes()['expires_at']->format('Y-m-d H:i:s'))->toBe('2026-06-04 12:00:00');
+
+    Carbon::setTestNow();
+    $expectedRelativeExpiration = date('Y-m-d H:i:s', strtotime('+ 3 days'));
+    $credential->expires_at = 'in 3 days';
+    expect($credential->getAttributes()['expires_at']->format('Y-m-d H:i:s'))->toBe($expectedRelativeExpiration);
+    Carbon::setTestNow();
+
+    $liveKeys = ApiCredential::generateKeys([1, 2, 3], false);
+    $testKeys = ApiCredential::generateKeys([1, 2, 3], true);
+
+    expect($liveKeys['key'])->toStartWith('flb_live_')
+        ->and($liveKeys['secret'])->toBe('hashed:' . substr($liveKeys['key'], strlen('flb_live_')))
+        ->and($testKeys['key'])->toStartWith('flb_test_')
+        ->and($testKeys['secret'])->toBe('hashed:' . substr($testKeys['key'], strlen('flb_test_')));
+});
+
+it('evaluates webhook endpoint event filters and api credential display labels', function () {
+    bind_test_container([
+        'api.events' => ['order.created', 'order.updated', 'order.deleted'],
+        'fleetbase.connection.db' => 'testing',
+    ]);
+    Cache::swap(new ApiAndWebhookModelsTaggedCacheFake());
+
+    $namedCredential = new ApiCredential();
+    $namedCredential->setRawAttributes([
+        'uuid' => 'credential-1',
+        'name' => 'Console Key',
+        'key'  => 'flb_live_named',
+    ], true);
+
+    $namedEndpoint = new WebhookEndpoint();
+    $namedEndpoint->setRawAttributes([
+        'uuid' => 'webhook-1',
+    ], true);
+    $namedEndpoint->events = ['order.created'];
+    $namedEndpoint->setRelation('apiCredential', $namedCredential);
+
+    expect($namedEndpoint->is_listening_on_all_events)->toBeFalse()
+        ->and($namedEndpoint->canFireEvent('order.created'))->toBeTrue()
+        ->and($namedEndpoint->cannotFireEvent('order.deleted'))->toBeTrue()
+        ->and($namedEndpoint->api_credential_name)->toBe('Console Key (flb_live_named)');
+
+    $keyOnlyCredential = new ApiCredential();
+    $keyOnlyCredential->setRawAttributes([
+        'uuid' => 'credential-2',
+        'key'  => 'flb_live_key_only',
+    ], true);
+
+    $allEventsEndpoint = new WebhookEndpoint();
+    $allEventsEndpoint->setRawAttributes([
+        'uuid' => 'webhook-2',
+    ], true);
+    $allEventsEndpoint->events = [];
+    $allEventsEndpoint->setRelation('apiCredential', $keyOnlyCredential);
+
+    expect($allEventsEndpoint->is_listening_on_all_events)->toBeTrue()
+        ->and($allEventsEndpoint->canFireEvent('order.deleted'))->toBeTrue()
+        ->and($allEventsEndpoint->api_credential_name)->toBe('flb_live_key_only');
+});
