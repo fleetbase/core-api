@@ -23,7 +23,7 @@ class RESTRegistrar extends ResourceRegistrar
      *
      * @return void
      */
-    protected function prefixedResource($name, $controller = null, array $options)
+    protected function prefixedResource($name, $controller, array $options)
     {
         [$name, $prefix] = $this->getResourcePrefix($name);
 
@@ -206,7 +206,7 @@ class RESTRegistrar extends ResourceRegistrar
     protected function getUniqueRouteName(array $append, string $name, array $options = []): string
     {
         $lastGroupStack          = is_array($options) && isset($options['groupStack']) ? Arr::last($options['groupStack']) : null;
-        $lastGroupStackNamespace = empty($lastGroupStack) ? null : $lastGroupStack['namespace'];
+        $lastGroupStackNamespace = empty($lastGroupStack) ? null : ($lastGroupStack['namespace'] ?? null);
         $groupPrefix             = $lastGroupStackNamespace ? strtolower(Str::replace('\\', '-', $lastGroupStackNamespace)) : null;
         $nameStack               = array_filter([$groupPrefix, $name, ...$append], fn ($segment) => !empty($segment));
 
