@@ -4,6 +4,10 @@ namespace Fleetbase\Support {
     if (!function_exists('Fleetbase\Support\request')) {
         function request()
         {
+            if (\function_exists('request')) {
+                return \request();
+            }
+
             return new class {
                 public function route()
                 {

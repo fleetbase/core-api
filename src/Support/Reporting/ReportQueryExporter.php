@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Support\Reporting;
 
+use Fleetbase\Support\Utils;
 use Illuminate\Support\Str;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
