@@ -232,7 +232,14 @@ class ImageService
         if ($format) {
             Log::debug('Converting image format', ['format' => $format, 'quality' => $quality]);
 
-            return $image->toFormat($format, $quality)->toString();
+            return match (strtolower($format)) {
+                'png'         => $image->toPng()->toString(),
+                'gif'         => $image->toGif()->toString(),
+                'webp'        => $image->toWebp($quality)->toString(),
+                'avif'        => $image->toAvif($quality)->toString(),
+                'bmp'         => $image->toBitmap()->toString(),
+                default       => $image->toJpeg($quality)->toString(),
+            };
         }
 
         // Use original extension or default to jpg
