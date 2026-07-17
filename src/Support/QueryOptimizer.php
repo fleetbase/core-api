@@ -44,7 +44,7 @@ class QueryOptimizer
 
             // Check for usage of raw queries as not able relaibly map bindings
             foreach ($wheres as $w) {
-                if (($w['type'] ?? null) === 'Raw') {
+                if (strtolower($w['type'] ?? '') === 'raw') {
                     // Can't reliably map bindings for Raw clauses, avoid breaking queries
                     return $query;
                 }
@@ -150,22 +150,22 @@ class QueryOptimizer
      */
     protected static function getBindingCount(array $where): int
     {
-        $type = $where['type'] ?? 'Basic';
+        $type = strtolower($where['type'] ?? 'Basic');
 
         switch ($type) {
-            case 'Null':
-            case 'NotNull':
-            case 'Raw':
+            case 'null':
+            case 'notnull':
+            case 'raw':
                 // These types don't use bindings (Raw might, but it's handled separately)
                 return 0;
 
-            case 'In':
-            case 'NotIn':
+            case 'in':
+            case 'notin':
                 // Count the number of values
                 return count($where['values'] ?? []);
 
-            case 'Between':
-            case 'NotBetween':
+            case 'between':
+            case 'notbetween':
                 // Between may contain Expressions (no bindings for those)
                 $values = $where['values'] ?? [];
 
@@ -179,7 +179,7 @@ class QueryOptimizer
                 // Fallback: if values array isn't present, assume 2 (Laravel default)
                 return $count > 0 ? $count : 2;
 
-            case 'Nested':
+            case 'nested':
                 // Nested queries have their own bindings
                 if (isset($where['query']) && $where['query'] instanceof Builder) {
                     return count($where['query']->bindings['where'] ?? []);
@@ -187,8 +187,8 @@ class QueryOptimizer
 
                 return 0;
 
-            case 'Exists':
-            case 'NotExists':
+            case 'exists':
+            case 'notexists':
                 // Exists queries have their own bindings
                 if (isset($where['query']) && $where['query'] instanceof Builder) {
                     return count($where['query']->bindings['where'] ?? []);
@@ -196,7 +196,7 @@ class QueryOptimizer
 
                 return 0;
 
-            case 'Basic':
+            case 'basic':
             default:
                 // Basic where clauses use 1 binding (unless value is an Expression)
                 if (isset($where['value']) && $where['value'] instanceof Expression) {
@@ -219,7 +219,7 @@ class QueryOptimizer
      */
     protected static function createWhereSignature(array $where, array $bindings): string
     {
-        $type = $where['type'] ?? 'Basic';
+        $type = strtolower($where['type'] ?? 'Basic');
 
         $signatureData = [
             'type'    => $type,
@@ -227,7 +227,7 @@ class QueryOptimizer
         ];
 
         switch ($type) {
-            case 'Basic':
+            case 'basic':
                 $signatureData['column']   = $where['column'] ?? '';
                 $signatureData['operator'] = $where['operator'] ?? '=';
                 if ($where['value'] instanceof Expression) {
@@ -237,26 +237,26 @@ class QueryOptimizer
                 }
                 break;
 
-            case 'In':
-            case 'NotIn':
+            case 'in':
+            case 'notin':
                 $signatureData['column']   = $where['column'] ?? '';
                 $signatureData['bindings'] = $bindings;
                 break;
 
-            case 'Null':
-            case 'NotNull':
+            case 'null':
+            case 'notnull':
                 $signatureData['column'] = $where['column'] ?? '';
                 break;
 
-            case 'Between':
-            case 'NotBetween':
+            case 'between':
+            case 'notbetween':
                 $signatureData['column']   = $where['column'] ?? '';
                 $signatureData['bindings'] = $bindings;
                 break;
 
-            case 'Nested':
-            case 'Exists':
-            case 'NotExists':
+            case 'nested':
+            case 'exists':
+            case 'notexists':
                 // For nested queries, include the nested where structure
                 if (isset($where['query']) && $where['query'] instanceof Builder) {
                     $nestedWheres            = $where['query']->wheres ?? [];
@@ -267,7 +267,7 @@ class QueryOptimizer
                 }
                 break;
 
-            case 'Raw':
+            case 'raw':
                 $signatureData['sql'] = $where['sql'] ?? '';
                 break;
 
@@ -290,7 +290,7 @@ class QueryOptimizer
     protected static function normalizeWhereForSignature(array $where): array
     {
         return [
-            'type'     => $where['type'] ?? 'Basic',
+            'type'     => strtolower($where['type'] ?? 'Basic'),
             'column'   => $where['column'] ?? null,
             'operator' => $where['operator'] ?? null,
             'boolean'  => $where['boolean'] ?? 'and',
