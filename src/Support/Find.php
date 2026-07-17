@@ -198,6 +198,10 @@ class Find
     {
         $fullClassName         = get_class($model);
         $fullClassNameSegments = explode('\\', $fullClassName);
+        if (!isset($fullClassNameSegments[1])) {
+            return null;
+        }
+
         if ($fullClassNameSegments[1] !== 'Models') {
             return $fullClassNameSegments[1];
         }
