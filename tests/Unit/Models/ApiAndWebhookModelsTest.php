@@ -2,6 +2,7 @@
 
 use Fleetbase\Models\ApiCredential;
 use Fleetbase\Models\WebhookEndpoint;
+use Fleetbase\Observers\ApiCredentialObserver;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -43,6 +44,19 @@ class ApiAndWebhookModelsHashFake
     }
 }
 
+class ApiCredentialObserverSaveSpy extends ApiCredential
+{
+    public int $saves = 0;
+
+    public function save(array $options = []): bool
+    {
+        $this->saves++;
+        $this->syncOriginal();
+
+        return true;
+    }
+}
+
 it('derives api credential sandbox mode expiration values and generated key prefixes', function () {
     $container = bind_test_container();
     $container->instance('hash', new ApiAndWebhookModelsHashFake());
@@ -52,7 +66,7 @@ it('derives api credential sandbox mode expiration values and generated key pref
     ]);
     $container->instance('request', $sandboxRequest);
 
-    $credential = new ApiCredential();
+    $credential            = new ApiCredential();
     $credential->test_mode = false;
 
     expect($credential->getAttributes()['test_mode'])->toBeTrue();
@@ -66,7 +80,7 @@ it('derives api credential sandbox mode expiration values and generated key pref
 
     Carbon::setTestNow();
     $expectedRelativeExpiration = date('Y-m-d H:i:s', strtotime('+ 3 days'));
-    $credential->expires_at = 'in 3 days';
+    $credential->expires_at     = 'in 3 days';
     expect($credential->getAttributes()['expires_at']->format('Y-m-d H:i:s'))->toBe($expectedRelativeExpiration);
     Carbon::setTestNow();
 
@@ -79,9 +93,31 @@ it('derives api credential sandbox mode expiration values and generated key pref
         ->and($testKeys['secret'])->toBe('hashed:' . substr($testKeys['key'], strlen('flb_test_')));
 });
 
+it('api credential observer writes generated keys and persists live and test credentials', function (bool $testMode, string $expectedPrefix) {
+    $container = bind_test_container();
+    $container->instance('hash', new ApiAndWebhookModelsHashFake());
+
+    $credential = new ApiCredentialObserverSaveSpy();
+    $credential->setDateFormat('Y-m-d H:i:s');
+    $credential->setRawAttributes([
+        'id'         => 42,
+        'created_at' => '2026-07-17 12:34:56',
+        'test_mode'  => $testMode,
+    ], true);
+
+    (new ApiCredentialObserver())->created($credential);
+
+    expect($credential->key)->toStartWith($expectedPrefix)
+        ->and($credential->secret)->toBe('hashed:' . substr($credential->key, strlen($expectedPrefix)))
+        ->and($credential->saves)->toBe(1);
+})->with([
+    'live credential' => [false, 'flb_live_'],
+    'test credential' => [true, 'flb_test_'],
+]);
+
 it('evaluates webhook endpoint event filters and api credential display labels', function () {
     bind_test_container([
-        'api.events' => ['order.created', 'order.updated', 'order.deleted'],
+        'api.events'              => ['order.created', 'order.updated', 'order.deleted'],
         'fleetbase.connection.db' => 'testing',
     ]);
     Cache::swap(new ApiAndWebhookModelsTaggedCacheFake());
