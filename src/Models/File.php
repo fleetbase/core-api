@@ -363,6 +363,11 @@ class File extends Model
 
     public static function createFromBase64(string $base64, ?string $fileName = null, string $path = 'uploads', ?string $type = 'image', ?string $contentType = 'image/png', ?int $size = null, ?string $disk = null, ?string $bucket = null): bool|File
     {
+        if (preg_match('/^data:(?<content_type>[^;]+);base64,(?<data>.+)$/', $base64, $matches)) {
+            $contentType = $contentType ?? $matches['content_type'];
+            $base64      = $matches['data'];
+        }
+
         $disk     = is_null($disk) ? config('filesystems.default') : $disk;
         $bucket   = is_null($bucket) ? config('filesystems.disks.' . $disk . '.bucket', config('filesystems.disks.s3.bucket')) : $bucket;
         $size     = is_null($size) ? Utils::getBase64ImageSize($base64) : $size;
@@ -391,7 +396,7 @@ class File extends Model
             'path'              => $fullPath,
             'bucket'            => $bucket,
             'type'              => $type,
-            'size'              => $size,
+            'file_size'         => $size,
         ];
 
         return static::create($data);
