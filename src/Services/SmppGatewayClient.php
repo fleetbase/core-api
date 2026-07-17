@@ -141,36 +141,18 @@ class SmppGatewayClient
 
         $header = fread($this->socket, 16);
         if (strlen($header) !== 16) {
-            throw new \RuntimeException(sprintf(
-                '%s failed: invalid SMPP response header, expected 16 bytes, read %d bytes',
-                $this->commandName($commandId),
-                strlen($header)
-            ));
+            throw new \RuntimeException(sprintf('%s failed: invalid SMPP response header, expected 16 bytes, read %d bytes', $this->commandName($commandId), strlen($header)));
         }
 
         $parts        = unpack('Nlength/Ncommand/Nstatus/Nsequence', $header);
         $bodyLength   = max(0, $parts['length'] - 16);
         $responseBody = $bodyLength > 0 ? fread($this->socket, $bodyLength) : '';
         if (strlen($responseBody) !== $bodyLength) {
-            throw new \RuntimeException(sprintf(
-                '%s failed: invalid SMPP response body, expected %d bytes, read %d bytes from %s',
-                $this->commandName($commandId),
-                $bodyLength,
-                strlen($responseBody),
-                $this->commandName((int) $parts['command'])
-            ));
+            throw new \RuntimeException(sprintf('%s failed: invalid SMPP response body, expected %d bytes, read %d bytes from %s', $this->commandName($commandId), $bodyLength, strlen($responseBody), $this->commandName((int) $parts['command'])));
         }
 
         if ((int) $parts['status'] !== 0) {
-            throw new \RuntimeException(sprintf(
-                '%s failed with SMPP status %d (0x%08X) from %s; sequence=%d, response_length=%d',
-                $this->commandName($commandId),
-                (int) $parts['status'],
-                (int) $parts['status'],
-                $this->commandName((int) $parts['command']),
-                (int) $parts['sequence'],
-                (int) $parts['length']
-            ), (int) $parts['status']);
+            throw new \RuntimeException(sprintf('%s failed with SMPP status %d (0x%08X) from %s; sequence=%d, response_length=%d', $this->commandName($commandId), (int) $parts['status'], (int) $parts['status'], $this->commandName((int) $parts['command']), (int) $parts['sequence'], (int) $parts['length']), (int) $parts['status']);
         }
 
         return [

@@ -312,7 +312,7 @@ test('smpp gateway client encodes configured submit ton and npi values', functio
     expect($sockets)->not->toBeFalse();
 
     [$clientSocket, $serverSocket] = $sockets;
-    $client                       = new SmppGatewayClient([
+    $client                        = new SmppGatewayClient([
         'host'                => 'smpp.example.test',
         'port'                => 2775,
         'source_addr_ton'     => 1,
@@ -335,9 +335,9 @@ test('smpp gateway client encodes configured submit ton and npi values', functio
 
     expect($messageId)->toBe('1')
         ->and(unpack('Nlength/Ncommand/Nstatus/Nsequence', substr($packet, 0, 16)))->toMatchArray([
-            'length'  => strlen($packet),
-            'command' => 0x00000004,
-            'status'  => 0,
+            'length'   => strlen($packet),
+            'command'  => 0x00000004,
+            'status'   => 0,
             'sequence' => 1,
         ])
         ->and(ord($body[1]))->toBe(1)
@@ -356,7 +356,7 @@ test('smpp gateway client reports command-aware submit failures', function () {
     expect($sockets)->not->toBeFalse();
 
     [$clientSocket, $serverSocket] = $sockets;
-    $client                       = new SmppGatewayClient([
+    $client                        = new SmppGatewayClient([
         'host' => 'smpp.example.test',
         'port' => 2775,
     ]);
