@@ -212,6 +212,11 @@ namespace {
                 {
                     return session('user');
                 }
+
+                public function user(): mixed
+                {
+                    return session('user');
+                }
             };
         }
     }
