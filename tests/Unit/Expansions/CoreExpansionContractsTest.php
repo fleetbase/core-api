@@ -1,13 +1,26 @@
 <?php
 
 use Fleetbase\Expansions\Blade as BladeExpansion;
+use Fleetbase\Expansions\Builder as BuilderExpansion;
 use Fleetbase\Expansions\Carbon as CarbonExpansion;
 use Fleetbase\Expansions\Request as RequestExpansion;
 use Fleetbase\Expansions\Response as ResponseExpansion;
 use Fleetbase\Expansions\Str as StrExpansion;
+use Illuminate\Database\Capsule\Manager as Capsule;
+use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
+use Illuminate\Database\Eloquent\Model as EloquentModel;
+use Illuminate\Events\Dispatcher;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request as HttpRequest;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Facade;
+
+class CoreExpansionBuilderModel extends EloquentModel
+{
+    protected $connection = 'mysql';
+    protected $table      = 'builder_expansion_records';
+    protected $guarded    = [];
+}
 
 class CoreExpansionResponseFactoryFake
 {
@@ -19,8 +32,55 @@ class CoreExpansionResponseFactoryFake
 
 afterEach(function () {
     HttpRequest::flushMacros();
+    EloquentModel::clearBootedModels();
+    Facade::clearResolvedInstances();
     Carbon::setTestNow();
 });
+
+function core_expansion_builder_database(): Capsule
+{
+    $connection = [
+        'driver'   => 'sqlite',
+        'database' => ':memory:',
+        'prefix'   => '',
+    ];
+
+    $container = bind_test_container([
+        'database.default'           => 'mysql',
+        'database.connections.mysql' => $connection,
+    ]);
+
+    $capsule = new Capsule($container);
+    $capsule->addConnection($connection, 'mysql');
+    $capsule->setEventDispatcher(new Dispatcher($container));
+    $capsule->setAsGlobal();
+    $capsule->bootEloquent();
+
+    $databaseManager = $capsule->getDatabaseManager();
+    $databaseManager->setDefaultConnection('mysql');
+    $container->instance('db', $databaseManager);
+    Facade::clearResolvedInstance('db');
+
+    $schema = $capsule->getConnection('mysql')->getSchemaBuilder();
+    $container->instance('db.schema', $schema);
+    Facade::clearResolvedInstance('db.schema');
+
+    $schema->create('builder_expansion_records', function ($table) {
+        $table->increments('id');
+        $table->string('name');
+        $table->string('email')->nullable();
+        $table->string('status')->nullable();
+        $table->timestamps();
+    });
+
+    $capsule->getConnection('mysql')->table('builder_expansion_records')->insert([
+        ['name' => 'Alpha Fleet', 'email' => 'alpha@example.test', 'status' => 'active', 'created_at' => '2026-07-17 10:00:00', 'updated_at' => '2026-07-17 10:00:00'],
+        ['name' => 'Beta Dispatch', 'email' => 'beta@example.test', 'status' => 'inactive', 'created_at' => '2026-07-18 10:00:00', 'updated_at' => '2026-07-18 10:00:00'],
+        ['name' => 'Gamma Fleet', 'email' => 'gamma@example.test', 'status' => 'active', 'created_at' => '2026-07-19 10:00:00', 'updated_at' => '2026-07-19 10:00:00'],
+    ]);
+
+    return $capsule;
+}
 
 test('string carbon and blade expansions preserve formatting contracts', function () {
     Carbon::setTestNow(Carbon::parse('2026-05-15 08:30:00'));
@@ -88,6 +148,94 @@ test('request expansion helpers normalize parameters and global filter payloads'
     $expansion->removeParam()->call($request, 'status');
 
     expect($request->has('status'))->toBeFalse();
+});
+
+test('builder expansion search where applies strict and fuzzy search contracts', function () {
+    core_expansion_builder_database();
+
+    $builderExpansion = new BuilderExpansion();
+    EloquentBuilder::macro('searchWhere', $builderExpansion->searchWhere());
+
+    $fuzzyNames = CoreExpansionBuilderModel::query()
+        ->searchWhere(['name', 'email'], 'fleet')
+        ->pluck('name')
+        ->all();
+
+    sort($fuzzyNames);
+
+    $strictNames = CoreExpansionBuilderModel::query()
+        ->searchWhere(['status', 'name'], 'active', true)
+        ->pluck('name')
+        ->all();
+
+    sort($strictNames);
+
+    $commaAndDotSearch = CoreExpansionBuilderModel::query()
+        ->searchWhere('email', 'alpha.example')
+        ->pluck('name')
+        ->all();
+
+    expect($fuzzyNames)->toBe(['Alpha Fleet', 'Gamma Fleet'])
+        ->and($strictNames)->toBe(['Alpha Fleet', 'Gamma Fleet'])
+        ->and($commaAndDotSearch)->toBe(['Alpha Fleet']);
+});
+
+test('builder expansion removes only matching basic where clauses and bindings', function () {
+    core_expansion_builder_database();
+
+    $builderExpansion = new BuilderExpansion();
+    EloquentBuilder::macro('removeWhereFromQuery', $builderExpansion->removeWhereFromQuery());
+
+    $query = CoreExpansionBuilderModel::query()
+        ->where('status', 'active')
+        ->where('name', 'Alpha Fleet')
+        ->where('email', 'alpha@example.test');
+
+    $query->removeWhereFromQuery('name', 'Alpha Fleet');
+
+    expect($query->getQuery()->wheres)->toHaveCount(2)
+        ->and($query->getBindings())->toBe(['active', 'alpha@example.test'])
+        ->and($query->pluck('name')->all())->toBe(['Alpha Fleet']);
+
+    $query->removeWhereFromQuery('missing', 'value');
+
+    expect($query->getQuery()->wheres)->toHaveCount(2)
+        ->and($query->getBindings())->toBe(['active', 'alpha@example.test']);
+});
+
+test('builder expansion applies request sort aliases and explicit directions', function () {
+    core_expansion_builder_database();
+
+    $requestExpansion = new RequestExpansion();
+    HttpRequest::macro('or', $requestExpansion->or());
+
+    $builderExpansion = new BuilderExpansion();
+    EloquentBuilder::macro('applySortFromRequest', $builderExpansion->applySortFromRequest());
+
+    $latest = CoreExpansionBuilderModel::query()
+        ->applySortFromRequest(HttpRequest::create('/int/v1/test', 'GET', ['sort' => 'latest']))
+        ->pluck('name')
+        ->all();
+
+    $oldest = CoreExpansionBuilderModel::query()
+        ->applySortFromRequest(HttpRequest::create('/int/v1/test', 'GET', ['sort' => 'oldest']))
+        ->pluck('name')
+        ->all();
+
+    $explicit = CoreExpansionBuilderModel::query()
+        ->applySortFromRequest(HttpRequest::create('/int/v1/test', 'GET', ['sort' => 'status:desc,-name']))
+        ->pluck('name')
+        ->all();
+
+    $default = CoreExpansionBuilderModel::query()
+        ->applySortFromRequest(HttpRequest::create('/int/v1/test', 'GET'))
+        ->pluck('name')
+        ->all();
+
+    expect($latest)->toBe(['Gamma Fleet', 'Beta Dispatch', 'Alpha Fleet'])
+        ->and($oldest)->toBe(['Alpha Fleet', 'Beta Dispatch', 'Gamma Fleet'])
+        ->and($explicit)->toBe(['Beta Dispatch', 'Gamma Fleet', 'Alpha Fleet'])
+        ->and($default)->toBe(['Gamma Fleet', 'Beta Dispatch', 'Alpha Fleet']);
 });
 
 test('response expansion helpers keep internal and public error response shapes stable', function () {

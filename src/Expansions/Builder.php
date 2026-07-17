@@ -5,7 +5,6 @@ namespace Fleetbase\Expansions;
 use Fleetbase\Build\Expansion;
 use Fleetbase\Support\Auth;
 use Fleetbase\Support\Http;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -95,17 +94,18 @@ class Builder implements Expansion
             $bindings        = $underlyingQuery->bindings['where'];
 
             // find key to remove based on where clause match
-            $removeKey = Arr::search(
-                $wheres,
-                function ($where) use ($column, $value, $operator, $type) {
-                    $isColumn   = data_get($where, 'column') === $column;
-                    $isValue    = data_get($where, 'value') === $value;
-                    $isOperator = data_get($where, 'operator') === $operator;
-                    $isType     = data_get($where, 'type') === $type;
+            $removeKey = null;
+            foreach ($wheres as $key => $where) {
+                $isColumn   = data_get($where, 'column') === $column;
+                $isValue    = data_get($where, 'value') === $value;
+                $isOperator = data_get($where, 'operator') === $operator;
+                $isType     = data_get($where, 'type') === $type;
 
-                    return $isColumn && $isValue && $isOperator && $isType;
+                if ($isColumn && $isValue && $isOperator && $isType) {
+                    $removeKey = $key;
+                    break;
                 }
-            );
+            }
 
             // remove using key found
             if (is_int($removeKey)) {
@@ -157,7 +157,7 @@ class Builder implements Expansion
             $model = $this->getModel();
 
             foreach ($sorts as $sort) {
-                if (Schema::hasColumn($model->table, $model->getCreatedAtColumn())) {
+                if (Schema::hasColumn($model->getTable(), $model->getCreatedAtColumn())) {
                     if (strtolower($sort) == 'latest') {
                         $this->latest();
                         continue;
