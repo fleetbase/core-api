@@ -97,8 +97,8 @@ function user_observer_database(): Capsule
         ['uuid' => 'company-session', 'name' => 'Session Company'],
     ]);
     $connection->table('company_users')->insert([
-        ['uuid' => 'cache-company-1', 'company_uuid' => 'user-1', 'user_uuid' => 'company-1', 'deleted_at' => null],
-        ['uuid' => 'cache-company-2', 'company_uuid' => 'user-1', 'user_uuid' => 'company-2', 'deleted_at' => null],
+        ['uuid' => 'cache-company-1', 'company_uuid' => 'company-1', 'user_uuid' => 'user-1', 'deleted_at' => null],
+        ['uuid' => 'cache-company-2', 'company_uuid' => 'company-2', 'user_uuid' => 'user-1', 'deleted_at' => null],
         ['uuid' => 'session-company-user', 'company_uuid' => 'company-session', 'user_uuid' => 'user-1', 'deleted_at' => null],
     ]);
 
@@ -128,10 +128,11 @@ it('invalidates user current cache and organization cache when users update or r
     expect($cache->forgotten)->toContain(
         UserCacheService::getCacheKey($user, 'company-1'),
         UserCacheService::getCacheKey($user, 'company-2'),
+        UserCacheService::getCacheKey($user, 'company-session'),
         'user_organizations_user-1',
         'user_organizations_v2_user-1',
     )
-        ->and(collect($log->entries)->where(1, 'User cache invalidated')->count())->toBe(2);
+        ->and(collect($log->entries)->where(1, 'User cache invalidated')->count())->toBe(3);
 })->with(['updated', 'restored']);
 
 it('deletes only the active session company membership when a user is deleted', function () {

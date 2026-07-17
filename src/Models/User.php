@@ -342,7 +342,7 @@ class User extends Authenticatable
      */
     public function companies(): HasManyThrough
     {
-        return $this->hasManyThrough(Company::class, CompanyUser::class, 'company_uuid', 'uuid', 'uuid', 'user_uuid');
+        return $this->hasManyThrough(Company::class, CompanyUser::class, 'user_uuid', 'uuid', 'uuid', 'company_uuid');
     }
 
     /**
