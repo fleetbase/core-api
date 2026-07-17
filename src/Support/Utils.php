@@ -2393,10 +2393,10 @@ class Utils
      */
     public static function getDefaultMailFromAddress(?string $default = 'hello@fleetbase.io'): string
     {
-        $from = env('MAIL_FROM_ADDRESS', $default);
+        $from = getenv('MAIL_FROM_ADDRESS') ?: $default;
 
-        if (!$from && env('CONSOLE_HOST')) {
-            $from = 'hello@' . Str::domain(env('CONSOLE_HOST'));
+        if (!$from && getenv('CONSOLE_HOST')) {
+            $from = 'hello@' . Str::domain(getenv('CONSOLE_HOST'));
         }
 
         if (!$from && is_string($default)) {
