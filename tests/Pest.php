@@ -100,6 +100,19 @@ namespace {
         }
     }
 
+    if (!function_exists('cache')) {
+        function cache(mixed $key = null, mixed $default = null): mixed
+        {
+            $cache = app('cache');
+
+            if ($key === null) {
+                return $cache;
+            }
+
+            return $cache->get($key, $default);
+        }
+    }
+
     if (!function_exists('session')) {
         function session($key = null, $default = null)
         {
@@ -120,6 +133,11 @@ namespace {
                     public function has(string $key): bool
                     {
                         return array_key_exists($key, $this->store);
+                    }
+
+                    public function missing(string $key): bool
+                    {
+                        return !$this->has($key);
                     }
 
                     public function get(string $key, mixed $default = null): mixed
