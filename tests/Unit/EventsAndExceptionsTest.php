@@ -1,8 +1,18 @@
 <?php
 
 use Fleetbase\Events\BroadcastNotificationCreated;
+use Fleetbase\Events\ScheduleConstraintViolated;
+use Fleetbase\Events\ScheduleCreated;
+use Fleetbase\Events\ScheduleDeleted;
+use Fleetbase\Events\ScheduleItemAssigned;
+use Fleetbase\Events\ScheduleItemCreated;
+use Fleetbase\Events\ScheduleItemDeleted;
+use Fleetbase\Events\ScheduleItemUpdated;
+use Fleetbase\Events\ScheduleUpdated;
 use Fleetbase\Exceptions\FleetbaseRequestException;
 use Fleetbase\Exceptions\FleetbaseRequestValidationException;
+use Fleetbase\Models\Schedule;
+use Fleetbase\Models\ScheduleItem;
 use Fleetbase\Exceptions\PolicyDoesNotExist;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Notifications\Notification;
@@ -102,4 +112,30 @@ test('broadcast notification event honors custom broadcast payload and type', fu
 
     expect($event->broadcastType())->toBe('custom.notification')
         ->and($event->broadcastWith())->toBe(['custom' => true]);
+});
+
+test('schedule events expose the schedule or schedule item they were created with', function () {
+    bind_test_container();
+
+    $schedule = new Schedule();
+    $schedule->setRawAttributes(['uuid' => 'schedule-1', 'company_uuid' => 'company-1'], true);
+
+    $item = new ScheduleItem();
+    $item->setRawAttributes(['uuid' => 'item-1', 'schedule_uuid' => 'schedule-1'], true);
+
+    expect((new ScheduleCreated($schedule))->schedule)->toBe($schedule)
+        ->and((new ScheduleUpdated($schedule))->schedule)->toBe($schedule)
+        ->and((new ScheduleDeleted($schedule))->schedule)->toBe($schedule)
+        ->and((new ScheduleItemCreated($item))->scheduleItem)->toBe($item)
+        ->and((new ScheduleItemUpdated($item))->scheduleItem)->toBe($item)
+        ->and((new ScheduleItemDeleted($item))->scheduleItem)->toBe($item)
+        ->and((new ScheduleItemAssigned($item))->scheduleItem)->toBe($item);
+
+    $violations = [
+        ['constraint_key' => 'max_hours', 'message' => 'Daily limit exceeded.'],
+    ];
+    $constraintEvent = new ScheduleConstraintViolated($item, $violations);
+
+    expect($constraintEvent->scheduleItem)->toBe($item)
+        ->and($constraintEvent->violations)->toBe($violations);
 });

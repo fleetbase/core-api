@@ -24,6 +24,14 @@ namespace Illuminate\Foundation\Validation {
     }
 }
 
+namespace Illuminate\Foundation\Events {
+    if (!trait_exists(Dispatchable::class)) {
+        trait Dispatchable
+        {
+        }
+    }
+}
+
 namespace Illuminate\Foundation\Http {
     if (!class_exists(FormRequest::class)) {
         class FormRequest extends \Illuminate\Http\Request
