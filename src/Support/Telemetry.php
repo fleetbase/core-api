@@ -27,7 +27,7 @@ class Telemetry
      */
     protected static function isDisabled(): bool
     {
-        return env('TELEMETRY_DISABLED', false) === true;
+        return filter_var(getenv('TELEMETRY_DISABLED'), FILTER_VALIDATE_BOOLEAN) === true;
     }
 
     /**
