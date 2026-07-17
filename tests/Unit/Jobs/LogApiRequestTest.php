@@ -9,12 +9,14 @@ namespace Illuminate\Foundation\Bus {
 }
 
 namespace Fleetbase\Jobs {
-    function getallheaders(): array
-    {
-        return [
-            'Authorization' => 'Bearer token-value',
-            'X-Request-Id'  => 'request-1',
-        ];
+    if (!function_exists('Fleetbase\\Jobs\\getallheaders')) {
+        function getallheaders(): array
+        {
+            return [
+                'Authorization' => 'Bearer token-value',
+                'X-Request-Id'  => 'request-1',
+            ];
+        }
     }
 }
 
