@@ -116,18 +116,8 @@ class DataPurger
                 $this->toggleForeignKeys(false);
             }
 
-            // Primary fast path: delete by company_uuid everywhere it exists
-            foreach ($tables as $table) {
-                if (!Schema::hasColumn($table, $this->companyColumn)) {
-                    continue;
-                }
-
-                $deleted                = $this->deleteByCompanyColumn($table, $this->companyColumn, $companyUuid);
-                $resultPerTable[$table] = $deleted;
-                $totalDeleted += $deleted;
-            }
-
-            // Optional deep pass: remove rows referencing deleted rows
+            // Optional deep pass: remove rows that reference tenant-owned rows
+            // before those parent rows are removed by the primary pass.
             if ($deepReferencePass) {
                 $deepDeleted = $this->deepReferenceCleanup($companyUuid);
                 foreach ($deepDeleted as $table => $count) {
@@ -137,6 +127,17 @@ class DataPurger
                     $resultPerTable[$table] += $count;
                     $totalDeleted += $count;
                 }
+            }
+
+            // Primary fast path: delete by company_uuid everywhere it exists
+            foreach ($tables as $table) {
+                if (!Schema::hasColumn($table, $this->companyColumn)) {
+                    continue;
+                }
+
+                $deleted                = $this->deleteByCompanyColumn($table, $this->companyColumn, $companyUuid);
+                $resultPerTable[$table] = $deleted;
+                $totalDeleted += $deleted;
             }
 
             // Finally, company row (if requested)
