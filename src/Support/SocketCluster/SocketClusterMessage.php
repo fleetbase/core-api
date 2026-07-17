@@ -4,6 +4,7 @@ namespace Fleetbase\Support\SocketCluster;
 
 use Illuminate\Broadcasting\Channel;
 use WebSocket\Message\Message;
+use WebSocket\Message\Text;
 
 /**
  * Class SocketClusterMessage.
@@ -116,6 +117,6 @@ class SocketClusterMessage extends Message
     {
         $payload = static::createSocketClusterPayload($data, $channel);
 
-        return new Message('text', $payload);
+        return new Text($payload);
     }
 }
