@@ -280,7 +280,7 @@ class FileController extends FleetbaseController
                 'path'              => $fullPath,
                 'bucket'            => $bucket,
                 'type'              => $fileType,
-                'size'              => strlen($decoded),
+                'file_size'         => strlen($decoded),
             ]);
 
             // Store resize metadata
