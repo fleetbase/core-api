@@ -12,6 +12,7 @@ namespace {
     use Fleetbase\Http\Middleware\AttachCacheHeaders;
     use Fleetbase\Http\Middleware\AuthenticateOnceWithBasicAuth;
     use Fleetbase\Http\Middleware\ConvertStringBooleans;
+    use Fleetbase\Http\Middleware\EnsureFleetbaseConfigured;
     use Fleetbase\Http\Middleware\RequestTimer;
     use Fleetbase\Http\Middleware\ResetJsonResourceWrap;
     use Fleetbase\Http\Middleware\SetGlobalHeaders;
@@ -43,6 +44,53 @@ namespace {
         public function uri(): string
         {
             return $this->uri;
+        }
+    }
+
+    class MiddlewareContractsDbConnectionFake
+    {
+        public function __construct(
+            private ?string $databaseName = 'fleetbase',
+            private bool $throws = false,
+        ) {
+        }
+
+        public function getPdo(): object
+        {
+            if ($this->throws) {
+                throw new RuntimeException('database unavailable');
+            }
+
+            return new stdClass();
+        }
+
+        public function getDatabaseName(): ?string
+        {
+            return $this->databaseName;
+        }
+    }
+
+    class MiddlewareContractsDbFake
+    {
+        public function __construct(private MiddlewareContractsDbConnectionFake $connection)
+        {
+        }
+
+        public function connection(): MiddlewareContractsDbConnectionFake
+        {
+            return $this->connection;
+        }
+    }
+
+    class MiddlewareContractsSchemaFake
+    {
+        public function __construct(private array $tables)
+        {
+        }
+
+        public function hasTable(string $table): bool
+        {
+            return in_array($table, $this->tables, true);
         }
     }
 
@@ -83,6 +131,87 @@ namespace {
     {
         return new ThrottleRequests(new RateLimiter(new Repository(new ArrayStore())));
     }
+
+    function middleware_contracts_configured_middleware(?string $databaseName = 'fleetbase', array $tables = ['settings', 'users', 'companies'], bool $throws = false): EnsureFleetbaseConfigured
+    {
+        $reflection = new ReflectionProperty(EnsureFleetbaseConfigured::class, 'configured');
+        $reflection->setAccessible(true);
+        $reflection->setValue(null, false);
+
+        app()->instance('db', new MiddlewareContractsDbFake(new MiddlewareContractsDbConnectionFake($databaseName, $throws)));
+        app()->instance('db.schema', new MiddlewareContractsSchemaFake($tables));
+        Facade::clearResolvedInstance('db');
+        Facade::clearResolvedInstance('db.schema');
+
+        return new EnsureFleetbaseConfigured();
+    }
+
+    test('ensure fleetbase configured skips non api and options requests', function () {
+        middleware_contracts_fixture();
+
+        $middleware = middleware_contracts_configured_middleware(null, [], true);
+        $health     = $middleware->handle(
+            middleware_contracts_request('/health', 'health'),
+            fn () => new JsonResponse(['ok' => true])
+        );
+
+        $optionsRequest = Request::create('/v1/orders', 'OPTIONS');
+        $optionsRequest->setRouteResolver(fn () => new MiddlewareContractsTestRoute('v1/orders'));
+        $options = $middleware->handle($optionsRequest, fn () => new JsonResponse(['ok' => true]));
+
+        expect($health->getStatusCode())->toBe(200)
+            ->and($health->getData(true))->toBe(['ok' => true])
+            ->and($options->getStatusCode())->toBe(200)
+            ->and($options->getData(true))->toBe(['ok' => true]);
+    });
+
+    test('ensure fleetbase configured returns setup error when database or core tables are missing', function () {
+        middleware_contracts_fixture();
+
+        $missingDatabase = middleware_contracts_configured_middleware(null)->handle(
+            middleware_contracts_request('/v1/orders', 'v1/orders'),
+            fn () => new JsonResponse(['ok' => true])
+        );
+        $missingTable = middleware_contracts_configured_middleware('fleetbase', ['settings', 'users'])->handle(
+            middleware_contracts_request('/int/v1/orders', 'int/v1/orders'),
+            fn () => new JsonResponse(['ok' => true])
+        );
+        $dbException = middleware_contracts_configured_middleware('fleetbase', [], true)->handle(
+            middleware_contracts_request('/v1/orders', 'v1/orders'),
+            fn () => new JsonResponse(['ok' => true])
+        );
+
+        foreach ([$missingDatabase, $missingTable, $dbException] as $response) {
+            expect($response->getStatusCode())->toBe(503)
+                ->and($response->getData(true))->toMatchArray([
+                    'error' => 'fleetbase_not_configured',
+                    'errors' => ['fleetbase_not_configured'],
+                ]);
+        }
+    });
+
+    test('ensure fleetbase configured allows configured api requests and caches success', function () {
+        middleware_contracts_fixture();
+
+        $middleware = middleware_contracts_configured_middleware();
+
+        $first = $middleware->handle(
+            middleware_contracts_request('/v1/orders', 'v1/orders'),
+            fn () => new JsonResponse(['ok' => true])
+        );
+
+        app()->instance('db.schema', new MiddlewareContractsSchemaFake([]));
+        Facade::clearResolvedInstance('db.schema');
+        $second = $middleware->handle(
+            middleware_contracts_request('/int/v1/orders', 'int/v1/orders'),
+            fn () => new JsonResponse(['cached' => true])
+        );
+
+        expect($first->getStatusCode())->toBe(200)
+            ->and($first->getData(true))->toBe(['ok' => true])
+            ->and($second->getStatusCode())->toBe(200)
+            ->and($second->getData(true))->toBe(['cached' => true]);
+    });
 
     test('attach cache headers exposes api cache status driver and debug cache key then resets state', function () {
         middleware_contracts_fixture([
