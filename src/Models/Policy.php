@@ -142,7 +142,7 @@ class Policy extends Model implements PolicyContract
      *
      * @return void
      */
-    public function setGuardNameAttribute()
+    public function setGuardNameAttribute($value = null)
     {
         $this->attributes['guard_name'] = 'sanctum';
     }

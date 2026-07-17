@@ -127,7 +127,7 @@ class Role extends BaseRole
      *
      * @return void
      */
-    public function setGuardNameAttribute()
+    public function setGuardNameAttribute($value = null)
     {
         $this->attributes['guard_name'] = 'sanctum';
     }

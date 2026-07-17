@@ -74,7 +74,7 @@ class CompanyUser extends Model
      */
     public function setStatusAttribute($value = 'active')
     {
-        $this->attributes['status'] = $value;
+        $this->attributes['status'] = $value ?? 'active';
     }
 
     /**
@@ -127,6 +127,7 @@ class CompanyUser extends Model
     public function hasPermissions(Collection|array $permissions): bool
     {
         $attachedPermissions = $this->getAllPermissions();
+        $permissions         = $permissions instanceof Collection ? $permissions : collect($permissions);
 
         return $attachedPermissions->filter(function ($permission) use ($permissions) {
             return $permissions->contains($permission);
