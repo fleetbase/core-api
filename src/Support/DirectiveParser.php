@@ -55,14 +55,23 @@ class DirectiveParser
      */
     protected function qualifyDirective(array $directive, string $relation): array
     {
-        return array_map(function ($item) use ($relation) {
-            if (is_string($item) && strpos($item, '.') === false) {
-                // Qualify the column with the relation name if it's a column name without qualification
-                return "{$relation}.{$item}";
-            }
+        if (empty($directive)) {
+            return $directive;
+        }
 
-            return $item;
-        }, $directive);
+        $method                = $directive[0];
+        $qualifiableParameters = match ($method) {
+            'whereColumn', 'orWhereColumn' => [1, 2],
+            default => [1],
+        };
+
+        foreach ($qualifiableParameters as $index) {
+            if (isset($directive[$index]) && is_string($directive[$index]) && strpos($directive[$index], '.') === false) {
+                $directive[$index] = "{$relation}.{$directive[$index]}";
+            }
+        }
+
+        return $directive;
     }
 
     /**
