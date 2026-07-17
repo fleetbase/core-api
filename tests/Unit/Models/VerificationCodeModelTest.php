@@ -1,5 +1,8 @@
 <?php
 
+use Fleetbase\Events\AccountCreated;
+use Fleetbase\Listeners\HandleAccountCreated;
+use Fleetbase\Models\Company;
 use Fleetbase\Models\User;
 use Fleetbase\Models\VerificationCode;
 use Illuminate\Database\Capsule\Manager as Capsule;
@@ -44,15 +47,15 @@ function verification_code_model_database(): Capsule
     EloquentModel::clearBootedModels();
 
     $connection = [
-        'driver' => 'sqlite',
+        'driver'   => 'sqlite',
         'database' => ':memory:',
-        'prefix' => '',
+        'prefix'   => '',
     ];
 
     $container = bind_test_container([
-        'database.default' => 'testing',
+        'database.default'             => 'testing',
         'database.connections.testing' => $connection,
-        'fleetbase.connection.db' => 'testing',
+        'fleetbase.connection.db'      => 'testing',
     ]);
 
     $cache = new VerificationCodeModelTaggedCacheFake();
@@ -99,11 +102,22 @@ function verification_code_subject(array $attributes = []): User
     return $user;
 }
 
+function verification_code_company(array $attributes = []): Company
+{
+    $company = new Company();
+    $company->setRawAttributes(array_merge([
+        'uuid' => 'company-1',
+        'name' => 'Acme Logistics',
+    ], $attributes), true);
+
+    return $company;
+}
+
 it('generates unsaved verification codes with subject purpose and pending status', function () {
     bind_test_container();
 
     $subject = verification_code_subject();
-    $code = VerificationCode::generateFor($subject, 'login_challenge', false);
+    $code    = VerificationCode::generateFor($subject, 'login_challenge', false);
 
     expect($code)->toBeInstanceOf(VerificationCode::class)
         ->and($code->for)->toBe('login_challenge')
@@ -118,7 +132,7 @@ it('persists verification codes with generated six digit codes', function () {
     verification_code_model_database();
 
     $subject = verification_code_subject(['uuid' => 'user-2']);
-    $code = VerificationCode::generateFor($subject, 'device_pairing', true);
+    $code    = VerificationCode::generateFor($subject, 'device_pairing', true);
 
     expect($code->exists)->toBeTrue()
         ->and($code->uuid)->toBeString()
@@ -139,8 +153,8 @@ it('generates email verification records with default and explicit options witho
 
     $explicit = VerificationCode::generateEmailVerificationFor($subject, 'security_review', [
         'expireAfter' => Carbon::parse('2026-06-07 12:30:00', 'UTC'),
-        'meta' => ['ip' => '127.0.0.1'],
-        'status' => 'queued',
+        'meta'        => ['ip' => '127.0.0.1'],
+        'status'      => 'queued',
     ]);
 
     expect($default->exists)->toBeTrue()
@@ -155,4 +169,44 @@ it('generates email verification records with default and explicit options witho
         ->and($explicit->meta)->toBe(['ip' => '127.0.0.1']);
 
     Carbon::setTestNow();
+});
+
+it('account created listener creates email verification for non-admin users without requiring mail delivery', function () {
+    verification_code_model_database();
+    Carbon::setTestNow(Carbon::parse('2026-07-17 09:00:00', 'UTC'));
+
+    $user = verification_code_subject([
+        'uuid'  => 'user-4',
+        'type'  => 'user',
+        'phone' => null,
+    ]);
+    $company = verification_code_company();
+
+    (new HandleAccountCreated())->handle(new AccountCreated($user, $company));
+
+    $verificationCode = VerificationCode::query()->first();
+
+    expect(VerificationCode::query()->count())->toBe(1)
+        ->and($verificationCode->subject_uuid)->toBe('user-4')
+        ->and($verificationCode->subject_type)->toBe(User::class)
+        ->and($verificationCode->for)->toBe('email_verification')
+        ->and($verificationCode->status)->toBe('active')
+        ->and($verificationCode->expires_at->toDateTimeString())->toBe('2026-07-17 10:00:00');
+
+    Carbon::setTestNow();
+});
+
+it('account created listener skips verification for admin users', function () {
+    verification_code_model_database();
+
+    $user = verification_code_subject([
+        'uuid'  => 'admin-1',
+        'type'  => 'admin',
+        'phone' => '+15550001111',
+    ]);
+    $company = verification_code_company();
+
+    (new HandleAccountCreated())->handle(new AccountCreated($user, $company));
+
+    expect(VerificationCode::query()->count())->toBe(0);
 });
