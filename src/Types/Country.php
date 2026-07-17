@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Types;
 
+use AllowDynamicProperties;
 use Fleetbase\Exceptions\CountryException;
 use Fleetbase\Support\Utils;
 use Illuminate\Support\Arr;
@@ -9,6 +10,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use PragmaRX\Countries\Package\Countries;
 
+#[AllowDynamicProperties]
 class Country implements \JsonSerializable
 {
     /**
@@ -68,6 +70,8 @@ class Country implements \JsonSerializable
             $code = isset($data['cca3']) ? $data['cca3'] : null;
         } else {
             $data = static::all()->where('cca2', $code)->first();
+            $data = $data && method_exists($data, 'toArray') ? $data->toArray() : [];
+            $code = isset($data['cca3']) ? $data['cca3'] : $code;
         }
 
         $this->name         = $data['name'] = Utils::or($data, ['name.common', 'name.official', 'name_long', 'name_en']);
@@ -185,7 +189,7 @@ class Country implements \JsonSerializable
             return false;
         }
 
-        return static::all()->where('cca2', $code)->exists();
+        return static::all()->where('cca2', $code)->isNotEmpty();
     }
 
     /**
@@ -239,10 +243,10 @@ class Country implements \JsonSerializable
                 $query = strtolower($query);
 
                 $matches = [
-                    strtolower($country->getCurrency()) === $query,
-                    strtolower($country->getCode()) === $query,
-                    strtolower($country->getCca2()) === $query,
-                    Str::contains(strtolower($country->getAbbrev()), $query),
+                    strtolower((string) $country->getCurrency()) === $query,
+                    strtolower((string) $country->getCode()) === $query,
+                    strtolower((string) $country->getCca2()) === $query,
+                    Str::contains(strtolower((string) $country->getAbbrev()), $query),
                     // Str::contains(strtolower($country->getName()), $query),
                 ];
 
