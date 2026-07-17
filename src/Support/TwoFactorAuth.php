@@ -570,7 +570,7 @@ class TwoFactorAuth
         }
 
         // Get session key and destroy it
-        $twoFaSessionKey = static::decryptSessionKey($token, $user);
+        $twoFaSessionKey = static::decryptSessionKey($token, $user->uuid);
 
         return Redis::del($twoFaSessionKey);
     }
