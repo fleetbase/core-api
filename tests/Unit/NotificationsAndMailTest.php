@@ -3,11 +3,16 @@
 use Fleetbase\Mail\TestMail;
 use Fleetbase\Mail\UserCredentialsMail;
 use Fleetbase\Mail\VerificationMail;
+use Fleetbase\Models\ChatChannel;
+use Fleetbase\Models\ChatMessage;
+use Fleetbase\Models\ChatParticipant;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\Invite;
 use Fleetbase\Models\User;
 use Fleetbase\Models\VerificationCode;
+use Fleetbase\Notifications\ChatMessageReceived;
 use Fleetbase\Notifications\PasswordReset;
+use Fleetbase\Notifications\TestPushNotification;
 use Fleetbase\Notifications\UserAcceptedCompanyInvite;
 use Fleetbase\Notifications\UserCreated;
 use Fleetbase\Notifications\UserEmailChange;
@@ -65,6 +70,34 @@ function notification_verification_code(array $attributes = []): VerificationCod
     ], $attributes), true);
 
     return $verificationCode;
+}
+
+function notification_chat_participant(array $attributes = [], ?User $user = null): ChatParticipant
+{
+    $participant = new ChatParticipant();
+    $participant->setRawAttributes(array_merge([
+        'uuid'      => 'participant-1',
+        'public_id' => 'chat_participant_1',
+        'user_uuid' => data_get($user, 'uuid', 'user-1'),
+    ], $attributes), true);
+
+    if ($user) {
+        $participant->setRelation('user', $user);
+    }
+
+    return $participant;
+}
+
+function notification_chat_channel(array $attributes = []): ChatChannel
+{
+    $channel = new ChatChannel();
+    $channel->setRawAttributes(array_merge([
+        'uuid'      => 'channel-1',
+        'public_id' => 'chat_channel_1',
+        'name'      => 'Dispatch Chat',
+    ], $attributes), true);
+
+    return $channel;
 }
 
 afterEach(function () {
@@ -219,4 +252,95 @@ test('mailables expose envelopes markdown views and view data contracts', functi
             'type'        => 'email_verification',
             'content'     => 'Use this code to continue.',
         ]);
+});
+
+test('test push notification exposes mobile delivery channels and deterministic payload metadata', function () {
+    notification_mail_container();
+    Carbon::setTestNow(Carbon::parse('2026-07-17 18:22:10'));
+
+    $notification = new TestPushNotification('Test title', 'Test body');
+
+    expect($notification->via())->toBe([
+        NotificationChannels\Fcm\FcmChannel::class,
+        NotificationChannels\Apn\ApnChannel::class,
+    ])
+        ->and($notification->title)->toBe('Test title')
+        ->and($notification->message)->toBe('Test body')
+        ->and($notification->data['id'])->toBeString()->not->toBe('')
+        ->and($notification->data)->toMatchArray([
+            'message' => 'Test Push Notification',
+            'type'    => 'test',
+            'date'    => '2026-07-17 18:22:10',
+        ]);
+});
+
+test('chat message received notification exposes broadcast channels and stable payload shape', function () {
+    notification_mail_container();
+    $senderUser = notification_user([
+        'uuid'  => 'sender-user-1',
+        'name'  => 'Dispatcher Dana',
+        'email' => 'dana@example.test',
+    ]);
+    $sender = notification_chat_participant([
+        'uuid'      => 'sender-participant-1',
+        'public_id' => 'chat_participant_sender',
+    ], $senderUser);
+    $recipient = notification_chat_participant([
+        'uuid'      => 'recipient-participant-1',
+        'public_id' => 'chat_participant_recipient',
+    ], notification_user([
+        'uuid'  => 'recipient-user-1',
+        'name'  => 'Driver Riley',
+        'email' => 'riley@example.test',
+    ]));
+    $channel = notification_chat_channel([
+        'uuid'      => 'chat-channel-uuid-1',
+        'public_id' => 'chat_channel_public_1',
+    ]);
+
+    $message = new ChatMessage();
+    $message->setRawAttributes([
+        'uuid'              => 'message-uuid-1',
+        'public_id'         => 'chat_message_public_1',
+        'sender_uuid'       => 'sender-participant-1',
+        'chat_channel_uuid' => 'chat-channel-uuid-1',
+        'content'           => 'Package is loaded.',
+        'created_at'        => Carbon::parse('2026-07-17 18:30:00'),
+    ], true);
+    $message->setRelation('sender', $sender);
+    $message->setRelation('chatChannel', $channel);
+
+    $notification = new ChatMessageReceived($message, $recipient);
+    $channels     = $notification->broadcastOn();
+    $array        = $notification->toArray();
+
+    expect($notification->via($recipient->user))->toBe([
+        'broadcast',
+        NotificationChannels\Fcm\FcmChannel::class,
+        NotificationChannels\Apn\ApnChannel::class,
+    ])
+        ->and(array_map(fn ($channel) => $channel->name, $channels))->toBe([
+            'chat_channel.chat-channel-uuid-1',
+            'chat_channel.chat_channel_public_1',
+            'chat_participant.recipient-participant-1',
+            'chat_participant.chat_participant_recipient',
+        ])
+        ->and($array['title'])->toBe('Message from Dispatcher Dana')
+        ->and($array['body'])->toBe('Package is loaded.')
+        ->and($array['event'])->toBe('chat_participent.chat_message_received')
+        ->and($array['data'])->toMatchArray([
+            'id'        => 'chat_message_public_1',
+            'type'      => 'chat_message_received',
+            'sender'    => 'chat_participant_sender',
+            'recipient' => 'chat_participant_recipient',
+            'channel'   => 'chat_channel_public_1',
+        ])
+        ->and(collect($array['data']['message'])->except('sent_at')->all())->toBe([
+            'sender'    => 'chat_participant_sender',
+            'recipient' => 'chat_participant_recipient',
+            'channel'   => 'chat_channel_public_1',
+            'content'   => 'Package is loaded.',
+        ])
+        ->and($array['data']['message']['sent_at'])->toBeInstanceOf(Carbon::class)
+        ->and($array['data']['message']['sent_at']->toDateTimeString())->toBe('2026-07-17 18:30:00');
 });
