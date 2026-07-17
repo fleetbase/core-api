@@ -2,6 +2,8 @@
 .idea/codeStyleSettings.xml
 composer.lock
 /vendor/
+/coverage/
+/.phpunit.cache/
 .phpunit.result.cache
 .php_cs.cache
 .php-cs-fixer.cache

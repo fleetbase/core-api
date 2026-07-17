@@ -98,7 +98,14 @@
         }
     },
     "scripts": {
+        "coverage:baseline": [
+            "@test:coverage:clover",
+            "@coverage:summary"
+        ],
+        "coverage:summary": "php scripts/coverage-summary.php coverage/clover.xml",
         "lint": "php-cs-fixer fix -v",
+        "test:coverage": "php scripts/coverage-runner.php --coverage --coverage-text --colors=always",
+        "test:coverage:clover": "mkdir -p coverage && php scripts/coverage-runner.php --coverage-clover=coverage/clover.xml --colors=always",
         "test:lint": "php-cs-fixer fix -v --dry-run",
         "test:types": "phpstan analyse --ansi --memory-limit=-1",
         "test:unit": "pest --colors=always",
