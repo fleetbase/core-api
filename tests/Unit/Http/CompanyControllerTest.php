@@ -84,7 +84,9 @@ function company_controller_fixtures(): Capsule
     EloquentModel::unsetEventDispatcher();
     $capsule->getDatabaseManager()->setDefaultConnection('mysql');
     $container->instance('db', $capsule->getDatabaseManager());
+    $container->instance('db.schema', $capsule->getConnection('mysql')->getSchemaBuilder());
     Facade::clearResolvedInstance('db');
+    Facade::clearResolvedInstance('db.schema');
 
     $schema = $capsule->getConnection('mysql')->getSchemaBuilder();
     $schema->create('companies', function ($table) {
