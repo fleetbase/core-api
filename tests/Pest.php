@@ -315,7 +315,7 @@ namespace {
             );
         }
 
-        public function json(array $data, int $statusCode = 200): JsonResponse
+        public function json(mixed $data, int $statusCode = 200): JsonResponse
         {
             return new JsonResponse($data, $statusCode);
         }
