@@ -7,6 +7,7 @@ use Fleetbase\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 use libphonenumber\NumberParseException;
+use libphonenumber\PhoneNumber;
 use libphonenumber\PhoneNumberFormat;
 use libphonenumber\PhoneNumberUtil;
 use PragmaRX\Countries\Package\Countries;
@@ -58,7 +59,7 @@ class ParsePhone
                 // silence...
             }
 
-            if ($phoneUtil->isValidNumber($parsedNumber)) {
+            if ($parsedNumber instanceof PhoneNumber && $phoneUtil->isValidNumber($parsedNumber)) {
                 return $phoneUtil->format($parsedNumber, $format);
             }
         }
@@ -102,7 +103,7 @@ class ParsePhone
                 // silence...
             }
 
-            if ($phoneUtil->isValidNumber($parsedNumber)) {
+            if ($parsedNumber instanceof PhoneNumber && $phoneUtil->isValidNumber($parsedNumber)) {
                 return $phoneUtil->format($parsedNumber, $format);
             }
         }
@@ -120,7 +121,7 @@ class ParsePhone
                 // silence...
             }
 
-            if ($phoneUtil->isValidNumber($parsedNumber)) {
+            if ($parsedNumber instanceof PhoneNumber && $phoneUtil->isValidNumber($parsedNumber)) {
                 return $phoneUtil->format($parsedNumber, $format);
             }
         }
@@ -138,7 +139,7 @@ class ParsePhone
                 // silence...
             }
 
-            if ($phoneUtil->isValidNumber($parsedNumber)) {
+            if ($parsedNumber instanceof PhoneNumber && $phoneUtil->isValidNumber($parsedNumber)) {
                 return $phoneUtil->format($parsedNumber, $format);
             }
         }
