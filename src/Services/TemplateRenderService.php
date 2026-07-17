@@ -55,6 +55,41 @@ class TemplateRenderService
     }
 
     /**
+     * Return model classes that templates may execute as query data sources.
+     */
+    public static function getTemplateQueryModels(): array
+    {
+        $contextModels = collect(static::$contextTypes)
+            ->pluck('model')
+            ->filter()
+            ->values()
+            ->all();
+
+        return collect($contextModels)
+            ->merge((array) config('fleetbase.template_query_models', []))
+            ->filter(fn ($modelClass) => is_string($modelClass) && is_subclass_of($modelClass, Model::class))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Determine whether a model class is approved for template query execution.
+     */
+    public static function isTemplateQueryModelAllowed(?string $modelClass): bool
+    {
+        return is_string($modelClass) && in_array($modelClass, static::getTemplateQueryModels(), true);
+    }
+
+    /**
+     * Determine whether an approved model without company_uuid may be queried.
+     */
+    public static function isTemplateQueryModelGloballyQueryable(string $modelClass): bool
+    {
+        return in_array($modelClass, (array) config('fleetbase.template_global_query_models', []), true);
+    }
+
+    /**
      * Return all registered context type schemas.
      */
     public function getContextSchemas(): array

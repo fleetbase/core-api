@@ -2,7 +2,6 @@
 
 namespace Fleetbase\Http\Requests;
 
-use Fleetbase\Rules\EmailDomainExcluded;
 use Fleetbase\Rules\ValidPhoneNumber;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\Rule;
@@ -41,20 +40,6 @@ class UpdateUserRequest extends FleetbaseRequest
         return [
             'name'  => ['sometimes', 'required', 'string', 'min:2', 'max:100'],
 
-            // Email must be a valid address, must not be empty, and must remain
-            // unique across non-deleted users — ignoring the current user's own row.
-            'email' => [
-                'sometimes',
-                'required',
-                'string',
-                'email',
-                'max:255',
-                Rule::unique('users', 'email')
-                    ->ignore($userId, 'uuid')
-                    ->whereNull('deleted_at'),
-                new EmailDomainExcluded(),
-            ],
-
             // Phone is optional (some user types may not have one), but if it is
             // supplied it must be a valid E.164 number and must remain unique.
             // `nullable` allows explicit null to clear the field; `required_with`
@@ -80,9 +65,6 @@ class UpdateUserRequest extends FleetbaseRequest
         return [
             'name.required'   => 'Name cannot be empty.',
             'name.min'        => 'Name must be at least 2 characters.',
-            'email.required'  => 'Email address cannot be empty.',
-            'email.email'     => 'A valid email address is required.',
-            'email.unique'    => 'An account with this email address already exists.',
             'phone.unique'    => 'An account with this phone number already exists.',
         ];
     }

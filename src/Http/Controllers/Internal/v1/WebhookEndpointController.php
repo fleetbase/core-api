@@ -3,7 +3,9 @@
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Http\Controllers\FleetbaseController;
+use Fleetbase\Http\Requests\Internal\WebhookEndpointRequest;
 use Fleetbase\Models\WebhookEndpoint;
+use Fleetbase\Rules\PublicWebhookUrl;
 
 class WebhookEndpointController extends FleetbaseController
 {
@@ -13,6 +15,20 @@ class WebhookEndpointController extends FleetbaseController
      * @var string
      */
     public $resource = 'webhook_endpoint';
+
+    /**
+     * Create webhook endpoint request.
+     *
+     * @var WebhookEndpointRequest
+     */
+    public $createRequest = WebhookEndpointRequest::class;
+
+    /**
+     * Update webhook endpoint request.
+     *
+     * @var WebhookEndpointRequest
+     */
+    public $updateRequest = WebhookEndpointRequest::class;
 
     /**
      * The service which this controller belongs to.
@@ -32,9 +48,14 @@ class WebhookEndpointController extends FleetbaseController
             return response()->error('No webhook to enable', 401);
         }
 
-        $webhook = WebhookEndpoint::where('uuid', $id)->first();
+        $webhook = WebhookEndpoint::where('uuid', $id)->where('company_uuid', session('company'))->first();
         if (!$webhook) {
             return response()->error('No webhook found', 401);
+        }
+
+        $urlRule = new PublicWebhookUrl();
+        if (!$urlRule->passes('url', $webhook->url)) {
+            return response()->error($urlRule->message(), 422);
         }
 
         $webhook->enable();
@@ -56,7 +77,7 @@ class WebhookEndpointController extends FleetbaseController
             return response()->error('No webhook to disable', 401);
         }
 
-        $webhook = WebhookEndpoint::where('uuid', $id)->first();
+        $webhook = WebhookEndpoint::where('uuid', $id)->where('company_uuid', session('company'))->first();
         if (!$webhook) {
             return response()->error('No webhook found', 401);
         }

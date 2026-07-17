@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
+use Fleetbase\Exceptions\FleetbaseRequestValidationException;
 use Fleetbase\Exports\CompanyExport;
 use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Http\Requests\AdminRequest;
@@ -17,6 +18,7 @@ use Fleetbase\Support\Auth;
 use Fleetbase\Support\TwoFactorAuth;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use Maatwebsite\Excel\Facades\Excel;
 
@@ -28,6 +30,75 @@ class CompanyController extends FleetbaseController
      * @var string
      */
     public $resource = 'company';
+
+    /**
+     * Find an organization visible to the current session company.
+     *
+     * @return \Illuminate\Http\Response|array
+     */
+    public function findRecord(Request $request, $id)
+    {
+        $company = $this->resolveVisibleCompany($id);
+
+        if (!$company) {
+            return response()->error('Organization not found.', 404);
+        }
+
+        return [$this->resourceSingularlName => new $this->resource($company)];
+    }
+
+    /**
+     * Update only the current session organization through generic REST.
+     *
+     * @return \Illuminate\Http\Response|array
+     */
+    public function updateRecord(Request $request, string $id)
+    {
+        $company = $this->resolveVisibleCompany($id);
+
+        if (!$company) {
+            return response()->error('Organization not found.', 404);
+        }
+
+        try {
+            $input = $this->model->getApiPayloadFromRequest($request);
+            $input = $this->model->fillSessionAttributes($input, [], ['updated_by_uuid']);
+
+            if ($this->model->isColumn('slug')) {
+                unset($input['slug']);
+            }
+
+            foreach (array_keys($input) as $key) {
+                if ($this->model->isInvalidUpdateParam($key)) {
+                    throw new \Exception('Invalid param "' . $key . '" in update request!');
+                }
+            }
+
+            $company->update(Arr::except($input, ['uuid', 'public_id', 'deleted_at', 'updated_at', 'created_at']));
+
+            return [$this->resourceSingularlName => new $this->resource($company->refresh())];
+        } catch (\Illuminate\Database\QueryException $e) {
+            return response()->error($e->getMessage());
+        } catch (FleetbaseRequestValidationException $e) {
+            return response()->error($e->getErrors());
+        } catch (\Exception $e) {
+            return response()->error($e->getMessage());
+        }
+    }
+
+    /**
+     * Disable generic organization deletion.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function deleteRecord($id, Request $request)
+    {
+        if (!$this->resolveVisibleCompany($id)) {
+            return response()->error('Organization not found.', 404);
+        }
+
+        return response()->error('Generic organization deletion is not supported.', 403);
+    }
 
     /**
      * Find company by public_id or invitation code.
@@ -102,18 +173,19 @@ class CompanyController extends FleetbaseController
      */
     public function users(string $id, Request $request)
     {
+        $company = $this->resolveVisibleCompanyForUsers($id, $request);
+
+        if (!$company) {
+            return response()->json(['error' => 'Organization not found.'], 404);
+        }
+
         $searchQuery = $request->searchQuery();
         $limit       = $request->input(['limit', 'nestedLimit'], 20);
         $paginate    = $request->boolean('paginate');
         $exclude     = $request->array('exclude');
 
         // Start user query
-        $usersQuery = CompanyUser::whereHas('company',
-            function ($query) use ($id) {
-                $query->where('public_id', $id);
-                $query->orWhere('uuid', $id);
-            }
-        )
+        $usersQuery = CompanyUser::where('company_uuid', $company->uuid)
         ->whereHas('user')
         ->whereNotIn('user_uuid', $exclude)
         ->with(['user']);
@@ -165,6 +237,42 @@ class CompanyController extends FleetbaseController
         });
 
         return UserResource::collection($users);
+    }
+
+    private function resolveVisibleCompanyForUsers(string $id, Request $request): ?Company
+    {
+        $user = $request->user();
+
+        if ($user && $user->isAdmin()) {
+            return Company::where('uuid', $id)->orWhere('public_id', $id)->first();
+        }
+
+        $sessionCompany = session('company');
+
+        if (!$sessionCompany) {
+            return null;
+        }
+
+        return Company::where('uuid', $sessionCompany)
+            ->where(function ($query) use ($id) {
+                $query->where('uuid', $id)->orWhere('public_id', $id);
+            })
+            ->first();
+    }
+
+    private function resolveVisibleCompany(string $id): ?Company
+    {
+        $sessionCompany = session('company');
+
+        if (!$sessionCompany) {
+            return null;
+        }
+
+        return Company::where('uuid', $sessionCompany)
+            ->where(function ($query) use ($id) {
+                $query->where('uuid', $id)->orWhere('public_id', $id);
+            })
+            ->first();
     }
 
     public function extensions(string $id, AdminRequest $request): JsonResponse
@@ -436,11 +544,21 @@ class CompanyController extends FleetbaseController
         $companyId      = $request->input('company');
         $newOwnerId     = $request->input('newOwner');
         $leave          = $request->boolean('leave');
+        $sessionCompany = session('company');
+        $currentUser    = $request->user();
+
+        if (!$currentUser || !$sessionCompany || ($companyId && $companyId !== $sessionCompany)) {
+            return response()->error('No organization found to transfer ownership for.');
+        }
 
         // Get and validate organization
-        $company = Company::where('uuid', $companyId)->first();
+        $company = Company::where('uuid', $sessionCompany)->first();
         if (!$company) {
             return response()->error('No organization found to transfer ownership for.');
+        }
+
+        if (!$company->isOwner($currentUser)) {
+            return response()->error('Only the organization owner can transfer ownership.', 403);
         }
 
         // Get and validate the new owner
@@ -449,22 +567,23 @@ class CompanyController extends FleetbaseController
             return response()->error('The new owner provided could not be found for transfer of ownership.');
         }
 
+        if ($leave && $newOwner->uuid === $currentUser->uuid) {
+            return response()->error('Select a different organization member before leaving.', 422);
+        }
+
         // Change the company owner
         $company->assignOwner($newOwner);
 
         // If the current user has opted to leave, remove them from the organization
         if ($leave) {
-            $currentUser = $request->user();
-            if ($currentUser) {
-                $currentCompanyUser = $company->getCompanyUserPivot($currentUser);
-                if ($currentCompanyUser) {
-                    $currentCompanyUser->delete();
-                }
-                // Switch organization
-                $nextOrganization = $currentUser->companies()->where('companies.uuid', '!=', $company->uuid)->first();
-                if ($nextOrganization) {
-                    $currentUser->setCompany($nextOrganization);
-                }
+            $currentCompanyUser = $company->getCompanyUserPivot($currentUser);
+            if ($currentCompanyUser) {
+                $currentCompanyUser->delete();
+            }
+            // Switch organization
+            $nextOrganization = $currentUser->companies()->where('companies.uuid', '!=', $company->uuid)->first();
+            if ($nextOrganization) {
+                $currentUser->setCompany($nextOrganization);
             }
         }
 
@@ -483,18 +602,22 @@ class CompanyController extends FleetbaseController
     public function leaveOrganization(Request $request)
     {
         $companyId        = $request->input('company');
-        $currentUserId    = $request->input('user');
-        $currentUser      = Str::isUuid($currentUserId) ? User::where('uuid', $currentUserId)->first() : Auth::getUserFromSession($request);
+        $sessionCompany   = session('company');
+        $currentUser      = $request->user() ?? Auth::getUserFromSession($request);
 
         // If not current user - error
-        if (!$currentUser) {
+        if (!$currentUser || !$sessionCompany || ($companyId && $companyId !== $sessionCompany)) {
             return response()->error('Unable to leave organization.');
         }
 
         // Get and validate organization
-        $company = Company::where('uuid', $companyId)->first();
+        $company = Company::where('uuid', $sessionCompany)->first();
         if (!$company) {
             return response()->error('No organization found for user to leave.');
+        }
+
+        if ($company->isOwner($currentUser)) {
+            return response()->error('Transfer ownership before leaving the organization.', 403);
         }
 
         $currentCompanyUser = $company->getCompanyUserPivot($currentUser);

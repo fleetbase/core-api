@@ -1,59 +1,9 @@
 <?php
 
-namespace Illuminate\Foundation\Auth\Access {
-    trait AuthorizesRequests
-    {
-    }
-}
-
-namespace Illuminate\Foundation\Bus {
-    trait DispatchesJobs
-    {
-    }
-}
-
-namespace Illuminate\Foundation\Validation {
-    trait ValidatesRequests
-    {
-    }
-}
-
-namespace Illuminate\Foundation\Http {
-    class FormRequest extends \Illuminate\Http\Request
-    {
-    }
-}
-
 namespace {
     use Fleetbase\Http\Controllers\Internal\v1\UserController;
     use Fleetbase\Http\Requests\Internal\AcceptCompanyInvite;
     use Fleetbase\Models\Invite;
-    use Illuminate\Http\JsonResponse;
-
-    if (!function_exists('response')) {
-        function response(): AcceptCompanyInviteTestResponseFactory
-        {
-            return new AcceptCompanyInviteTestResponseFactory();
-        }
-    }
-
-    class AcceptCompanyInviteTestResponseFactory
-    {
-        public function error($error, int $statusCode = 400, ?array $data = []): JsonResponse
-        {
-            return $this->json(
-                array_merge([
-                    'errors' => is_array($error) ? $error : [$error],
-                ], $data),
-                $statusCode
-            );
-        }
-
-        public function json(array $data, int $statusCode = 200): JsonResponse
-        {
-            return new JsonResponse($data, $statusCode);
-        }
-    }
 
     class AcceptCompanyInviteTestController extends UserController
     {

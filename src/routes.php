@@ -30,6 +30,13 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
         */
         $router->prefix('v1')
             ->namespace('Api\v1')
+            ->middleware(['fleetbase.platform-api'])
+            ->group(function ($router) {
+                $router->get('organizations', 'OrganizationController@listOrganizations');
+            });
+
+        $router->prefix('v1')
+            ->namespace('Api\v1')
             ->middleware(['fleetbase.api'])
             ->group(function ($router) {
                 $router->group(
@@ -193,6 +200,9 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 );
                                 $router->fleetbaseRoutes('settings', null, [], function ($router, $controller) {
                                     $router->get('overview', $controller('adminOverview'));
+                                    $router->get('platform-api-token', $controller('getPlatformApiToken'));
+                                    $router->post('platform-api-token', $controller('rotatePlatformApiToken'));
+                                    $router->delete('platform-api-token', $controller('revokePlatformApiToken'));
                                     $router->get('filesystem-config', $controller('getFilesystemConfig'));
                                     $router->post('filesystem-config', $controller('saveFilesystemConfig'));
                                     $router->post('test-filesystem-config', $controller('testFilesystemConfig'));
@@ -262,6 +272,8 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     $router->patch('activate/{id}', $controller('activate'));
                                     $router->patch('verify/{id}', $controller('verify'));
                                     $router->delete('remove-from-company/{id}', $controller('removeFromCompany'));
+                                    $router->post('change-email', $controller('changeCurrentUserEmail'));
+                                    $router->post('{id}/change-email', $controller('changeEmail'));
                                     $router->post('invite-user', $controller('inviteUser'));
                                     $router->post('resend-invite', $controller('resendInvitation'));
                                     $router->post('set-password', $controller('setCurrentUserPassword'));

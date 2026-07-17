@@ -82,7 +82,9 @@ class PolicyController extends FleetbaseController
     public function deleteRecord($id, Request $request)
     {
         $id     = $request->segment(4);
-        $policy = Policy::find($id);
+        $policy = Policy::where('id', $id)
+            ->where('company_uuid', session('company'))
+            ->first();
 
         if (!$policy) {
             return response()->error('Unable to find policy for deletion.');

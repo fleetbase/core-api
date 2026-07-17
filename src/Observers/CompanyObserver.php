@@ -19,6 +19,7 @@ class CompanyObserver
 
         foreach ($company->users as $user) {
             Cache::forget("user_organizations_{$user->uuid}");
+            Cache::forget("user_organizations_v2_{$user->uuid}");
         }
     }
 

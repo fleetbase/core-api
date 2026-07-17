@@ -27,7 +27,7 @@ class TemplateQuery extends FleetbaseResource
             'conditions'    => $this->conditions ?? [],
             'sort'          => $this->sort ?? [],
             'limit'         => $this->limit,
-            'with'          => $this->with ?? [],
+            'with'          => data_get($this->resource, 'with', []),
             'updated_at'    => $this->updated_at,
             'created_at'    => $this->created_at,
         ];

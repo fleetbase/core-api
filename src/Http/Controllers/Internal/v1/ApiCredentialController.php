@@ -182,7 +182,9 @@ class ApiCredentialController extends FleetbaseController
         }
 
         // get the api key to roll
-        $apiCredential = ApiCredential::find($id);
+        $apiCredential = ApiCredential::where('uuid', $id)
+            ->where('company_uuid', session('company'))
+            ->first();
 
         // if no api key respond with error
         if (!$apiCredential) {

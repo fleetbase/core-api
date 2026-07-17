@@ -3,6 +3,7 @@
 namespace Fleetbase\Traits;
 
 use Fleetbase\Support\Utils;
+use Illuminate\Support\Str;
 
 trait HasPublicId
 {
@@ -25,31 +26,14 @@ trait HasPublicId
     }
 
     /**
-     * Generate a hashid with maximum uniqueness using cryptographically secure random numbers.
+     * Generate a random public ID suffix.
      *
      * @return string
      */
     public static function getPublicId()
     {
-        $sqids  = new \Sqids\Sqids();
-
-        // Maximize uniqueness with multiple entropy sources
-        // CRITICAL: Use random_int() instead of rand() for cryptographic security
-        $hashid = lcfirst($sqids->encode([
-            time(),                                    // Current second
-            (int) (microtime(true) * 1000000),         // Microseconds
-            getmypid(),                                // Process ID
-            random_int(0, PHP_INT_MAX),               // Cryptographically secure random
-            random_int(0, PHP_INT_MAX),               // Another secure random
-            random_int(0, PHP_INT_MAX),               // Third secure random
-            crc32(uniqid('', true)),                  // Unique ID hash for extra entropy
-        ]));
-
-        // 10 characters for better collision resistance
-        // 62^10 = 839 quadrillion combinations
-        $hashid = substr($hashid, 0, 10);
-
-        return $hashid;
+        // Keep entropy in the retained suffix; bulk importers may generate thousands in the same second.
+        return Str::lower(Str::random(10));
     }
 
     /**

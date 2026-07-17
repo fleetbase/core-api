@@ -38,7 +38,7 @@ class ChatChannelController extends FleetbaseController
             ]);
 
             foreach ($participants as $userId) {
-                $user = User::where('uuid', $userId)->orWhere('public_id', $userId)->first();
+                $user = $this->companyUserQuery($userId)->first();
 
                 if (!$user || $user->uuid === session('user')) {
                     continue;
@@ -70,7 +70,7 @@ class ChatChannelController extends FleetbaseController
     {
         $query         = $request->input('query');
         $chatChannelId = $request->input('channel');
-        $chatChannel   = $chatChannelId ? ChatChannel::where('uuid', $chatChannelId)->orWhere('public_id', $chatChannelId)->first() : null;
+        $chatChannel   = $chatChannelId ? $this->companyChatChannelQuery($chatChannelId)->first() : null;
 
         $users = User::whereHas('companyUsers', function ($query) {
             $query->where('company_uuid', session('company'));
@@ -102,7 +102,13 @@ class ChatChannelController extends FleetbaseController
      */
     public function getUnreadCountForChannel(string $channelId, Request $request)
     {
-        $chatChannel = ChatChannel::where('uuid', $channelId)->first();
+        $userUuid     = $request->user()?->uuid;
+        $chatChannel  = ChatChannel::where('company_uuid', session('company'))
+            ->where('uuid', $channelId)
+            ->whereHas('participants', function ($query) use ($userUuid) {
+                $query->where('user_uuid', $userUuid);
+            })
+            ->first();
         if (!$chatChannel) {
             return response()->json(['error' => 'Chat channel not found.'], 404);
         }
@@ -135,5 +141,23 @@ class ChatChannelController extends FleetbaseController
         }
 
         return response()->json(['unreadCount' => $unreadCount]);
+    }
+
+    protected function companyUserQuery(string $id)
+    {
+        return User::where(function ($query) use ($id) {
+            $query->where('uuid', $id)->orWhere('public_id', $id);
+        })
+            ->whereHas('companyUsers', function ($query) {
+                $query->where('company_uuid', session('company'));
+            });
+    }
+
+    protected function companyChatChannelQuery(string $id)
+    {
+        return ChatChannel::where('company_uuid', session('company'))
+            ->where(function ($query) use ($id) {
+                $query->where('uuid', $id)->orWhere('public_id', $id);
+            });
     }
 }

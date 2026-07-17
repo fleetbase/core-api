@@ -84,7 +84,7 @@ return new class extends Migration {
             // Multi-currency settlement
             // ----------------------------------------------------------------
             $table->decimal('exchange_rate', 18, 8)->default(1)->after('currency');
-            $table->string('settled_currency', 3)->nullable()->after('exchange_rate');
+            $table->string('settled_currency', 10)->nullable()->after('exchange_rate');
             $table->integer('settled_amount')->nullable()->after('settled_currency');
 
             // ----------------------------------------------------------------

@@ -68,6 +68,11 @@ class CoreServiceProvider extends ServiceProvider
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
             \Fleetbase\Http\Middleware\LogApiRequests::class,
         ],
+        'fleetbase.platform-api' => [
+            \Fleetbase\Http\Middleware\ThrottleRequests::class,
+            \Fleetbase\Http\Middleware\AuthenticatePlatformApiToken::class,
+            \Illuminate\Routing\Middleware\SubstituteBindings::class,
+        ],
     ];
 
     /**

@@ -7,7 +7,7 @@ use Fleetbase\Support\Reporting\ReportSchemaRegistry;
 use Fleetbase\Support\Reporting\Schema\Column;
 use Fleetbase\Support\Reporting\Schema\Relationship;
 use Fleetbase\Support\Reporting\Schema\Table;
-use Tests\TestCase;
+use PHPUnit\Framework\TestCase;
 
 class ComputedColumnValidatorTest extends TestCase
 {
@@ -18,8 +18,8 @@ class ComputedColumnValidatorTest extends TestCase
     {
         parent::setUp();
 
-        // Create a mock registry with a test table
         $this->registry = new ReportSchemaRegistry();
+        $this->registry->setCacheEnabled(false);
 
         $testTable = Table::make('test_table')
             ->label('Test Table')
