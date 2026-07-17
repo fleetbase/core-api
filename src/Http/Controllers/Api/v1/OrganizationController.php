@@ -39,6 +39,10 @@ class OrganizationController extends Controller
     public function getCurrent(Request $request)
     {
         $token       = $request->bearerToken();
+        if (empty($token)) {
+            return response()->error('No API key found to fetch company details with.');
+        }
+
         $isSecretKey = Str::startsWith($token, '$');
         $companyId   = null;
 
@@ -67,7 +71,7 @@ class OrganizationController extends Controller
         if (!$apiCredential) {
             $apiCredential = PersonalAccessToken::findToken($token);
 
-            if ($apiCredential->tokenable) {
+            if ($apiCredential && $apiCredential->tokenable) {
                 $companyId = $apiCredential->tokenable->company_uuid;
             }
         }
