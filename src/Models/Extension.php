@@ -148,6 +148,10 @@ class Extension extends Model
      */
     public function getIsInstalledAttribute()
     {
+        if (array_key_exists('is_installed', $this->attributes)) {
+            return (bool) $this->attributes['is_installed'];
+        }
+
         $isInstalled   = (bool) $this->installs()->where('company_uuid', session('company'))->count();
         $isCoreService = $this->core_service;
 
