@@ -80,6 +80,44 @@ namespace Illuminate\Foundation\Support\Providers {
     }
 }
 
+namespace Illuminate\Foundation\Bus {
+    if (!trait_exists(Dispatchable::class)) {
+        trait Dispatchable
+        {
+        }
+    }
+}
+
+namespace Illuminate\Bus {
+    if (!trait_exists(Queueable::class)) {
+        trait Queueable
+        {
+        }
+    }
+}
+
+namespace Illuminate\Queue {
+    if (!trait_exists(InteractsWithQueue::class)) {
+        trait InteractsWithQueue
+        {
+        }
+    }
+
+    if (!trait_exists(SerializesModels::class)) {
+        trait SerializesModels
+        {
+        }
+    }
+}
+
+namespace Illuminate\Contracts\Queue {
+    if (!interface_exists(ShouldQueue::class)) {
+        interface ShouldQueue
+        {
+        }
+    }
+}
+
 namespace {
     use Fleetbase\Events\AccountCreated;
     use Fleetbase\Events\ResourceLifecycleEvent;
@@ -115,7 +153,12 @@ namespace {
     use Fleetbase\Webhook\Events\WebhookCallFailedEvent;
     use Fleetbase\Webhook\Events\WebhookCallSucceededEvent;
     use Fleetbase\Webhook\WebhookServerServiceProvider;
+    use Illuminate\Console\Scheduling\Schedule;
+    use Illuminate\Container\Container;
     use Illuminate\Contracts\Http\Kernel;
+    use Illuminate\Database\Capsule\Manager as Capsule;
+    use Illuminate\Database\Eloquent\Model as EloquentModel;
+    use Illuminate\Events\Dispatcher;
     use Illuminate\Notifications\Events\BroadcastNotificationCreated;
     use Illuminate\Support\Facades\Blade;
     use Illuminate\Support\Facades\Broadcast;
@@ -200,6 +243,180 @@ namespace {
         }
     }
 
+    class CoreProviderContractsBootProbe extends CoreProviderContractsCommandProbe
+    {
+        public array $calls                                 = [];
+        public ?CoreProviderContractsScheduleFake $schedule = null;
+
+        public function scheduleCommands(?callable $callback = null): void
+        {
+            $this->calls[]  = 'scheduleCommands';
+            $this->schedule = new CoreProviderContractsScheduleFake();
+            $callback($this->schedule);
+        }
+
+        public function registerObservers(): void
+        {
+            $this->calls[] = 'registerObservers';
+        }
+
+        public function registerExpansionsFrom($from = null, $namespace = null): void
+        {
+            $this->calls[] = 'registerExpansionsFrom';
+        }
+
+        public function registerMiddleware(): void
+        {
+            $this->calls[] = 'registerMiddleware';
+        }
+
+        public function registerCustomBladeComponents()
+        {
+            $this->calls[] = 'registerCustomBladeComponents';
+        }
+
+        public function mergeConfigFromSettings()
+        {
+            $this->calls[] = 'mergeConfigFromSettings';
+        }
+
+        public function pingTelemetry()
+        {
+            $this->calls[] = 'pingTelemetry';
+        }
+
+        protected function loadRoutesFrom($path)
+        {
+            $this->calls[] = ['loadRoutesFrom', $path];
+        }
+
+        protected function loadMigrationsFrom($paths)
+        {
+            $this->calls[] = ['loadMigrationsFrom', $paths];
+        }
+
+        protected function loadViewsFrom($path, $namespace)
+        {
+            $this->calls[] = ['loadViewsFrom', $path, $namespace];
+        }
+    }
+
+    class CoreProviderContractsApplicationFake extends FleetbaseTestContainer
+    {
+        public array $bootedCallbacks = [];
+
+        public function __construct(private string $environment = 'production', private bool $console = false)
+        {
+        }
+
+        public function environment(array|string $environments): bool|string
+        {
+            if (is_array($environments)) {
+                return in_array($this->environment, $environments, true);
+            }
+
+            return $this->environment === $environments;
+        }
+
+        public function runningInConsole(): bool
+        {
+            return $this->console;
+        }
+
+        public function booted($callback)
+        {
+            $this->bootedCallbacks[] = $callback;
+            $callback();
+        }
+    }
+
+    class CoreProviderContractsScheduleFake
+    {
+        public array $commands = [];
+        public array $jobs     = [];
+
+        public function command(string $command, array $parameters = []): CoreProviderContractsScheduledEventFake
+        {
+            $event            = new CoreProviderContractsScheduledEventFake('command', $command, $parameters);
+            $this->commands[] = $event;
+
+            return $event;
+        }
+
+        public function job(object $job): CoreProviderContractsScheduledEventFake
+        {
+            $event        = new CoreProviderContractsScheduledEventFake('job', $job::class);
+            $this->jobs[] = $event;
+
+            return $event;
+        }
+    }
+
+    class CoreProviderContractsScheduledEventFake
+    {
+        public array $methods = [];
+
+        public function __construct(public string $type, public string $name, public array $parameters = [])
+        {
+        }
+
+        public function hourly(): self
+        {
+            $this->methods[] = ['hourly'];
+
+            return $this;
+        }
+
+        public function twiceDaily(int $first, int $second): self
+        {
+            $this->methods[] = ['twiceDaily', $first, $second];
+
+            return $this;
+        }
+
+        public function daily(): self
+        {
+            $this->methods[] = ['daily'];
+
+            return $this;
+        }
+
+        public function dailyAt(string $time): self
+        {
+            $this->methods[] = ['dailyAt', $time];
+
+            return $this;
+        }
+
+        public function name(string $name): self
+        {
+            $this->methods[] = ['name', $name];
+
+            return $this;
+        }
+
+        public function withoutOverlapping(): self
+        {
+            $this->methods[] = ['withoutOverlapping'];
+
+            return $this;
+        }
+    }
+
+    class CoreProviderContractsCacheFake
+    {
+        public array $values = [];
+
+        public function remember(string $key, mixed $ttl, callable $callback): mixed
+        {
+            if (!array_key_exists($key, $this->values)) {
+                $this->values[$key] = $callback();
+            }
+
+            return $this->values[$key];
+        }
+    }
+
     class CoreProviderContractsExpansionTarget
     {
         public static array $expanded = [];
@@ -272,6 +489,51 @@ namespace {
 
         return new CoreServiceProvider($container);
     }
+
+    function core_provider_database(CoreProviderContractsApplicationFake $container): Capsule
+    {
+        EloquentModel::clearBootedModels();
+
+        $connection = [
+            'driver'   => 'sqlite',
+            'database' => ':memory:',
+            'prefix'   => '',
+        ];
+
+        $container = bind_test_container([
+            'database.default'           => 'mysql',
+            'database.connections.mysql' => $connection,
+            'fleetbase.connection.db'    => 'mysql',
+        ]);
+
+        $capsule = new Capsule($container);
+        $capsule->addConnection($connection, 'mysql');
+        $capsule->setEventDispatcher(new Dispatcher($container));
+        $capsule->setAsGlobal();
+        $capsule->bootEloquent();
+        $capsule->getDatabaseManager()->setDefaultConnection('mysql');
+        $container->instance('db', $capsule->getDatabaseManager());
+        $container->instance('db.schema', $capsule->getConnection('mysql')->getSchemaBuilder());
+        Facade::clearResolvedInstance('db');
+        Facade::clearResolvedInstance('db.schema');
+
+        $capsule->getConnection('mysql')->getSchemaBuilder()->create('settings', function ($table) {
+            $table->increments('id');
+            $table->string('key')->nullable();
+            $table->text('value')->nullable();
+        });
+
+        return $capsule;
+    }
+
+    afterEach(function () {
+        putenv('CI');
+        putenv('TELEMETRY_DISABLED');
+        Facade::clearResolvedInstances();
+        EloquentModel::unsetEventDispatcher();
+        EloquentModel::clearBootedModels();
+        Container::setInstance(new FleetbaseTestContainer());
+    });
 
     test('core service provider exposes critical observer middleware and command contracts', function () {
         $provider = core_provider();
@@ -522,9 +784,114 @@ namespace {
         expect($called)->toBeFalse();
     });
 
+    test('core service provider registers scheduler callbacks when app is booted outside testing', function () {
+        $app = new CoreProviderContractsApplicationFake('production', false);
+        Container::setInstance($app);
+        Facade::setFacadeApplication($app);
+        core_provider_database($app);
+
+        $schedule = new CoreProviderContractsScheduleFake();
+        $app->instance(Schedule::class, $schedule);
+
+        $provider = new CoreServiceProvider($app);
+        $provider->scheduleCommands(function (CoreProviderContractsScheduleFake $scheduler) {
+            $scheduler->command('test:command')->daily();
+        });
+
+        expect($app->bootedCallbacks)->toHaveCount(1)
+            ->and($schedule->commands)->toHaveCount(1)
+            ->and($schedule->commands[0]->name)->toBe('test:command')
+            ->and($schedule->commands[0]->methods)->toBe([['daily']]);
+    });
+
+    test('core service provider boot wires scheduled maintenance and package bootstrapping contracts', function () {
+        $previousNotifications               = NotificationRegistry::$notifications;
+        NotificationRegistry::$notifications = [];
+        $blade                               = new CoreProviderContractsBladeFake();
+        Blade::swap($blade);
+
+        try {
+            $provider = new CoreProviderContractsBootProbe(bind_test_container(['app.env' => 'testing']));
+
+            $provider->boot();
+
+            expect($provider->registeredCommands)->toBe($provider->commands)
+                ->and($provider->calls)->toContain(
+                    'scheduleCommands',
+                    'registerObservers',
+                    'registerExpansionsFrom',
+                    'registerMiddleware',
+                    'registerCustomBladeComponents',
+                    'mergeConfigFromSettings',
+                    'pingTelemetry'
+                )
+                ->and($provider->calls)->toContain(
+                    ['loadRoutesFrom', dirname(__DIR__, 3) . '/src/Providers/../routes.php'],
+                    ['loadMigrationsFrom', dirname(__DIR__, 3) . '/src/Providers/../../migrations'],
+                    ['loadViewsFrom', dirname(__DIR__, 3) . '/src/Providers/../../views', 'fleetbase']
+                )
+                ->and($provider->schedule->commands)->toHaveCount(8)
+                ->and(array_map(fn ($event) => $event->name, $provider->schedule->commands))->toBe([
+                    'cache:prune-stale-tags',
+                    'model:prune',
+                    'purge:api-logs --force --no-interaction --days 2',
+                    'purge:webhook-logs --force --no-interaction --days 2',
+                    'purge:activity-logs --force --no-interaction --days 2',
+                    'purge:scheduled-task-logs --force --no-interaction --days 1',
+                    'telemetry:ping',
+                    'sandbox:sync',
+                ])
+                ->and($provider->schedule->commands[1]->parameters)->toBe(['--model' => Spatie\ScheduleMonitor\Models\MonitoredScheduledTaskLogItem::class])
+                ->and($provider->schedule->commands[7]->methods)->toBe([['hourly'], ['name', 'sandbox-sync'], ['withoutOverlapping']])
+                ->and($provider->schedule->jobs)->toHaveCount(1)
+                ->and($provider->schedule->jobs[0]->name)->toBe(Fleetbase\Jobs\MaterializeSchedulesJob::class)
+                ->and($provider->schedule->jobs[0]->methods)->toBe([['dailyAt', '01:00'], ['name', 'materialize-schedules'], ['withoutOverlapping']])
+                ->and(NotificationRegistry::findNotificationRegistrationByDefinition(Fleetbase\Notifications\UserCreated::class))->not->toBeNull();
+        } finally {
+            NotificationRegistry::$notifications = $previousNotifications;
+            Facade::clearResolvedInstance('blade.compiler');
+        }
+    });
+
+    test('core service provider telemetry ping runs only for web requests with configured storage', function () {
+        putenv('TELEMETRY_DISABLED=true');
+
+        $app = new CoreProviderContractsApplicationFake('production', false);
+        Container::setInstance($app);
+        Facade::setFacadeApplication($app);
+        core_provider_database($app);
+        $cache = new CoreProviderContractsCacheFake();
+        $app->instance('cache', $cache);
+        Facade::clearResolvedInstance('cache');
+
+        (new CoreServiceProvider($app))->pingTelemetry();
+
+        expect($cache->values)->toHaveKey('telemetry:last_ping');
+
+        $consoleApp = new CoreProviderContractsApplicationFake('production', true);
+        Container::setInstance($consoleApp);
+        Facade::setFacadeApplication($consoleApp);
+        core_provider_database($consoleApp);
+        $consoleCache = new CoreProviderContractsCacheFake();
+        $consoleApp->instance('cache', $consoleCache);
+        Facade::clearResolvedInstance('cache');
+
+        (new CoreServiceProvider($consoleApp))->pingTelemetry();
+
+        expect($consoleCache->values)->toBe([]);
+    });
+
     test('socket cluster provider registers the socketcluster broadcaster driver', function () {
         $broadcast = new CoreProviderContractsBroadcastFake();
         Broadcast::swap($broadcast);
+        bind_test_container([
+            'broadcasting.connections.socketcluster.options' => [
+                'secure' => false,
+                'host'   => 'socket.test',
+                'port'   => 8000,
+                'path'   => '/socketcluster/',
+            ],
+        ]);
 
         (new SocketClusterServiceProvider(bind_test_container()))->boot();
 
