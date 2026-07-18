@@ -108,6 +108,10 @@ class ChatLog extends Model
             $type          = $segments[0];
             $id            = $segments[1];
             $typeClass     = Utils::getMutationType($type);
+            if (!Utils::classExists($typeClass)) {
+                continue;
+            }
+
             $modelInstance = app($typeClass)->where('uuid', $id)->first();
             if ($modelInstance) {
                 $resolvedSubjects[] = $modelInstance;

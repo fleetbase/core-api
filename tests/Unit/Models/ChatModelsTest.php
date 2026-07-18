@@ -7,6 +7,7 @@ use Fleetbase\Models\ChatLog;
 use Fleetbase\Models\ChatMessage;
 use Fleetbase\Models\ChatParticipant;
 use Fleetbase\Models\ChatReceipt;
+use Fleetbase\Models\Company;
 use Fleetbase\Models\File;
 use Fleetbase\Models\User;
 use Illuminate\Database\Capsule\Manager as Capsule;
@@ -346,6 +347,89 @@ it('combines chat messages attachments and logs into chronological feed entries'
         ->and($feed[0]['data'])->toBeInstanceOf(ChatAttachment::class)
         ->and($feed[1]['data'])->toBeInstanceOf(ChatMessage::class)
         ->and($feed[2]['data'])->toBeInstanceOf(ChatLog::class);
+});
+
+it('resolves chat log subjects content and relationship contracts', function () {
+    $capsule = chat_models_database();
+    $testing = $capsule->getConnection('testing');
+    $mysql   = $capsule->getConnection('mysql');
+
+    $mysql->table('users')->insert([
+        ['uuid' => 'user-1', 'name' => 'Ada Lovelace', 'created_at' => now(), 'updated_at' => now()],
+        ['uuid' => 'user-2', 'name' => 'Grace Hopper', 'created_at' => now(), 'updated_at' => now()],
+    ]);
+    $testing->table('chat_channels')->insert([
+        'uuid'         => 'channel-1',
+        'company_uuid' => 'company-1',
+        'created_at'   => now(),
+        'updated_at'   => now(),
+    ]);
+    $testing->table('chat_participants')->insert([
+        'uuid'              => 'participant-1',
+        'company_uuid'      => 'company-1',
+        'chat_channel_uuid' => 'channel-1',
+        'user_uuid'         => 'user-1',
+        'created_at'        => now(),
+        'updated_at'        => now(),
+    ]);
+
+    $log = ChatLog::create([
+        'company_uuid'      => 'company-1',
+        'chat_channel_uuid' => 'channel-1',
+        'initiator_uuid'    => 'participant-1',
+        'event_type'        => 'custom',
+        'content'           => '{subject.0.name} mentioned {subject.1.name} and kept {subject.2.name}.',
+        'subjects'          => ['user:user-1', 'missing-format', 'user:user-2', 'user:missing'],
+        'status'            => 'complete',
+    ]);
+
+    expect($log->company()->getRelated())->toBeInstanceOf(Company::class)
+        ->and($log->company()->getForeignKeyName())->toBe('company_uuid')
+        ->and($log->chatChannel()->getRelated())->toBeInstanceOf(ChatChannel::class)
+        ->and($log->chatChannel()->getForeignKeyName())->toBe('chat_channel_uuid')
+        ->and($log->initiator()->getRelated())->toBeInstanceOf(ChatParticipant::class)
+        ->and($log->initiator()->getForeignKeyName())->toBe('initiator_uuid')
+        ->and(array_map(fn ($subject) => $subject->uuid, $log->resolveSubjects()))->toBe(['user-1', 'user-2'])
+        ->and($log->getContent())->toBe('Ada Lovelace mentioned Grace Hopper and kept {subject.2.name}.')
+        ->and($log->resolved_content)->toBe('Ada Lovelace mentioned Grace Hopper and kept {subject.2.name}.');
+});
+
+it('creates chat lifecycle logs with stable event types subjects and content templates', function () {
+    $capsule = chat_models_database();
+    $db      = $capsule->getConnection('testing');
+
+    $db->table('chat_channels')->insert([
+        'uuid'         => 'channel-1',
+        'company_uuid' => 'company-1',
+        'created_at'   => now(),
+        'updated_at'   => now(),
+    ]);
+    $db->table('chat_participants')->insert([
+        ['uuid' => 'participant-1', 'company_uuid' => 'company-1', 'chat_channel_uuid' => 'channel-1', 'user_uuid' => 'user-1', 'created_at' => now(), 'updated_at' => now()],
+        ['uuid' => 'participant-2', 'company_uuid' => 'company-1', 'chat_channel_uuid' => 'channel-1', 'user_uuid' => 'user-2', 'created_at' => now(), 'updated_at' => now()],
+    ]);
+
+    $initiator = ChatParticipant::query()->whereKey('participant-1')->firstOrFail();
+    $added     = ChatParticipant::query()->whereKey('participant-2')->firstOrFail();
+
+    $createdChat    = ChatLog::participantAdded($initiator, $initiator);
+    $addedOther     = ChatLog::participantAdded($initiator, $added);
+    $deletedMessage = ChatLog::messageDeleted($initiator, 'message-1');
+    $startedChat    = ChatLog::chatStarted($initiator);
+    $endedChat      = ChatLog::chatEnded($initiator);
+
+    expect($createdChat->event_type)->toBe('created_chat')
+        ->and($createdChat->subjects)->toBe(['user:user-1'])
+        ->and($createdChat->content)->toBe('{subject.0.name} has created a new chat.')
+        ->and($addedOther->event_type)->toBe('added_participant')
+        ->and($addedOther->subjects)->toBe(['user:user-1', 'user:user-2'])
+        ->and($deletedMessage->event_type)->toBe('deleted_message')
+        ->and($deletedMessage->subjects)->toBe(['user:user-1', 'message:message-1'])
+        ->and($startedChat->event_type)->toBe('started_chat')
+        ->and($startedChat->subjects)->toBe(['user:user-1'])
+        ->and($endedChat->event_type)->toBe('ended_chat')
+        ->and($endedChat->subjects)->toBe(['user:user-1'])
+        ->and(ChatLog::query()->pluck('status')->unique()->all())->toBe(['complete']);
 });
 
 it('defines chat attachment ownership channel message and file relationships', function () {
