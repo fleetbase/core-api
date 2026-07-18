@@ -237,6 +237,58 @@ test('data purger deep reference pass deletes child rows before parent tenant ro
         ->and($db->table('companies')->pluck('uuid')->all())->toBe(['company-1', 'company-2']);
 });
 
+test('data purger deep reference pass skips unsafe parents and honors dry run', function () {
+    $capsule = data_purger_database();
+    $db      = $capsule->getConnection('mysql');
+    $schema  = $db->getSchemaBuilder();
+
+    $schema->create('audit_rows', function ($table) {
+        $table->string('company_uuid')->nullable();
+        $table->string('reference')->nullable();
+    });
+    $schema->create('audit_children', function ($table) {
+        $table->string('audit_reference')->nullable();
+    });
+
+    $db->table('audit_rows')->insert([
+        ['company_uuid' => 'company-1', 'reference' => 'audit-1'],
+        ['company_uuid' => 'company-2', 'reference' => 'audit-2'],
+    ]);
+    $db->table('audit_children')->insert([
+        ['audit_reference' => 'audit-1'],
+        ['audit_reference' => 'audit-2'],
+    ]);
+
+    $unsafeParent = new DataPurgerTestPurger(
+        $db,
+        null,
+        ['audit_rows', 'audit_children'],
+        [['audit_children', 'audit_reference', 'audit_rows', 'reference']]
+    );
+
+    $unsafeResult = $unsafeParent->purgeCompany('company-1', deleteCompanyRow: false, deepReferencePass: true);
+
+    expect($unsafeResult)->toBe([
+        'tables' => ['audit_rows' => 1],
+        'total'  => 1,
+    ])->and($db->table('audit_children')->pluck('audit_reference')->all())->toBe(['audit-1', 'audit-2']);
+
+    $dryRun = new DataPurgerTestPurger(
+        $db,
+        null,
+        ['orders', 'order_notes'],
+        [['order_notes', 'order_uuid', 'orders', 'uuid']]
+    );
+
+    $dryRunResult = $dryRun->purgeCompany('company-2', deleteCompanyRow: false, deepReferencePass: true, dryRun: true);
+
+    expect($dryRunResult)->toBe([
+        'tables' => ['orders' => 0],
+        'total'  => 0,
+    ])->and($db->table('order_notes')->pluck('body')->all())->toBe(['tenant note', 'other note'])
+        ->and($db->table('orders')->pluck('uuid')->all())->toBe(['order-1', 'order-2', 'order-3']);
+});
+
 test('data purger discovers allowed tenant tables and detects safe key columns', function () {
     $capsule = data_purger_database();
     $db      = $capsule->getConnection('mysql');
@@ -244,14 +296,19 @@ test('data purger discovers allowed tenant tables and detects safe key columns',
     $schema->create('audit_rows', function ($table) {
         $table->string('event')->nullable();
     });
+    $schema->create('id_only_rows', function ($table) {
+        $table->increments('id');
+        $table->string('company_uuid')->nullable();
+    });
 
     $purger = new DataPurgerProbe($db);
     $purger->setSkipPrefixes(['global_']);
 
-    expect($purger->tenantTables())->toContain('companies', 'orders', 'api_events', 'order_notes', 'audit_rows')
+    expect($purger->tenantTables())->toContain('companies', 'orders', 'api_events', 'order_notes', 'audit_rows', 'id_only_rows')
         ->and($purger->tenantTables())->not->toContain('global_settings')
         ->and($purger->keyFor('companies'))->toBe('uuid')
         ->and($purger->keyFor('orders'))->toBe('uuid')
+        ->and($purger->keyFor('id_only_rows'))->toBe('id')
         ->and($purger->keyFor('audit_rows'))->toBeNull();
 });
 
@@ -289,4 +346,26 @@ test('data purger rolls back failed purges logs errors and restores foreign key 
             'context' => ['error' => 'simulated purge failure'],
             'level'   => 'error',
         ]);
+});
+
+test('data purger uses the default log facade when no logger closure is provided', function () {
+    $capsule = data_purger_database();
+    $db      = $capsule->getConnection('mysql');
+    $logger  = app('log');
+
+    $result = (new DataPurgerTestPurger($db, null, ['orders']))
+        ->purgeCompany('company-2', deleteCompanyRow: false, verbose: true);
+
+    expect($result)->toBe([
+        'tables' => ['orders' => 1],
+        'total'  => 1,
+    ])->and($logger->entries[0])->toMatchArray([
+        'info',
+        '[DataPurger] Starting purge',
+        ['company' => 'company-2', 'deep' => false, 'dry_run' => false],
+    ])->and($logger->entries[count($logger->entries) - 1])->toMatchArray([
+        'info',
+        '[DataPurger] Purge complete',
+        ['total_deleted' => 1],
+    ]);
 });

@@ -309,6 +309,36 @@ it('reports unavailable schedule template rrule support clearly in this package 
         ->and($template->getOccurrencesBetween($from, $to, 'UTC'))->toBe([]);
 });
 
+it('exposes schedule template relationship keys and rrule dependency failures', function () {
+    scheduling_models_database();
+
+    $template = new ScheduleTemplate();
+    $template->setRawAttributes([
+        'uuid'          => 'template-relations',
+        'company_uuid'  => 'company-1',
+        'schedule_uuid' => 'schedule-1',
+        'subject_type'  => Fleetbase\Models\User::class,
+        'subject_uuid'  => 'driver-1',
+        'start_time'    => '09:15',
+        'rrule'         => 'FREQ=DAILY;COUNT=1',
+    ], true);
+
+    expect($template->company()->getForeignKeyName())->toBe('company_uuid')
+        ->and($template->company()->getOwnerKeyName())->toBe('uuid')
+        ->and($template->company()->getRelated())->toBeInstanceOf(Fleetbase\Models\Company::class)
+        ->and($template->schedule()->getForeignKeyName())->toBe('schedule_uuid')
+        ->and($template->schedule()->getOwnerKeyName())->toBe('uuid')
+        ->and($template->subject()->getMorphType())->toBe('subject_type')
+        ->and($template->subject()->getForeignKeyName())->toBe('subject_uuid')
+        ->and($template->items()->getForeignKeyName())->toBe('template_uuid')
+        ->and($template->items()->getQualifiedForeignKeyName())->toBe('schedule_items.template_uuid');
+
+    if (!class_exists('RRule\\RRule')) {
+        expect(fn () => $template->getRruleInstance(Carbon::parse('2026-05-04', 'UTC'), 'Asia/Ulaanbaatar'))
+            ->toThrow(RuntimeException::class, 'php-rrule is not installed.');
+    }
+});
+
 it('scopes schedule templates and applies library copies to schedules', function () {
     scheduling_models_database();
 
