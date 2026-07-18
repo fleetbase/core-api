@@ -22,30 +22,48 @@ namespace {
     class AuthContractCacheFake
     {
         public array $remembered = [];
+        public mixed $privateKey;
+        public array $details;
+
+        public function __construct(public string $kid = 'other-key')
+        {
+            $this->privateKey = openssl_pkey_new([
+                'private_key_bits' => 2048,
+                'private_key_type' => OPENSSL_KEYTYPE_RSA,
+            ]);
+            $this->details = openssl_pkey_get_details($this->privateKey);
+        }
 
         public function remember(string $key, int $ttl, callable $callback): mixed
         {
             $this->remembered[] = [$key, $ttl];
 
-            $privateKey = openssl_pkey_new([
-                'private_key_bits' => 2048,
-                'private_key_type' => OPENSSL_KEYTYPE_RSA,
-            ]);
-            $details = openssl_pkey_get_details($privateKey);
-            $encode  = fn (string $value): string => rtrim(strtr(base64_encode($value), '+/', '-_'), '=');
+            $encode = fn (string $value): string => rtrim(strtr(base64_encode($value), '+/', '-_'), '=');
 
             return [
                 'keys' => [
                     [
                         'kty' => 'RSA',
-                        'kid' => 'other-key',
+                        'kid' => $this->kid,
                         'use' => 'sig',
                         'alg' => 'RS256',
-                        'n'   => $encode($details['rsa']['n']),
-                        'e'   => $encode($details['rsa']['e']),
+                        'n'   => $encode($this->details['rsa']['n']),
+                        'e'   => $encode($this->details['rsa']['e']),
                     ],
                 ],
             ];
+        }
+
+        public function privateKeyContents(): string
+        {
+            openssl_pkey_export($this->privateKey, $privateKey);
+
+            return $privateKey;
+        }
+
+        public function publicKeyContents(): string
+        {
+            return $this->details['key'];
         }
     }
 
@@ -55,6 +73,26 @@ namespace {
         $signature = rtrim(strtr(base64_encode('signature'), '+/', '-_'), '=');
 
         return $encode($header) . '.' . $encode($payload) . '.' . $signature;
+    }
+
+    function auth_contract_signed_apple_jwt(AuthContractCacheFake $cache, array $claims = []): string
+    {
+        $configuration = Lcobucci\JWT\Configuration::forAsymmetricSigner(
+            new Lcobucci\JWT\Signer\Rsa\Sha256(),
+            AppleSignerInMemory::plainText($cache->privateKeyContents()),
+            AppleSignerInMemory::plainText($cache->publicKeyContents()),
+        );
+
+        $now = new DateTimeImmutable();
+
+        return $configuration->builder()
+            ->issuedBy($claims['iss'] ?? 'https://appleid.apple.com')
+            ->issuedAt($claims['iat'] ?? $now)
+            ->expiresAt($claims['exp'] ?? $now->modify('+5 minutes'))
+            ->relatedTo($claims['sub'] ?? 'apple-user')
+            ->withHeader('kid', $cache->kid)
+            ->getToken($configuration->signer(), $configuration->signingKey())
+            ->toString();
     }
 
     beforeEach(function () {
@@ -93,6 +131,28 @@ namespace {
         expect(fn () => AppleVerifier::verifyAppleJwt($jwt))
             ->toThrow(Exception::class, 'Invalid JWT Signature or missing key ID.')
             ->and($cache->remembered)->toBe([['apple-JWKSet', 300]]);
+    });
+
+    test('apple verifier returns true for a valid apple-issued token signed by the cached key', function () {
+        $cache = new AuthContractCacheFake('matching-key');
+        app()->instance('cache', $cache);
+
+        $jwt = auth_contract_signed_apple_jwt($cache);
+
+        expect(AppleVerifier::verifyAppleJwt($jwt))->toBeTrue()
+            ->and($cache->remembered)->toBe([['apple-JWKSet', 300]]);
+    });
+
+    test('apple verifier wraps constraint failures for tokens signed by a known key', function () {
+        $cache = new AuthContractCacheFake('matching-key');
+        app()->instance('cache', $cache);
+
+        $jwt = auth_contract_signed_apple_jwt($cache, [
+            'iss' => 'https://issuer.example.test',
+        ]);
+
+        expect(fn () => AppleVerifier::verifyAppleJwt($jwt))
+            ->toThrow(Exception::class, 'JWT validation failed:');
     });
 
     test('google verifier returns null for invalid identity tokens instead of leaking verification exceptions', function () {
