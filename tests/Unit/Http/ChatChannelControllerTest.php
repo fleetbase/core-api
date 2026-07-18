@@ -1,5 +1,6 @@
 <?php
 
+use Fleetbase\Exceptions\FleetbaseRequestValidationException;
 use Fleetbase\Expansions\Str as StrExpansion;
 use Fleetbase\Http\Controllers\Api\v1\ChatChannelController as PublicChatChannelController;
 use Fleetbase\Http\Controllers\Internal\v1\ChatChannelController;
@@ -17,6 +18,7 @@ use Illuminate\Container\Container;
 use Illuminate\Contracts\Notifications\Dispatcher as NotificationDispatcher;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
+use Illuminate\Database\QueryException;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -113,6 +115,18 @@ class ChatChannelControllerNotificationDispatcherFake implements NotificationDis
     public function sendNow($notifiables, $notification, ?array $channels = null): void
     {
         $this->send($notifiables, $notification);
+    }
+}
+
+class ChatReceiptControllerFailingModel
+{
+    public function __construct(private Throwable $exception)
+    {
+    }
+
+    public function createRecordFromRequest(Request $request): never
+    {
+        throw $this->exception;
     }
 }
 
@@ -555,6 +569,38 @@ test('internal chat receipt controller returns existing receipts and creates mis
         ->and($created['chatReceipt']->resource->participant_uuid)->toBe('participant-active')
         ->and(ChatReceipt::query()->where('chat_message_uuid', 'message-internal-receipt')->count())->toBe(2);
 });
+
+test('internal chat receipt controller returns stable create error responses', function (Closure $exceptionFactory, array $expectedErrors) {
+    chat_channel_controller_database();
+
+    $controller        = chat_receipt_controller();
+    $controller->model = new ChatReceiptControllerFailingModel($exceptionFactory());
+
+    $response = $controller->createRecord(Request::create('/int/v1/chat-receipts', 'POST', [
+        'chatReceipt' => [
+            'chat_message_uuid' => 'message-missing',
+            'participant_uuid'  => 'participant-current',
+        ],
+    ]));
+
+    expect($response->getStatusCode())->toBe(400)
+        ->and($response->getData(true))->toBe([
+            'errors' => $expectedErrors,
+        ]);
+})->with([
+    'validation failure' => [
+        fn () => new FleetbaseRequestValidationException(['chat_message_uuid' => ['The selected chat message is invalid.']]),
+        ['chat_message_uuid' => ['The selected chat message is invalid.']],
+    ],
+    'query failure' => [
+        fn () => new QueryException('mysql', 'insert into chat_receipts', [], new RuntimeException('constraint failed')),
+        ['constraint failed (Connection: mysql, SQL: insert into chat_receipts)'],
+    ],
+    'generic failure' => [
+        fn () => new RuntimeException('receipt creation failed'),
+        ['receipt creation failed'],
+    ],
+]);
 
 test('public chat channel creates channel with creator and valid participants only', function () {
     $capsule = chat_channel_controller_database();
