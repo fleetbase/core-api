@@ -1159,7 +1159,7 @@ class Utils
             ],
         ]));
 
-        return $countries->filter(function ($country) use ($timezone) {
+        return $countries->all()->filter(function ($country) use ($timezone) {
             return $country->timezones->filter(function ($tzData) use ($timezone) {
                 return $tzData->zone_name === $timezone;
             })->count();
