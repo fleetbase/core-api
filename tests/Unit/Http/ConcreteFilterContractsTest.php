@@ -1,6 +1,8 @@
 <?php
 
 use Fleetbase\Expansions\Builder as BuilderExpansion;
+use Fleetbase\Http\Filter\ActivityFilter;
+use Fleetbase\Http\Filter\ApiEventFilter;
 use Fleetbase\Http\Filter\ApiRequestLogFilter;
 use Fleetbase\Http\Filter\CategoryFilter;
 use Fleetbase\Http\Filter\CompanyFilter;
@@ -11,8 +13,12 @@ use Fleetbase\Http\Filter\ScheduleExceptionFilter;
 use Fleetbase\Http\Filter\ScheduleItemFilter;
 use Fleetbase\Http\Filter\ScheduleTemplateFilter;
 use Fleetbase\Http\Filter\UserFilter;
+use Fleetbase\Http\Filter\WebhookRequestLogFilter;
+use Fleetbase\Http\Filter\ChatReceiptFilter;
 use Fleetbase\Models\Category;
 use Fleetbase\Models\ApiRequestLog;
+use Fleetbase\Models\ApiEvent;
+use Fleetbase\Models\ChatReceipt;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\Policy;
 use Fleetbase\Models\Role;
@@ -26,6 +32,14 @@ use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Facade;
+
+class ConcreteFilterActivityRecord extends EloquentModel
+{
+    protected $connection = 'mysql';
+    protected $table = 'activity_log';
+    protected $guarded = [];
+    public $timestamps = false;
+}
 
 class ConcreteFilterRoute
 {
@@ -77,7 +91,13 @@ function concrete_filter_database(): Capsule
         'company_users',
         'companies',
         'api_credentials',
+        'api_events',
         'api_request_logs',
+        'activity_log',
+        'chat_channels',
+        'chat_messages',
+        'chat_participants',
+        'chat_receipts',
         'invites',
         'policies',
         'roles',
@@ -86,6 +106,7 @@ function concrete_filter_database(): Capsule
         'schedule_templates',
         'schedules',
         'users',
+        'webhook_request_logs',
     ] as $table) {
         $schema->dropIfExists($table);
     }
@@ -229,6 +250,68 @@ function concrete_filter_database(): Capsule
         $table->string('ip_address')->nullable();
         $table->timestamp('created_at')->nullable();
         $table->timestamp('updated_at')->nullable();
+        $table->softDeletes();
+    });
+
+    $schema->create('api_events', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('public_id')->nullable();
+        $table->string('company_uuid')->nullable();
+        $table->string('event')->nullable();
+        $table->string('description')->nullable();
+        $table->string('method')->nullable();
+        $table->timestamp('created_at')->nullable();
+        $table->timestamp('updated_at')->nullable();
+        $table->softDeletes();
+    });
+
+    $schema->create('webhook_request_logs', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('public_id')->nullable();
+        $table->string('company_uuid')->nullable();
+        $table->string('api_event_uuid')->nullable();
+        $table->string('method')->nullable();
+        $table->string('url')->nullable();
+        $table->timestamp('created_at')->nullable();
+        $table->timestamp('updated_at')->nullable();
+        $table->softDeletes();
+    });
+
+    $schema->create('activity_log', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('company_id')->nullable();
+        $table->string('subject_id')->nullable();
+        $table->string('causer_id')->nullable();
+        $table->timestamp('created_at')->nullable();
+    });
+
+    $schema->create('chat_channels', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('company_uuid')->nullable();
+        $table->softDeletes();
+    });
+
+    $schema->create('chat_messages', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('company_uuid')->nullable();
+        $table->string('chat_channel_uuid')->nullable();
+        $table->softDeletes();
+    });
+
+    $schema->create('chat_participants', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('company_uuid')->nullable();
+        $table->string('chat_channel_uuid')->nullable();
+        $table->string('user_uuid')->nullable();
+        $table->softDeletes();
+    });
+
+    $schema->create('chat_receipts', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('company_uuid')->nullable();
+        $table->string('chat_message_uuid')->nullable();
+        $table->string('participant_uuid')->nullable();
+        $table->timestamp('read_at')->nullable();
         $table->softDeletes();
     });
 
@@ -413,6 +496,85 @@ test('api request log filter scopes tenant logs by credential and date ranges', 
         ->and(concrete_filter_uuids(ApiRequestLogFilter::class, ApiRequestLog::class, ['query' => 'files'], 'int/v1/api-request-logs'))->toBe(['log-2'])
         ->and(concrete_filter_uuids(ApiRequestLogFilter::class, ApiRequestLog::class, ['created_at' => '2026-07-18,2026-07-18 23:59:59'], 'int/v1/api-request-logs'))->toBe(['log-1'])
         ->and(concrete_filter_uuids(ApiRequestLogFilter::class, ApiRequestLog::class, ['updated_at' => '2026-07-19'], 'int/v1/api-request-logs'))->toBe(['log-2']);
+});
+
+test('api event and webhook request log filters scope tenant logs and date windows', function () {
+    $capsule = concrete_filter_database();
+    $capsule->getConnection('mysql')->table('api_events')->insert([
+        ['uuid' => 'event-1', 'public_id' => 'event_1', 'company_uuid' => 'company-1', 'event' => 'order.created', 'description' => 'Order created', 'method' => 'POST', 'created_at' => '2026-07-18 08:00:00', 'updated_at' => '2026-07-18 09:00:00'],
+        ['uuid' => 'event-2', 'public_id' => 'event_2', 'company_uuid' => 'company-1', 'event' => 'file.uploaded', 'description' => 'File uploaded', 'method' => 'POST', 'created_at' => '2026-07-19 08:00:00', 'updated_at' => '2026-07-19 09:00:00'],
+        ['uuid' => 'event-hidden', 'public_id' => 'event_hidden', 'company_uuid' => 'company-2', 'event' => 'order.created', 'description' => 'Other order', 'method' => 'POST', 'created_at' => '2026-07-18 08:00:00', 'updated_at' => '2026-07-18 09:00:00'],
+    ]);
+    $capsule->getConnection('mysql')->table('webhook_request_logs')->insert([
+        ['uuid' => 'webhook-log-1', 'public_id' => 'webhook_req_1', 'company_uuid' => 'company-1', 'api_event_uuid' => 'event-1', 'method' => 'POST', 'url' => 'https://hooks.test/orders', 'created_at' => '2026-07-18 08:00:00', 'updated_at' => '2026-07-18 09:00:00'],
+        ['uuid' => 'webhook-log-2', 'public_id' => 'webhook_req_2', 'company_uuid' => 'company-1', 'api_event_uuid' => 'event-2', 'method' => 'POST', 'url' => 'https://hooks.test/files', 'created_at' => '2026-07-19 08:00:00', 'updated_at' => '2026-07-19 09:00:00'],
+        ['uuid' => 'webhook-log-hidden', 'public_id' => 'webhook_req_hidden', 'company_uuid' => 'company-2', 'api_event_uuid' => 'event-hidden', 'method' => 'POST', 'url' => 'https://hooks.test/orders', 'created_at' => '2026-07-18 08:00:00', 'updated_at' => '2026-07-18 09:00:00'],
+    ]);
+
+    expect(concrete_filter_uuids(ApiEventFilter::class, ApiEvent::class, [], 'int/v1/api-events'))->toBe(['event-1', 'event-2'])
+        ->and(concrete_filter_uuids(ApiEventFilter::class, ApiEvent::class, ['query' => 'uploaded'], 'int/v1/api-events'))->toBe(['event-2'])
+        ->and(concrete_filter_uuids(ApiEventFilter::class, ApiEvent::class, ['created_at' => '2026-07-18,2026-07-18 23:59:59'], 'int/v1/api-events'))->toBe(['event-1'])
+        ->and(concrete_filter_uuids(ApiEventFilter::class, ApiEvent::class, ['updated_at' => '2026-07-19'], 'int/v1/api-events'))->toBe(['event-2'])
+        ->and(concrete_filter_uuids(WebhookRequestLogFilter::class, Fleetbase\Models\WebhookRequestLog::class, [], 'int/v1/webhook-request-logs'))->toBe(['webhook-log-1', 'webhook-log-2'])
+        ->and(concrete_filter_uuids(WebhookRequestLogFilter::class, Fleetbase\Models\WebhookRequestLog::class, ['query' => 'files'], 'int/v1/webhook-request-logs'))->toBe(['webhook-log-1', 'webhook-log-2'])
+        ->and(concrete_filter_uuids(WebhookRequestLogFilter::class, Fleetbase\Models\WebhookRequestLog::class, ['created_at' => '2026-07-18,2026-07-18 23:59:59'], 'int/v1/webhook-request-logs'))->toBe(['webhook-log-1'])
+        ->and(concrete_filter_uuids(WebhookRequestLogFilter::class, Fleetbase\Models\WebhookRequestLog::class, ['updated_at' => '2026-07-19'], 'int/v1/webhook-request-logs'))->toBe(['webhook-log-2']);
+});
+
+test('activity filter respects admin override and subject causer constraints', function () {
+    $capsule = concrete_filter_database();
+    $capsule->getConnection('mysql')->table('activity_log')->insert([
+        ['uuid' => 'activity-1', 'company_id' => 'company-1', 'subject_id' => 'order-1', 'causer_id' => 'user-1', 'created_at' => '2026-07-18 08:00:00'],
+        ['uuid' => 'activity-2', 'company_id' => 'company-1', 'subject_id' => 'order-2', 'causer_id' => 'user-2', 'created_at' => '2026-07-19 08:00:00'],
+        ['uuid' => 'activity-hidden', 'company_id' => 'company-2', 'subject_id' => 'order-1', 'causer_id' => 'user-3', 'created_at' => '2026-07-18 08:00:00'],
+    ]);
+
+    $adminRequest = concrete_filter_request(['company_uuid' => 'company-2'], 'int/v1/activities');
+    $adminRequest->setUserResolver(fn () => new class {
+        public function isAdmin(): bool
+        {
+            return true;
+        }
+    });
+
+    $adminMatches = (new ActivityFilter($adminRequest))
+        ->apply(ConcreteFilterActivityRecord::query())
+        ->orderBy('uuid')
+        ->pluck('uuid')
+        ->all();
+
+    expect(concrete_filter_uuids(ActivityFilter::class, ConcreteFilterActivityRecord::class, [], 'int/v1/activities'))->toBe(['activity-1', 'activity-2'])
+        ->and(concrete_filter_uuids(ActivityFilter::class, ConcreteFilterActivityRecord::class, ['subject_id' => 'order-1'], 'int/v1/activities'))->toBe(['activity-1'])
+        ->and(concrete_filter_uuids(ActivityFilter::class, ConcreteFilterActivityRecord::class, ['causer_id' => 'user-2'], 'int/v1/activities'))->toBe(['activity-2'])
+        ->and(concrete_filter_uuids(ActivityFilter::class, ConcreteFilterActivityRecord::class, ['created_at' => '2026-07-18,2026-07-18 23:59:59'], 'int/v1/activities'))->toBe(['activity-1'])
+        ->and($adminMatches)->toBe(['activity-hidden']);
+});
+
+test('chat receipt filter limits receipts to channels that include current user', function () {
+    $capsule = concrete_filter_database();
+    $capsule->getConnection('mysql')->table('users')->insert([
+        ['uuid' => 'user-1', 'name' => 'Visible Participant', 'email' => 'visible@example.test', 'type' => 'user'],
+        ['uuid' => 'user-2', 'name' => 'Other Participant', 'email' => 'other@example.test', 'type' => 'user'],
+    ]);
+    $capsule->getConnection('mysql')->table('chat_channels')->insert([
+        ['uuid' => 'channel-1', 'company_uuid' => 'company-1', 'deleted_at' => null],
+        ['uuid' => 'channel-2', 'company_uuid' => 'company-1', 'deleted_at' => null],
+    ]);
+    $capsule->getConnection('mysql')->table('chat_messages')->insert([
+        ['uuid' => 'message-1', 'company_uuid' => 'company-1', 'chat_channel_uuid' => 'channel-1', 'deleted_at' => null],
+        ['uuid' => 'message-2', 'company_uuid' => 'company-1', 'chat_channel_uuid' => 'channel-2', 'deleted_at' => null],
+    ]);
+    $capsule->getConnection('mysql')->table('chat_participants')->insert([
+        ['uuid' => 'participant-current', 'company_uuid' => 'company-1', 'chat_channel_uuid' => 'channel-1', 'user_uuid' => 'user-1', 'deleted_at' => null],
+        ['uuid' => 'participant-other', 'company_uuid' => 'company-1', 'chat_channel_uuid' => 'channel-2', 'user_uuid' => 'user-2', 'deleted_at' => null],
+    ]);
+    $capsule->getConnection('mysql')->table('chat_receipts')->insert([
+        ['uuid' => 'receipt-visible', 'company_uuid' => 'company-1', 'chat_message_uuid' => 'message-1', 'participant_uuid' => 'participant-current', 'read_at' => '2026-07-18 08:00:00', 'deleted_at' => null],
+        ['uuid' => 'receipt-hidden', 'company_uuid' => 'company-1', 'chat_message_uuid' => 'message-2', 'participant_uuid' => 'participant-other', 'read_at' => '2026-07-18 08:00:00', 'deleted_at' => null],
+        ['uuid' => 'receipt-other-company', 'company_uuid' => 'company-2', 'chat_message_uuid' => 'message-1', 'participant_uuid' => 'participant-current', 'read_at' => '2026-07-18 08:00:00', 'deleted_at' => null],
+    ]);
+
+    expect(concrete_filter_uuids(ChatReceiptFilter::class, ChatReceipt::class, [], 'int/v1/chat-receipts'))->toBe(['receipt-visible']);
 });
 
 test('category filter applies tenant core parent and list filters', function () {

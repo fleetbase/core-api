@@ -34,6 +34,7 @@ namespace {
     use Fleetbase\Http\Middleware\ConvertStringBooleans;
     use Fleetbase\Http\Middleware\EnsureFleetbaseConfigured;
     use Fleetbase\Http\Middleware\LogApiRequests;
+    use Fleetbase\Http\Middleware\PerformanceMonitoring;
     use Fleetbase\Http\Middleware\RequestTimer;
     use Fleetbase\Http\Middleware\ResetJsonResourceWrap;
     use Fleetbase\Http\Middleware\SetGlobalHeaders;
@@ -651,5 +652,41 @@ namespace {
             ->and($response->getData(true))->toBe([
                 'errors' => ['Oops! The API credentials provided were not valid'],
             ]);
+    });
+
+    test('performance monitoring adds timing headers and logs debug and slow request context', function () {
+        middleware_contracts_fixture([
+            'app.debug' => true,
+        ]);
+
+        $request = Request::create('/int/v1/reports?period=today', 'GET');
+        $request->setUserResolver(fn () => (object) ['uuid' => 'user-1']);
+        $middleware = new PerformanceMonitoring();
+
+        $fastResponse = $middleware->handle($request, fn () => new JsonResponse(['ok' => true]));
+
+        expect($fastResponse->headers->get('X-Response-Time'))->toEndWith('ms')
+            ->and($fastResponse->headers->get('X-Memory-Usage'))->toEndWith('MB')
+            ->and(app('log')->entries[0][0])->toBe('debug')
+            ->and(app('log')->entries[0][1])->toBe('[Performance]')
+            ->and(app('log')->entries[0][2]['method'])->toBe('GET')
+            ->and(app('log')->entries[0][2]['url'])->toBe('int/v1/reports');
+
+        $slowRequest = Request::create('/int/v1/slow?debug=1', 'POST');
+        $slowRequest->setUserResolver(fn () => (object) ['uuid' => 'user-2']);
+        $slowResponse = $middleware->handle($slowRequest, function () {
+            usleep(1010000);
+
+            return new JsonResponse(['slow' => true]);
+        });
+
+        expect($slowResponse->headers->get('X-Response-Time'))->toEndWith('ms')
+            ->and(app('log')->entries[1][0])->toBe('warning')
+            ->and(app('log')->entries[1][1])->toBe('[Performance] Slow request detected')
+            ->and(app('log')->entries[1][2]['method'])->toBe('POST')
+            ->and(app('log')->entries[1][2]['url'])->toContain('/int/v1/slow?debug=1')
+            ->and(app('log')->entries[1][2]['user'])->toBe('user-2')
+            ->and(app('log')->entries[2][0])->toBe('debug')
+            ->and(app('log')->entries[2][2]['url'])->toBe('int/v1/slow');
     });
 }

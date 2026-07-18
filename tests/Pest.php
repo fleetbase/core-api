@@ -259,6 +259,16 @@ namespace {
         $container->instance('log', new class {
             public array $entries = [];
 
+            public function debug(string $message, array $context = []): void
+            {
+                $this->entries[] = ['debug', $message, $context];
+            }
+
+            public function info(string $message, array $context = []): void
+            {
+                $this->entries[] = ['info', $message, $context];
+            }
+
             public function error(string $message, array $context = []): void
             {
                 $this->entries[] = ['error', $message, $context];
