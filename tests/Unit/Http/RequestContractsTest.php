@@ -357,6 +357,22 @@ namespace {
         }
     }
 
+    class RequestContractsSignUpRequestProbe extends SignUpRequest
+    {
+        public function triggerFailedValidation(ValidatorContract $validator): mixed
+        {
+            return $this->failedValidation($validator);
+        }
+    }
+
+    class RequestContractsTwoFaValidationRequestProbe extends TwoFaValidationRequest
+    {
+        public function triggerFailedValidation(ValidatorContract $validator): mixed
+        {
+            return $this->failedValidation($validator);
+        }
+    }
+
     it('keeps authentication request validation contracts security-safe', function () {
         $loginRules = (new Fleetbase\Http\Requests\LoginRequest())->rules();
         $twoFaRules = (new TwoFaValidationRequest())->rules();
@@ -397,20 +413,22 @@ namespace {
     });
 
     it('keeps signup onboarding and password rules strict', function () {
-        $signupRules  = (new SignUpRequest())->rules();
+        $signup       = new SignUpRequest();
+        $signupRules  = $signup->rules();
+        $signupErrors = $signup->messages();
         $onboard      = new OnboardRequest();
         $onboardRules = $onboard->rules();
         $messages     = $onboard->messages();
         $changeRules  = (new ChangePasswordRequest())->rules();
 
-        expect((new SignUpRequest())->authorize())->toBeTrue()
+        expect($signup->authorize())->toBeTrue()
             ->and($onboard->authorize())->toBeTrue()
             ->and((new ChangePasswordRequest())->authorize())->toBeTrue()
             ->and($signupRules['user.name'])->toBe(['required'])
             ->and($signupRules['user.email'])->toBe(['required', 'email'])
             ->and(request_rule_strings($signupRules['user.password']))->toContain('required', 'confirmed', 'string')
             ->and($signupRules['company.name'])->toBe(['required'])
-            ->and((new SignUpRequest())->attributes())->toMatchArray([
+            ->and($signup->attributes())->toMatchArray([
                 'user.name'                  => 'user name',
                 'user.password_confirmation' => 'user password confirmation',
                 'company.name'               => 'company name',
@@ -429,9 +447,62 @@ namespace {
             ->and($messages['password.numbers'])->toBe('Password must contain at least 1 number.')
             ->and($messages['password.symbols'])->toBe('Password must contain at least 1 symbol.')
             ->and($messages['password.uncompromised'])->toBe('The password you entered has appeared in a data breach. Please choose a different one.')
+            ->and($signupErrors['*.required'])->toBe('Your :attribute is required to signup')
+            ->and($signupErrors['user.email'])->toBe('You must enter a valid :attribute to signup')
+            ->and($signupErrors['user.email.unique'])->toBe('An account with this email address already exists')
+            ->and($signupErrors['user.password.required'])->toBe('You must enter a password to signup')
+            ->and($signupErrors['user.password.min'])->toBe('Password must be at least 8 characters.')
+            ->and($signupErrors['user.password.mixed'])->toBe('Password must contain both uppercase and lowercase letters.')
+            ->and($signupErrors['user.password.letters'])->toBe('Password must contain at least one letter.')
+            ->and($signupErrors['user.password.numbers'])->toBe('Password must contain at least one number.')
+            ->and($signupErrors['user.password.symbols'])->toBe('Password must contain at least one symbol.')
+            ->and($signupErrors['user.password.uncompromised'])->toBe('This password has appeared in a data breach. Please choose a different one.')
             ->and(request_rule_strings($changeRules['password']))->toContain('required', 'confirmed', 'string')
             ->and($changeRules['password_confirmation'])->toBe(['sometimes', 'min:4', 'max:64'])
             ->and((new ChangePasswordRequest())->messages()['password.symbols'])->toBe('Password must contain at least 1 symbol.');
+    });
+
+    it('keeps signup and two factor validation error responses stable', function () {
+        $signupSingle = (new RequestContractsSignUpRequestProbe())->triggerFailedValidation(new RequestContractsValidatorFake([
+            'user.email' => ['You must enter a valid user email to signup'],
+        ]));
+
+        $signupMultiple = (new RequestContractsSignUpRequestProbe())->triggerFailedValidation(new RequestContractsValidatorFake([
+            'user.email'   => ['You must enter a valid user email to signup'],
+            'company.name' => ['Your company name is required to signup'],
+        ]));
+
+        $twoFaSingle = (new RequestContractsTwoFaValidationRequestProbe())->triggerFailedValidation(new RequestContractsValidatorFake([
+            'token' => ['A two factor session token is required'],
+        ]));
+
+        $twoFaMultiple = (new RequestContractsTwoFaValidationRequestProbe())->triggerFailedValidation(new RequestContractsValidatorFake([
+            'identity' => ['No user found by this email'],
+            'token'    => ['A two factor session token is required'],
+        ]));
+
+        expect($signupSingle->getStatusCode())->toBe(422)
+            ->and($signupSingle->getData(true))->toBe([
+                'errors' => ['You must enter a valid user email to signup'],
+            ])
+            ->and($signupMultiple->getStatusCode())->toBe(422)
+            ->and($signupMultiple->getData(true))->toBe([
+                'errors' => [
+                    'You must enter a valid user email to signup',
+                    'Your company name is required to signup',
+                ],
+            ])
+            ->and($twoFaSingle->getStatusCode())->toBe(422)
+            ->and($twoFaSingle->getData(true))->toBe([
+                'errors' => ['A two factor session token is required'],
+            ])
+            ->and($twoFaMultiple->getStatusCode())->toBe(422)
+            ->and($twoFaMultiple->getData(true))->toBe([
+                'errors' => [
+                    'No user found by this email',
+                    'A two factor session token is required',
+                ],
+            ]);
     });
 
     it('preserves user create and update validation boundaries', function () {

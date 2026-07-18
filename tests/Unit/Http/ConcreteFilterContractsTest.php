@@ -638,6 +638,20 @@ test('simple tenant filters scope credentials groups webhooks and dashboards', f
         ->and(concrete_filter_uuids(DashboardFilter::class, Dashboard::class, [], 'int/v1/dashboards'))->toBe(['dashboard-visible']);
 });
 
+test('simple tenant filters delegate free text queries to searchable builders', function () {
+    $apiCredentialBuilder   = new ConcreteFilterSearchBuilderFake();
+    $groupBuilder           = new ConcreteFilterSearchBuilderFake();
+    $webhookEndpointBuilder = new ConcreteFilterSearchBuilderFake();
+
+    concrete_filter_with_any_builder(new ApiCredentialFilter(concrete_filter_request([], 'int/v1/api-credentials')), $apiCredentialBuilder)->query('primary');
+    concrete_filter_with_any_builder(new GroupFilter(concrete_filter_request([], 'int/v1/groups')), $groupBuilder)->query('dispatch');
+    concrete_filter_with_any_builder(new WebhookEndpointFilter(concrete_filter_request([], 'int/v1/webhook-endpoints')), $webhookEndpointBuilder)->query('hooks');
+
+    expect($apiCredentialBuilder->queries)->toBe(['primary'])
+        ->and($groupBuilder->queries)->toBe(['dispatch'])
+        ->and($webhookEndpointBuilder->queries)->toBe(['hooks']);
+});
+
 test('file filter scopes files to the active company and filters type prefixes and suffixes', function () {
     $capsule = concrete_filter_database();
     $capsule->getConnection('mysql')->table('files')->insert([
