@@ -3,12 +3,24 @@
 use Fleetbase\Http\Resources\FleetbaseResource;
 use Fleetbase\Http\Resources\FleetbaseResourceCollection;
 use Illuminate\Container\Container;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Routing\Route;
 use Illuminate\Support\Facades\Facade;
 
 class FleetbaseResourceCollectionTestResource extends FleetbaseResource
 {
+}
+
+class FleetbaseResourcePreserveKeysTestResource extends FleetbaseResource
+{
+    public $preserveKeys = true;
+}
+
+class FleetbaseResourceModelRecord extends Model
+{
+    protected $guarded = [];
 }
 
 class FleetbaseResourceCollectionTestPlainItems extends FleetbaseResourceCollection
@@ -108,7 +120,12 @@ function fleetbase_resource_collection_request(): Request
 {
     bind_test_container();
 
-    return Request::create('/int/v1/resources', 'GET');
+    $request = Request::create('/int/v1/resources', 'GET');
+    $route   = new Route('GET', 'int/v1/resources', []);
+    $request->setRouteResolver(fn () => $route);
+    app()->instance('request', $request);
+
+    return $request;
 }
 
 afterEach(function () {
@@ -152,6 +169,100 @@ test('resource collection applies exclusions without mutating the original insta
                 'payload' => ['keep' => true],
             ],
         ]);
+});
+
+test('fleetbase resource serializes model attributes and recursively excludes cloned keys', function () {
+    $request = fleetbase_resource_collection_request();
+
+    $record = new FleetbaseResourceModelRecord();
+    $record->setRawAttributes([
+        'id'           => 1,
+        'public_id'    => 'resource_public',
+        'company_uuid' => 'company-1',
+        'owner_uuid'   => 'owner-1',
+        'name'         => 'Visible resource',
+        'secret'       => 'top-secret',
+        'payload'      => [
+            'keep'   => true,
+            'secret' => 'nested-secret',
+            'deep'   => [
+                'secret' => 'deep-secret',
+                'value'  => 'safe',
+            ],
+        ],
+    ], true);
+
+    $resource = new FleetbaseResource($record);
+    $filtered = $resource->without(['secret', 'payload.secret']);
+
+    expect($resource->toArray($request))->toMatchArray([
+        'id'           => 1,
+        'public_id'    => 'resource_public',
+        'company_uuid' => 'company-1',
+        'owner_uuid'   => 'owner-1',
+        'name'         => 'Visible resource',
+        'secret'       => 'top-secret',
+        'payload'      => [
+            'keep'   => true,
+            'secret' => 'nested-secret',
+            'deep'   => [
+                'secret' => 'deep-secret',
+                'value'  => 'safe',
+            ],
+        ],
+    ])
+        ->and($filtered)->not->toBe($resource)
+        ->and($filtered->toArray($request))->toMatchArray([
+            'id'           => 1,
+            'public_id'    => 'resource_public',
+            'company_uuid' => 'company-1',
+            'owner_uuid'   => 'owner-1',
+            'name'         => 'Visible resource',
+            'payload'      => [
+                'keep' => true,
+                'deep' => [
+                    'value' => 'safe',
+                ],
+            ],
+        ])
+        ->and($filtered->toArray($request))->not->toHaveKey('secret')
+        ->and($filtered->toArray($request)['payload'])->not->toHaveKey('secret')
+        ->and($filtered->toArray($request)['payload']['deep'])->not->toHaveKey('secret');
+});
+
+test('fleetbase resource exposes internal ids and detects empty resources', function () {
+    $request = fleetbase_resource_collection_request();
+
+    $record = new FleetbaseResourceModelRecord();
+    $record->setRawAttributes([
+        'id'           => 1,
+        'company_uuid' => 'company-1',
+        'owner_uuid'   => 'owner-1',
+        'name'         => 'Visible resource',
+    ], true);
+
+    expect((new FleetbaseResource(null))->isEmpty())->toBeTrue()
+        ->and((new FleetbaseResource((object) ['resource' => null]))->isEmpty())->toBeTrue()
+        ->and((new FleetbaseResource((object) ['resource' => 'present']))->isEmpty())->toBeFalse()
+        ->and((new FleetbaseResource($record))->getInternalIds())->toBe([
+            'company_uuid' => 'company-1',
+            'owner_uuid'   => 'owner-1',
+        ]);
+
+    $publicRequest = Request::create('/v1/resources', 'GET');
+    app()->instance('request', $publicRequest);
+
+    expect((new FleetbaseResource($record))->getInternalIds()['company_uuid']->isMissing())->toBeTrue();
+});
+
+test('fleetbase resource collection preserves keys when resource opts in', function () {
+    $collection = FleetbaseResourcePreserveKeysTestResource::collection([
+        'first'  => ['id' => 'item-1'],
+        'second' => ['id' => 'item-2'],
+    ]);
+
+    expect($collection)->toBeInstanceOf(FleetbaseResourceCollection::class)
+        ->and($collection->preserveKeys)->toBeTrue();
 });
 
 test('resource collection wraps raw items with fleetbase resources and applies recursive exclusions', function () {
