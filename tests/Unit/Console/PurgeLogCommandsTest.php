@@ -5,13 +5,17 @@ use Fleetbase\Console\Commands\PurgeApiLogs;
 use Fleetbase\Console\Commands\PurgeScheduledTaskLogs;
 use Fleetbase\Console\Commands\PurgeWebhookLogs;
 use Fleetbase\Traits\ForcesCommands;
+use Fleetbase\Traits\PurgeCommand;
 use Illuminate\Console\Command;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Events\Dispatcher;
+use Illuminate\Filesystem\FilesystemManager;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Facade;
+use Illuminate\Support\Facades\Storage;
 
 class PurgeApiLogsTestCommand extends PurgeApiLogs
 {
@@ -168,6 +172,78 @@ class ForcesCommandsTestCommand extends Command
     }
 }
 
+class PurgeCommandRecord extends Model
+{
+    protected $table = 'purge_command_records';
+    protected $guarded = [];
+    public $timestamps = false;
+}
+
+class PurgeCommandNoKeyRecord extends Model
+{
+    protected $table = 'purge_command_no_key_records';
+    protected $guarded = [];
+    protected $primaryKey = null;
+    public $incrementing = false;
+    public $timestamps = false;
+}
+
+class PurgeCommandTestCommand extends Command
+{
+    use PurgeCommand;
+
+    public array $infos = [];
+    public array $warnings = [];
+    public array $confirmations = [];
+
+    public function __construct(private array $options = [], private bool $confirmationResult = true)
+    {
+        parent::__construct();
+    }
+
+    public function option($key = null)
+    {
+        return $key === null ? $this->options : ($this->options[$key] ?? null);
+    }
+
+    public function info($string, $verbosity = null): void
+    {
+        $this->infos[] = $string;
+    }
+
+    public function warn($string, $verbosity = null): void
+    {
+        $this->warnings[] = $string;
+    }
+
+    public function confirm($question, $default = false): bool
+    {
+        $this->confirmations[] = $question;
+
+        return $this->confirmationResult;
+    }
+
+    public function runPurgeForTest(Builder $query, Model $model, ?string $diskOption = null, string $backupPath = 'backups'): int
+    {
+        return $this->runPurge($query, $model, $diskOption, $backupPath);
+    }
+
+    public function writeSqlDumpForTest(string $tableName, Collection $records, string $fileName): void
+    {
+        $this->writeSqlDump($tableName, $records, $fileName);
+    }
+
+    public function detectPrimaryKeyForTest(string $tableName, ?Model $model = null): ?string
+    {
+        return $this->detectPrimaryKey($tableName, $model);
+    }
+
+    public function confirmDeleteLineForTest(string $tableName): string
+    {
+        return $this->confirmDeleteLine($tableName);
+    }
+}
+
 function purge_log_commands_database(bool $withCreatedAt = true): Capsule
 {
     $connection = [
@@ -181,7 +257,13 @@ function purge_log_commands_database(bool $withCreatedAt = true): Capsule
         'database.connections.mysql' => $connection,
         'fleetbase.connection.db'    => 'mysql',
         'activitylog.table_name'     => 'activity_log',
+        'filesystems.default'        => 'local',
+        'filesystems.disks.local'    => [
+            'driver' => 'local',
+            'root'   => sys_get_temp_dir() . '/fleetbase-purge-command-test-' . uniqid(),
+        ],
     ]);
+    $container->instance('filesystem', new FilesystemManager($container));
 
     $capsule = new Capsule($container);
     $capsule->addConnection($connection, 'mysql');
@@ -205,6 +287,18 @@ function purge_log_commands_database(bool $withCreatedAt = true): Capsule
             }
         });
     }
+    $schema->dropIfExists('purge_command_records');
+    $schema->create('purge_command_records', function ($table) {
+        $table->increments('id');
+        $table->string('uuid')->nullable();
+        $table->string('name')->nullable();
+        $table->timestamp('created_at')->nullable();
+    });
+    $schema->dropIfExists('purge_command_no_key_records');
+    $schema->create('purge_command_no_key_records', function ($table) {
+        $table->string('name')->nullable();
+        $table->timestamp('created_at')->nullable();
+    });
 
     return $capsule;
 }
@@ -218,6 +312,7 @@ function purge_log_cutoff(array $purge): ?string
 
 afterEach(function () {
     Carbon::setTestNow();
+    Storage::clearResolvedInstances();
     Facade::clearResolvedInstances();
 });
 
@@ -327,4 +422,56 @@ it('forces command confirmation when force is present and otherwise prompts', fu
         ->and($prompt->confirmForTest('Delete records?'))->toBeTrue()
         ->and($prompt->warnings)->toBe([])
         ->and($prompt->confirmations)->toBe(['Delete records?']);
+});
+
+it('runs purge flow with backup upload deletion and empty set handling', function () {
+    $capsule = purge_log_commands_database();
+    Carbon::setTestNow(Carbon::parse('2026-07-17 12:00:00'));
+
+    $capsule->getConnection('mysql')->table('purge_command_records')->insert([
+        ['id' => 1, 'uuid' => 'record-1', 'name' => "O'Hare", 'created_at' => '2026-06-01 00:00:00'],
+        ['id' => 2, 'uuid' => 'record-2', 'name' => 'Keep', 'created_at' => '2026-07-01 00:00:00'],
+    ]);
+
+    $command = new PurgeCommandTestCommand();
+
+    expect($command->runPurgeForTest(PurgeCommandRecord::query()->where('created_at', '<', '2026-06-15 00:00:00'), new PurgeCommandRecord(), null, 'purge-backups'))->toBe(1)
+        ->and(PurgeCommandRecord::query()->pluck('name')->all())->toBe(['Keep'])
+        ->and($command->confirmations)->toBe(['Do you want to permanently delete the selected records from purge_command_records?'])
+        ->and($command->infos)->toContain('Backup uploaded.')
+        ->and($command->infos)->toContain('Purge completed. Deleted: 1');
+
+    $diskFiles = Storage::disk('local')->allFiles('purge-backups');
+    expect($diskFiles)->toHaveCount(1)
+        ->and(Storage::disk('local')->get($diskFiles[0]))->toContain("INSERT INTO `purge_command_records`")
+        ->and(Storage::disk('local')->get($diskFiles[0]))->toContain("'O''Hare'");
+
+    $empty = new PurgeCommandTestCommand();
+    expect($empty->runPurgeForTest(PurgeCommandRecord::query()->where('name', 'missing'), new PurgeCommandRecord()))->toBe(0)
+        ->and($empty->infos)->toBe(['No records to purge from purge_command_records.']);
+});
+
+it('runs purge flow skip backup and decline paths and detects primary keys', function () {
+    $capsule = purge_log_commands_database();
+    $capsule->getConnection('mysql')->table('purge_command_records')->insert([
+        ['id' => 1, 'uuid' => 'record-1', 'name' => 'Delete', 'created_at' => '2026-06-01 00:00:00'],
+        ['id' => 2, 'uuid' => 'record-2', 'name' => 'Decline', 'created_at' => '2026-06-01 00:00:00'],
+    ]);
+    $capsule->getConnection('mysql')->table('purge_command_no_key_records')->insert([
+        ['name' => 'No key', 'created_at' => '2026-06-01 00:00:00'],
+    ]);
+
+    $skipBackup = new PurgeCommandTestCommand(['skip-backup' => true, 'force' => true]);
+    $declined   = new PurgeCommandTestCommand(['skip-backup' => false, 'force' => false], false);
+
+    expect($skipBackup->confirmDeleteLineForTest('purge_command_records'))->toBe('Permanently delete selected records from purge_command_records WITHOUT BACKUP?')
+        ->and($skipBackup->runPurgeForTest(PurgeCommandRecord::query()->where('name', 'Delete'), new PurgeCommandRecord()))->toBe(1)
+        ->and($skipBackup->warnings)->toContain('Force flag detected: Skipping confirmation.')
+        ->and($skipBackup->warnings)->toContain('Skipping backup as --skip-backup was provided.')
+        ->and($declined->runPurgeForTest(PurgeCommandRecord::query()->where('name', 'Decline'), new PurgeCommandRecord()))->toBe(0)
+        ->and(PurgeCommandRecord::query()->where('name', 'Decline')->exists())->toBeTrue()
+        ->and($declined->warnings)->toBe(['Skipped purging purge_command_records.'])
+        ->and($skipBackup->detectPrimaryKeyForTest('purge_command_records'))->toBe('uuid')
+        ->and($skipBackup->detectPrimaryKeyForTest('purge_command_records', new PurgeCommandRecord()))->toBe('id')
+        ->and($skipBackup->detectPrimaryKeyForTest('purge_command_no_key_records', new PurgeCommandNoKeyRecord()))->toBeNull();
 });

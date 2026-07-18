@@ -10,6 +10,8 @@ use Fleetbase\Events\ScheduleItemCreated;
 use Fleetbase\Events\ScheduleItemDeleted;
 use Fleetbase\Events\ScheduleItemUpdated;
 use Fleetbase\Events\ScheduleUpdated;
+use Fleetbase\Events\UserCreatedNewCompany;
+use Fleetbase\Events\UserRemovedFromCompany;
 use Fleetbase\Exceptions\FleetbaseRequestException;
 use Fleetbase\Exceptions\FleetbaseRequestValidationException;
 use Fleetbase\Exceptions\PolicyDoesNotExist;
@@ -130,6 +132,28 @@ test('request exceptions expose stable error arrays and messages', function () {
 test('policy exceptions include the missing policy identity', function () {
     expect(PolicyDoesNotExist::named('manage users')->getMessage())->toBe('There is no policy named `manage users`.')
         ->and(PolicyDoesNotExist::withId(42)->getMessage())->toBe('There is no policy with id `42`.');
+});
+
+test('company membership events carry user and company payloads without stale relations', function () {
+    bind_test_container();
+
+    $user = new Fleetbase\Models\User();
+    $user->setRawAttributes(['uuid' => 'user-1', 'email' => 'owner@example.test']);
+    $user->setRelation('companies', collect(['stale']));
+
+    $company = new Company();
+    $company->setRawAttributes(['uuid' => 'company-1', 'name' => 'Acme']);
+    $company->setRelation('owner', $user);
+
+    $created = new UserCreatedNewCompany($user, $company);
+    $removed = new UserRemovedFromCompany($user, $company);
+
+    expect($created->user)->toBe($user)
+        ->and($created->company)->toBe($company)
+        ->and($removed->user->uuid)->toBe('user-1')
+        ->and($removed->company->uuid)->toBe('company-1')
+        ->and($removed->user->getRelations())->toBe([])
+        ->and($removed->company->getRelations())->toBe([]);
 });
 
 test('unauthorized request exception falls back cleanly and includes resolved permission when available', function () {

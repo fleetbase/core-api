@@ -2,6 +2,7 @@
 
 use Fleetbase\Expansions\Builder as BuilderExpansion;
 use Fleetbase\Http\Filter\ActivityFilter;
+use Fleetbase\Http\Filter\ApiCredentialFilter;
 use Fleetbase\Http\Filter\ApiEventFilter;
 use Fleetbase\Http\Filter\ApiRequestLogFilter;
 use Fleetbase\Http\Filter\CategoryFilter;
@@ -9,6 +10,8 @@ use Fleetbase\Http\Filter\ChatLogFilter;
 use Fleetbase\Http\Filter\ChatMessageFilter;
 use Fleetbase\Http\Filter\ChatReceiptFilter;
 use Fleetbase\Http\Filter\CompanyFilter;
+use Fleetbase\Http\Filter\DashboardFilter;
+use Fleetbase\Http\Filter\GroupFilter;
 use Fleetbase\Http\Filter\NotificationFilter;
 use Fleetbase\Http\Filter\PolicyFilter;
 use Fleetbase\Http\Filter\RoleFilter;
@@ -17,7 +20,9 @@ use Fleetbase\Http\Filter\ScheduleFilter;
 use Fleetbase\Http\Filter\ScheduleItemFilter;
 use Fleetbase\Http\Filter\ScheduleTemplateFilter;
 use Fleetbase\Http\Filter\UserFilter;
+use Fleetbase\Http\Filter\WebhookEndpointFilter;
 use Fleetbase\Http\Filter\WebhookRequestLogFilter;
+use Fleetbase\Models\ApiCredential;
 use Fleetbase\Models\ApiEvent;
 use Fleetbase\Models\ApiRequestLog;
 use Fleetbase\Models\Category;
@@ -25,6 +30,8 @@ use Fleetbase\Models\ChatLog;
 use Fleetbase\Models\ChatMessage;
 use Fleetbase\Models\ChatReceipt;
 use Fleetbase\Models\Company;
+use Fleetbase\Models\Dashboard;
+use Fleetbase\Models\Group;
 use Fleetbase\Models\Notification;
 use Fleetbase\Models\Policy;
 use Fleetbase\Models\Role;
@@ -32,6 +39,7 @@ use Fleetbase\Models\ScheduleException;
 use Fleetbase\Models\ScheduleItem;
 use Fleetbase\Models\ScheduleTemplate;
 use Fleetbase\Models\User;
+use Fleetbase\Models\WebhookEndpoint;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
@@ -105,6 +113,8 @@ function concrete_filter_database(): Capsule
         'chat_messages',
         'chat_participants',
         'chat_receipts',
+        'dashboards',
+        'groups',
         'invites',
         'notifications',
         'policies',
@@ -114,6 +124,7 @@ function concrete_filter_database(): Capsule
         'schedule_templates',
         'schedules',
         'users',
+        'webhook_endpoints',
         'webhook_request_logs',
     ] as $table) {
         $schema->dropIfExists($table);
@@ -243,6 +254,34 @@ function concrete_filter_database(): Capsule
         $table->string('name')->nullable();
         $table->string('key')->nullable();
         $table->timestamp('expires_at')->nullable();
+        $table->softDeletes();
+    });
+
+    $schema->create('groups', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('public_id')->nullable();
+        $table->string('company_uuid')->nullable();
+        $table->string('name')->nullable();
+        $table->text('description')->nullable();
+        $table->string('slug')->nullable();
+        $table->softDeletes();
+    });
+
+    $schema->create('dashboards', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('user_uuid')->nullable();
+        $table->string('company_uuid')->nullable();
+        $table->string('name')->nullable();
+        $table->softDeletes();
+    });
+
+    $schema->create('webhook_endpoints', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('company_uuid')->nullable();
+        $table->string('url')->nullable();
+        $table->text('description')->nullable();
+        $table->text('events')->nullable();
+        $table->string('status')->nullable();
         $table->softDeletes();
     });
 
@@ -527,6 +566,31 @@ test('api request log filter scopes tenant logs by credential and date ranges', 
         ->and(concrete_filter_uuids(ApiRequestLogFilter::class, ApiRequestLog::class, ['query' => 'files'], 'int/v1/api-request-logs'))->toBe(['log-2'])
         ->and(concrete_filter_uuids(ApiRequestLogFilter::class, ApiRequestLog::class, ['created_at' => '2026-07-18,2026-07-18 23:59:59'], 'int/v1/api-request-logs'))->toBe(['log-1'])
         ->and(concrete_filter_uuids(ApiRequestLogFilter::class, ApiRequestLog::class, ['updated_at' => '2026-07-19'], 'int/v1/api-request-logs'))->toBe(['log-2']);
+});
+
+test('simple tenant filters scope credentials groups webhooks and dashboards', function () {
+    $capsule = concrete_filter_database();
+    $capsule->getConnection('mysql')->table('api_credentials')->insert([
+        ['uuid' => 'credential-visible', 'public_id' => 'cred_visible', 'company_uuid' => 'company-1', 'name' => 'Primary key', 'key' => 'pk_visible'],
+        ['uuid' => 'credential-hidden', 'public_id' => 'cred_hidden', 'company_uuid' => 'company-2', 'name' => 'Hidden key', 'key' => 'pk_hidden'],
+    ]);
+    $capsule->getConnection('mysql')->table('groups')->insert([
+        ['uuid' => 'group-visible', 'public_id' => 'group_visible', 'company_uuid' => 'company-1', 'name' => 'Dispatch Admins'],
+        ['uuid' => 'group-hidden', 'public_id' => 'group_hidden', 'company_uuid' => 'company-2', 'name' => 'Hidden Admins'],
+    ]);
+    $capsule->getConnection('mysql')->table('webhook_endpoints')->insert([
+        ['uuid' => 'webhook-visible', 'company_uuid' => 'company-1', 'url' => 'https://hooks.test/dispatch', 'description' => 'Dispatch webhooks', 'events' => '[]', 'status' => 'enabled'],
+        ['uuid' => 'webhook-hidden', 'company_uuid' => 'company-2', 'url' => 'https://hooks.test/hidden', 'description' => 'Hidden webhooks', 'events' => '[]', 'status' => 'enabled'],
+    ]);
+    $capsule->getConnection('mysql')->table('dashboards')->insert([
+        ['uuid' => 'dashboard-visible', 'user_uuid' => 'user-1', 'company_uuid' => 'company-1', 'name' => 'Dispatch dashboard'],
+        ['uuid' => 'dashboard-hidden', 'user_uuid' => 'user-2', 'company_uuid' => 'company-1', 'name' => 'Hidden dashboard'],
+    ]);
+
+    expect(concrete_filter_uuids(ApiCredentialFilter::class, ApiCredential::class, [], 'int/v1/api-credentials'))->toBe(['credential-visible'])
+        ->and(concrete_filter_uuids(GroupFilter::class, Group::class, [], 'int/v1/groups'))->toBe(['group-visible'])
+        ->and(concrete_filter_uuids(WebhookEndpointFilter::class, WebhookEndpoint::class, [], 'int/v1/webhook-endpoints'))->toBe(['webhook-visible'])
+        ->and(concrete_filter_uuids(DashboardFilter::class, Dashboard::class, [], 'int/v1/dashboards'))->toBe(['dashboard-visible']);
 });
 
 test('api event and webhook request log filters scope tenant logs and date windows', function () {

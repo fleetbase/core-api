@@ -1,9 +1,11 @@
 <?php
 
 use Fleetbase\Http\Controllers\Controller;
+use Fleetbase\Http\Controllers\Internal\v1\DashboardController;
 use Fleetbase\Http\Controllers\Internal\v1\UserDeviceController;
 use Fleetbase\Http\Controllers\Internal\v1\WebhookEndpointController;
 use Fleetbase\Http\Middleware\TrackPresence;
+use Fleetbase\Models\Dashboard;
 use Fleetbase\Models\UserDevice;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
@@ -129,6 +131,66 @@ function lightweight_http_user_device_database(): Capsule
     return $capsule;
 }
 
+function lightweight_http_dashboard_database(): Capsule
+{
+    EloquentModel::clearBootedModels();
+
+    $connection = [
+        'driver'   => 'sqlite',
+        'database' => ':memory:',
+        'prefix'   => '',
+    ];
+
+    $container = bind_test_container([
+        'database.default'           => 'mysql',
+        'database.connections.mysql' => $connection,
+        'fleetbase.connection.db'    => 'mysql',
+    ]);
+    $container->instance('cache', new LightweightHttpTaggedCacheFake());
+    $container->instance('responsecache', new LightweightHttpResponseCacheFake());
+
+    $capsule = new Capsule($container);
+    $capsule->addConnection($connection, 'mysql');
+    $capsule->setEventDispatcher(new Dispatcher($container));
+    $capsule->setAsGlobal();
+    $capsule->bootEloquent();
+    $capsule->getDatabaseManager()->setDefaultConnection('mysql');
+    $container->instance('db', $capsule->getDatabaseManager());
+
+    $schema = $capsule->getConnection('mysql')->getSchemaBuilder();
+    $schema->create('dashboards', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('user_uuid')->nullable()->index();
+        $table->string('company_uuid')->nullable();
+        $table->string('extension')->nullable();
+        $table->string('name')->nullable();
+        $table->boolean('is_default')->default(false);
+        $table->text('tags')->nullable();
+        $table->text('meta')->nullable();
+        $table->text('options')->nullable();
+        $table->timestamps();
+        $table->softDeletes();
+    });
+    $schema->create('dashboard_widgets', function ($table) {
+        $table->increments('id');
+        $table->string('dashboard_uuid')->nullable();
+        $table->timestamps();
+        $table->softDeletes();
+    });
+
+    $now = '2026-07-18 00:00:00';
+    $capsule->getConnection('mysql')->table('dashboards')->insert([
+        ['uuid' => 'dashboard-current', 'user_uuid' => 'user-1', 'company_uuid' => 'company-1', 'name' => 'Current', 'is_default' => true, 'created_at' => $now, 'updated_at' => $now],
+        ['uuid' => 'dashboard-next', 'user_uuid' => 'user-1', 'company_uuid' => 'company-1', 'name' => 'Next', 'is_default' => false, 'created_at' => $now, 'updated_at' => $now],
+        ['uuid' => 'dashboard-other-user', 'user_uuid' => 'user-2', 'company_uuid' => 'company-1', 'name' => 'Other User', 'is_default' => true, 'created_at' => $now, 'updated_at' => $now],
+    ]);
+
+    session()->flush();
+    session(['user' => 'user-1', 'company' => 'company-1']);
+
+    return $capsule;
+}
+
 afterEach(function () {
     session()->flush();
     EloquentModel::clearBootedModels();
@@ -221,4 +283,26 @@ test('user device controller registers new devices and reuses existing tokens', 
         ->and(UserDevice::query()->count())->toBe(1)
         ->and(UserDevice::query()->first()->user_uuid)->toBe('user-1')
         ->and(UserDevice::query()->first()->platform)->toBe('ios');
+});
+
+test('dashboard controller switches resets and reports missing dashboards within the active user', function () {
+    lightweight_http_dashboard_database();
+
+    $controller = new DashboardController();
+    $switched   = $controller->switchDashboard(Request::create('/int/v1/dashboards/switch', 'POST', [
+        'dashboard_uuid' => 'dashboard-next',
+    ]));
+    $missing = $controller->switchDashboard(Request::create('/int/v1/dashboards/switch', 'POST', [
+        'dashboard_uuid' => 'dashboard-missing',
+    ]));
+    $reset = $controller->resetDefaultDashboard();
+
+    expect($switched->getData(true)['dashboard']['uuid'])->toBe('dashboard-next')
+        ->and(Dashboard::query()->where('uuid', 'dashboard-current')->value('is_default'))->toBeFalse()
+        ->and(Dashboard::query()->where('uuid', 'dashboard-next')->value('is_default'))->toBeFalse()
+        ->and(Dashboard::query()->where('uuid', 'dashboard-other-user')->value('is_default'))->toBeTrue()
+        ->and($missing->getStatusCode())->toBe(404)
+        ->and($missing->getData(true))->toBe(['errors' => ['Dashboard not found.']])
+        ->and($reset->getData(true))->toBe(['status' => 'ok'])
+        ->and(Dashboard::query()->where('user_uuid', 'user-1')->where('is_default', true)->exists())->toBeFalse();
 });
