@@ -77,11 +77,19 @@ class ConcreteFilterRoute
 
 class ConcreteFilterSearchBuilderFake
 {
-    public array $queries = [];
+    public array $queries     = [];
+    public array $searchWhere = [];
 
     public function search(?string $query): self
     {
         $this->queries[] = $query;
+
+        return $this;
+    }
+
+    public function searchWhere(string $column, ?string $query): self
+    {
+        $this->searchWhere[] = [$column, $query];
 
         return $this;
     }
@@ -118,6 +126,7 @@ class ConcreteFilterRelationBuilderFake
             'wheres'      => $related->wheres,
             'orWheres'    => $related->orWheres,
             'whereNulls'  => $related->whereNulls,
+            'whereHas'    => $related->whereHas,
         ];
 
         return $this;
@@ -651,9 +660,44 @@ test('user filter includes current company members and pending invite recipients
     ]);
 
     expect(concrete_filter_uuids(UserFilter::class, User::class, [], 'int/v1/users'))->toBe(['user-invited', 'user-member'])
+        ->and(concrete_filter_uuids(UserFilter::class, User::class, [], 'v1/users'))->toBe(['user-invited', 'user-member'])
         ->and(concrete_filter_uuids(UserFilter::class, User::class, ['is_not_admin' => '1'], 'int/v1/users'))->toBe(['user-invited', 'user-member'])
         ->and(concrete_filter_uuids(UserFilter::class, User::class, ['is_user' => '1'], 'int/v1/users'))->toBe(['user-invited', 'user-member'])
         ->and(concrete_filter_uuids(UserFilter::class, User::class, ['email' => 'invited'], 'int/v1/users'))->toBe(['user-invited']);
+});
+
+test('user filter delegates search helpers and scopes role filters to the active company', function () {
+    concrete_filter_database();
+
+    $searchFilter = concrete_filter_with_any_builder(
+        new UserFilter(concrete_filter_request([], 'int/v1/users')),
+        $searchBuilder = new ConcreteFilterSearchBuilderFake()
+    );
+    $searchFilter->query('ada');
+    $searchFilter->name('grace');
+    $searchFilter->phone('+15550002');
+
+    $roleFilter = concrete_filter_with_any_builder(
+        new UserFilter(concrete_filter_request([], 'int/v1/users')),
+        $roleBuilder = new ConcreteFilterRelationBuilderFake()
+    );
+    $roleFilter->role('role-dispatcher');
+
+    expect($searchBuilder->queries)->toBe(['ada'])
+        ->and($searchBuilder->searchWhere)->toBe([
+            ['name', 'grace'],
+            ['phone', '+15550002'],
+        ])
+        ->and($roleBuilder->whereHas)->toHaveCount(1)
+        ->and($roleBuilder->whereHas[0]['relation'])->toBe('companyUsers')
+        ->and($roleBuilder->whereHas[0]['wheres'])->toBe([
+            ['company_uuid', 'company-1', null, 'and'],
+        ])
+        ->and($roleBuilder->whereHas[0]['whereHas'])->toHaveCount(1)
+        ->and($roleBuilder->whereHas[0]['whereHas'][0]['relation'])->toBe('roles')
+        ->and($roleBuilder->whereHas[0]['whereHas'][0]['wheres'])->toBe([
+            ['id', 'role-dispatcher', null, 'and'],
+        ]);
 });
 
 test('api request log filter scopes tenant logs by credential and date ranges', function () {
@@ -911,14 +955,18 @@ test('category filter applies tenant core parent and list filters', function () 
 });
 
 test('schedule item filter resolves schedule identifiers and date ranges within tenant scope', function () {
-    $capsule = concrete_filter_database();
+    $capsule         = concrete_filter_database();
+    $rawScheduleUuid = '11111111-1111-4111-8111-111111111111';
+
     $capsule->getConnection('mysql')->table('schedules')->insert([
         ['uuid' => 'schedule-1', 'public_id' => 'schedule_public_1', 'company_uuid' => 'company-1'],
+        ['uuid' => $rawScheduleUuid, 'public_id' => 'schedule_public_uuid', 'company_uuid' => 'company-1'],
         ['uuid' => 'schedule-2', 'public_id' => 'schedule_public_2', 'company_uuid' => 'company-2'],
     ]);
     $capsule->getConnection('mysql')->table('schedule_items')->insert([
         ['uuid' => 'item-direct', 'company_uuid' => 'company-1', 'schedule_uuid' => 'schedule-1', 'assignee_uuid' => 'driver-1', 'assignee_type' => 'Fleetbase\\FleetOps\\Models\\Driver', 'start_at' => '2026-07-18 08:00:00', 'end_at' => '2026-07-18 12:00:00'],
         ['uuid' => 'item-fallback', 'company_uuid' => null, 'schedule_uuid' => 'schedule-1', 'assignee_uuid' => 'driver-2', 'assignee_type' => 'Fleetbase\\FleetOps\\Models\\Driver', 'start_at' => '2026-07-19 08:00:00', 'end_at' => '2026-07-19 12:00:00'],
+        ['uuid' => 'item-uuid', 'company_uuid' => 'company-1', 'schedule_uuid' => $rawScheduleUuid, 'assignee_uuid' => 'driver-3', 'assignee_type' => 'Fleetbase\\FleetOps\\Models\\Driver', 'start_at' => '2026-07-20 08:00:00', 'end_at' => '2026-07-20 12:00:00'],
         ['uuid' => 'item-hidden', 'company_uuid' => 'company-2', 'schedule_uuid' => 'schedule-2', 'assignee_uuid' => 'driver-1', 'assignee_type' => 'Fleetbase\\FleetOps\\Models\\Driver', 'start_at' => '2026-07-18 08:00:00', 'end_at' => '2026-07-18 12:00:00'],
     ]);
 
@@ -933,11 +981,32 @@ test('schedule item filter resolves schedule identifiers and date ranges within 
         ->pluck('uuid')
         ->all();
 
-    expect(concrete_filter_uuids(ScheduleItemFilter::class, ScheduleItem::class, [], 'int/v1/schedule-items'))->toBe(['item-direct', 'item-fallback'])
+    expect(concrete_filter_uuids(ScheduleItemFilter::class, ScheduleItem::class, [], 'int/v1/schedule-items'))->toBe(['item-direct', 'item-fallback', 'item-uuid'])
+        ->and(concrete_filter_uuids(ScheduleItemFilter::class, ScheduleItem::class, [], 'v1/schedule-items'))->toBe(['item-direct', 'item-fallback', 'item-uuid'])
         ->and(concrete_filter_uuids(ScheduleItemFilter::class, ScheduleItem::class, ['schedule_uuid' => 'schedule_public_1'], 'int/v1/schedule-items'))->toBe(['item-direct', 'item-fallback'])
+        ->and(concrete_filter_uuids(ScheduleItemFilter::class, ScheduleItem::class, ['schedule_uuid' => $rawScheduleUuid], 'int/v1/schedule-items'))->toBe(['item-uuid'])
         ->and(concrete_filter_uuids(ScheduleItemFilter::class, ScheduleItem::class, ['schedule_uuid' => 'missing_schedule'], 'int/v1/schedule-items'))->toBe([])
         ->and(concrete_filter_uuids(ScheduleItemFilter::class, ScheduleItem::class, ['assignee_type' => 'Fleetbase\\FleetOps\\Models\\Driver', 'assignee_uuid' => 'driver-1'], 'int/v1/schedule-items'))->toBe(['item-direct'])
         ->and($rangeMatches)->toBe(['item-fallback']);
+});
+
+test('schedule item filter ignores blank identifiers and resolves assignee aliases with range lower bounds', function () {
+    concrete_filter_database();
+
+    $filter = concrete_filter_with_any_builder(
+        new ScheduleItemFilter(concrete_filter_request([], 'int/v1/schedule-items')),
+        $builder = new ConcreteFilterRelationBuilderFake()
+    );
+    $filter->scheduleUuid('');
+    $filter->assigneeType('');
+    $filter->assigneeUuid('');
+    $filter->assigneeType('fleet-ops:driver');
+    $filter->endAtBetween('2026-07-20 00:00:00', null);
+
+    expect($builder->wheres)->toBe([
+        ['assignee_type', 'Fleetbase\\FleetOps\\Models\\Driver', null, 'and'],
+        ['end_at', '>=', '2026-07-20 00:00:00', 'and'],
+    ]);
 });
 
 test('schedule filter scopes tenant schedules and applies subject and status filters', function () {
