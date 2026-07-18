@@ -936,6 +936,39 @@ namespace {
             ->and(app('log')->entries[1][2]['api_key_prefix'])->toBe('Query:query-key...');
     });
 
+    test('throttle requests applies configured limits and preserves key extraction edge cases', function () {
+        middleware_contracts_fixture([
+            'api.throttle.enabled'        => true,
+            'api.throttle.max_attempts'   => 5,
+            'api.throttle.decay_minutes'  => 2,
+            'api.throttle.unlimited_keys' => [],
+        ]);
+
+        $middleware = middleware_contracts_throttle();
+        $request    = Request::create('/v1/orders', 'GET', [], [], [], [
+            'REMOTE_ADDR' => '203.0.113.10',
+        ]);
+        $request->setRouteResolver(fn () => new Illuminate\Routing\Route(['GET'], 'v1/orders', fn () => null));
+
+        $response = $middleware->handle($request, fn () => new JsonResponse(['throttled' => false]));
+
+        $extractApiKey     = new ReflectionMethod($middleware, 'extractApiKey');
+        $isUnlimitedApiKey = new ReflectionMethod($middleware, 'isUnlimitedApiKey');
+        $extractApiKey->setAccessible(true);
+        $isUnlimitedApiKey->setAccessible(true);
+
+        expect($response->getData(true))->toBe(['throttled' => false])
+            ->and($response->headers->get('X-RateLimit-Limit'))->toBe('5')
+            ->and($response->headers->get('X-RateLimit-Remaining'))->toBe('4')
+            ->and($extractApiKey->invoke($middleware, Request::create('/v1/orders', 'GET')))->toBeNull()
+            ->and($isUnlimitedApiKey->invoke($middleware, 'Bearer unlimited-key'))->toBeFalse();
+
+        config(['api.throttle.unlimited_keys' => ['unlimited-key']]);
+
+        expect($isUnlimitedApiKey->invoke($middleware, 'Bearer unlimited-key'))->toBeTrue()
+            ->and($isUnlimitedApiKey->invoke($middleware, 'Bearer other-key'))->toBeFalse();
+    });
+
     test('basic auth middleware rejects requests without bearer credentials before continuing', function () {
         middleware_contracts_fixture();
 
