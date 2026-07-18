@@ -1,6 +1,9 @@
 <?php
 
+use Fleetbase\Http\Resources\Author as AuthorResource;
 use Fleetbase\Http\Resources\Category as CategoryResource;
+use Fleetbase\Http\Resources\ChatAttachment as ChatAttachmentResource;
+use Fleetbase\Http\Resources\DeletedResource;
 use Fleetbase\Http\Resources\Json\FleetbasePaginatedResourceResponse;
 use Fleetbase\Http\Resources\Policy as PolicyResource;
 use Fleetbase\Http\Resources\Role as RoleResource;
@@ -36,6 +39,10 @@ function resource_contract_container(): void
             'provider' => 'users',
         ],
     ]);
+
+    if (!class_exists('Fleetbase\\FleetOps\\Support\\Utils')) {
+        class_alias(Fleetbase\Support\Utils::class, 'Fleetbase\\FleetOps\\Support\\Utils');
+    }
 }
 
 function category_resource_model(array $attributes): Category
@@ -393,4 +400,121 @@ test('paginated resource response keeps fleetbase pagination metadata compact wi
         ->and($pagination['meta']['from'])->toBe(11)
         ->and($pagination['meta']['to'])->toBe(20)
         ->and($pagination['meta']['time'])->toBeGreaterThanOrEqual(0);
+});
+
+test('author resource hides internal identifiers from public responses', function () {
+    resource_contract_container();
+
+    $author = new class extends EloquentModel {
+        protected $guarded = [];
+    };
+    $author->setRawAttributes([
+        'id' => 12,
+        'uuid' => 'author-uuid',
+        'public_id' => 'author_public',
+        'company_uuid' => 'company-1',
+        'avatar_uuid' => 'file-1',
+        'name' => 'Ada Author',
+        'email' => 'ada@example.test',
+        'phone' => '+15555550123',
+        'country' => 'SG',
+        'avatar_url' => 'https://cdn.test/avatar.png',
+        'company_name' => 'Acme Logistics',
+        'is_admin' => false,
+        'timezone' => 'Asia/Singapore',
+        'updated_at' => Carbon::parse('2026-07-18 00:00:00'),
+        'created_at' => Carbon::parse('2026-07-17 00:00:00'),
+    ], true);
+    $author->id = 12;
+
+    $internal = (new AuthorResource($author))->resolve(resource_contract_request('/int/v1/users/author_public'));
+    $public = (new AuthorResource($author))->resolve(resource_contract_request('/v1/users/author_public'));
+
+    expect($internal['id'])->toBe(12)
+        ->and($internal['uuid'])->toBe('author-uuid')
+        ->and($internal['public_id'])->toBe('author_public')
+        ->and($internal['company_uuid'])->toBe('company-1')
+        ->and($internal['avatar_uuid'])->toBe('file-1')
+        ->and($internal['name'])->toBe('Ada Author')
+        ->and($internal['avatar_url'])->toBe('https://cdn.test/avatar.png')
+        ->and($internal['company_name'])->toBe('Acme Logistics')
+        ->and($public['id'])->toBe('author_public')
+        ->and($public)->not->toHaveKeys(['uuid', 'public_id', 'company_uuid', 'avatar_uuid'])
+        ->and($public['email'])->toBe('ada@example.test')
+        ->and($public['timezone'])->toBe('Asia/Singapore');
+});
+
+test('chat attachment resource maps internal ids and public related ids correctly', function () {
+    resource_contract_container();
+
+    $attachment = new class extends EloquentModel {
+        protected $guarded = [];
+    };
+    $attachment->setRawAttributes([
+        'id' => 91,
+        'uuid' => 'attachment-uuid',
+        'public_id' => 'attachment_public',
+        'chat_channel_uuid' => 'channel-uuid',
+        'chat_message_uuid' => 'message-uuid',
+        'file_uuid' => 'file-uuid',
+        'updated_at' => Carbon::parse('2026-07-18 00:00:00'),
+        'created_at' => Carbon::parse('2026-07-17 00:00:00'),
+        'deleted_at' => null,
+    ], true);
+    $attachment->id = 91;
+    $attachment->setRelation('chatChannel', (object) ['public_id' => 'channel_public']);
+    $attachment->setRelation('message', (object) ['public_id' => 'message_public']);
+    $attachment->setRelation('file', (object) [
+        'public_id' => 'file_public',
+        'url' => 'https://cdn.test/file.pdf',
+        'original_filename' => 'file.pdf',
+        'content_type' => 'application/pdf',
+    ]);
+
+    $internal = (new ChatAttachmentResource($attachment))->resolve(resource_contract_request('/int/v1/chat-attachments/attachment_public'));
+    $public = (new ChatAttachmentResource($attachment))->resolve(resource_contract_request('/v1/chat-attachments/attachment_public'));
+
+    expect($internal['id'])->toBe(91)
+        ->and($internal['uuid'])->toBe('attachment-uuid')
+        ->and($internal['chat_channel_uuid'])->toBe('channel-uuid')
+        ->and($internal['chat_message_uuid'])->toBe('message-uuid')
+        ->and($internal['file_uuid'])->toBe('file-uuid')
+        ->and($internal['url'])->toBe('https://cdn.test/file.pdf')
+        ->and($internal['filename'])->toBe('file.pdf')
+        ->and($public['id'])->toBe('attachment_public')
+        ->and($public['chat_channel'])->toBe('channel_public')
+        ->and($public['chat_message'])->toBe('message_public')
+        ->and($public['file'])->toBe('file_public')
+        ->and($public)->not->toHaveKeys(['uuid', 'chat_channel_uuid', 'chat_message_uuid', 'file_uuid']);
+});
+
+test('deleted resource keeps internal deletion shape and compact webhook payload', function () {
+    resource_contract_container();
+
+    $deleted = new Category();
+    $deleted->setRawAttributes([
+        'id' => 44,
+        'uuid' => 'category-uuid',
+        'public_id' => 'category_public',
+        'deleted_at' => Carbon::parse('2026-07-18 08:30:00'),
+    ], true);
+    $deleted->id = 44;
+
+    $internalResource = new DeletedResource($deleted);
+    $internal = $internalResource->resolve(resource_contract_request('/int/v1/categories/category_public'));
+    $public = (new DeletedResource($deleted))->resolve(resource_contract_request('/v1/categories/category_public'));
+    $webhook = $internalResource->toWebhookPayload();
+
+    expect($internal['id'])->toBe(44)
+        ->and($internal['uuid'])->toBe('category-uuid')
+        ->and($internal['public_id'])->toBe('category_public')
+        ->and($internal['object'])->toBe('category')
+        ->and($internal['deleted'])->toBeTrue()
+        ->and($public['id'])->toBe('category_public')
+        ->and($public)->not->toHaveKeys(['uuid', 'public_id'])
+        ->and($webhook)->toMatchArray([
+            'id' => 'category_public',
+            'object' => 'category',
+            'deleted' => true,
+        ]);
 });
