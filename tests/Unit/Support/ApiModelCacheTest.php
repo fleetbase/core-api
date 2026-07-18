@@ -67,8 +67,16 @@ class ApiModelCacheTraitDisabledModel extends ApiModelCacheTraitTestModel
 
 class ApiModelCacheTestLock
 {
+    public function __construct(private ApiModelCacheTestStore $store)
+    {
+    }
+
     public function block(int $seconds, Closure $callback)
     {
+        if ($this->store->lockReturnsNull) {
+            return null;
+        }
+
         return $callback();
     }
 }
@@ -117,11 +125,12 @@ class ApiModelCacheTestTaggedStore
 
 class ApiModelCacheTestStore
 {
-    public array $values       = [];
-    public array $taggedValues = [];
-    public array $flushedTags  = [];
-    public array $forgotten    = [];
-    public bool $throwOnTags   = false;
+    public array $values         = [];
+    public array $taggedValues   = [];
+    public array $flushedTags    = [];
+    public array $forgotten      = [];
+    public bool $throwOnTags     = false;
+    public bool $lockReturnsNull = false;
 
     public function get(string $key, mixed $default = null): mixed
     {
@@ -144,7 +153,7 @@ class ApiModelCacheTestStore
 
     public function lock(string $key, int $seconds): ApiModelCacheTestLock
     {
-        return new ApiModelCacheTestLock();
+        return new ApiModelCacheTestLock($this);
     }
 
     public function tags(array $tags): ApiModelCacheTestTaggedStore
@@ -184,6 +193,18 @@ class ApiModelCacheTestStore
     private function tagKey(array $tags): string
     {
         return implode('|', $tags);
+    }
+}
+
+class ApiModelCacheUserResolver
+{
+    public function __construct(public ?string $company_uuid)
+    {
+    }
+
+    public function company_uuid(): ?string
+    {
+        return $this->company_uuid;
     }
 }
 
@@ -380,6 +401,39 @@ test('api model cache stores query results with miss hit status and disabled byp
     expect($bypassed->all())->toBe([]);
 });
 
+test('api model cache handles query lock timeouts from cached fallback and direct callback', function () {
+    $store   = api_model_cache_fixture();
+    $model   = api_model_cache_model();
+    $request = api_model_cache_request(['status' => 'active']);
+    $key     = ApiModelCache::generateQueryCacheKey($model, $request);
+    $tags    = ApiModelCache::generateCacheTags($model, 'company-1', true);
+
+    $store->lockReturnsNull = true;
+    $store->putTagged($tags, $key, collect(['from-existing-cache']));
+    $calls = 0;
+
+    $cached = ApiModelCache::cacheQueryResult($model, $request, function () use (&$calls) {
+        $calls++;
+
+        return collect(['unexpected']);
+    });
+
+    expect($cached->all())->toBe(['from-existing-cache'])
+        ->and($calls)->toBe(0)
+        ->and(ApiModelCache::getCacheStatus())->toBe('HIT');
+
+    $uncachedRequest = api_model_cache_request(['status' => 'inactive']);
+    $missed          = ApiModelCache::cacheQueryResult($model, $uncachedRequest, function () use (&$calls) {
+        $calls++;
+
+        return null;
+    });
+
+    expect($missed->all())->toBe([])
+        ->and($calls)->toBe(1)
+        ->and(ApiModelCache::getCacheStatus())->toBe('MISS');
+});
+
 test('api model cache stores model and relationship lookups with status tracking', function () {
     api_model_cache_fixture();
     $model      = api_model_cache_model();
@@ -423,6 +477,39 @@ test('api model cache stores model and relationship lookups with status tracking
         ->and(ApiModelCache::getCacheKey())->toBe('{api_relation}:orders:order-1:payload');
 });
 
+test('api model cache bypasses model relationship and invalidation work when disabled', function () {
+    $store             = api_model_cache_fixture(['api.cache.enabled' => false]);
+    $model             = api_model_cache_model();
+    $modelCalls        = 0;
+    $relationshipCalls = 0;
+
+    $modelResult = ApiModelCache::cacheModel($model, 'order-1', function () use (&$modelCalls) {
+        $modelCalls++;
+
+        return ['uuid' => 'direct-model'];
+    });
+
+    $relationshipResult = ApiModelCache::cacheRelationship($model, 'payload', function () use (&$relationshipCalls) {
+        $relationshipCalls++;
+
+        return ['uuid' => 'direct-relation'];
+    });
+
+    ApiModelCache::invalidateModelCache($model, 'company-1');
+    ApiModelCache::invalidateQueryCache($model, api_model_cache_request(['status' => 'active']));
+    ApiModelCache::invalidateCompanyCache('company-1');
+    ApiModelCache::warmCache($model, api_model_cache_request(['status' => 'active']), fn () => collect(['ignored']));
+
+    expect($modelResult)->toBe(['uuid' => 'direct-model'])
+        ->and($relationshipResult)->toBe(['uuid' => 'direct-relation'])
+        ->and($modelCalls)->toBe(1)
+        ->and($relationshipCalls)->toBe(1)
+        ->and($store->values)->toBe([])
+        ->and($store->taggedValues)->toBe([])
+        ->and($store->flushedTags)->toBe([])
+        ->and($store->forgotten)->toBe([]);
+});
+
 test('api model cache invalidates scoped query and model caches and advances query versions', function () {
     $store   = api_model_cache_fixture();
     $model   = api_model_cache_model();
@@ -447,6 +534,39 @@ test('api model cache invalidates scoped query and model caches and advances que
     ApiModelCache::invalidateCompanyCache('company-1');
 
     expect($store->flushedTags)->toContain(['company:company-1']);
+});
+
+test('api model cache resolves tenant scope from authenticated user and request input fallbacks', function () {
+    api_model_cache_fixture();
+    $model = api_model_cache_model();
+
+    $userRequest = api_model_cache_request(['status' => 'active'], null);
+    $userRequest->setUserResolver(fn () => new ApiModelCacheUserResolver('company-from-user'));
+
+    $inputRequest = api_model_cache_request([
+        'status'       => 'active',
+        'company_uuid' => 'company-from-input',
+    ], null);
+
+    expect(ApiModelCache::generateQueryCacheKey($model, $userRequest))
+        ->toStartWith('{api_query}:orders:company_company-from-user:v1:')
+        ->and(ApiModelCache::generateQueryCacheKey($model, $inputRequest))
+        ->toStartWith('{api_query}:orders:company_company-from-input:v1:');
+});
+
+test('api model cache invalidation methods swallow tagged cache backend failures', function () {
+    $store              = api_model_cache_fixture();
+    $store->throwOnTags = true;
+    $model              = api_model_cache_model();
+    $request            = api_model_cache_request(['status' => 'active']);
+
+    ApiModelCache::invalidateModelCache($model, 'company-1');
+    ApiModelCache::invalidateQueryCache($model, $request);
+    ApiModelCache::invalidateCompanyCache('company-1');
+
+    expect($store->get('api_query_version:orders:company-1'))->toBe(1)
+        ->and($store->flushedTags)->toBe([])
+        ->and($store->forgotten)->toBe([]);
 });
 
 test('api model cache falls back to callbacks when tagged cache operations fail', function () {
