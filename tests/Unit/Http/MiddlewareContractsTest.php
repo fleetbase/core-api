@@ -275,6 +275,7 @@ namespace {
 
         $capsule = new Capsule($container);
         $capsule->addConnection($connection, 'mysql');
+        $capsule->addConnection($connection, 'sandbox');
         $capsule->setEventDispatcher(new Dispatcher($container));
         $capsule->setAsGlobal();
         $capsule->bootEloquent();
@@ -283,37 +284,41 @@ namespace {
         $container->instance('db', $capsule->getDatabaseManager());
         Facade::clearResolvedInstance('db');
 
-        $schema = $capsule->getConnection('mysql')->getSchemaBuilder();
-        $schema->create('users', function ($table) {
-            $table->string('uuid')->primary();
-            $table->string('company_uuid')->nullable();
-            $table->string('type')->nullable();
-            $table->timestamp('created_at')->nullable();
-            $table->timestamp('updated_at')->nullable();
-            $table->timestamp('deleted_at')->nullable();
-        });
-        $schema->create('companies', function ($table) {
-            $table->string('uuid')->primary();
-            $table->string('owner_id')->nullable();
-            $table->string('owner_uuid')->nullable();
-            $table->timestamp('created_at')->nullable();
-            $table->timestamp('updated_at')->nullable();
-            $table->timestamp('deleted_at')->nullable();
-        });
-        $schema->create('api_credentials', function ($table) {
-            $table->string('uuid')->primary();
-            $table->string('user_uuid')->nullable();
-            $table->string('company_uuid')->nullable();
-            $table->string('name')->nullable();
-            $table->string('key')->nullable();
-            $table->string('secret')->nullable();
-            $table->boolean('test_mode')->default(false);
-            $table->timestamp('last_used_at')->nullable();
-            $table->timestamp('expires_at')->nullable();
-            $table->timestamp('created_at')->nullable();
-            $table->timestamp('updated_at')->nullable();
-            $table->timestamp('deleted_at')->nullable();
-        });
+        $schema                = $capsule->getConnection('mysql')->getSchemaBuilder();
+        $createBasicAuthTables = function ($schema): void {
+            $schema->create('users', function ($table) {
+                $table->string('uuid')->primary();
+                $table->string('company_uuid')->nullable();
+                $table->string('type')->nullable();
+                $table->timestamp('created_at')->nullable();
+                $table->timestamp('updated_at')->nullable();
+                $table->timestamp('deleted_at')->nullable();
+            });
+            $schema->create('companies', function ($table) {
+                $table->string('uuid')->primary();
+                $table->string('owner_id')->nullable();
+                $table->string('owner_uuid')->nullable();
+                $table->timestamp('created_at')->nullable();
+                $table->timestamp('updated_at')->nullable();
+                $table->timestamp('deleted_at')->nullable();
+            });
+            $schema->create('api_credentials', function ($table) {
+                $table->string('uuid')->primary();
+                $table->string('user_uuid')->nullable();
+                $table->string('company_uuid')->nullable();
+                $table->string('name')->nullable();
+                $table->string('key')->nullable();
+                $table->string('secret')->nullable();
+                $table->boolean('test_mode')->default(false);
+                $table->timestamp('last_used_at')->nullable();
+                $table->timestamp('expires_at')->nullable();
+                $table->timestamp('created_at')->nullable();
+                $table->timestamp('updated_at')->nullable();
+                $table->timestamp('deleted_at')->nullable();
+            });
+        };
+        $createBasicAuthTables($schema);
+        $createBasicAuthTables($capsule->getConnection('sandbox')->getSchemaBuilder());
         $schema->create('personal_access_tokens', function ($table) {
             $table->increments('id');
             $table->string('tokenable_type');
@@ -330,13 +335,36 @@ namespace {
         $db = $capsule->getConnection('mysql');
         $db->table('users')->insert([
             ['uuid' => 'user-1', 'company_uuid' => 'company-1', 'type' => 'admin'],
+            ['uuid' => 'sanctum-user-invalid-company', 'company_uuid' => 'company-1', 'type' => 'user'],
+            ['uuid' => 'sanctum-user-valid-company', 'company_uuid' => '550e8400-e29b-41d4-a716-446655440000', 'type' => 'user'],
+            ['uuid' => 'sanctum-user-token-fallback', 'company_uuid' => '550e8400-e29b-41d4-a716-446655440001', 'type' => 'driver'],
         ]);
         $db->table('companies')->insert([
             ['uuid' => 'company-1', 'owner_id' => 'user-1', 'owner_uuid' => 'user-1'],
+            ['uuid' => '550e8400-e29b-41d4-a716-446655440000', 'owner_id' => 'sanctum-user-valid-company', 'owner_uuid' => 'sanctum-user-valid-company'],
+            ['uuid' => '550e8400-e29b-41d4-a716-446655440001', 'owner_id' => 'sanctum-user-token-fallback', 'owner_uuid' => 'sanctum-user-token-fallback'],
         ]);
         $db->table('api_credentials')->insert([
             ['uuid' => 'credential-live', 'user_uuid' => 'user-1', 'company_uuid' => 'company-1', 'name' => 'Live', 'key' => 'flb_live_auth', 'secret' => '$live_secret', 'test_mode' => 0, 'last_used_at' => null, 'expires_at' => null, 'created_at' => '2026-07-18 00:00:00', 'updated_at' => '2026-07-18 00:00:00'],
             ['uuid' => 'credential-expired', 'user_uuid' => 'user-1', 'company_uuid' => 'company-1', 'name' => 'Expired', 'key' => 'flb_live_expired', 'secret' => '$expired_secret', 'test_mode' => 0, 'last_used_at' => null, 'expires_at' => '2020-01-01 00:00:00', 'created_at' => '2026-07-18 00:00:00', 'updated_at' => '2026-07-18 00:00:00'],
+            ['uuid' => 'credential-sanctum', 'user_uuid' => 'sanctum-user-valid-company', 'company_uuid' => '550e8400-e29b-41d4-a716-446655440000', 'name' => 'Sanctum', 'key' => 'flb_live_sanctum', 'secret' => '$sanctum_secret', 'test_mode' => 0, 'last_used_at' => null, 'expires_at' => null, 'created_at' => '2026-07-18 00:00:00', 'updated_at' => '2026-07-18 00:00:00'],
+        ]);
+        $db->table('personal_access_tokens')->insert([
+            ['id' => 1, 'tokenable_type' => FleetbaseUser::class, 'tokenable_id' => 'sanctum-user-invalid-company', 'name' => 'invalid-company', 'token' => hash('sha256', 'plain-invalid-company-token'), 'abilities' => json_encode(['*']), 'created_at' => '2026-07-18 00:00:00', 'updated_at' => '2026-07-18 00:00:00'],
+            ['id' => 2, 'tokenable_type' => FleetbaseUser::class, 'tokenable_id' => 'sanctum-user-valid-company', 'name' => 'valid-company', 'token' => hash('sha256', 'plain-valid-company-token'), 'abilities' => json_encode(['*']), 'created_at' => '2026-07-18 00:00:00', 'updated_at' => '2026-07-18 00:00:00'],
+            ['id' => 3, 'tokenable_type' => FleetbaseUser::class, 'tokenable_id' => 'sanctum-user-token-fallback', 'name' => 'fallback-company', 'token' => hash('sha256', 'plain-token-fallback-token'), 'abilities' => json_encode(['*']), 'created_at' => '2026-07-18 00:00:00', 'updated_at' => '2026-07-18 00:00:00'],
+            ['id' => 4, 'tokenable_type' => Fleetbase\Models\Company::class, 'tokenable_id' => 'company-1', 'name' => 'company-token', 'token' => hash('sha256', 'plain-company-token'), 'abilities' => json_encode(['*']), 'created_at' => '2026-07-18 00:00:00', 'updated_at' => '2026-07-18 00:00:00'],
+        ]);
+
+        $sandbox = $capsule->getConnection('sandbox');
+        $sandbox->table('users')->insert([
+            ['uuid' => 'sandbox-user-1', 'company_uuid' => 'sandbox-company-1', 'type' => 'admin'],
+        ]);
+        $sandbox->table('companies')->insert([
+            ['uuid' => 'sandbox-company-1', 'owner_id' => 'sandbox-user-1', 'owner_uuid' => 'sandbox-user-1'],
+        ]);
+        $sandbox->table('api_credentials')->insert([
+            ['uuid' => 'credential-sandbox-secret', 'user_uuid' => 'sandbox-user-1', 'company_uuid' => 'sandbox-company-1', 'name' => 'Sandbox Secret', 'key' => 'flb_test_auth', 'secret' => '$sandbox_secret', 'test_mode' => 1, 'last_used_at' => null, 'expires_at' => null, 'created_at' => '2026-07-18 00:00:00', 'updated_at' => '2026-07-18 00:00:00'],
         ]);
 
         return $capsule;
@@ -990,6 +1018,128 @@ namespace {
             ->and($expiredResponse->getStatusCode())->toBe(401)
             ->and($expiredResponse->getData(true))->toBe([
                 'errors' => ['Oops! These api credentials have expired'],
+            ]);
+    });
+
+    test('basic auth middleware falls back to sandbox for sdk secret keys', function () {
+        middleware_contracts_basic_auth_database();
+        session()->flush();
+
+        $request = Request::create('/v1/orders', 'GET', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer $sandbox_secret',
+            'HTTP_USER_AGENT'    => '@fleetbase/sdk;node',
+        ]);
+
+        $response = (new AuthenticateOnceWithBasicAuth())->handle(
+            $request,
+            fn () => new JsonResponse(['source' => 'sandbox-secret'])
+        );
+
+        expect($response->getData(true))->toBe(['source' => 'sandbox-secret'])
+            ->and(session('company'))->toBe('sandbox-company-1')
+            ->and(session('user'))->toBe('sandbox-user-1')
+            ->and(session('api_credential'))->toBe('credential-sandbox-secret')
+            ->and(session('api_environment'))->toBe('test')
+            ->and(session('api_test_mode'))->toBeTrue()
+            ->and(session('is_sandbox'))->toBeTrue()
+            ->and(session('sandbox_api_credential'))->toBe('credential-sandbox-secret');
+    });
+
+    test('basic auth middleware authenticates sanctum tokens and preserves invalid company boundaries', function () {
+        middleware_contracts_basic_auth_database();
+        session()->flush();
+
+        $invalidCompanyRequest = Request::create('/v1/orders', 'GET', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer plain-invalid-company-token',
+        ]);
+        $invalidCompanyContinued = false;
+        $invalidCompanyResponse  = (new AuthenticateOnceWithBasicAuth())->handle(
+            $invalidCompanyRequest,
+            function () use (&$invalidCompanyContinued) {
+                $invalidCompanyContinued = true;
+
+                return new JsonResponse(['ok' => true]);
+            }
+        );
+
+        expect($invalidCompanyContinued)->toBeFalse()
+            ->and($invalidCompanyResponse->getStatusCode())->toBe(401)
+            ->and($invalidCompanyResponse->getData(true))->toBe([
+                'errors' => ['Oops! The api credentials provided were not valid'],
+            ])
+            ->and(session('api_credential'))->toBeNull();
+
+        session()->flush();
+
+        $validCompanyResponse = (new AuthenticateOnceWithBasicAuth())->handle(
+            Request::create('/v1/orders', 'GET', [], [], [], [
+                'HTTP_AUTHORIZATION' => 'Bearer plain-valid-company-token',
+            ]),
+            fn () => new JsonResponse(['source' => 'sanctum-api-credential'])
+        );
+
+        expect($validCompanyResponse->getData(true))->toBe(['source' => 'sanctum-api-credential'])
+            ->and(session('company'))->toBe('550e8400-e29b-41d4-a716-446655440000')
+            ->and(session('user'))->toBe('sanctum-user-valid-company')
+            ->and(session('api_credential'))->toBe('credential-sanctum')
+            ->and(session('api_key'))->toBe('flb_live_sanctum')
+            ->and(session('is_sanctum_token'))->toBeNull();
+
+        session()->flush();
+
+        $fallbackResponse = (new AuthenticateOnceWithBasicAuth())->handle(
+            Request::create('/v1/orders', 'GET', [], [], [], [
+                'HTTP_AUTHORIZATION' => 'Bearer plain-token-fallback-token',
+            ]),
+            fn () => new JsonResponse(['source' => 'sanctum-token-fallback'])
+        );
+
+        expect($fallbackResponse->getData(true))->toBe(['source' => 'sanctum-token-fallback'])
+            ->and(session('company'))->toBe('550e8400-e29b-41d4-a716-446655440001')
+            ->and(session('user'))->toBe('sanctum-user-token-fallback')
+            ->and(session('is_sanctum_token'))->toBeTrue()
+            ->and(session('api_credential'))->toBe(3)
+            ->and(session('api_key'))->toBe(hash('sha256', 'plain-token-fallback-token'));
+
+        session()->flush();
+
+        $nonUserTokenResponse = (new AuthenticateOnceWithBasicAuth())->handle(
+            Request::create('/v1/orders', 'GET', [], [], [], [
+                'HTTP_AUTHORIZATION' => 'Bearer plain-company-token',
+            ]),
+            fn () => new JsonResponse(['ok' => true])
+        );
+
+        expect($nonUserTokenResponse->getStatusCode())->toBe(401)
+            ->and($nonUserTokenResponse->getData(true))->toBe([
+                'errors' => ['Oops! The api credentials provided were not valid'],
+            ]);
+    });
+
+    test('basic auth middleware returns the generic invalid response for unsupported auth results', function () {
+        middleware_contracts_fixture();
+
+        $middleware = new class extends AuthenticateOnceWithBasicAuth {
+            public function authenticatedWithBasic(Request $request, $connection = null)
+            {
+                return false;
+            }
+        };
+
+        $continued = false;
+        $response  = $middleware->handle(
+            Request::create('/v1/orders', 'GET'),
+            function () use (&$continued) {
+                $continued = true;
+
+                return new JsonResponse(['ok' => true]);
+            }
+        );
+
+        expect($continued)->toBeFalse()
+            ->and($response->getStatusCode())->toBe(401)
+            ->and($response->getData(true))->toBe([
+                'errors' => ['Oops! The API credentials provided were not valid'],
             ]);
     });
 
