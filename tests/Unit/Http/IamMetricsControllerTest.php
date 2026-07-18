@@ -1,6 +1,7 @@
 <?php
 
 use Fleetbase\Http\Controllers\Internal\v1\IamMetricsController;
+use Fleetbase\Http\Controllers\Internal\v1\MetricController;
 use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\Group;
 use Fleetbase\Models\Policy;
@@ -451,4 +452,17 @@ test('iam metrics activity limits allowed iam subject types', function () {
             'subject_type' => 'Role',
             'causer_name'  => null,
         ]);
+});
+
+test('legacy iam metric endpoint counts tenant users groups roles and policies', function () {
+    iam_metrics_seed(iam_metrics_database());
+
+    $payload = (new MetricController())->iam()->getData(true);
+
+    expect($payload)->toBe([
+        'users_count' => 4,
+        'groups_count' => 2,
+        'roles_count' => 2,
+        'policy_count' => 1,
+    ]);
 });

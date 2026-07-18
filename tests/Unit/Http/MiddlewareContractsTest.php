@@ -38,6 +38,7 @@ namespace {
     use Fleetbase\Http\Middleware\RequestTimer;
     use Fleetbase\Http\Middleware\ResetJsonResourceWrap;
     use Fleetbase\Http\Middleware\SetGlobalHeaders;
+    use Fleetbase\Http\Middleware\SetupFleetbaseSession;
     use Fleetbase\Http\Middleware\ThrottleRequests;
     use Fleetbase\Http\Middleware\ValidateETag;
     use Fleetbase\Support\ApiModelCache;
@@ -50,6 +51,7 @@ namespace {
     use Illuminate\Http\Resources\Json\JsonResource;
     use Illuminate\Support\Facades\Bus;
     use Illuminate\Support\Facades\Facade;
+    use Laravel\Sanctum\PersonalAccessToken;
 
     class MiddlewareContractsHeaders extends SetGlobalHeaders
     {
@@ -688,5 +690,73 @@ namespace {
             ->and(app('log')->entries[1][2]['user'])->toBe('user-2')
             ->and(app('log')->entries[2][0])->toBe('debug')
             ->and(app('log')->entries[2][2]['url'])->toBe('int/v1/slow');
+    });
+
+    test('setup fleetbase session stores authenticated user sandbox and sanctum token context', function () {
+        middleware_contracts_fixture([
+            'database.default'        => 'mysql',
+            'fleetbase.connection.db' => 'mysql',
+        ]);
+        session()->flush();
+
+        $token = new class(['token' => 'plain-sanctum-token']) extends PersonalAccessToken {
+            public function getDateFormat()
+            {
+                return 'Y-m-d H:i:s';
+            }
+        };
+        $token->setRawAttributes([
+            'id' => 987,
+            'token' => 'plain-sanctum-token',
+            'created_at' => '2026-07-18 12:00:00',
+        ], true);
+
+        $user = new class($token) {
+            public string $uuid = 'user-1';
+            public string $company_uuid = 'company-1';
+
+            public function __construct(private PersonalAccessToken $token)
+            {
+            }
+
+            public function isAdmin(): bool
+            {
+                return true;
+            }
+
+            public function isType(string $type): bool
+            {
+                return $type === 'driver';
+            }
+
+            public function currentAccessToken(): PersonalAccessToken
+            {
+                return $this->token;
+            }
+        };
+
+        $request = Request::create('/int/v1/orders', 'GET', [], [], [], [
+            'HTTP_ACCESS_CONSOLE_SANDBOX' => '1',
+            'HTTP_ACCESS_CONSOLE_SANDBOX_KEY' => 'sandbox-credential-1',
+        ]);
+        $request->setUserResolver(fn () => $user);
+
+        $response = (new SetupFleetbaseSession())->handle($request, fn () => new JsonResponse(['ok' => true]));
+
+        expect($response->getData(true))->toBe(['ok' => true])
+            ->and(session('company'))->toBe('company-1')
+            ->and(session('user'))->toBe('user-1')
+            ->and(session('is_admin'))->toBeTrue()
+            ->and(session('is_customer'))->toBeFalse()
+            ->and(session('is_driver'))->toBeTrue()
+            ->and(config('database.default'))->toBe('sandbox')
+            ->and(config('fleetbase.connection.db'))->toBe('sandbox')
+            ->and(session('is_sandbox'))->toBeTrue()
+            ->and(session('sandbox_api_credential'))->toBe('sandbox-credential-1')
+            ->and(session('is_sanctum_token'))->toBeTrue()
+            ->and(session('api_credential'))->toBe(987)
+            ->and(session('api_key'))->toBe('plain-sanctum-token')
+            ->and(session('api_environment'))->toBe('live')
+            ->and(session('api_test_mode'))->toBeFalse();
     });
 }

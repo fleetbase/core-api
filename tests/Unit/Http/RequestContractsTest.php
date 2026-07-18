@@ -132,8 +132,11 @@ namespace Illuminate\Validation {
 
 namespace {
     use Fleetbase\Http\Requests\AdminRequest;
+    use Fleetbase\Http\Requests\Internal\BulkActionRequest;
+    use Fleetbase\Http\Requests\Internal\BulkDeleteRequest;
     use Fleetbase\Http\Requests\ChangePasswordRequest;
     use Fleetbase\Http\Requests\CreateChatChannelRequest;
+    use Fleetbase\Http\Requests\Internal\CreateCategoryRequest;
     use Fleetbase\Http\Requests\CreateCommentRequest;
     use Fleetbase\Http\Requests\CreateReportRequest;
     use Fleetbase\Http\Requests\CreateUserRequest;
@@ -643,6 +646,34 @@ namespace {
             ->and($inviteAuthorized->attributes())->toBe([
                 'user.email' => 'email address',
                 'user.name' => 'name',
+            ]);
+    });
+
+    it('keeps bulk action delete and category request contracts stable', function () {
+        $bulkUnauthorized = request_with_session(BulkActionRequest::class, 'POST');
+        $bulkAuthorized = request_with_session(BulkActionRequest::class, 'POST', [], ['user' => 'user-1']);
+        $deleteUnauthorized = request_with_session(BulkDeleteRequest::class, 'DELETE');
+        $deleteAuthorized = request_with_session(BulkDeleteRequest::class, 'DELETE', [], ['user' => 'user-1']);
+        $categoryUnauthorized = request_with_session(CreateCategoryRequest::class, 'POST');
+        $categoryAuthorized = request_with_session(CreateCategoryRequest::class, 'POST', [], ['company' => 'company-1']);
+
+        expect(bind_active_request($bulkUnauthorized)->authorize())->toBeFalse()
+            ->and(bind_active_request($bulkAuthorized)->authorize())->toBeTrue()
+            ->and($bulkAuthorized->rules())->toBe(['ids' => ['required', 'array']])
+            ->and($bulkAuthorized->messages())->toBe([
+                'ids.required' => 'Please provide a resource ID.',
+                'ids.array'    => 'Please provide multiple resource ID\'s.',
+            ])
+            ->and(bind_active_request($deleteUnauthorized)->authorize())->toBeFalse()
+            ->and(bind_active_request($deleteAuthorized)->authorize())->toBeTrue()
+            ->and($deleteAuthorized->rules())->toBe(['ids' => ['required', 'array']])
+            ->and($deleteAuthorized->messages())->toBe($bulkAuthorized->messages())
+            ->and(bind_active_request($categoryUnauthorized)->authorize())->toBeFalse()
+            ->and(bind_active_request($categoryAuthorized)->authorize())->toBeTrue()
+            ->and($categoryAuthorized->rules())->toBe(['name' => 'required|min:3'])
+            ->and($categoryAuthorized->messages())->toBe([
+                'name.required' => 'The category name is required.',
+                'name.min'      => 'The category name must be at least 3 characters.',
             ]);
     });
 
