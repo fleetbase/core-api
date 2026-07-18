@@ -17,6 +17,14 @@ use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\Facades\Http;
 use Psr\Log\NullLogger;
 
+class MessageBirdSmsServiceProbe extends MessageBirdSmsService
+{
+    public function exposeValidateParameters(string $to, string $text, string $originator): void
+    {
+        $this->validateParameters($to, $text, $originator);
+    }
+}
+
 if (!function_exists('config')) {
     function config($key = null, $default = null)
     {
@@ -163,6 +171,92 @@ test('messagebird sms service sends json payload and maps message id', function 
             && $request['body'] === 'Hello'
             && $request['reference'] === 'verification-123';
     });
+});
+
+test('messagebird sms service includes optional json fields and normalizes recipient formatting', function () {
+    Http::fake([
+        'https://rest.messagebird.com/messages' => Http::response([
+            'id'         => 'messagebird-id',
+            'recipients' => [
+                'items' => [
+                    ['status' => 'accepted'],
+                ],
+            ],
+        ], 201),
+    ]);
+
+    $result = (new MessageBirdSmsService())->send('+1 (555) 123-4567', 'Unicode snowman', 'CustomSender', [
+        'reference'  => 'manual-reference',
+        'datacoding' => 'unicode',
+    ]);
+
+    expect($result)->toMatchArray([
+        'success'    => true,
+        'message_id' => 'messagebird-id',
+        'result'     => 'accepted',
+        'status'     => 'accepted',
+    ]);
+
+    Http::assertSent(function ($request) {
+        return $request->url() === 'https://rest.messagebird.com/messages'
+            && $request['originator'] === 'CustomSender'
+            && $request['recipients'] === ['15551234567']
+            && $request['reference'] === 'manual-reference'
+            && $request['datacoding'] === 'unicode';
+    });
+});
+
+test('messagebird sms service returns provider error descriptions when delivery fails', function () {
+    Http::fake([
+        'https://rest.messagebird.com/messages' => Http::response([
+            'errors' => [
+                ['description' => 'Access key is invalid'],
+                ['message' => 'Recipient is not routable'],
+            ],
+        ], 401),
+    ]);
+
+    $result = (new MessageBirdSmsService())->send('+15551234567', 'Hello');
+
+    expect($result)->toMatchArray([
+        'success' => false,
+        'error'   => 'Access key is invalid; Recipient is not routable',
+        'code'    => 401,
+    ])
+        ->and($result['response']['errors'])->toHaveCount(2);
+});
+
+test('messagebird sms service falls back to status code error messages for unstructured failures', function () {
+    Http::fake([
+        'https://rest.messagebird.com/messages' => Http::response('gateway unavailable', 503),
+    ]);
+
+    $result = (new MessageBirdSmsService())->send('+15551234567', 'Hello');
+
+    expect($result)->toMatchArray([
+        'success'  => false,
+        'error'    => 'MessageBird request failed with status code: 503',
+        'code'     => 503,
+        'response' => null,
+    ]);
+});
+
+test('messagebird sms service validates configuration recipient text and originator inputs', function () {
+    Http::fake();
+
+    expect(fn () => (new MessageBirdSmsService([
+        'access_key' => '',
+        'originator' => '',
+    ]))->send('+15551234567', 'Hello'))
+        ->toThrow(InvalidArgumentException::class, 'MessageBird SMS provider is not configured')
+        ->and(fn () => (new MessageBirdSmsService())->send('', 'Hello'))
+        ->toThrow(InvalidArgumentException::class, 'Recipient phone number (to) is required')
+        ->and(fn () => (new MessageBirdSmsService())->send('+15551234567', ''))
+        ->toThrow(InvalidArgumentException::class, 'Message text cannot be empty')
+        ->and(fn () => (new MessageBirdSmsServiceProbe())->exposeValidateParameters('+15551234567', 'Hello', ''))
+        ->toThrow(InvalidArgumentException::class, 'MessageBird originator is required');
+
+    Http::assertNothingSent();
 });
 
 test('custom http sms service renders configured post templates', function () {
