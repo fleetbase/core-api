@@ -7,6 +7,7 @@ use Fleetbase\Http\Controllers\Internal\v1\WebhookEndpointController;
 use Fleetbase\Http\Middleware\TrackPresence;
 use Fleetbase\Models\Dashboard;
 use Fleetbase\Models\UserDevice;
+use Fleetbase\Models\WebhookEndpoint;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Events\Dispatcher;
@@ -191,6 +192,56 @@ function lightweight_http_dashboard_database(): Capsule
     return $capsule;
 }
 
+function lightweight_http_webhook_database(): Capsule
+{
+    EloquentModel::clearBootedModels();
+
+    $connection = [
+        'driver'   => 'sqlite',
+        'database' => ':memory:',
+        'prefix'   => '',
+    ];
+
+    $container = bind_test_container([
+        'database.default'           => 'mysql',
+        'database.connections.mysql' => $connection,
+        'fleetbase.connection.db'    => 'mysql',
+    ]);
+    $container->instance('cache', new LightweightHttpTaggedCacheFake());
+    $container->instance('responsecache', new LightweightHttpResponseCacheFake());
+
+    $capsule = new Capsule($container);
+    $capsule->addConnection($connection, 'mysql');
+    $capsule->setEventDispatcher(new Dispatcher($container));
+    $capsule->setAsGlobal();
+    $capsule->bootEloquent();
+    EloquentModel::unsetEventDispatcher();
+    $capsule->getDatabaseManager()->setDefaultConnection('mysql');
+    $container->instance('db', $capsule->getDatabaseManager());
+
+    $schema = $capsule->getConnection('mysql')->getSchemaBuilder();
+    $schema->create('webhook_endpoints', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('company_uuid')->nullable()->index();
+        $table->string('url')->nullable();
+        $table->string('status')->nullable();
+        $table->timestamps();
+        $table->softDeletes();
+    });
+
+    $now = '2026-07-18 00:00:00';
+    $capsule->getConnection('mysql')->table('webhook_endpoints')->insert([
+        ['uuid' => 'webhook-company', 'company_uuid' => 'company-1', 'url' => 'https://example.com/fleetbase/webhook', 'status' => 'disabled', 'created_at' => $now, 'updated_at' => $now],
+        ['uuid' => 'webhook-private-url', 'company_uuid' => 'company-1', 'url' => 'http://127.0.0.1/internal', 'status' => 'disabled', 'created_at' => $now, 'updated_at' => $now],
+        ['uuid' => 'webhook-other-company', 'company_uuid' => 'company-2', 'url' => 'https://example.com/other/webhook', 'status' => 'disabled', 'created_at' => $now, 'updated_at' => $now],
+    ]);
+
+    session()->flush();
+    session(['company' => 'company-1']);
+
+    return $capsule;
+}
+
 afterEach(function () {
     session()->flush();
     EloquentModel::clearBootedModels();
@@ -241,6 +292,48 @@ test('webhook endpoint metadata and missing id responses stay stable', function 
         ->and($missingEnable->getData(true))->toBe(['errors' => ['No webhook to enable']])
         ->and($missingDisable->getStatusCode())->toBe(401)
         ->and($missingDisable->getData(true))->toBe(['errors' => ['No webhook to disable']]);
+});
+
+test('webhook endpoint enable validates tenant ownership and public callback urls', function () {
+    $capsule    = lightweight_http_webhook_database();
+    $controller = new WebhookEndpointController();
+
+    $missing = $controller->enable('missing-webhook');
+    $other   = $controller->enable('webhook-other-company');
+    $private = $controller->enable('webhook-private-url');
+    $enabled = $controller->enable('webhook-company');
+
+    expect($missing->getStatusCode())->toBe(401)
+        ->and($missing->getData(true))->toBe(['errors' => ['No webhook found']])
+        ->and($other->getStatusCode())->toBe(401)
+        ->and($other->getData(true))->toBe(['errors' => ['No webhook found']])
+        ->and($private->getStatusCode())->toBe(422)
+        ->and($private->getData(true))->toBe(['errors' => ['The :attribute must be a public HTTP or HTTPS URL.']])
+        ->and($enabled->getData(true))->toBe([
+            'message' => 'Webhook enabled',
+            'status'  => 'enabled',
+        ])
+        ->and(WebhookEndpoint::find('webhook-company')->status)->toBe('enabled')
+        ->and(WebhookEndpoint::find('webhook-private-url')->status)->toBe('disabled')
+        ->and($capsule->getConnection('mysql')->table('webhook_endpoints')->where('uuid', 'webhook-other-company')->value('status'))->toBe('disabled');
+});
+
+test('webhook endpoint disable is tenant scoped and persists disabled status', function () {
+    $capsule = lightweight_http_webhook_database();
+    $capsule->getConnection('mysql')->table('webhook_endpoints')->where('uuid', 'webhook-company')->update(['status' => 'enabled']);
+
+    $controller = new WebhookEndpointController();
+    $other      = $controller->disable('webhook-other-company');
+    $disabled   = $controller->disable('webhook-company');
+
+    expect($other->getStatusCode())->toBe(401)
+        ->and($other->getData(true))->toBe(['errors' => ['No webhook found']])
+        ->and($disabled->getData(true))->toBe([
+            'message' => 'Webhook disabled',
+            'status'  => 'disabled',
+        ])
+        ->and(WebhookEndpoint::find('webhook-company')->status)->toBe('disabled')
+        ->and($capsule->getConnection('mysql')->table('webhook_endpoints')->where('uuid', 'webhook-other-company')->value('status'))->toBe('disabled');
 });
 
 test('track presence records authenticated users and passes anonymous requests through', function () {
