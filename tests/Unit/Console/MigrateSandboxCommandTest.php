@@ -15,7 +15,10 @@ namespace {
 
     class MigrateSandboxCommandSpy extends MigrateSandbox
     {
-        public array $calls = [];
+        public array $calls                = [];
+        public array $installedExtensions  = [];
+        public array $extensionProperties  = [];
+        public array $migrationDirectories = [];
 
         public function __construct(private array $options = [])
         {
@@ -32,6 +35,26 @@ namespace {
             $this->calls[] = [$command, $arguments];
 
             return 0;
+        }
+
+        public function exposeRelativePaths(?array $paths): array
+        {
+            return $this->makePathsRelative($paths);
+        }
+
+        protected function getInstalledFleetbaseExtensions(): array
+        {
+            return $this->installedExtensions;
+        }
+
+        protected function getFleetbaseExtensionProperty(string $packageName, string $key)
+        {
+            return $this->extensionProperties[$packageName][$key] ?? null;
+        }
+
+        protected function getMigrationDirectoryForExtension(string $packageName): ?string
+        {
+            return $this->migrationDirectories[$packageName] ?? null;
         }
     }
 
@@ -86,5 +109,55 @@ namespace {
                 '--path'     => 'vendor/fleetbase/core-api/migrations',
             ],
         ]);
+    });
+
+    it('includes enabled extension sandbox migrations and skips disabled or missing migration directories', function () {
+        $command = migrate_sandbox_command([
+            'refresh' => false,
+            'seed'    => true,
+            'force'   => true,
+        ]);
+        $command->installedExtensions = [
+            'fleetbase/fleetops'   => ['name' => 'fleetbase/fleetops'],
+            'fleetbase/storefront' => ['name' => 'fleetbase/storefront'],
+            'fleetbase/ledger'     => ['name' => 'fleetbase/ledger'],
+            'fleetbase/ai'         => ['name' => 'fleetbase/ai'],
+            'fleetbase/missing'    => ['name' => 'fleetbase/missing'],
+        ];
+        $command->extensionProperties = [
+            'fleetbase/storefront' => ['sandbox-migrations' => 'false'],
+            'fleetbase/ledger'     => ['sandbox-migrations' => 0],
+            'fleetbase/ai'         => ['sandbox-migrations' => '0'],
+        ];
+        $command->migrationDirectories = [
+            'fleetbase/fleetops' => '/srv/app/vendor/fleetbase/fleetops/migrations/sandbox/',
+        ];
+
+        $command->handle();
+
+        expect($command->calls)->toHaveCount(2)
+            ->and($command->calls[0][1]['--path'])->toBe('vendor/fleetbase/core-api/migrations')
+            ->and($command->calls[1])->toBe([
+                'migrate',
+                [
+                    '--seed'     => true,
+                    '--force'    => true,
+                    '--database' => 'sandbox',
+                    '--path'     => 'vendor/fleetbase/fleetops/migrations/sandbox',
+                ],
+            ]);
+    });
+
+    it('normalizes migration paths defensively', function () {
+        $command = migrate_sandbox_command();
+
+        expect($command->exposeRelativePaths(null))->toBe([])
+            ->and($command->exposeRelativePaths([
+                '/srv/app/vendor/fleetbase/core-api/migrations/',
+                '/srv/app/vendor/fleetbase/fleetops/migrations/sandbox',
+            ]))->toBe([
+                'vendor/fleetbase/core-api/migrations',
+                'vendor/fleetbase/fleetops/migrations/sandbox',
+            ]);
     });
 }

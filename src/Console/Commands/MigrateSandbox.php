@@ -69,20 +69,20 @@ class MigrateSandbox extends Command
      *
      * @return array an array of the relative paths to the migration directories of all installed Fleetbase extensions
      */
-    private function getExtensionsMigrationPaths(): array
+    protected function getExtensionsMigrationPaths(): array
     {
-        $packages = Utils::getInstalledFleetbaseExtensions();
+        $packages = $this->getInstalledFleetbaseExtensions();
         $paths    = [];
 
         foreach ($packages as $packageName => $package) {
             // check if migrations is disabled for sandbox
-            $sandboxMigrations = Utils::getFleetbaseExtensionProperty($packageName, 'sandbox-migrations');
+            $sandboxMigrations = $this->getFleetbaseExtensionProperty($packageName, 'sandbox-migrations');
 
             if ($sandboxMigrations === false || $sandboxMigrations === 'false' || $sandboxMigrations === 0 || $sandboxMigrations === '0') {
                 continue;
             }
 
-            $path = Utils::getMigrationDirectoryForExtension($packageName);
+            $path = $this->getMigrationDirectoryForExtension($packageName);
 
             if ($path) {
                 $paths[] = $path;
@@ -104,7 +104,7 @@ class MigrateSandbox extends Command
      *
      * @return array an array of relative paths
      */
-    private function makePathsRelative(?array $paths = []): array
+    protected function makePathsRelative(?array $paths = []): array
     {
         if (!is_array($paths)) {
             return [];
@@ -122,5 +122,20 @@ class MigrateSandbox extends Command
         }, $paths);
 
         return $relativePaths;
+    }
+
+    protected function getInstalledFleetbaseExtensions(): array
+    {
+        return Utils::getInstalledFleetbaseExtensions();
+    }
+
+    protected function getFleetbaseExtensionProperty(string $packageName, string $key)
+    {
+        return Utils::getFleetbaseExtensionProperty($packageName, $key);
+    }
+
+    protected function getMigrationDirectoryForExtension(string $packageName): ?string
+    {
+        return Utils::getMigrationDirectoryForExtension($packageName);
     }
 }
