@@ -134,7 +134,7 @@ test('policy exceptions include the missing policy identity', function () {
 
 test('unauthorized request exception falls back cleanly and includes resolved permission when available', function () {
     if (!Illuminate\Http\Request::hasMacro('getController')) {
-        Illuminate\Http\Request::macro('getController', fn () => $this->attributes->get('_controller'));
+        Illuminate\Http\Request::macro('getController', fn () => $this->attributes->get('_controller') ?? $this->route()?->controller);
     }
 
     $permissionRequest = Illuminate\Http\Request::create('/int/v1/api-keys', 'POST');

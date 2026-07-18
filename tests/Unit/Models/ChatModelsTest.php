@@ -2,10 +2,12 @@
 
 use Fleetbase\Expansions\Str as StrExpansion;
 use Fleetbase\Models\ChatChannel;
+use Fleetbase\Models\ChatAttachment;
 use Fleetbase\Models\ChatLog;
 use Fleetbase\Models\ChatMessage;
 use Fleetbase\Models\ChatParticipant;
 use Fleetbase\Models\ChatReceipt;
+use Fleetbase\Models\File;
 use Fleetbase\Models\User;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
@@ -344,4 +346,34 @@ it('combines chat messages attachments and logs into chronological feed entries'
         ->and($feed[0]['data'])->toBeInstanceOf(Fleetbase\Models\ChatAttachment::class)
         ->and($feed[1]['data'])->toBeInstanceOf(ChatMessage::class)
         ->and($feed[2]['data'])->toBeInstanceOf(ChatLog::class);
+});
+
+it('defines chat attachment ownership channel message and file relationships', function () {
+    bind_test_container();
+
+    $attachment = new ChatAttachment([
+        'company_uuid' => 'company-1',
+        'chat_channel_uuid' => 'channel-1',
+        'chat_message_uuid' => 'message-1',
+        'sender_uuid' => 'participant-1',
+        'file_uuid' => 'file-1',
+    ]);
+
+    expect($attachment->getTable())->toBe('chat_attachments')
+        ->and($attachment->getFillable())->toBe([
+            'company_uuid',
+            'chat_channel_uuid',
+            'chat_message_uuid',
+            'sender_uuid',
+            'file_uuid',
+        ])
+        ->and($attachment->sender()->getRelated())->toBeInstanceOf(ChatParticipant::class)
+        ->and($attachment->sender()->getForeignKeyName())->toBe('sender_uuid')
+        ->and($attachment->sender()->getOwnerKeyName())->toBe('uuid')
+        ->and($attachment->chatChannel()->getRelated())->toBeInstanceOf(ChatChannel::class)
+        ->and($attachment->chatChannel()->getForeignKeyName())->toBe('chat_channel_uuid')
+        ->and($attachment->message()->getRelated())->toBeInstanceOf(ChatMessage::class)
+        ->and($attachment->message()->getForeignKeyName())->toBe('chat_message_uuid')
+        ->and($attachment->file()->getRelated())->toBeInstanceOf(File::class)
+        ->and($attachment->file()->getForeignKeyName())->toBe('file_uuid');
 });

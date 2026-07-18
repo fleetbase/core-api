@@ -153,9 +153,11 @@ namespace {
     use Fleetbase\Http\Requests\Internal\DownloadFileRequest;
     use Fleetbase\Http\Requests\Internal\InviteUserRequest;
     use Fleetbase\Http\Requests\Internal\ResetPasswordRequest;
+    use Fleetbase\Http\Requests\Internal\ResendUserInvite;
     use Fleetbase\Http\Requests\Internal\UpdatePasswordRequest;
     use Fleetbase\Http\Requests\Internal\UploadBase64FileRequest;
     use Fleetbase\Http\Requests\Internal\UploadFileRequest;
+    use Fleetbase\Http\Requests\JoinOrganizationRequest;
     use Fleetbase\Http\Requests\Internal\ValidatePasswordRequest;
     use Fleetbase\Http\Requests\OnboardRequest;
     use Fleetbase\Http\Requests\SignUpRequest;
@@ -455,6 +457,22 @@ namespace {
             ->and($admin->rules())->toBe([])
             ->and(bind_active_request($internalSwitch)->rules()['next'])->toBe(['required', 'exists:companies,uuid'])
             ->and(bind_active_request($publicSwitch)->rules()['next'])->toBe(['required', 'exists:companies,public_id']);
+    });
+
+    it('keeps organization join and resend invitation request contracts session scoped', function () {
+        $anonymousJoin = request_with_session(JoinOrganizationRequest::class, 'POST');
+        $authorizedJoin = request_with_session(JoinOrganizationRequest::class, 'POST', [], ['user' => 'user-1']);
+        $unauthorizedResend = request_with_session(ResendUserInvite::class, 'POST');
+        $authorizedResend = request_with_session(ResendUserInvite::class, 'POST', [], ['company' => 'company-1']);
+
+        expect(bind_active_request($anonymousJoin)->authorize())->toBeFalse()
+            ->and(bind_active_request($authorizedJoin)->authorize())->toBeTrue()
+            ->and($authorizedJoin->rules())->toBe(['next' => 'required|exists:companies,public_id'])
+            ->and(bind_active_request($unauthorizedResend)->authorize())->toBeFalse()
+            ->and(bind_active_request($authorizedResend)->authorize())->toBeTrue()
+            ->and($authorizedResend->rules())->toBe([
+                'user' => ['required', 'exists:users,uuid'],
+            ]);
     });
 
     it('keeps report request query limits formats and status transitions stable', function () {

@@ -34,6 +34,8 @@ namespace {
     use Fleetbase\Http\Middleware\AuthenticateOnceWithBasicAuth;
     use Fleetbase\Http\Middleware\ConvertStringBooleans;
     use Fleetbase\Http\Middleware\EnsureFleetbaseConfigured;
+    use Fleetbase\Http\Middleware\AuthorizationGuard;
+    use Fleetbase\Http\Middleware\ClearCacheAfterDelete;
     use Fleetbase\Http\Middleware\LogApiRequests;
     use Fleetbase\Http\Middleware\PerformanceMonitoring;
     use Fleetbase\Http\Middleware\RequestTimer;
@@ -48,6 +50,9 @@ namespace {
     use Illuminate\Cache\RateLimiter;
     use Illuminate\Cache\Repository;
     use Illuminate\Contracts\Bus\Dispatcher as BusDispatcher;
+    use Illuminate\Database\Capsule\Manager as Capsule;
+    use Illuminate\Database\Eloquent\Model as EloquentModel;
+    use Illuminate\Events\Dispatcher;
     use Illuminate\Http\JsonResponse;
     use Illuminate\Http\Request;
     use Illuminate\Http\Resources\Json\JsonResource;
@@ -139,14 +144,28 @@ namespace {
         }
     }
 
+    class MiddlewareContractsResponseCacheFake
+    {
+        public int $clears = 0;
+
+        public function clear(array $tags = []): bool
+        {
+            $this->clears++;
+
+            return true;
+        }
+    }
+
     class MiddlewareContractsUser extends FleetbaseUser
     {
         private bool $adminForTest;
+        private bool $missingPermissionsForTest;
 
-        public function __construct(bool $admin = false)
+        public function __construct(bool $admin = false, bool $missingPermissions = false)
         {
             parent::__construct();
-            $this->adminForTest = $admin;
+            $this->adminForTest              = $admin;
+            $this->missingPermissionsForTest = $missingPermissions;
             $this->setRawAttributes([
                 'uuid' => $admin ? 'admin-user' : 'standard-user',
                 'type' => $admin ? 'admin' : 'user',
@@ -156,6 +175,28 @@ namespace {
         public function isAdmin(): bool
         {
             return $this->adminForTest;
+        }
+
+        public function doesntHavePermissions($permissions): bool
+        {
+            return $this->missingPermissionsForTest;
+        }
+    }
+
+    class MiddlewareContractsPermissionController
+    {
+        public function createRecord(): void
+        {
+        }
+
+        public function getService(): string
+        {
+            return 'iam';
+        }
+
+        public function getResourceSingularName(): string
+        {
+            return 'api_key';
         }
     }
 
@@ -217,6 +258,49 @@ namespace {
     function middleware_contracts_throttle(): ThrottleRequests
     {
         return new ThrottleRequests(new RateLimiter(new Repository(new ArrayStore())));
+    }
+
+    function middleware_contracts_permissions_database(): Capsule
+    {
+        EloquentModel::clearBootedModels();
+
+        $connection = [
+            'driver'   => 'sqlite',
+            'database' => ':memory:',
+            'prefix'   => '',
+        ];
+
+        $container = bind_test_container([
+            'database.default'           => 'mysql',
+            'database.connections.mysql' => $connection,
+            'fleetbase.connection.db'    => 'mysql',
+            'auth.defaults.guard'        => 'sanctum',
+            'auth.guards.sanctum'        => ['provider' => 'users'],
+            'auth.providers.users'       => ['model' => FleetbaseUser::class],
+        ]);
+
+        $capsule = new Capsule($container);
+        $capsule->addConnection($connection, 'mysql');
+        $capsule->setEventDispatcher(new Dispatcher($container));
+        $capsule->setAsGlobal();
+        $capsule->bootEloquent();
+        EloquentModel::unsetEventDispatcher();
+        $capsule->getDatabaseManager()->setDefaultConnection('mysql');
+        $container->instance('db', $capsule->getDatabaseManager());
+        Facade::clearResolvedInstance('db');
+
+        $schema = $capsule->getConnection('mysql')->getSchemaBuilder();
+        $schema->create('permissions', function ($table) {
+            $table->string('id')->primary();
+            $table->string('name')->nullable();
+            $table->string('guard_name')->nullable();
+            $table->timestamps();
+        });
+        $capsule->getConnection('mysql')->table('permissions')->insert([
+            ['id' => 'permission-1', 'name' => 'iam create api-key', 'guard_name' => 'sanctum'],
+        ]);
+
+        return $capsule;
     }
 
     function middleware_contracts_configured_middleware(?string $databaseName = 'fleetbase', array $tables = ['settings', 'users', 'companies'], bool $throws = false): EnsureFleetbaseConfigured
@@ -830,5 +914,92 @@ namespace {
             ->and($standardContinued)->toBeFalse()
             ->and($standardResponse->getStatusCode())->toBe(401)
             ->and($standardResponse->getData(true))->toBe(['errors' => ['User is not authorized to access this resource.']]);
+    });
+
+    test('authorization guard bypasses admins rejects missing permissions and allows permitted users', function () {
+        middleware_contracts_permissions_database();
+
+        Request::macro('getController', fn () => $this->attributes->get('_controller') ?? $this->route()?->controller);
+
+        $guard = new AuthorizationGuard();
+
+        $requestFactory = function (MiddlewareContractsUser $user): Request {
+            $request = Request::create('/int/v1/api-keys', 'POST');
+            $request->attributes->set('_controller', new MiddlewareContractsPermissionController());
+            $request->setUserResolver(fn () => $user);
+            $request->setRouteResolver(fn () => new class {
+                public function getAction(string $key): string
+                {
+                    return 'MiddlewareContractsPermissionController@createRecord';
+                }
+
+                public function getActionMethod(): string
+                {
+                    return 'createRecord';
+                }
+            });
+            app()->instance('request', $request);
+
+            return $request;
+        };
+
+        $adminContinued = false;
+        $adminResponse = $guard->handle(
+            $requestFactory(new MiddlewareContractsUser(true, true)),
+            function () use (&$adminContinued) {
+                $adminContinued = true;
+
+                return new JsonResponse(['ok' => 'admin']);
+            }
+        );
+
+        $deniedContinued = false;
+        $deniedResponse = $guard->handle(
+            $requestFactory(new MiddlewareContractsUser(false, true)),
+            function () use (&$deniedContinued) {
+                $deniedContinued = true;
+
+                return new JsonResponse(['ok' => 'denied']);
+            }
+        );
+
+        $allowedContinued = false;
+        $allowedResponse = $guard->handle(
+            $requestFactory(new MiddlewareContractsUser(false, false)),
+            function () use (&$allowedContinued) {
+                $allowedContinued = true;
+
+                return new JsonResponse(['ok' => 'allowed']);
+            }
+        );
+
+        expect($adminContinued)->toBeTrue()
+            ->and($adminResponse->getData(true))->toBe(['ok' => 'admin'])
+            ->and($deniedContinued)->toBeFalse()
+            ->and($deniedResponse->getStatusCode())->toBe(401)
+            ->and($deniedResponse->getData(true))->toBe(['errors' => ['User is not authorized to create api-key']])
+            ->and($allowedContinued)->toBeTrue()
+            ->and($allowedResponse->getData(true))->toBe(['ok' => 'allowed']);
+    });
+
+    test('clear cache after delete clears response cache only for delete requests', function () {
+        middleware_contracts_fixture();
+        $cache = new MiddlewareContractsResponseCacheFake();
+        app()->instance('responsecache', $cache);
+        Facade::clearResolvedInstance('responsecache');
+
+        $getResponse = (new ClearCacheAfterDelete())->handle(
+            Request::create('/int/v1/files/file-1', 'GET'),
+            fn () => new JsonResponse(['method' => 'GET'])
+        );
+
+        $deleteResponse = (new ClearCacheAfterDelete())->handle(
+            Request::create('/int/v1/files/file-1', 'DELETE'),
+            fn () => new JsonResponse(['method' => 'DELETE'])
+        );
+
+        expect($getResponse->getData(true))->toBe(['method' => 'GET'])
+            ->and($deleteResponse->getData(true))->toBe(['method' => 'DELETE'])
+            ->and($cache->clears)->toBe(1);
     });
 }

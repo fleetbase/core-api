@@ -341,6 +341,16 @@ namespace {
             );
         }
 
+        public function authorizationError(?array $data = []): JsonResponse
+        {
+            return $this->json(
+                array_merge([
+                    'errors' => ['User is not authorized to create api-key'],
+                ], $data),
+                401
+            );
+        }
+
         public function json(mixed $data, int $statusCode = 200): JsonResponse
         {
             return new JsonResponse($data, $statusCode);
