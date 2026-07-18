@@ -1,13 +1,225 @@
 <?php
 
 use Fleetbase\Http\Controllers\Internal\v1\CompanyController;
+use Fleetbase\Http\Requests\AdminRequest;
 use Fleetbase\Models\User;
 use Illuminate\Database\Capsule\Manager as Capsule;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Facade;
+use Spatie\Activitylog\ActivityLogger;
+use Spatie\Activitylog\Contracts\Activity as ActivityContract;
+use Spatie\Activitylog\PendingActivityLog;
+
+class CompanyControllerCacheFake
+{
+    private array $values = [];
+
+    public function get(string $key, mixed $default = null): mixed
+    {
+        return $this->values[$key] ?? $default;
+    }
+
+    public function put(string $key, mixed $value, mixed $ttl = null): bool
+    {
+        $this->values[$key] = $value;
+
+        return true;
+    }
+
+    public function rememberForever(string $key, callable $callback): mixed
+    {
+        return $this->values[$key] ??= $callback();
+    }
+
+    public function forget(string $key): bool
+    {
+        unset($this->values[$key]);
+
+        return true;
+    }
+}
+
+class CompanyControllerPermissionRegistrarFake
+{
+    public string $pivotRole       = 'role_id';
+    public string $pivotPermission = 'permission_id';
+    public bool $teams             = false;
+    public string $teamsKey        = 'team_id';
+}
+
+class CompanyControllerRouteStub
+{
+    public array $action = [
+        'namespace' => 'Fleetbase\\Http\\Controllers\\Internal\\v1',
+    ];
+
+    public function __construct(private string $uri = 'int/v1/admin/companies')
+    {
+    }
+
+    public function uri(): string
+    {
+        return $this->uri;
+    }
+}
+
+class CompanyControllerActivityFake
+{
+    public array $entries  = [];
+    private array $current = [];
+
+    public function performedOn(EloquentModel $subject): self
+    {
+        $this->current['subject'] = $subject;
+
+        return $this;
+    }
+
+    public function causedBy(EloquentModel|int|string|null $user): self
+    {
+        $this->current['user'] = $user;
+
+        return $this;
+    }
+
+    public function event(string $event): self
+    {
+        $this->current['event'] = $event;
+
+        return $this;
+    }
+
+    public function withProperties(mixed $properties): self
+    {
+        $this->current['properties'] = $properties;
+
+        return $this;
+    }
+
+    public function log(string $message): ActivityContract
+    {
+        $this->current['message'] = $message;
+        $this->entries[]          = $this->current;
+        $this->current            = [];
+
+        return new CompanyControllerActivityRecordFake();
+    }
+}
+
+class CompanyControllerActivityRecordFake extends EloquentModel implements ActivityContract
+{
+    public bool $saved = false;
+
+    public function save(array $options = []): bool
+    {
+        $this->saved = true;
+
+        return true;
+    }
+
+    public function subject(): MorphTo
+    {
+        throw new RuntimeException('Subject relation is not used by this test fake.');
+    }
+
+    public function causer(): MorphTo
+    {
+        throw new RuntimeException('Causer relation is not used by this test fake.');
+    }
+
+    public function getExtraProperty(string $propertyName, mixed $defaultValue): mixed
+    {
+        return $defaultValue;
+    }
+
+    public function changes(): Collection
+    {
+        return collect();
+    }
+
+    public function scopeInLog(Builder $query, ...$logNames): Builder
+    {
+        return $query;
+    }
+
+    public function scopeCausedBy(Builder $query, EloquentModel $causer): Builder
+    {
+        return $query;
+    }
+
+    public function scopeForEvent(Builder $query, string $event): Builder
+    {
+        return $query;
+    }
+
+    public function scopeForSubject(Builder $query, EloquentModel $subject): Builder
+    {
+        return $query;
+    }
+}
+
+class CompanyControllerActivityLoggerFake extends ActivityLogger
+{
+    public function __construct(private CompanyControllerActivityFake $activityFake)
+    {
+    }
+
+    public function performedOn(EloquentModel $model): static
+    {
+        $this->activityFake->performedOn($model);
+
+        return $this;
+    }
+
+    public function causedBy(EloquentModel|int|string|null $modelOrId): static
+    {
+        $this->activityFake->causedBy($modelOrId);
+
+        return $this;
+    }
+
+    public function event(string $event): static
+    {
+        $this->activityFake->event($event);
+
+        return $this;
+    }
+
+    public function withProperties(mixed $properties): static
+    {
+        $this->activityFake->withProperties($properties);
+
+        return $this;
+    }
+
+    public function log(string $description): ?ActivityContract
+    {
+        return $this->activityFake->log($description);
+    }
+}
+
+class CompanyControllerPendingActivityLogFake extends PendingActivityLog
+{
+    public function __construct(private CompanyControllerActivityLoggerFake $activityLogger)
+    {
+    }
+
+    public function useLog(?string $logName): self
+    {
+        return $this;
+    }
+
+    public function logger(): ActivityLogger
+    {
+        return $this->activityLogger;
+    }
+}
 
 function company_controller_fixtures(): Capsule
 {
@@ -15,11 +227,19 @@ function company_controller_fixtures(): Capsule
     $_SERVER['REQUEST_METHOD'] = 'GET';
 
     $container = bind_test_container([
-        'app.env'                    => 'testing',
-        'app.url'                    => 'http://fleetbase.test',
-        'database.default'           => 'mysql',
-        'fleetbase.connection.db'    => 'mysql',
-        'database.connections.mysql' => [
+        'app.env'                                      => 'testing',
+        'app.url'                                      => 'http://fleetbase.test',
+        'auth.defaults.guard'                          => 'sanctum',
+        'database.default'                             => 'mysql',
+        'fleetbase.connection.db'                      => 'mysql',
+        'permission.models.permission'                 => Fleetbase\Models\Permission::class,
+        'permission.models.role'                       => Fleetbase\Models\Role::class,
+        'permission.table_names.permissions'           => 'permissions',
+        'permission.table_names.roles'                 => 'roles',
+        'permission.table_names.model_has_permissions' => 'model_has_permissions',
+        'permission.table_names.model_has_roles'       => 'model_has_roles',
+        'permission.column_names.model_morph_key'      => 'model_uuid',
+        'database.connections.mysql'                   => [
             'driver'   => 'sqlite',
             'database' => ':memory:',
             'prefix'   => '',
@@ -70,6 +290,10 @@ function company_controller_fixtures(): Capsule
         });
     }
 
+    $container->instance('cache', new CompanyControllerCacheFake());
+    $container->instance(Spatie\Permission\PermissionRegistrar::class, new CompanyControllerPermissionRegistrarFake());
+    Facade::clearResolvedInstance('cache');
+
     session()->flush();
     session([
         'company' => 'company-1',
@@ -99,6 +323,8 @@ function company_controller_fixtures(): Capsule
         $table->string('timezone')->nullable();
         $table->string('country')->nullable();
         $table->string('currency')->nullable();
+        $table->timestamp('onboarding_completed_at')->nullable();
+        $table->string('onboarding_completed_by_uuid')->nullable();
         $table->timestamp('deleted_at')->nullable();
         $table->timestamps();
     });
@@ -125,6 +351,11 @@ function company_controller_fixtures(): Capsule
         $table->boolean('external')->default(false);
         $table->timestamp('deleted_at')->nullable();
         $table->timestamps();
+    });
+    $schema->create('settings', function ($table) {
+        $table->increments('id');
+        $table->string('key')->nullable()->index();
+        $table->text('value')->nullable();
     });
 
     $now = '2026-07-18 00:00:00';
@@ -236,6 +467,18 @@ function company_controller_request(string $method = 'GET', array $input = [], ?
 {
     $request = Request::create('/int/v1/companies', $method, $input);
     $request->setUserResolver(fn () => $user);
+    $request->setRouteResolver(fn () => new CompanyControllerRouteStub('int/v1/companies'));
+
+    app()->instance('request', $request);
+
+    return $request;
+}
+
+function company_controller_admin_request(string $method = 'GET', array $input = [], ?User $user = null): AdminRequest
+{
+    $request = AdminRequest::create('/int/v1/admin/companies', $method, $input);
+    $request->setUserResolver(fn () => $user);
+    $request->setRouteResolver(fn () => new CompanyControllerRouteStub());
 
     app()->instance('request', $request);
 
@@ -245,6 +488,14 @@ function company_controller_request(string $method = 'GET', array $input = [], ?
 function company_controller_user(string $uuid): User
 {
     return User::where('uuid', $uuid)->firstOrFail();
+}
+
+function company_controller_bind_activity(): CompanyControllerActivityFake
+{
+    $activity = new CompanyControllerActivityFake();
+    app()->instance(PendingActivityLog::class, new CompanyControllerPendingActivityLogFake(new CompanyControllerActivityLoggerFake($activity)));
+
+    return $activity;
 }
 
 afterEach(function () {
@@ -300,6 +551,81 @@ test('company controller user listing respects session company scope unless the 
     sort($adminIds);
 
     expect($adminIds)->toBe(['foreign-1']);
+});
+
+test('company controller admin status updates validate status persist active state and log activity', function () {
+    $capsule  = company_controller_fixtures();
+    $activity = company_controller_bind_activity();
+    $admin    = company_controller_user('admin-1');
+
+    $invalid = company_controller()->setAdminStatus('company_public_2', company_controller_admin_request('POST', [
+        'status' => 'archived',
+    ], $admin));
+
+    expect($invalid->getStatusCode())->toBe(422)
+        ->and($invalid->getData(true))->toBe(['error' => 'Invalid organization status.']);
+
+    $suspended = company_controller()->setAdminStatus('company_public_2', company_controller_admin_request('POST', [
+        'status' => 'suspended',
+    ], $admin));
+
+    $payload = $suspended->getData(true);
+    expect($suspended->getStatusCode())->toBe(200)
+        ->and($payload['company']['uuid'])->toBe('company-2')
+        ->and($payload['company']['status'])->toBe('suspended')
+        ->and($capsule->getConnection('mysql')->table('companies')->where('uuid', 'company-2')->value('status'))->toBe('suspended');
+
+    $active = company_controller()->setAdminStatus('company_public_2', company_controller_admin_request('POST', [
+        'status' => 'active',
+    ], $admin));
+
+    expect($active->getStatusCode())->toBe(200)
+        ->and($active->getData(true)['company']['status'])->toBeNull()
+        ->and($capsule->getConnection('mysql')->table('companies')->where('uuid', 'company-2')->value('status'))->toBeNull()
+        ->and($activity->entries)->toHaveCount(2)
+        ->and($activity->entries[0]['message'])->toBe('Organization status changed')
+        ->and($activity->entries[0]['event'])->toBe('updated')
+        ->and($activity->entries[0]['properties']['old'])->toBe(['status' => 'inactive'])
+        ->and($activity->entries[0]['properties']['attributes'])->toBe(['status' => 'suspended'])
+        ->and($activity->entries[1]['properties']['old'])->toBe(['status' => 'suspended'])
+        ->and($activity->entries[1]['properties']['attributes'])->toBe(['status' => 'active']);
+});
+
+test('company controller admin onboarding toggles completion metadata and handles missing organizations', function () {
+    $capsule  = company_controller_fixtures();
+    $activity = company_controller_bind_activity();
+    $admin    = company_controller_user('admin-1');
+
+    $missing = company_controller()->setAdminOnboarding('missing-company', company_controller_admin_request('POST', [
+        'completed' => true,
+    ], $admin));
+
+    expect($missing->getStatusCode())->toBe(404)
+        ->and($missing->getData(true))->toBe(['error' => 'Organization not found.']);
+
+    $completed = company_controller()->setAdminOnboarding('company_public_2', company_controller_admin_request('POST', [
+        'completed' => true,
+    ], $admin));
+
+    $completedRecord = $capsule->getConnection('mysql')->table('companies')->where('uuid', 'company-2')->first();
+    expect($completed->getStatusCode())->toBe(200)
+        ->and($completed->getData(true)['company']['uuid'])->toBe('company-2')
+        ->and($completedRecord->onboarding_completed_at)->not->toBeNull()
+        ->and($completedRecord->onboarding_completed_by_uuid)->toBe('admin-1');
+
+    $incomplete = company_controller()->setAdminOnboarding('company_public_2', company_controller_admin_request('POST', [
+        'completed' => false,
+    ], $admin));
+
+    $incompleteRecord = $capsule->getConnection('mysql')->table('companies')->where('uuid', 'company-2')->first();
+    expect($incomplete->getStatusCode())->toBe(200)
+        ->and($incompleteRecord->onboarding_completed_at)->toBeNull()
+        ->and($incompleteRecord->onboarding_completed_by_uuid)->toBeNull()
+        ->and($activity->entries)->toHaveCount(2)
+        ->and($activity->entries[0]['message'])->toBe('Organization onboarding marked complete')
+        ->and($activity->entries[0]['properties']['old'])->toBe(['onboarding_completed_at' => null])
+        ->and($activity->entries[1]['message'])->toBe('Organization onboarding marked incomplete')
+        ->and($activity->entries[1]['properties']['attributes'])->toBe(['onboarding_completed_at' => null]);
 });
 
 test('company controller transfer ownership rejects invalid session ownership and company mismatches', function () {
