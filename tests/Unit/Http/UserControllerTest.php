@@ -3,6 +3,7 @@
 use Fleetbase\Http\Controllers\Internal\v1\UserController;
 use Fleetbase\Http\Requests\Internal\ChangeCurrentUserEmailRequest;
 use Fleetbase\Http\Requests\Internal\ChangeUserEmailRequest;
+use Fleetbase\Http\Requests\Internal\ResendUserInvite;
 use Fleetbase\Http\Requests\Internal\UpdatePasswordRequest;
 use Fleetbase\Http\Requests\Internal\ValidatePasswordRequest;
 use Fleetbase\Models\User;
@@ -240,6 +241,24 @@ function user_controller_database(): Capsule
         $table->timestamp('expires_at')->nullable();
         $table->text('meta')->nullable();
         $table->string('status')->nullable();
+        $table->timestamp('deleted_at')->nullable();
+        $table->timestamps();
+    });
+    $schema->create('invites', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('public_id')->nullable()->index();
+        $table->string('_key')->nullable();
+        $table->string('company_uuid')->nullable()->index();
+        $table->string('created_by_uuid')->nullable();
+        $table->string('subject_uuid')->nullable()->index();
+        $table->string('subject_type')->nullable();
+        $table->string('uri')->nullable();
+        $table->string('code')->nullable();
+        $table->string('protocol')->nullable();
+        $table->text('recipients')->nullable();
+        $table->string('reason')->nullable();
+        $table->text('meta')->nullable();
+        $table->timestamp('expires_at')->nullable();
         $table->timestamp('deleted_at')->nullable();
         $table->timestamps();
     });
@@ -593,4 +612,20 @@ test('user controller current password and permission endpoints expose scoped re
         ->and($permissions->getData(true)['permissions'])->toHaveCount(1)
         ->and($permissions->getData(true)['permissions'][0]['id'])->toBe('permission-manage-users')
         ->and($permissions->getData(true)['permissions'][0]['name'])->toBe('iam manage users');
+});
+
+test('user controller rejects resending invitations outside the active company contract', function () {
+    user_controller_database();
+
+    $missingTarget = user_controller()->resendInvitation(user_controller_request('POST', [
+        'user' => 'missing-user',
+    ], user_controller_user('owner-1'), 'resendInvitation', ResendUserInvite::class));
+    $notInvitable = user_controller()->resendInvitation(user_controller_request('POST', [
+        'user' => 'foreign-1',
+    ], user_controller_user('owner-1'), 'resendInvitation', ResendUserInvite::class));
+
+    expect($missingTarget->getStatusCode())->toBe(404)
+        ->and($missingTarget->getData(true))->toBe(['errors' => ['Unable to resend invitation.']])
+        ->and($notInvitable->getStatusCode())->toBe(404)
+        ->and($notInvitable->getData(true))->toBe(['errors' => ['Unable to resend invitation.']]);
 });

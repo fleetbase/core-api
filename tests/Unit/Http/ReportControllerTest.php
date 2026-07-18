@@ -337,8 +337,10 @@ test('report controller exposes query analysis and export format contracts witho
     report_controller_bind();
     $controller = new ReportController();
 
-    $missing  = report_controller_payload($controller->analyzeQuery(Request::create('/int/v1/reports/analyze-query', 'POST')));
-    $analysis = report_controller_payload($controller->analyzeQuery(Request::create('/int/v1/reports/analyze-query', 'POST', [
+    $missing                = report_controller_payload($controller->analyzeQuery(Request::create('/int/v1/reports/analyze-query', 'POST')));
+    $missingExecutionConfig = report_controller_payload($controller->executeQuery(Request::create('/int/v1/reports/execute-query', 'POST')));
+    $missingExportConfig    = report_controller_payload($controller->exportQuery(Request::create('/int/v1/reports/export-query', 'POST')));
+    $analysis               = report_controller_payload($controller->analyzeQuery(Request::create('/int/v1/reports/analyze-query', 'POST', [
         'query_config' => report_controller_query_config([
             'computed_columns' => [
                 [
@@ -357,6 +359,10 @@ test('report controller exposes query analysis and export format contracts witho
 
     expect($missing['success'])->toBeFalse()
         ->and($missing['error']['code'])->toBe('INVALID_CONFIGURATION')
+        ->and($missingExecutionConfig['success'])->toBeFalse()
+        ->and($missingExecutionConfig['error']['message'])->toBe('Query configuration is required')
+        ->and($missingExportConfig['success'])->toBeFalse()
+        ->and($missingExportConfig['error']['message'])->toBe('Query configuration is required')
         ->and($analysis['success'])->toBeTrue()
         ->and($analysis['analysis']['table_name'])->toBe('orders')
         ->and($analysis['analysis']['selected_columns_count'])->toBe(3)
@@ -367,6 +373,55 @@ test('report controller exposes query analysis and export format contracts witho
         ->and($invalidFormat['success'])->toBeFalse()
         ->and($invalidFormat['error']['code'])->toBe('INVALID_CONFIGURATION')
         ->and($invalidFormat['error']['allowed_formats'])->toBe(['csv', 'excel', 'json', 'pdf', 'xml']);
+});
+
+test('report controller returns handled errors for report execution and export outside the active company', function () {
+    report_controller_bind();
+    report_controller_database();
+    $controller = new ReportController();
+
+    $executeMissing = $controller->execute(Request::create('/int/v1/reports/report-other/execute'), 'report-other');
+    $exportMissing  = $controller->export(Request::create('/int/v1/reports/report-other/export', 'POST', [
+        'format' => 'csv',
+    ]), 'report-other');
+
+    expect($executeMissing->getStatusCode())->toBe(500)
+        ->and(report_controller_payload($executeMissing)['success'])->toBeFalse()
+        ->and(report_controller_payload($executeMissing)['error']['code'])->toBe('QUERY_EXECUTION_FAILED')
+        ->and(report_controller_payload($executeMissing)['error']['message'])->toBe('The query could not be executed. Please try simplifying your request.')
+        ->and(report_controller_payload($executeMissing)['meta']['company_id'])->toBe('company-1')
+        ->and($exportMissing->getStatusCode())->toBe(500)
+        ->and(report_controller_payload($exportMissing)['success'])->toBeFalse()
+        ->and(report_controller_payload($exportMissing)['error']['code'])->toBe('EXPORT_FAILED')
+        ->and(report_controller_payload($exportMissing)['error']['message'])->toBe('Export to csv format failed')
+        ->and(report_controller_payload($exportMissing)['error']['format'])->toBe('csv');
+});
+
+test('report controller recommends query changes for complex broad or warning-heavy analysis', function () {
+    report_controller_bind();
+    $controller = new ReportController();
+    $method     = new ReflectionMethod(ReportController::class, 'getQueryRecommendations');
+    $method->setAccessible(true);
+
+    $recommendations = $method->invoke($controller, [
+        'complexity'              => 'complex',
+        'joins_count'             => 4,
+        'selected_columns_count'  => 21,
+    ], [
+        'warnings' => ['No limit specified'],
+    ]);
+
+    expect($recommendations)->toHaveCount(4)
+        ->and(array_column($recommendations, 'type'))->toBe([
+            'performance',
+            'performance',
+            'performance',
+            'validation',
+        ])
+        ->and($recommendations[0]['priority'])->toBe('high')
+        ->and($recommendations[1]['message'])->toBe('Multiple joins may impact performance')
+        ->and($recommendations[2]['message'])->toBe('Selecting many columns may slow down the query')
+        ->and($recommendations[3]['suggestions'])->toBe(['No limit specified']);
 });
 
 test('report controller rejects missing and unsafe export download filenames before file access', function () {
