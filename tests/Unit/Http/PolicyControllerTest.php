@@ -1,5 +1,6 @@
 <?php
 
+use Fleetbase\Exceptions\FleetbaseRequestValidationException;
 use Fleetbase\Http\Controllers\Internal\v1\PolicyController;
 use Fleetbase\Http\Resources\Policy as PolicyResource;
 use Fleetbase\Models\Permission;
@@ -7,6 +8,7 @@ use Fleetbase\Models\Policy;
 use Illuminate\Container\Container;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
+use Illuminate\Database\QueryException;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -75,6 +77,21 @@ class PolicyControllerPermissionRegistrarFake
 
     public function forgetWildcardPermissionIndex(mixed $record = null): void
     {
+    }
+}
+
+class PolicyControllerFailingPolicy extends Policy
+{
+    public ?Throwable $throwable = null;
+
+    public function createRecordFromRequest($request, ?callable $onBefore = null, ?callable $onAfter = null, array $options = [])
+    {
+        throw $this->throwable;
+    }
+
+    public function updateRecordFromRequest(Request $request, $id, ?callable $onBefore = null, ?callable $onAfter = null, array $options = [])
+    {
+        throw $this->throwable;
     }
 }
 
@@ -238,6 +255,16 @@ function policy_controller(): PolicyController
     return new PolicyController(new Policy());
 }
 
+function policy_controller_with_model(Policy $model): PolicyController
+{
+    $_SERVER['REQUEST_METHOD'] ??= 'GET';
+
+    $controller        = new PolicyController(new Policy());
+    $controller->model = $model;
+
+    return $controller;
+}
+
 function policy_controller_request(string $method, string $uri, array $parameters = []): Request
 {
     $_SERVER['REQUEST_METHOD'] = $method;
@@ -337,4 +364,33 @@ test('policy controller rejects delete attempts for another company policy', fun
             'errors' => ['Unable to find policy for deletion.'],
         ])
         ->and(Policy::where('id', 'policy-other-company')->exists())->toBeTrue();
+});
+
+test('policy controller returns validation and query errors from create and update without generic masking', function () {
+    policy_controller_database();
+
+    $validationPolicy            = new PolicyControllerFailingPolicy();
+    $validationPolicy->throwable = new FleetbaseRequestValidationException(['policy.name' => ['The policy name is required.']]);
+    $queryPolicy                 = new PolicyControllerFailingPolicy();
+    $queryPolicy->throwable      = new QueryException('mysql', 'select * from policies', [], new RuntimeException('database unavailable'));
+
+    $validationController = policy_controller_with_model($validationPolicy);
+    $queryController      = policy_controller_with_model($queryPolicy);
+
+    $createValidation = $validationController->createRecord(policy_controller_request('POST', '/int/v1/policies', []));
+    $updateValidation = $validationController->updateRecord(policy_controller_request('PATCH', '/int/v1/policies/policy-company', []), 'policy-company');
+    $createQuery      = $queryController->createRecord(policy_controller_request('POST', '/int/v1/policies', []));
+    $updateQuery      = $queryController->updateRecord(policy_controller_request('PATCH', '/int/v1/policies/policy-company', []), 'policy-company');
+
+    expect($createValidation)->toBeInstanceOf(JsonResponse::class)
+        ->and($createValidation->getStatusCode())->toBe(400)
+        ->and($createValidation->getData(true))->toBe([
+            'errors' => [
+                'policy.name' => ['The policy name is required.'],
+            ],
+        ])
+        ->and($updateValidation->getData(true))->toBe($createValidation->getData(true))
+        ->and($createQuery->getStatusCode())->toBe(400)
+        ->and($createQuery->getData(true)['errors'][0])->toContain('database unavailable')
+        ->and($updateQuery->getData(true)['errors'][0])->toContain('database unavailable');
 });
