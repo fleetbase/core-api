@@ -11,6 +11,7 @@ use Fleetbase\Http\Filter\ChatMessageFilter;
 use Fleetbase\Http\Filter\ChatReceiptFilter;
 use Fleetbase\Http\Filter\CompanyFilter;
 use Fleetbase\Http\Filter\DashboardFilter;
+use Fleetbase\Http\Filter\FileFilter;
 use Fleetbase\Http\Filter\GroupFilter;
 use Fleetbase\Http\Filter\NotificationFilter;
 use Fleetbase\Http\Filter\PermissionFilter;
@@ -32,6 +33,7 @@ use Fleetbase\Models\ChatMessage;
 use Fleetbase\Models\ChatReceipt;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\Dashboard;
+use Fleetbase\Models\File;
 use Fleetbase\Models\Group;
 use Fleetbase\Models\Notification;
 use Fleetbase\Models\Policy;
@@ -127,6 +129,7 @@ function concrete_filter_database(): Capsule
         'chat_participants',
         'chat_receipts',
         'dashboards',
+        'files',
         'groups',
         'invites',
         'notifications',
@@ -285,6 +288,14 @@ function concrete_filter_database(): Capsule
         $table->string('user_uuid')->nullable();
         $table->string('company_uuid')->nullable();
         $table->string('name')->nullable();
+        $table->softDeletes();
+    });
+
+    $schema->create('files', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('public_id')->nullable();
+        $table->string('company_uuid')->nullable();
+        $table->string('type')->nullable();
         $table->softDeletes();
     });
 
@@ -625,6 +636,21 @@ test('simple tenant filters scope credentials groups webhooks and dashboards', f
         ->and(concrete_filter_uuids(GroupFilter::class, Group::class, [], 'int/v1/groups'))->toBe(['group-visible'])
         ->and(concrete_filter_uuids(WebhookEndpointFilter::class, WebhookEndpoint::class, [], 'int/v1/webhook-endpoints'))->toBe(['webhook-visible'])
         ->and(concrete_filter_uuids(DashboardFilter::class, Dashboard::class, [], 'int/v1/dashboards'))->toBe(['dashboard-visible']);
+});
+
+test('file filter scopes files to the active company and filters type prefixes and suffixes', function () {
+    $capsule = concrete_filter_database();
+    $capsule->getConnection('mysql')->table('files')->insert([
+        ['uuid' => 'file-document-pdf', 'public_id' => 'file_doc_pdf', 'company_uuid' => 'company-1', 'type' => 'document-pdf'],
+        ['uuid' => 'file-document-csv', 'public_id' => 'file_doc_csv', 'company_uuid' => 'company-1', 'type' => 'document-csv'],
+        ['uuid' => 'file-image-png', 'public_id' => 'file_image_png', 'company_uuid' => 'company-1', 'type' => 'image-png'],
+        ['uuid' => 'file-hidden-pdf', 'public_id' => 'file_hidden_pdf', 'company_uuid' => 'company-2', 'type' => 'document-pdf'],
+    ]);
+
+    expect(concrete_filter_uuids(FileFilter::class, File::class, [], 'int/v1/files'))->toBe(['file-document-csv', 'file-document-pdf', 'file-image-png'])
+        ->and(concrete_filter_uuids(FileFilter::class, File::class, [], 'v1/files'))->toBe(['file-document-csv', 'file-document-pdf', 'file-image-png'])
+        ->and(concrete_filter_uuids(FileFilter::class, File::class, ['type_ends_with' => 'pdf'], 'int/v1/files'))->toBe(['file-document-pdf'])
+        ->and(concrete_filter_uuids(FileFilter::class, File::class, ['type_starts_with' => 'document'], 'int/v1/files'))->toBe(['file-document-csv', 'file-document-pdf']);
 });
 
 test('api event and webhook request log filters scope tenant logs and date windows', function () {

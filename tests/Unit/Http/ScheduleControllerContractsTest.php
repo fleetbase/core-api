@@ -49,6 +49,18 @@ class ScheduleControllerContractsResponseCacheFake
     }
 }
 
+class ScheduleControllerContractsApplyRequest extends Request
+{
+    public function validate(array $rules, ...$params): array
+    {
+        expect($rules)->toBe([
+            'schedule_uuid' => 'required|string',
+        ]);
+
+        return $this->only(array_keys($rules));
+    }
+}
+
 class ScheduleControllerContractsServiceFake extends ScheduleService
 {
     public array $calls = [];
@@ -62,6 +74,26 @@ class ScheduleControllerContractsServiceFake extends ScheduleService
         $this->calls[] = ['materializeTemplate', $template->uuid, $schedule->uuid, $horizon?->toDateString()];
 
         return 3;
+    }
+
+    public function applyTemplateToSchedule(ScheduleTemplate $template, Schedule $schedule): array
+    {
+        $this->calls[] = ['applyTemplateToSchedule', $template->uuid, $schedule->uuid];
+
+        $applied = new ScheduleTemplate();
+        $applied->setRawAttributes([
+            'uuid'          => 'applied-template-1',
+            'public_id'     => 'applied_template_1',
+            'company_uuid'  => $schedule->company_uuid,
+            'schedule_uuid' => $schedule->uuid,
+            'subject_type'  => $schedule->subject_type,
+            'subject_uuid'  => $schedule->subject_uuid,
+            'name'          => $template->name,
+            'rrule'         => $template->rrule,
+        ], true);
+        $applied->exists = true;
+
+        return ['template' => $applied, 'items_created' => 5];
     }
 
     public function approveException(ScheduleException $exception, ?string $reviewerUuid = null): ScheduleException
@@ -249,6 +281,62 @@ it('materializes an applied schedule template scoped to the active company and r
         ])
         ->and($service->calls)->toBe([
             ['materializeTemplate', 'template-1', 'schedule-1', null],
+        ]);
+});
+
+it('applies a library schedule template to a tenant schedule and returns the applied resource', function () {
+    $capsule = schedule_controller_contracts_database();
+    session(['company' => 'company-1']);
+
+    $capsule->getConnection()->table('schedules')->insert([
+        'uuid'         => 'schedule-1',
+        'public_id'    => 'schedule_public_1',
+        'company_uuid' => 'company-1',
+        'subject_type' => 'driver',
+        'subject_uuid' => 'driver-1',
+        'name'         => 'Driver schedule',
+        'status'       => 'draft',
+        'created_at'   => now(),
+        'updated_at'   => now(),
+    ]);
+    $capsule->getConnection()->table('schedule_templates')->insert([
+        [
+            'uuid'         => 'template-1',
+            'public_id'    => 'template_public_1',
+            'company_uuid' => 'company-1',
+            'subject_type' => 'driver',
+            'subject_uuid' => 'driver-1',
+            'name'         => 'Library route',
+            'rrule'        => 'FREQ=WEEKLY;BYDAY=TU',
+            'created_at'   => now(),
+            'updated_at'   => now(),
+        ],
+        [
+            'uuid'         => 'template-other-company',
+            'public_id'    => 'template_public_other',
+            'company_uuid' => 'company-2',
+            'subject_type' => 'driver',
+            'subject_uuid' => 'driver-1',
+            'name'         => 'Wrong tenant',
+            'rrule'        => 'FREQ=WEEKLY;BYDAY=TU',
+            'created_at'   => now(),
+            'updated_at'   => now(),
+        ],
+    ]);
+
+    $service  = new ScheduleControllerContractsServiceFake();
+    $request  = ScheduleControllerContractsApplyRequest::create('/int/v1/schedule-templates/template_public_1/apply', 'POST', ['schedule_uuid' => 'schedule_public_1']);
+    $response = schedule_controller_contracts_controller(ScheduleTemplateController::class, $service)->apply($request, 'template_public_1');
+    $payload  = schedule_controller_contracts_json($response);
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($payload['status'])->toBe('ok')
+        ->and($payload['items_created'])->toBe(5)
+        ->and($payload['schedule_template']['uuid'])->toBe('applied-template-1')
+        ->and($payload['schedule_template']['public_id'])->toBe('applied_template_1')
+        ->and($payload['schedule_template']['schedule_uuid'])->toBe('schedule-1')
+        ->and($service->calls)->toBe([
+            ['applyTemplateToSchedule', 'template-1', 'schedule-1'],
         ]);
 });
 

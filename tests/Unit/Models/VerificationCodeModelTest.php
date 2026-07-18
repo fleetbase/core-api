@@ -57,6 +57,8 @@ class VerificationCodeModelMailerFake
 
     public array $sent = [];
 
+    public ?Throwable $sendException = null;
+
     public function to(mixed $recipient): self
     {
         $this->recipients[] = $recipient;
@@ -80,6 +82,10 @@ class VerificationCodeModelMailerFake
 
     public function send(mixed $mail): void
     {
+        if ($this->sendException) {
+            throw $this->sendException;
+        }
+
         $this->sent[] = $mail;
     }
 }
@@ -399,6 +405,47 @@ it('account created listener creates email verification for non-admin users with
         ->and($verificationCode->for)->toBe('email_verification')
         ->and($verificationCode->status)->toBe('active')
         ->and($verificationCode->expires_at->toDateTimeString())->toBe('2026-07-17 10:00:00');
+
+    Carbon::setTestNow();
+});
+
+it('account created listener falls back to sms verification when email delivery fails and a phone exists', function () {
+    verification_code_model_database();
+    Carbon::setTestNow(Carbon::parse('2026-07-17 11:00:00', 'UTC'));
+    config([
+        'app.name'             => 'Fleetbase',
+        'sms.default_provider' => SmsService::PROVIDER_TWILIO,
+        'sms.routing_rules'    => [],
+    ]);
+
+    $mailer                = new VerificationCodeModelMailerFake();
+    $mailer->sendException = new RuntimeException('SMTP unavailable');
+    $container             = Illuminate\Container\Container::getInstance();
+    $container->instance('mail.manager', $mailer);
+
+    $twilio = new VerificationCodeModelTwilioFake();
+    $container->instance('twilio', $twilio);
+    Facade::clearResolvedInstance('twilio');
+
+    $user = verification_code_subject([
+        'uuid'  => 'user-fallback',
+        'type'  => 'user',
+        'email' => 'fallback@example.test',
+        'phone' => '+15550004444',
+    ]);
+    $company = verification_code_company();
+
+    (new HandleAccountCreated())->handle(new AccountCreated($user, $company));
+
+    $codes = VerificationCode::query()->orderBy('for')->get();
+
+    expect($codes)->toHaveCount(2)
+        ->and($codes->pluck('for')->all())->toBe(['email_verification', 'phone_verification'])
+        ->and($mailer->recipients)->toBe([$user])
+        ->and($mailer->sent)->toBe([])
+        ->and($twilio->messages)->toHaveCount(1)
+        ->and($twilio->messages[0]['to'])->toBe('+15550004444')
+        ->and($twilio->messages[0]['message'])->toContain('Fleetbase verification code is');
 
     Carbon::setTestNow();
 });

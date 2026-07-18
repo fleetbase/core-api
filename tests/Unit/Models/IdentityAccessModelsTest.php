@@ -207,6 +207,10 @@ it('keeps group user membership relationships and credential tracking boundaries
 it('tracks login attempts while hiding sensitive identity and password fields', function () {
     identity_access_models_database();
 
+    if (!class_exists(Fleetbase\Models\Session::class, false)) {
+        eval('namespace Fleetbase\Models; class Session extends Model { protected $table = "sessions"; }');
+    }
+
     $attempt = LoginAttempt::track([
         'session_uuid' => 'session-1',
         'identity'     => 'ada@example.com',
@@ -217,6 +221,8 @@ it('tracks login attempts while hiding sensitive identity and password fields', 
         ->and($attempt->uuid)->toBeString()
         ->and($attempt->identity)->toBe('ada@example.com')
         ->and($attempt->password)->toBe('plaintext-secret')
+        ->and($attempt->session()->getForeignKeyName())->toBe('session_uuid')
+        ->and($attempt->session()->getOwnerKeyName())->toBe('uuid')
         ->and($attempt->toArray())->not->toHaveKeys(['identity', 'password', 'session_uuid'])
         ->and((fn () => $this->hidden)->call($attempt))->toBe(['password', 'identity', 'session_uuid'])
         ->and($attempt->getSearchableColumns())->toBe([])
