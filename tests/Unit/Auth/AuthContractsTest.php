@@ -101,6 +101,19 @@ namespace {
         expect($result)->toBeNull();
     });
 
+    test('google verifier uses relaxed http verification in debug mode and still hides invalid token failures', function () {
+        bind_test_container([
+            'app.debug' => true,
+            'app.env'   => 'development',
+        ]);
+
+        $result = GoogleVerifier::verifyIdToken('not-a-jwt', 'client-id.apps.googleusercontent.com');
+
+        expect($result)->toBeNull()
+            ->and(app('log')->entries[0][0])->toBe('error')
+            ->and(app('log')->entries[0][1])->toContain('Google ID Token verification failed:');
+    });
+
     test('auth permission schemas expose stable guards resources policies and roles', function () {
         $developers = new Developers();
         $iam        = new IAM();

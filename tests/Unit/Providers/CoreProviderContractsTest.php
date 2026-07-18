@@ -108,6 +108,7 @@ namespace {
     use Fleetbase\Providers\SocketClusterServiceProvider;
     use Fleetbase\Services\FileResolverService;
     use Fleetbase\Services\TemplateRenderService;
+    use Fleetbase\Support\NotificationRegistry;
     use Fleetbase\Support\Reporting\ReportSchemaRegistry;
     use Fleetbase\Support\SocketCluster\SocketClusterBroadcaster;
     use Fleetbase\Webhook\Events\FinalWebhookCallFailedEvent;
@@ -116,6 +117,7 @@ namespace {
     use Fleetbase\Webhook\WebhookServerServiceProvider;
     use Illuminate\Contracts\Http\Kernel;
     use Illuminate\Notifications\Events\BroadcastNotificationCreated;
+    use Illuminate\Support\Facades\Blade;
     use Illuminate\Support\Facades\Broadcast;
     use Illuminate\Support\Facades\Facade;
     use Spatie\LaravelPackageTools\Package;
@@ -178,6 +180,58 @@ namespace {
         }
     }
 
+    class CoreProviderContractsBladeFake
+    {
+        public array $components = [];
+
+        public function component(string $view, string $alias): void
+        {
+            $this->components[$alias] = $view;
+        }
+    }
+
+    class CoreProviderContractsCommandProbe extends CoreServiceProvider
+    {
+        public array $registeredCommands = [];
+
+        public function commands($commands)
+        {
+            $this->registeredCommands = is_array($commands) ? $commands : func_get_args();
+        }
+    }
+
+    class CoreProviderContractsExpansionTarget
+    {
+        public static array $expanded = [];
+        public static array $mixed    = [];
+
+        public static function expand(object $macro): void
+        {
+            static::$expanded[] = $macro::class;
+        }
+
+        public static function mixin(object $macro): void
+        {
+            static::$mixed[] = $macro::class;
+        }
+    }
+
+    class CoreProviderContractsExpansionMacro
+    {
+        public static function target(): string
+        {
+            return CoreProviderContractsExpansionTarget::class;
+        }
+    }
+
+    class CoreProviderContractsMissingExpansion
+    {
+        public static function target(): string
+        {
+            return 'CoreProviderContractsMissingTarget';
+        }
+    }
+
     function core_provider(): CoreServiceProvider
     {
         $container = bind_test_container(['app.env' => 'testing']);
@@ -227,6 +281,90 @@ namespace {
             ->and(config('fleetbase.api.version'))->toBe('v1')
             ->and(config('fleetbase.connection.db'))->not->toBeNull()
             ->and(config('webhook-server.signer'))->not->toBeNull();
+    });
+
+    test('core service provider registers blade component aliases and command classes', function () {
+        $blade = new CoreProviderContractsBladeFake();
+        Blade::swap($blade);
+
+        $provider = new CoreProviderContractsCommandProbe(bind_test_container());
+
+        $provider->registerCustomBladeComponents();
+        $provider->registerCommands();
+
+        expect($blade->components)->toBe([
+            'mail-layout' => 'fleetbase::layout.mail',
+        ])
+            ->and($provider->registeredCommands)->toBe($provider->commands);
+
+        Facade::clearResolvedInstance('blade.compiler');
+    });
+
+    test('core service provider can merge config files from a directory', function () {
+        $provider = core_provider();
+        $path     = sys_get_temp_dir() . '/fleetbase-core-provider-config';
+
+        if (!is_dir($path)) {
+            mkdir($path, 0777, true);
+        }
+
+        file_put_contents($path . '/provider-test.php', "<?php\n\nreturn ['feature' => ['enabled' => true], 'limit' => 25];\n");
+
+        $method = new ReflectionMethod($provider, 'loadConfigFromDirectory');
+        $method->setAccessible(true);
+        $method->invoke($provider, $path);
+
+        expect(config('provider-test.feature.enabled'))->toBeTrue()
+            ->and(config('provider-test.limit'))->toBe(25);
+    });
+
+    test('core service provider registers core notification definitions', function () {
+        $previousNotifications = NotificationRegistry::$notifications;
+
+        try {
+            NotificationRegistry::$notifications = [];
+            $provider                            = core_provider();
+            $method                              = new ReflectionMethod($provider, 'registerNotifications');
+            $method->setAccessible(true);
+            $method->invoke($provider);
+
+            expect(NotificationRegistry::findNotificationRegistrationByDefinition(Fleetbase\Notifications\UserCreated::class))->not->toBeNull()
+                ->and(NotificationRegistry::findNotificationRegistrationByDefinition(Fleetbase\Notifications\UserAcceptedCompanyInvite::class))->not->toBeNull()
+                ->and(NotificationRegistry::getNotificationsByPackage('core'))->not->toBeEmpty();
+        } finally {
+            NotificationRegistry::$notifications = $previousNotifications;
+        }
+    });
+
+    test('core service provider registers explicit expansion namespaces and ignores missing targets', function () {
+        CoreProviderContractsExpansionTarget::$expanded = [];
+        CoreProviderContractsExpansionTarget::$mixed    = [];
+
+        $base = sys_get_temp_dir() . '/fleetbase-core-provider-expansions';
+        $path = $base . '/src/Expansions';
+        if (!is_dir($path)) {
+            mkdir($path, 0777, true);
+        }
+
+        file_put_contents($base . '/composer.json', json_encode([
+            'autoload' => [
+                'psr-4' => [
+                    'Fleetbase\\ProviderTest\\' => 'src/',
+                ],
+            ],
+        ]));
+
+        file_put_contents($path . '/CoreProviderContractsExpansionMacro.php', "<?php\n");
+        file_put_contents($path . '/CoreProviderContractsMissingExpansion.php', "<?php\n");
+
+        $provider = core_provider();
+        $provider->registerExpansionsFrom($path, '');
+        $provider->registerExpansionsFrom($path . '/missing-directory', '');
+
+        expect(CoreProviderContractsExpansionTarget::$expanded)->toBe([
+            CoreProviderContractsExpansionMacro::class,
+        ])
+            ->and(CoreProviderContractsExpansionTarget::$mixed)->toBe([]);
     });
 
     test('core service provider registers global and grouped middleware with the kernel and router', function () {
