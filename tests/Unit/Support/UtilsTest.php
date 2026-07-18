@@ -2,7 +2,80 @@
 
 use Fleetbase\Models\User;
 use Fleetbase\Support\Utils;
+use Illuminate\Database\Capsule\Manager as Capsule;
+use Illuminate\Database\Eloquent\Model as EloquentModel;
+use Illuminate\Events\Dispatcher;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Facade;
+
+class UtilsRedisFake
+{
+    public array $values = [];
+    public array $sets   = [];
+
+    public function exists(string $key): bool
+    {
+        return array_key_exists($key, $this->values);
+    }
+
+    public function get(string $key): ?string
+    {
+        return $this->values[$key] ?? null;
+    }
+
+    public function set(string $key, string $value): bool
+    {
+        $this->values[$key] = $value;
+        $this->sets[]       = compact('key', 'value');
+
+        return true;
+    }
+}
+
+function utils_database(): Capsule
+{
+    EloquentModel::clearBootedModels();
+
+    $connection = [
+        'driver'   => 'sqlite',
+        'database' => ':memory:',
+        'prefix'   => '',
+    ];
+
+    $container = bind_test_container([
+        'database.default'           => 'mysql',
+        'database.connections.mysql' => $connection,
+    ]);
+
+    $capsule = new Capsule($container);
+    $capsule->addConnection($connection, 'mysql');
+    $capsule->setEventDispatcher(new Dispatcher($container));
+    $capsule->setAsGlobal();
+    $capsule->bootEloquent();
+    $capsule->getDatabaseManager()->setDefaultConnection('mysql');
+    $container->instance('db', $capsule->getDatabaseManager());
+    Facade::clearResolvedInstance('db');
+
+    $schema = $capsule->getConnection('mysql')->getSchemaBuilder();
+    $schema->create('orders', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('public_id')->nullable();
+        $table->string('status')->nullable();
+    });
+    $schema->create('files', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('public_id')->nullable();
+        $table->string('type')->nullable();
+    });
+
+    return $capsule;
+}
+
+afterEach(function () {
+    Facade::clearResolvedInstances();
+    EloquentModel::unsetEventDispatcher();
+    EloquentModel::clearBootedModels();
+});
 
 test('utils formats urls headers strings and dates', function () {
     bind_test_container([
@@ -140,4 +213,59 @@ test('utils normalizes country currency dates delimiters and template bindings',
         ->and($range[0]->toDateString())->toBe('2026-07-01')
         ->and($range[1]->toDateString())->toBe('2026-07-31')
         ->and($date->toDateString())->toBe('2026-07-18');
+});
+
+test('utils resolves uuids and models across tables and ember style resource types', function () {
+    $capsule = utils_database();
+    $capsule->getConnection('mysql')->table('orders')->insert([
+        ['uuid' => 'order-1', 'public_id' => 'order_1234567', 'status' => 'active'],
+    ]);
+    $capsule->getConnection('mysql')->table('files')->insert([
+        ['uuid' => 'file-1', 'public_id' => 'file_1234567', 'type' => 'pod'],
+    ]);
+
+    $orderModel = Utils::findModel('orders', ['public_id' => 'order_1234567']);
+    $fileModel  = Utils::findModel(['orders', 'files'], ['public_id' => 'file_1234567']);
+
+    expect(Utils::getUuid('fleet-ops:order', ['public_id' => 'order_1234567']))->toBe('order-1')
+        ->and(Utils::getUuid(['order', 'file'], ['public_id' => 'file_1234567'], ['with_table' => true]))->toBe([
+            'uuid'  => 'file-1',
+            'table' => 'file',
+        ])
+        ->and(Utils::getUuid(['order', 'file'], ['public_id' => 'none']))->toBeNull()
+        ->and($orderModel->uuid)->toBe('order-1')
+        ->and($fileModel->uuid)->toBe('file-1');
+});
+
+test('utils resolves country metadata cache fallback and locale helpers', function () {
+    bind_test_container();
+    $redis                           = new UtilsRedisFake();
+    $redis->values['countryData:US'] = json_encode([
+        'iso2'      => 'US',
+        'currency'  => 'USD',
+        'dial_code' => '1',
+        'capital'   => 'Washington D.C.',
+    ]);
+    app()->instance('redis', $redis);
+    Facade::clearResolvedInstance('redis');
+
+    $mongolia = Utils::getCountryData('MN');
+
+    expect(Utils::getCountryCodeByName('Mongolia Country'))->toBe('MN')
+        ->and(Utils::getCountryCodeByName('United', 'ZZ'))->toBe('ZZ')
+        ->and(Utils::findCountryFromTimezone(null))->toHaveCount(0)
+        ->and(Utils::getCountryData(null))->toBeNull()
+        ->and(Utils::getCountryData('US'))->toMatchArray([
+            'iso2'      => 'US',
+            'currency'  => 'USD',
+            'dial_code' => '1',
+            'capital'   => 'Washington D.C.',
+        ])
+        ->and($mongolia['iso2'])->toBe('MN')
+        ->and($redis->sets[0]['key'])->toBe('countryData:MN')
+        ->and(Utils::getCurrenyFromCountryCode(null))->toBeNull()
+        ->and(Utils::getCurrenyFromCountryCode('US'))->toBe('USD')
+        ->and(Utils::getDialCodeFromCountryCode('US'))->toBe('1')
+        ->and(Utils::getCapitalCityFromCountryCode('US'))->toBe('Washington D.C.')
+        ->and(Utils::smartHumanize('api_id_and_sku'))->toBe('API ID And SKU');
 });
