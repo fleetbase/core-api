@@ -2001,6 +2001,10 @@ class Utils
 
         // Load the composer.json file into an array
         try {
+            if (!is_file($composerJsonPath)) {
+                throw new \RuntimeException('composer.json not found.');
+            }
+
             $composerJson = json_decode(file_get_contents($composerJsonPath), true);
         } catch (\Throwable $e) {
             // try monorepo style path `/server`
@@ -2012,6 +2016,10 @@ class Utils
         // retry with server path
         if ($useServerPath === true) {
             try {
+                if (!is_file($composerJsonPath)) {
+                    throw new \RuntimeException('composer.json not found.');
+                }
+
                 $composerJson = json_decode(file_get_contents($composerJsonPath), true);
             } catch (\Throwable $e) {
                 return null;

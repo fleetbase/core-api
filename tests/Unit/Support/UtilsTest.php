@@ -11,6 +11,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Facade;
+use Illuminate\Support\Facades\Http;
 
 class UtilsRedisFake
 {
@@ -102,6 +103,7 @@ test('utils formats urls headers strings and dates', function () {
         ->and(Utils::consoleUrl('settings', ['tab' => 'billing']))->toBe('https://console.fleetbase.test/settings?tab=billing')
         ->and(Utils::consolePath('dist/assets'))->toBe('/srv/fleetbase/console/dist/assets')
         ->and(Utils::getDomainFromUrl('https://api.fleetbase.test:8443/v1/orders', true))->toBe('api.fleetbase.test:8443')
+        ->and(Utils::getDomainFromUrl('fleetbase.test'))->toBe('fleetbase.test')
         ->and(Utils::getDomainFromUrl('api.fleetbase.test:8000', true))->toBe('api.fleetbase.test:8000')
         ->and(Utils::getDomainFromUrl('//api.fleetbase.test'))->toBe('api.fleetbase.test')
         ->and(Utils::fromS3('avatars/user.png'))->toBe('https://fleetbase-media.s3-ap-southeast-1.amazonaws.com/avatars/user.png')
@@ -164,6 +166,7 @@ test('utils validates identifiers base64 and numeric strings across edge cases',
         ->and(Utils::isBase64String('not base64!'))->toBeFalse()
         ->and(Utils::isBase64String(''))->toBeFalse()
         ->and(Utils::isBase64('plain+base64/shape=='))->toBeTrue()
+        ->and(Utils::isBase64('not base64!'))->toBeFalse()
         ->and(Utils::numbersOnly('+1 (561) 276-7156 ext. 9'))->toBe(156127671569)
         ->and(Utils::removeSpecialCharacters('Fleet-Ops #42', ['\-', ' ']))->toBe('Fleet-Ops 42')
         ->and(Utils::calculatePercentage(12.5, 200))->toBe(25.0);
@@ -183,6 +186,7 @@ test('utils resolves model class mutation and ember resource type contracts', fu
         ->and(Utils::getTypeFromClassName('Fleetbase\FleetOps\Models\UserDevice'))->toBe('userdevice')
         ->and(Utils::humanizeClassName('Fleetbase\FleetOps\Models\ApiCredential'))->toBe('API Credential')
         ->and(Utils::toEmberResourceType('Fleetbase\FleetOps\Models\IntegratedVendor'))->toBe('fleet-ops:integrated-vendor')
+        ->and(Utils::toEmberResourceType('Acme\Packages\Models\Invoice'))->toBe('invoice')
         ->and(Utils::toEmberResourceType('fliit:client'))->toBe('fliit:client')
         ->and(Utils::toEmberResourceType('SimpleClass'))->toBe('simple-class')
         ->and(Utils::toEmberResourceType(null))->toBeNull();
@@ -440,6 +444,8 @@ test('utils serializes resources images queues countries and connectivity edges'
             ->and(Utils::getBase64ImageSize($png))->toBe(70)
             ->and(Utils::getImageSizeFromString($png)[0])->toBe(1)
             ->and(Utils::getImageSizeFromString($png)[1])->toBe(1)
+            ->and(Utils::getImageSizeFromString(base64_decode($png))[0])->toBe(1)
+            ->and(Utils::getImageSizeFromString(base64_decode($png))[1])->toBe(1)
             ->and(Utils::getEventsQueue())->toBe('default')
             ->and(Utils::chooseQueueConnection())->toBe('redis')
             ->and(Utils::getModelCountry($countryCodeModel))->toBe('SG')
@@ -477,4 +483,65 @@ test('utils recursively deletes directories and ignores missing paths', function
     Utils::deleteDirectory($root);
 
     expect(is_dir($root))->toBeFalse();
+});
+
+test('utils looks up ip metadata through the configured external api contract', function () {
+    bind_test_container();
+    putenv('IPINFO_API_KEY=test-ip-key');
+
+    Http::fake([
+        'https://api.ipdata.co/203.0.113.42?api-key=test-ip-key' => Http::response([
+            'ip'           => '203.0.113.42',
+            'country_code' => 'US',
+        ]),
+    ]);
+
+    expect(Utils::lookupIp('203.0.113.42'))->toBe([
+        'ip'           => '203.0.113.42',
+        'country_code' => 'US',
+    ]);
+
+    Http::assertSent(fn ($request) => (string) $request->url() === 'https://api.ipdata.co/203.0.113.42?api-key=test-ip-key');
+});
+
+test('utils generates public ids and emits dry run database statements without executing them', function () {
+    expect(Utils::generatePublicId('order'))->toMatch('/^order_[A-Za-z0-9]{7}$/');
+
+    ob_start();
+    Utils::dbExec('ALTER TABLE `orders` CONVERT TO CHARACTER SET utf8mb4', true, 'mysql');
+    $output = ob_get_clean();
+
+    expect($output)->toBe("ALTER TABLE `orders` CONVERT TO CHARACTER SET utf8mb4;\n");
+});
+
+test('utils resolves package namespaces from root and server composer layouts', function () {
+    $rootPackage   = sys_get_temp_dir() . '/fleetbase-utils-root-package-' . uniqid();
+    $serverPackage = sys_get_temp_dir() . '/fleetbase-utils-server-package-' . uniqid();
+
+    mkdir($rootPackage . '/src', 0777, true);
+    mkdir($serverPackage . '/server/src', 0777, true);
+    file_put_contents($rootPackage . '/composer.json', json_encode([
+        'autoload' => [
+            'psr-4' => [
+                'Fleetbase\\RootPackage\\' => 'src/',
+            ],
+        ],
+    ]));
+    file_put_contents($serverPackage . '/composer.json', json_encode([
+        'autoload' => [
+            'psr-4' => [
+                'Fleetbase\\ServerPackage\\' => 'server/src/',
+            ],
+        ],
+    ]));
+
+    try {
+        expect(Utils::findPackageNamespace(null))->toBeNull()
+            ->and(Utils::findPackageNamespace($rootPackage . '/src/Models/Thing.php'))->toBe('Fleetbase\\RootPackage')
+            ->and(Utils::findPackageNamespace($serverPackage . '/server/src/Models/Thing.php'))->toBe('Fleetbase\\ServerPackage')
+            ->and(Utils::findPackageNamespace(sys_get_temp_dir() . '/missing-package/server/src/Models/Thing.php'))->toBeNull();
+    } finally {
+        Utils::deleteDirectory($rootPackage);
+        Utils::deleteDirectory($serverPackage);
+    }
 });
