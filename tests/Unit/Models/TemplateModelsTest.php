@@ -2,6 +2,7 @@
 
 use Fleetbase\Models\Template;
 use Fleetbase\Models\TemplateQuery;
+use Fleetbase\Traits\Searchable;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Events\Dispatcher;
@@ -23,8 +24,58 @@ class TemplateQueryGlobalFixture extends Model
     public $timestamps    = false;
 }
 
+class TemplateSearchFixture extends Model
+{
+    use Searchable;
+
+    protected $connection = 'mysql';
+    protected $table      = 'template_search_fixtures';
+    protected $guarded    = [];
+    public $timestamps    = false;
+
+    protected $searchableColumns = [
+        'name',
+        'meta->code',
+        'searchRelation.label',
+    ];
+
+    public function searchRelation()
+    {
+        return $this->hasMany(TemplateSearchRelationFixture::class, 'fixture_id');
+    }
+}
+
+class TemplateCustomSearchFixture extends Model
+{
+    use Searchable;
+
+    protected $connection = 'mysql';
+    protected $table      = 'template_search_fixtures';
+    protected $guarded    = [];
+    public $timestamps    = false;
+
+    public string $lastSearch = '';
+
+    public function search($search): string
+    {
+        $this->lastSearch = $search;
+
+        return 'custom-search:' . $search;
+    }
+}
+
+class TemplateSearchRelationFixture extends Model
+{
+    protected $connection = 'mysql';
+    protected $table      = 'template_search_relation_fixtures';
+    protected $guarded    = [];
+    public $timestamps    = false;
+}
+
 function template_models_database(): Capsule
 {
+    Model::clearBootedModels();
+
     $connection = [
         'driver'   => 'sqlite',
         'database' => ':memory:',
@@ -58,13 +109,50 @@ function template_models_database(): Capsule
     Facade::clearResolvedInstance('db');
 
     $schema = $capsule->getConnection('mysql')->getSchemaBuilder();
+    $schema->create('companies', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('name')->nullable();
+        $table->timestamp('deleted_at')->nullable();
+    });
+    $schema->create('users', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('name')->nullable();
+        $table->string('email')->nullable();
+        $table->timestamp('deleted_at')->nullable();
+    });
+    $schema->create('files', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('path')->nullable();
+        $table->timestamp('deleted_at')->nullable();
+    });
     $schema->create('templates', function ($table) {
         $table->string('uuid')->primary();
         $table->string('public_id')->nullable();
         $table->string('company_uuid')->nullable();
+        $table->string('created_by_uuid')->nullable();
+        $table->string('updated_by_uuid')->nullable();
+        $table->string('name')->nullable();
+        $table->text('description')->nullable();
         $table->string('context_type')->nullable();
+        $table->string('unit')->nullable();
+        $table->float('width')->nullable();
+        $table->float('height')->nullable();
+        $table->string('orientation')->nullable();
+        $table->json('margins')->nullable();
+        $table->string('background_color')->nullable();
+        $table->string('background_image_uuid')->nullable();
+        $table->json('content')->nullable();
+        $table->json('element_schemas')->nullable();
+        $table->boolean('is_default')->default(false);
         $table->boolean('is_system')->default(false);
         $table->boolean('is_public')->default(false);
+        $table->timestamps();
+        $table->timestamp('deleted_at')->nullable();
+    });
+    $schema->create('template_queries', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('template_uuid')->nullable();
+        $table->string('variable_name')->nullable();
         $table->timestamp('deleted_at')->nullable();
     });
     $schema->create('template_query_tenant_fixtures', function ($table) {
@@ -81,7 +169,28 @@ function template_models_database(): Capsule
         $table->string('name')->nullable();
         $table->integer('rank')->default(0);
     });
+    $schema->create('template_search_fixtures', function ($table) {
+        $table->increments('id');
+        $table->string('name')->nullable();
+        $table->json('meta')->nullable();
+        $table->string('status')->nullable();
+    });
+    $schema->create('template_search_relation_fixtures', function ($table) {
+        $table->increments('id');
+        $table->integer('fixture_id');
+        $table->string('label')->nullable();
+    });
 
+    $capsule->getConnection('mysql')->table('companies')->insert([
+        ['uuid' => 'company-1', 'name' => 'Acme Logistics'],
+    ]);
+    $capsule->getConnection('mysql')->table('users')->insert([
+        ['uuid' => 'creator-1', 'name' => 'Creator', 'email' => 'creator@example.com'],
+        ['uuid' => 'updater-1', 'name' => 'Updater', 'email' => 'updater@example.com'],
+    ]);
+    $capsule->getConnection('mysql')->table('files')->insert([
+        ['uuid' => 'file-background-1', 'path' => 'templates/background.png'],
+    ]);
     $capsule->getConnection('mysql')->table('template_query_tenant_fixtures')->insert([
         ['company_uuid' => 'company-1', 'status' => 'active', 'name' => 'Alpha order', 'score' => 95, 'archived_at' => null],
         ['company_uuid' => 'company-1', 'status' => 'active', 'name' => 'Beta order', 'score' => 70, 'archived_at' => '2026-07-10 10:00:00'],
@@ -93,12 +202,74 @@ function template_models_database(): Capsule
         ['category' => 'public', 'name' => 'Global Beta', 'rank' => 1],
         ['category' => 'private', 'name' => 'Global Private', 'rank' => 3],
     ]);
-    $capsule->getConnection('mysql')->table('templates')->insert([
-        ['uuid' => 'template-company', 'company_uuid' => 'company-1', 'context_type' => 'invoice', 'is_system' => false, 'is_public' => false, 'deleted_at' => null],
-        ['uuid' => 'template-system', 'company_uuid' => null, 'context_type' => 'invoice', 'is_system' => true, 'is_public' => false, 'deleted_at' => null],
-        ['uuid' => 'template-public', 'company_uuid' => null, 'context_type' => 'invoice', 'is_system' => false, 'is_public' => true, 'deleted_at' => null],
-        ['uuid' => 'template-other-company', 'company_uuid' => 'company-2', 'context_type' => 'invoice', 'is_system' => false, 'is_public' => false, 'deleted_at' => null],
-        ['uuid' => 'template-other-context', 'company_uuid' => 'company-1', 'context_type' => 'receipt', 'is_system' => false, 'is_public' => false, 'deleted_at' => null],
+    $templateDefaults = [
+        'public_id'             => null,
+        'company_uuid'          => null,
+        'created_by_uuid'       => null,
+        'updated_by_uuid'       => null,
+        'name'                  => null,
+        'description'           => null,
+        'context_type'          => null,
+        'unit'                  => null,
+        'width'                 => null,
+        'height'                => null,
+        'orientation'           => null,
+        'margins'               => null,
+        'background_color'      => null,
+        'background_image_uuid' => null,
+        'content'               => null,
+        'element_schemas'       => null,
+        'is_default'            => false,
+        'is_system'             => false,
+        'is_public'             => false,
+        'created_at'            => '2026-07-18 00:00:00',
+        'updated_at'            => '2026-07-18 00:00:00',
+        'deleted_at'            => null,
+    ];
+
+    $capsule->getConnection('mysql')->table('templates')->insert(array_map(
+        fn (array $row): array => array_merge($templateDefaults, $row),
+        [
+            [
+                'uuid'                  => 'template-company',
+                'public_id'             => 'template_company_public',
+                'company_uuid'          => 'company-1',
+                'created_by_uuid'       => 'creator-1',
+                'updated_by_uuid'       => 'updater-1',
+                'name'                  => 'Invoice Template',
+                'description'           => 'Primary invoice layout',
+                'context_type'          => 'invoice',
+                'unit'                  => 'px',
+                'width'                 => 800,
+                'height'                => 600,
+                'orientation'           => 'portrait',
+                'margins'               => json_encode(['top' => 12, 'right' => 14]),
+                'background_color'      => '#ffffff',
+                'background_image_uuid' => 'file-background-1',
+                'content'               => json_encode(['blocks' => [['type' => 'text']]]),
+                'element_schemas'       => json_encode(['customer' => ['label' => 'Customer']]),
+                'is_default'            => true,
+                'is_system'             => false,
+                'is_public'             => false,
+                'created_at'            => '2026-07-18 00:00:00',
+                'updated_at'            => '2026-07-18 00:00:00',
+                'deleted_at'            => null,
+            ],
+            ['uuid' => 'template-system', 'name' => 'System Invoice', 'description' => 'Shared system layout', 'context_type' => 'invoice', 'is_system' => true],
+            ['uuid' => 'template-public', 'name' => 'Public Invoice', 'description' => 'Shared public layout', 'context_type' => 'invoice', 'is_public' => true],
+            ['uuid' => 'template-other-company', 'company_uuid' => 'company-2', 'name' => 'Other Tenant Invoice', 'description' => 'Hidden tenant layout', 'context_type' => 'invoice'],
+            ['uuid' => 'template-other-context', 'company_uuid' => 'company-1', 'name' => 'Receipt Template', 'description' => 'Receipt layout', 'context_type' => 'receipt'],
+        ]
+    ));
+    $capsule->getConnection('mysql')->table('template_queries')->insert([
+        ['uuid' => 'query-1', 'template_uuid' => 'template-company', 'variable_name' => 'orders'],
+        ['uuid' => 'query-2', 'template_uuid' => 'template-other-company', 'variable_name' => 'hidden'],
+    ]);
+    $capsule->getConnection('mysql')->table('template_search_fixtures')->insert([
+        ['id' => 1, 'name' => 'Alpha Fixture', 'meta' => json_encode(['code' => 'ALPHA.001']), 'status' => 'active'],
+    ]);
+    $capsule->getConnection('mysql')->table('template_search_relation_fixtures')->insert([
+        ['fixture_id' => 1, 'label' => 'Related Alpha'],
     ]);
 
     return $capsule;
@@ -119,6 +290,54 @@ it('filters templates by context and availability for company system and public 
         'template-public',
         'template-system',
     ]);
+});
+
+it('casts template layout data and resolves ownership background and query relationships', function () {
+    template_models_database();
+
+    $template = Template::where('uuid', 'template-company')->firstOrFail();
+
+    expect($template->margins)->toBe(['top' => 12, 'right' => 14])
+        ->and($template->content)->toBe(['blocks' => [['type' => 'text']]])
+        ->and($template->element_schemas)->toBe(['customer' => ['label' => 'Customer']])
+        ->and($template->is_default)->toBeTrue()
+        ->and($template->is_system)->toBeFalse()
+        ->and($template->is_public)->toBeFalse()
+        ->and($template->width)->toBe(800.0)
+        ->and($template->height)->toBe(600.0)
+        ->and($template->getSearchableColumns())->toBe(['name', 'description', 'context_type'])
+        ->and($template->company()->first()->name)->toBe('Acme Logistics')
+        ->and($template->createdBy()->first()->email)->toBe('creator@example.com')
+        ->and($template->updatedBy()->first()->email)->toBe('updater@example.com')
+        ->and($template->backgroundImage()->first()->path)->toBe('templates/background.png')
+        ->and($template->queries()->pluck('variable_name')->all())->toBe(['orders'])
+        ->and(Template::search('invoice')->orderBy('uuid')->pluck('uuid')->all())->toBe([
+            'template-company',
+            'template-other-company',
+            'template-public',
+            'template-system',
+        ]);
+});
+
+it('builds searchable query branches for custom search json relations and additional filters', function () {
+    template_models_database();
+
+    $customSearch = new TemplateCustomSearchFixture();
+
+    expect($customSearch->scopeSearch(TemplateCustomSearchFixture::query(), 'Alpha'))->toBe('custom-search:Alpha')
+        ->and($customSearch->lastSearch)->toBe('Alpha');
+
+    $query = TemplateSearchFixture::query()->search('Alpha.001', function ($builder, string $search) {
+        $builder->orWhere('status', $search === 'alpha%001' ? 'active' : 'missing');
+    });
+
+    $sql = $query->toSql();
+
+    expect($sql)->toContain('lower(name)')
+        ->and($sql)->toContain('json_extract(meta')
+        ->and($sql)->toContain('exists')
+        ->and($sql)->toContain('template_search_relation_fixtures')
+        ->and($query->getBindings())->toContain('%alpha%001%');
 });
 
 it('executes tenant scoped template queries with conditions sorting and limits', function () {
