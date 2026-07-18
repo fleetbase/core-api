@@ -43,6 +43,19 @@ namespace Illuminate\Validation\Rules {
 }
 
 namespace Illuminate\Validation {
+    if (!class_exists(ValidationException::class)) {
+        class ValidationException extends \Exception
+        {
+            public mixed $response;
+
+            public function __construct(mixed $validator, mixed $response = null)
+            {
+                parent::__construct('The given data was invalid.');
+                $this->response = $response;
+            }
+        }
+    }
+
     if (!class_exists(Rule::class)) {
         class Rule
         {
@@ -127,8 +140,11 @@ namespace {
     use Fleetbase\Http\Requests\ExecuteReportQueryRequest;
     use Fleetbase\Http\Requests\ExportReportRequest;
     use Fleetbase\Http\Requests\ExportRequest;
+    use Fleetbase\Http\Requests\FleetbaseRequest;
+    use Fleetbase\Http\Requests\ImportRequest;
     use Fleetbase\Http\Requests\Internal\ConfirmCurrentPassword;
     use Fleetbase\Http\Requests\Internal\ChangeCurrentUserEmailRequest;
+    use Fleetbase\Http\Requests\Internal\CreateTemplateRequest;
     use Fleetbase\Http\Requests\Internal\CreateCustomFieldRequest;
     use Fleetbase\Http\Requests\Internal\DownloadFileRequest;
     use Fleetbase\Http\Requests\Internal\ResetPasswordRequest;
@@ -143,9 +159,16 @@ namespace {
     use Fleetbase\Http\Requests\UpdateReportRequest;
     use Fleetbase\Http\Requests\UpdateUserRequest;
     use Fleetbase\Http\Requests\ValidateReportQueryRequest;
+    use Illuminate\Contracts\Validation\Validator as ValidatorContract;
     use Illuminate\Container\Container;
+    use Illuminate\Database\Capsule\Manager as Capsule;
+    use Illuminate\Database\Eloquent\Model as EloquentModel;
+    use Illuminate\Events\Dispatcher;
+    use Illuminate\Support\Facades\Facade;
+    use Illuminate\Support\MessageBag;
     use Illuminate\Session\ArraySessionHandler;
     use Illuminate\Session\Store;
+    use Illuminate\Validation\ValidationException;
 
     if (!function_exists('base_path')) {
         function base_path(string $path = ''): string
@@ -227,6 +250,96 @@ namespace {
         Container::getInstance()->instance('request', $request);
 
         return $request;
+    }
+
+    function request_contract_files_database(): Capsule
+    {
+        EloquentModel::clearBootedModels();
+
+        $connection = [
+            'driver' => 'sqlite',
+            'database' => ':memory:',
+            'prefix' => '',
+        ];
+
+        $container = bind_test_container([
+            'database.default' => 'mysql',
+            'database.connections.mysql' => $connection,
+            'fleetbase.connection.db' => 'mysql',
+        ]);
+
+        $capsule = new Capsule($container);
+        $capsule->addConnection($connection, 'mysql');
+        $capsule->setEventDispatcher(new Dispatcher($container));
+        $capsule->setAsGlobal();
+        $capsule->bootEloquent();
+        $capsule->getDatabaseManager()->setDefaultConnection('mysql');
+        $container->instance('db', $capsule->getDatabaseManager());
+        Facade::clearResolvedInstance('db');
+
+        $capsule->getConnection('mysql')->getSchemaBuilder()->create('files', function ($table) {
+            $table->string('uuid')->primary();
+            $table->string('path')->nullable();
+            $table->string('original_filename')->nullable();
+            $table->softDeletes();
+        });
+
+        return $capsule;
+    }
+
+    class RequestContractsValidatorFake implements ValidatorContract
+    {
+        public function __construct(private array $messages)
+        {
+        }
+
+        public function validate()
+        {
+            return [];
+        }
+
+        public function validated()
+        {
+            return [];
+        }
+
+        public function fails()
+        {
+            return true;
+        }
+
+        public function failed()
+        {
+            return [];
+        }
+
+        public function sometimes($attribute, $rules, callable $callback)
+        {
+            return $this;
+        }
+
+        public function after($callback)
+        {
+            return $this;
+        }
+
+        public function errors()
+        {
+            return $this->getMessageBag();
+        }
+
+        public function getMessageBag()
+        {
+            return new MessageBag($this->messages);
+        }
+    }
+
+    class RequestContractsFleetbaseRequestProbe extends FleetbaseRequest
+    {
+        public function triggerValidationResponse(ValidatorContract $validator): never
+        {
+            $this->responseWithErrors($validator);
+        }
     }
 
     it('keeps authentication request validation contracts security-safe', function () {
@@ -516,5 +629,106 @@ namespace {
             ->and($rules['order'])->toBe(['nullable', 'integer'])
             ->and($authorized->messages()['type.required'])->toBe('A custom field type is required (e.g., text, number, date, etc.).')
             ->and($authorized->messages()['type.string'])->toBe('The custom field type must be a valid string.');
+    });
+
+    it('keeps import and template request validation contracts explicit', function () {
+        $capsule = request_contract_files_database();
+        $capsule->getConnection('mysql')->table('files')->insert([
+            ['uuid' => 'file-csv', 'path' => 'imports/orders.csv', 'original_filename' => 'orders.csv', 'deleted_at' => null],
+            ['uuid' => 'file-pdf', 'path' => 'imports/orders.pdf', 'original_filename' => 'orders.pdf', 'deleted_at' => null],
+        ]);
+
+        $unauthorizedImport = request_with_session(ImportRequest::class, 'POST');
+        $authorizedImport = request_with_session(ImportRequest::class, 'POST', [], ['user' => 'user-1']);
+        $importRules = $authorizedImport->rules();
+        $fileRule = $importRules['files'][3];
+        $errors = [];
+
+        $fileRule('files', ['missing-file'], function (string $message) use (&$errors) {
+            $errors[] = $message;
+        });
+        $fileRule('files', ['file-pdf'], function (string $message) use (&$errors) {
+            $errors[] = $message;
+        });
+        $fileRule('files', ['file-csv'], function (string $message) use (&$errors) {
+            $errors[] = $message;
+        });
+
+        $templateAuthorized = request_with_session(CreateTemplateRequest::class, 'POST', [], ['company' => 'company-1']);
+        $templateUnauthorized = request_with_session(CreateTemplateRequest::class, 'POST');
+        $templateRules = $templateAuthorized->rules();
+        $templateMessages = $templateAuthorized->messages();
+
+        expect(bind_active_request($unauthorizedImport)->authorize())->toBeFalse()
+            ->and(bind_active_request($authorizedImport)->authorize())->toBeTrue()
+            ->and($importRules['files'][0])->toBe('required')
+            ->and($importRules['files'][1])->toBe('array')
+            ->and($importRules['files'][2])->toBe('exists:files,uuid')
+            ->and($importRules['files'][3])->toBeInstanceOf(Closure::class)
+            ->and($errors)->toBe([
+                'One of the files sent for import is invalid.',
+                'The file (orders.pdf) format with the extension pdf is not valid for import.',
+            ])
+            ->and(bind_active_request($templateUnauthorized)->authorize())->toBeFalse()
+            ->and(bind_active_request($templateAuthorized)->authorize())->toBeTrue()
+            ->and($templateRules['name'])->toBe('required|min:2|max:191')
+            ->and($templateRules['context_type'])->toBe('required|string|max:191')
+            ->and($templateRules['orientation'])->toBe('nullable|in:portrait,landscape')
+            ->and($templateRules['unit'])->toBe('nullable|in:mm,px,in')
+            ->and($templateRules['width'])->toBe('nullable|numeric|min:1')
+            ->and($templateMessages['name.required'])->toBe('A template name is required.')
+            ->and($templateMessages['context_type.required'])->toBe('A context type is required to determine which variables are available.');
+    });
+
+    it('formats fleetbase validation failures differently for internal and public routes', function () {
+        $internal = RequestContractsFleetbaseRequestProbe::create('/int/v1/test', 'POST');
+        $internal->setRouteResolver(fn () => new class {
+            public array $action = [];
+
+            public function uri(): string
+            {
+                return 'int/v1/test';
+            }
+        });
+        Container::getInstance()->instance('request', $internal);
+
+        try {
+            $internal->triggerValidationResponse(new RequestContractsValidatorFake([
+                'name' => ['Name is required.'],
+                'email' => ['Email is invalid.'],
+            ]));
+        } catch (ValidationException $exception) {
+            $internalResponse = $exception->response;
+        }
+
+        $public = RequestContractsFleetbaseRequestProbe::create('/v1/test', 'POST');
+        $public->setRouteResolver(fn () => new class {
+            public array $action = [];
+
+            public function uri(): string
+            {
+                return 'v1/test';
+            }
+        });
+        Container::getInstance()->instance('request', $public);
+
+        try {
+            $public->triggerValidationResponse(new RequestContractsValidatorFake([
+                'name' => ['Name is required.'],
+                'email' => ['Email is invalid.'],
+            ]));
+        } catch (ValidationException $exception) {
+            $publicResponse = $exception->response;
+        }
+
+        expect($internalResponse->getStatusCode())->toBe(422)
+            ->and($internalResponse->getData(true))->toBe([
+                'errors' => ['Name is required.', 'Email is invalid.'],
+            ])
+            ->and($publicResponse->getStatusCode())->toBe(422)
+            ->and($publicResponse->getData(true))->toBe([
+                'error' => 'Name is required.',
+                'errors' => ['Name is required.', 'Email is invalid.'],
+            ]);
     });
 }

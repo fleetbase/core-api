@@ -1,15 +1,21 @@
 <?php
 
 use Fleetbase\Expansions\Builder as BuilderExpansion;
+use Fleetbase\Http\Filter\ApiRequestLogFilter;
 use Fleetbase\Http\Filter\CategoryFilter;
 use Fleetbase\Http\Filter\CompanyFilter;
+use Fleetbase\Http\Filter\PolicyFilter;
+use Fleetbase\Http\Filter\RoleFilter;
 use Fleetbase\Http\Filter\ScheduleFilter;
 use Fleetbase\Http\Filter\ScheduleExceptionFilter;
 use Fleetbase\Http\Filter\ScheduleItemFilter;
 use Fleetbase\Http\Filter\ScheduleTemplateFilter;
 use Fleetbase\Http\Filter\UserFilter;
 use Fleetbase\Models\Category;
+use Fleetbase\Models\ApiRequestLog;
 use Fleetbase\Models\Company;
+use Fleetbase\Models\Policy;
+use Fleetbase\Models\Role;
 use Fleetbase\Models\ScheduleException;
 use Fleetbase\Models\ScheduleItem;
 use Fleetbase\Models\ScheduleTemplate;
@@ -70,7 +76,10 @@ function concrete_filter_database(): Capsule
         'categories',
         'company_users',
         'companies',
+        'api_credentials',
+        'api_request_logs',
         'invites',
+        'policies',
         'roles',
         'schedule_exceptions',
         'schedule_items',
@@ -175,7 +184,52 @@ function concrete_filter_database(): Capsule
     });
 
     $schema->create('roles', function ($table) {
-        $table->increments('id');
+        $table->string('id')->primary();
+        $table->string('uuid')->nullable();
+        $table->string('company_uuid')->nullable();
+        $table->string('name')->nullable();
+        $table->string('guard_name')->nullable();
+        $table->string('service')->nullable();
+        $table->string('description')->nullable();
+        $table->softDeletes();
+        $table->timestamps();
+    });
+
+    $schema->create('policies', function ($table) {
+        $table->string('id')->primary();
+        $table->string('uuid')->nullable();
+        $table->string('company_uuid')->nullable();
+        $table->string('name')->nullable();
+        $table->string('guard_name')->nullable();
+        $table->string('service')->nullable();
+        $table->string('description')->nullable();
+        $table->softDeletes();
+        $table->timestamps();
+    });
+
+    $schema->create('api_credentials', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('public_id')->nullable();
+        $table->string('company_uuid')->nullable();
+        $table->string('name')->nullable();
+        $table->string('key')->nullable();
+        $table->timestamp('expires_at')->nullable();
+        $table->softDeletes();
+    });
+
+    $schema->create('api_request_logs', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('public_id')->nullable();
+        $table->string('company_uuid')->nullable();
+        $table->string('api_credential_uuid')->nullable();
+        $table->string('method')->nullable();
+        $table->string('path')->nullable();
+        $table->string('full_url')->nullable();
+        $table->string('content_type')->nullable();
+        $table->string('ip_address')->nullable();
+        $table->timestamp('created_at')->nullable();
+        $table->timestamp('updated_at')->nullable();
+        $table->softDeletes();
     });
 
     session()->flush();
@@ -294,6 +348,29 @@ test('company filter leaves admin company listing unscoped and applies searchabl
     expect($matches)->toBe(['company-2']);
 });
 
+test('role and policy filters include organization and fleetbase managed records unless type is explicit', function () {
+    $capsule = concrete_filter_database();
+    $capsule->getConnection('mysql')->table('roles')->insert([
+        ['id' => 'role-org', 'uuid' => 'role-org', 'company_uuid' => 'company-1', 'name' => 'Dispatcher', 'guard_name' => 'sanctum', 'service' => 'iam'],
+        ['id' => 'role-flb', 'uuid' => 'role-flb', 'company_uuid' => null, 'name' => 'Administrator', 'guard_name' => 'sanctum', 'service' => 'iam'],
+        ['id' => 'role-hidden', 'uuid' => 'role-hidden', 'company_uuid' => 'company-2', 'name' => 'Other', 'guard_name' => 'sanctum', 'service' => 'iam'],
+    ]);
+    $capsule->getConnection('mysql')->table('policies')->insert([
+        ['id' => 'policy-org', 'uuid' => 'policy-org', 'company_uuid' => 'company-1', 'name' => 'DispatchPolicy', 'guard_name' => 'sanctum', 'service' => 'iam'],
+        ['id' => 'policy-flb', 'uuid' => 'policy-flb', 'company_uuid' => null, 'name' => 'SystemPolicy', 'guard_name' => 'sanctum', 'service' => 'iam'],
+        ['id' => 'policy-hidden', 'uuid' => 'policy-hidden', 'company_uuid' => 'company-2', 'name' => 'OtherPolicy', 'guard_name' => 'sanctum', 'service' => 'iam'],
+    ]);
+
+    expect(concrete_filter_uuids(RoleFilter::class, Role::class, [], 'int/v1/roles'))->toBe(['role-flb', 'role-org'])
+        ->and(concrete_filter_uuids(RoleFilter::class, Role::class, ['type' => 'flb-managed'], 'int/v1/roles'))->toBe(['role-flb'])
+        ->and(concrete_filter_uuids(RoleFilter::class, Role::class, ['type' => 'org-managed'], 'int/v1/roles'))->toBe(['role-org'])
+        ->and(concrete_filter_uuids(RoleFilter::class, Role::class, ['query' => 'Dispatch'], 'int/v1/roles'))->toBe(['role-org'])
+        ->and(concrete_filter_uuids(PolicyFilter::class, Policy::class, [], 'int/v1/policies'))->toBe(['policy-flb', 'policy-org'])
+        ->and(concrete_filter_uuids(PolicyFilter::class, Policy::class, ['type' => 'flb-managed'], 'int/v1/policies'))->toBe(['policy-flb'])
+        ->and(concrete_filter_uuids(PolicyFilter::class, Policy::class, ['type' => 'org-managed'], 'int/v1/policies'))->toBe(['policy-org'])
+        ->and(concrete_filter_uuids(PolicyFilter::class, Policy::class, ['query' => 'System'], 'int/v1/policies'))->toBe(['policy-flb']);
+});
+
 test('user filter includes current company members and pending invite recipients', function () {
     $capsule = concrete_filter_database();
     $pdo     = $capsule->getConnection('mysql')->getPdo();
@@ -317,6 +394,25 @@ test('user filter includes current company members and pending invite recipients
         ->and(concrete_filter_uuids(UserFilter::class, User::class, ['is_not_admin' => '1'], 'int/v1/users'))->toBe(['user-invited', 'user-member'])
         ->and(concrete_filter_uuids(UserFilter::class, User::class, ['is_user' => '1'], 'int/v1/users'))->toBe(['user-invited', 'user-member'])
         ->and(concrete_filter_uuids(UserFilter::class, User::class, ['email' => 'invited'], 'int/v1/users'))->toBe(['user-invited']);
+});
+
+test('api request log filter scopes tenant logs by credential and date ranges', function () {
+    $capsule = concrete_filter_database();
+    $capsule->getConnection('mysql')->table('api_credentials')->insert([
+        ['uuid' => 'credential-1', 'public_id' => 'cred_public_1', 'company_uuid' => 'company-1', 'name' => 'Primary key', 'key' => 'pk_1'],
+        ['uuid' => 'credential-2', 'public_id' => 'cred_public_2', 'company_uuid' => 'company-2', 'name' => 'Other key', 'key' => 'pk_2'],
+    ]);
+    $capsule->getConnection('mysql')->table('api_request_logs')->insert([
+        ['uuid' => 'log-1', 'public_id' => 'req_1', 'company_uuid' => 'company-1', 'api_credential_uuid' => 'credential-1', 'method' => 'GET', 'path' => '/v1/orders', 'full_url' => 'https://api.test/v1/orders', 'created_at' => '2026-07-18 08:00:00', 'updated_at' => '2026-07-18 09:00:00'],
+        ['uuid' => 'log-2', 'public_id' => 'req_2', 'company_uuid' => 'company-1', 'api_credential_uuid' => 'credential-1', 'method' => 'POST', 'path' => '/v1/files', 'full_url' => 'https://api.test/v1/files', 'created_at' => '2026-07-19 08:00:00', 'updated_at' => '2026-07-19 09:00:00'],
+        ['uuid' => 'log-hidden', 'public_id' => 'req_hidden', 'company_uuid' => 'company-2', 'api_credential_uuid' => 'credential-2', 'method' => 'GET', 'path' => '/v1/orders', 'full_url' => 'https://api.test/v1/orders', 'created_at' => '2026-07-18 08:00:00', 'updated_at' => '2026-07-18 09:00:00'],
+    ]);
+
+    expect(concrete_filter_uuids(ApiRequestLogFilter::class, ApiRequestLog::class, [], 'int/v1/api-request-logs'))->toBe(['log-1', 'log-2'])
+        ->and(concrete_filter_uuids(ApiRequestLogFilter::class, ApiRequestLog::class, ['key' => 'cred_public_1'], 'int/v1/api-request-logs'))->toBe(['log-1', 'log-2'])
+        ->and(concrete_filter_uuids(ApiRequestLogFilter::class, ApiRequestLog::class, ['query' => 'files'], 'int/v1/api-request-logs'))->toBe(['log-2'])
+        ->and(concrete_filter_uuids(ApiRequestLogFilter::class, ApiRequestLog::class, ['created_at' => '2026-07-18,2026-07-18 23:59:59'], 'int/v1/api-request-logs'))->toBe(['log-1'])
+        ->and(concrete_filter_uuids(ApiRequestLogFilter::class, ApiRequestLog::class, ['updated_at' => '2026-07-19'], 'int/v1/api-request-logs'))->toBe(['log-2']);
 });
 
 test('category filter applies tenant core parent and list filters', function () {
