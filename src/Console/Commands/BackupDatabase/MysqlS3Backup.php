@@ -73,7 +73,7 @@ class MysqlS3Backup extends Command
                 $this->output->writeln("Running command: {$cmd}");
             }
 
-            $process = Process::fromShellCommandline($cmd);
+            $process = $this->makeProcess($cmd);
             $process->setTimeout(config('laravel-mysql-s3-backup.sql_timout'));
             $process->run();
 
@@ -83,7 +83,7 @@ class MysqlS3Backup extends Command
                 if ($this->output->isVerbose()) {
                     $this->output->writeln(
                         sprintf(
-                            'Unable to dump database for %s with a file name of %. Error: %s',
+                            'Unable to dump database for %s with a file name of %s. Error: %s',
                             now()->toDateString(),
                             $fileName,
                             $process->getErrorOutput()
@@ -100,7 +100,7 @@ class MysqlS3Backup extends Command
 
             // Upload to S3
             $s3config = config('laravel-mysql-s3-backup.s3');
-            $s3       = new S3Client($s3config);
+            $s3       = $this->makeS3Client($s3config);
 
             $bucket = config('laravel-mysql-s3-backup.s3.bucket');
             $key    = basename($fileName);
@@ -113,7 +113,7 @@ class MysqlS3Backup extends Command
                 $this->output->writeln(sprintf('Uploading %s to S3/%s', $key, $bucket));
             }
 
-            $uploader = new MultipartUploader(
+            $uploader = $this->makeMultipartUploader(
                 $s3,
                 $fileName,
                 [
@@ -142,7 +142,7 @@ class MysqlS3Backup extends Command
                     $this->output->writeln("Deleting local backup file {$fileName}");
                 }
 
-                unlink($fileName);
+                $this->deleteLocalFile($fileName);
             }
 
             if ($this->output->isVerbose()) {
@@ -154,8 +154,33 @@ class MysqlS3Backup extends Command
                     $this->output->writeln("Trimming {$bucket} have have only " . config('laravel-mysql-s3-backup.rolling_backup_days') . ' days of backups');
                 }
 
-                S3BackupTrimmer::make(config('laravel-mysql-s3-backup.rolling_backup_days'), $bucket)->run();
+                $this->makeBackupTrimmer(config('laravel-mysql-s3-backup.rolling_backup_days'), $bucket)->run();
             }
         }
+    }
+
+    protected function makeProcess(string $command)
+    {
+        return Process::fromShellCommandline($command);
+    }
+
+    protected function makeS3Client(array $config)
+    {
+        return new S3Client($config);
+    }
+
+    protected function makeMultipartUploader($s3, string $fileName, array $options)
+    {
+        return new MultipartUploader($s3, $fileName, $options);
+    }
+
+    protected function makeBackupTrimmer($days, $bucket): S3BackupTrimmer
+    {
+        return S3BackupTrimmer::make($days, $bucket);
+    }
+
+    protected function deleteLocalFile(string $fileName): void
+    {
+        unlink($fileName);
     }
 }

@@ -12,7 +12,7 @@ class S3BackupTrimmer
     public $bucket;
     public $when;
 
-    private function __construct($days, $bucket)
+    protected function __construct($days, $bucket)
     {
         $this->days   = $days;
         $this->bucket = $bucket;
@@ -27,7 +27,7 @@ class S3BackupTrimmer
     public function run()
     {
         $s3config = config('laravel-mysql-s3-backup.s3');
-        $s3       = new S3Client($s3config);
+        $s3       = $this->makeS3Client($s3config);
 
         with($s3->listObjects(
             [
@@ -81,5 +81,10 @@ class S3BackupTrimmer
                 }
             }
         );
+    }
+
+    protected function makeS3Client(array $config)
+    {
+        return new S3Client($config);
     }
 }
