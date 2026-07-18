@@ -7,7 +7,16 @@ use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Filesystem\FilesystemManager;
 use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\Facades\Storage;
+use Kreait\Firebase\Contract\Messaging;
+use Kreait\Firebase\Messaging\AppInstance;
+use Kreait\Firebase\Messaging\Message;
+use Kreait\Firebase\Messaging\Messages;
+use Kreait\Firebase\Messaging\MulticastSendReport;
+use Kreait\Firebase\Messaging\RegistrationToken;
+use Kreait\Firebase\Messaging\RegistrationTokens;
+use Kreait\Firebase\Messaging\Topic;
 use NotificationChannels\Apn\ApnMessage;
+use NotificationChannels\Fcm\FcmMessage;
 use Pushok\Client as PushOkClient;
 
 function push_notification_file_database(): Capsule
@@ -81,6 +90,78 @@ function push_notification_reflect_property(object $object, string $property): m
     $reflectionProperty->setAccessible(true);
 
     return $reflectionProperty->getValue($object);
+}
+
+class PushNotificationMessagingFake implements Messaging
+{
+    public function send(Message|array $message, bool $validateOnly = false): array
+    {
+        return [];
+    }
+
+    public function sendMulticast(Message|array $message, RegistrationTokens|RegistrationToken|array|string $registrationTokens, bool $validateOnly = false): MulticastSendReport
+    {
+        throw new BadMethodCallException('sendMulticast should not be called by this test.');
+    }
+
+    public function sendAll(array|Messages $messages, bool $validateOnly = false): MulticastSendReport
+    {
+        throw new BadMethodCallException('sendAll should not be called by this test.');
+    }
+
+    public function validate(Message|array $message): array
+    {
+        return [];
+    }
+
+    public function validateRegistrationTokens(RegistrationTokens|RegistrationToken|array|string $registrationTokenOrTokens): array
+    {
+        return [
+            'valid'   => [],
+            'unknown' => [],
+            'invalid' => [],
+        ];
+    }
+
+    public function subscribeToTopic(string|Topic $topic, RegistrationTokens|RegistrationToken|array|string $registrationTokenOrTokens): array
+    {
+        return [];
+    }
+
+    public function subscribeToTopics(iterable $topics, RegistrationTokens|RegistrationToken|array|string $registrationTokenOrTokens): array
+    {
+        return [];
+    }
+
+    public function unsubscribeFromTopic(string|Topic $topic, RegistrationTokens|RegistrationToken|array|string $registrationTokenOrTokens): array
+    {
+        return [];
+    }
+
+    public function unsubscribeFromTopics(array $topics, RegistrationTokens|RegistrationToken|array|string $registrationTokenOrTokens): array
+    {
+        return [];
+    }
+
+    public function unsubscribeFromAllTopics(RegistrationTokens|RegistrationToken|array|string $registrationTokenOrTokens): array
+    {
+        return [];
+    }
+
+    public function getAppInstance(RegistrationToken|string $registrationToken): AppInstance
+    {
+        throw new BadMethodCallException('getAppInstance should not be called by this test.');
+    }
+}
+
+class PushNotificationFcmTestDouble extends PushNotification
+{
+    public static Messaging $messaging;
+
+    protected static function getFcmMessagingClient(): Messaging
+    {
+        return static::$messaging;
+    }
 }
 
 afterEach(function () {
@@ -216,4 +297,61 @@ it('creates apn messages with title body custom data action and configured clien
         ])
         ->and($message->client)->toBeInstanceOf(PushOkClient::class)
         ->and(push_notification_reflect_property($message->client, 'isProductionEnv'))->toBeTrue();
+});
+
+it('creates fcm messages with notification data custom options and configured client', function () {
+    $messaging                                = new PushNotificationMessagingFake();
+    PushNotificationFcmTestDouble::$messaging = $messaging;
+    bind_test_container([
+        'firebase.projects.app' => [
+            'project_id'          => 'fleetbase-test',
+            'credentials'         => ['client_email' => 'firebase@test.invalid'],
+            'credentials_file'    => '/tmp/firebase.json',
+            'credentials_file_id' => 'not-a-file-uuid',
+        ],
+    ]);
+
+    $message = PushNotificationFcmTestDouble::createFcmMessage('Dispatch assigned', 'Order ABC is ready', [
+        'order_uuid' => 'order-1',
+        'screen'     => 'orders.show',
+    ]);
+
+    expect($message)->toBeInstanceOf(FcmMessage::class)
+        ->and($message->notification->title)->toBe('Dispatch assigned')
+        ->and($message->notification->body)->toBe('Order ABC is ready')
+        ->and($message->data)->toBe([
+            'order_uuid' => 'order-1',
+            'screen'     => 'orders.show',
+        ])
+        ->and($message->client)->toBe($messaging)
+        ->and($message->toArray())->toMatchArray([
+            'notification' => [
+                'title' => 'Dispatch assigned',
+                'body'  => 'Order ABC is ready',
+            ],
+            'data' => [
+                'order_uuid' => 'order-1',
+                'screen'     => 'orders.show',
+            ],
+            'android' => [
+                'notification' => [
+                    'color' => '#4391EA',
+                    'sound' => 'default',
+                ],
+                'fcm_options' => [
+                    'analytics_label' => 'analytics',
+                ],
+            ],
+            'apns' => [
+                'payload' => [
+                    'aps' => [
+                        'sound' => 'default',
+                    ],
+                ],
+                'fcm_options' => [
+                    'analytics_label' => 'analytics',
+                ],
+            ],
+        ])
+        ->and(config('firebase.projects.app'))->not->toHaveKey('credentials_file');
 });

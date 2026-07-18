@@ -41,12 +41,21 @@ function derivedClassCoverageMetrics(SimpleXMLElement $project): array
 {
     $classes        = 0;
     $coveredClasses = 0;
+    $touchedClasses = 0;
 
     foreach ($project->xpath('.//class') ?: [] as $class) {
-        $classes++;
-
         $statements        = intMetric($class, 'statements');
         $coveredStatements = intMetric($class, 'coveredstatements');
+
+        if ($statements === 0) {
+            continue;
+        }
+
+        $classes++;
+
+        if ($coveredStatements > 0) {
+            $touchedClasses++;
+        }
 
         if ($statements > 0 && $coveredStatements === $statements) {
             $coveredClasses++;
@@ -56,6 +65,7 @@ function derivedClassCoverageMetrics(SimpleXMLElement $project): array
     return [
         'classes' => $classes,
         'covered' => $coveredClasses,
+        'touched' => $touchedClasses,
     ];
 }
 
@@ -69,11 +79,13 @@ $coveredMethods    = (int) ($metrics['coveredmethods'] ?? 0);
 $classes           = (int) ($metrics['classes'] ?? 0);
 $coveredClasses    = (int) ($metrics['coveredclasses'] ?? 0);
 $classCoverageNote = '';
+$touchedClasses    = null;
 
 if (!hasMetric($project, 'coveredclasses')) {
     $derivedClasses      = derivedClassCoverageMetrics($project);
     $classes             = $classes ?: $derivedClasses['classes'];
     $coveredClasses      = $derivedClasses['covered'];
+    $touchedClasses      = $derivedClasses['touched'];
     $classCoverageNote   = ' derived from fully covered class statement metrics';
 }
 
@@ -138,6 +150,9 @@ usort($directoryRows, function (array $a, array $b): int {
 printf("Line coverage: %.2f%% (%d/%d statements)\n", coveragePercent($coveredStatements, $statements), $coveredStatements, $statements);
 printf("Method coverage: %.2f%% (%d/%d methods)\n", coveragePercent($coveredMethods, $methods), $coveredMethods, $methods);
 printf("Class coverage: %.2f%% (%d/%d classes%s)\n", coveragePercent($coveredClasses, $classes), $coveredClasses, $classes, $classCoverageNote);
+if ($touchedClasses !== null) {
+    printf("Touched class coverage: %.2f%% (%d/%d classes executed at least once)\n", coveragePercent($touchedClasses, $classes), $touchedClasses, $classes);
+}
 
 echo "\nLowest covered directories:\n";
 foreach (array_slice($directoryRows, 0, 10) as $row) {
