@@ -41,6 +41,57 @@ class TemplateRenderServiceOrder extends Model
     }
 }
 
+class TemplateRenderServiceUser extends Model
+{
+    public function toArray(): array
+    {
+        return [
+            'name'  => 'Render User',
+            'email' => 'render@example.test',
+        ];
+    }
+}
+
+class TemplateRenderServiceLineItem extends Model
+{
+    protected $guarded = [];
+
+    public function __construct(array $attributes = [])
+    {
+        parent::__construct($attributes);
+    }
+
+    public function toArray(): array
+    {
+        return $this->attributesToArray();
+    }
+}
+
+class TemplateRenderServiceQueryFake
+{
+    public function __construct(public string $variable_name, private Collection $results)
+    {
+    }
+
+    public function execute(): Collection
+    {
+        return $this->results;
+    }
+}
+
+class TemplateRenderServiceArithmeticFailure extends TemplateRenderService
+{
+    public function evaluateForTest(string $expression): string
+    {
+        return $this->evaluateArithmetic($expression);
+    }
+
+    protected function parseExpression(string $expr): float
+    {
+        throw new RuntimeException('parser unavailable');
+    }
+}
+
 function template_render_service_container(): void
 {
     $container = bind_test_container([
@@ -95,6 +146,31 @@ test('template render service registers context schemas and query model allowlis
         ->and(TemplateRenderService::getTemplateQueryModels())->toContain(TemplateRenderServiceOrder::class)
         ->and(TemplateRenderService::isTemplateQueryModelAllowed(TemplateRenderServiceOrder::class))->toBeTrue()
         ->and(TemplateRenderService::isTemplateQueryModelAllowed(Template::class))->toBeFalse();
+});
+
+test('template render service filters invalid query model config and honors global query allowlists', function () {
+    template_render_service_container();
+
+    app('config')->set('fleetbase.template_query_models', [
+        TemplateRenderServiceOrder::class,
+        Template::class,
+        'NotAClass',
+        42,
+        TemplateRenderServiceOrder::class,
+    ]);
+    app('config')->set('fleetbase.template_global_query_models', [
+        TemplateRenderServiceOrder::class,
+    ]);
+
+    $models = TemplateRenderService::getTemplateQueryModels();
+
+    expect($models)->toContain(TemplateRenderServiceOrder::class)
+        ->and($models)->not->toContain('NotAClass')
+        ->and($models)->not->toContain(42)
+        ->and(array_count_values($models)[TemplateRenderServiceOrder::class])->toBe(1)
+        ->and(TemplateRenderService::isTemplateQueryModelAllowed(null))->toBeFalse()
+        ->and(TemplateRenderService::isTemplateQueryModelAllowed(TemplateRenderServiceOrder::class))->toBeTrue()
+        ->and(TemplateRenderService::isTemplateQueryModelGloballyQueryable(TemplateRenderServiceUser::class))->toBeFalse();
 });
 
 test('template render service renders variables formulas loops tables and document wrapper', function () {
@@ -153,4 +229,130 @@ test('template render service renders variables formulas loops tables and docume
         ->and($html)->toContain('<td>25</td>');
 
     Carbon::setTestNow();
+});
+
+test('template render service renders alternate elements static tables and defensive template branches', function () {
+    template_render_service_container();
+
+    $template = template_render_service_template([
+        [
+            'type'     => 'image',
+            'x'        => 5,
+            'y'        => 6,
+            'width'    => '50%',
+            'height'   => 'auto',
+            'rotation' => 15,
+            'src'      => 'https://fleetbase.test/logo.png',
+            'styles'   => ['backgroundColor' => '', 'borderColor' => null],
+        ],
+        [
+            'type'   => 'line',
+            'x'      => 10,
+            'y'      => 15,
+            'width'  => 140,
+            'styles' => ['borderTop' => '2px dashed #333'],
+        ],
+        [
+            'type'   => 'rectangle',
+            'x'      => 20,
+            'y'      => 25,
+            'width'  => 30,
+            'height' => 40,
+        ],
+        [
+            'type'  => 'qr_code',
+            'x'     => 30,
+            'y'     => 35,
+            'value' => 'order:T-001',
+        ],
+        [
+            'type'  => 'barcode',
+            'x'     => 40,
+            'y'     => 45,
+            'value' => 'B-001',
+        ],
+        [
+            'type'    => 'unknown_widget',
+            'x'       => 50,
+            'y'       => 55,
+            'content' => 'Fallback {missing.value}',
+        ],
+        [
+            'type'    => 'paragraph',
+            'x'       => 60,
+            'y'       => 65,
+            'content' => 'Empty loop:{{#each order.missing_items}}should disappear{{/each}}',
+        ],
+        [
+            'type'    => 'paragraph',
+            'x'       => 70,
+            'y'       => 75,
+            'content' => 'Array variable suppressed: {order.line_items}',
+        ],
+        [
+            'type'    => 'paragraph',
+            'x'       => 80,
+            'y'       => 85,
+            'content' => 'Fallback arithmetic: [{ (10 - 3) / 0 + -2 + abc }]',
+        ],
+        [
+            'type'    => 'table',
+            'x'       => 10,
+            'y'       => 90,
+            'width'   => 180,
+            'columns' => [
+                ['label' => 'Item', 'key' => 'name'],
+                ['label' => 'Amount', 'key' => 'amount'],
+            ],
+            'rows' => [
+                ['name' => 'Accessorial', 'amount' => 15],
+                ['name' => 'Fuel', 'amount' => 35],
+            ],
+        ],
+    ]);
+
+    $html = (new TemplateRenderService())->renderToHtml($template, new TemplateRenderServiceOrder());
+
+    expect($html)->toContain('<img src="https://fleetbase.test/logo.png"')
+        ->and($html)->toContain('width: 50%;')
+        ->and($html)->toContain('transform: rotate(15deg);')
+        ->and($html)->toContain('<hr style="position: absolute; left: 10px; top: 15px; width: 140px; border-top: 2px dashed #333;"')
+        ->and($html)->toContain('data-qr="order:T-001"')
+        ->and($html)->toContain('data-barcode="B-001"')
+        ->and($html)->toContain('Fallback ')
+        ->and($html)->toContain('Empty loop:')
+        ->and($html)->not->toContain('should disappear')
+        ->and($html)->toContain('Array variable suppressed: ')
+        ->and($html)->toContain('Fallback arithmetic: -2')
+        ->and($html)->toContain('<th>Item</th>')
+        ->and($html)->toContain('<td>Accessorial</td>')
+        ->and($html)->toContain('<td>35</td>');
+});
+
+test('template render service guesses generic subject keys and renders query result collections', function () {
+    template_render_service_container();
+
+    $template = template_render_service_template([
+        [
+            'type'    => 'paragraph',
+            'content' => '{template_render_service_order.number}|{{#each query_items}}{this.name}:{this.amount};{{/each}}',
+        ],
+    ]);
+    $template->context_type = 'generic';
+    $template->setRelation('queries', new Collection([
+        new TemplateRenderServiceQueryFake('query_items', new Collection([
+            new TemplateRenderServiceLineItem(['name' => 'Query Freight', 'amount' => 75]),
+            new TemplateRenderServiceLineItem(['name' => 'Query Handling', 'amount' => 25]),
+        ])),
+    ]));
+
+    $html = (new TemplateRenderService())->renderToHtml($template, new TemplateRenderServiceOrder());
+
+    expect($html)->toContain('T-001|Query Freight:75;Query Handling:25;');
+});
+
+test('template render service returns formula errors when arithmetic fallback parsing fails', function () {
+    template_render_service_container();
+
+    expect((new TemplateRenderServiceArithmeticFailure())->evaluateForTest('1 + 2'))->toBe('#ERR');
 });
