@@ -86,9 +86,15 @@ class UserControllerRouteStub
     {
         $action = [
             'controller' => UserController::class . '@' . $this->method,
+            'namespace'  => 'Fleetbase\\Http\\Controllers\\Internal\\v1',
         ];
 
         return $key ? $action[$key] ?? null : $action;
+    }
+
+    public function uri(): string
+    {
+        return 'int/v1/users';
     }
 
     public function getActionMethod(): string
@@ -276,6 +282,21 @@ function user_controller_database(): Capsule
     $schema->create('role_has_permissions', function ($table) {
         $table->string('permission_id');
         $table->string('role_id');
+    });
+    $schema->create('policies', function ($table) {
+        $table->string('id')->primary();
+        $table->string('company_uuid')->nullable();
+        $table->string('name');
+        $table->string('guard_name')->default('sanctum');
+        $table->string('service')->nullable();
+        $table->text('description')->nullable();
+        $table->timestamps();
+        $table->softDeletes();
+    });
+    $schema->create('model_has_policies', function ($table) {
+        $table->string('policy_id');
+        $table->string('model_type');
+        $table->string('model_uuid');
     });
 
     $now = '2026-07-18 10:00:00';
@@ -493,4 +514,83 @@ test('user controller rejects email change requests without an authorized actor 
         ->and($sameManagedEmail->getData(true))->toBe(['errors' => ['The new email address must be different from the current email address.']])
         ->and($missingTarget->getStatusCode())->toBe(404)
         ->and($missingTarget->getData(true))->toBe(['errors' => ['User not found to change email for.']]);
+});
+
+test('user controller current endpoint stores and reuses cached user response payloads', function () {
+    user_controller_database();
+    $user = user_controller_user('owner-1');
+
+    $freshResponse  = user_controller()->current(user_controller_request('GET', [], $user, 'current'));
+    $freshPayload   = $freshResponse->getData(true);
+    $cachedResponse = user_controller()->current(user_controller_request('GET', [], $user, 'current'));
+    $cachedPayload  = $cachedResponse->getData(true);
+
+    expect($freshResponse->getStatusCode())->toBe(200)
+        ->and($freshResponse->headers->get('X-Cache-Hit'))->toBe('false')
+        ->and($freshPayload['user']['uuid'])->toBe('owner-1')
+        ->and($freshPayload['user']['email'])->toBe('owner@example.test')
+        ->and($freshPayload['user']['session_status'])->toBe('active')
+        ->and($freshResponse->getEtag())->toBe($cachedResponse->getEtag())
+        ->and($cachedResponse->headers->get('X-Cache-Hit'))->toBe('true')
+        ->and($cachedPayload)->toBe($freshPayload);
+});
+
+test('user controller reads writes and returns current user two factor settings', function () {
+    user_controller_database();
+    $user = user_controller_user('owner-1');
+
+    $initial = user_controller()->getTwoFactorSettings(user_controller_request('GET', [], $user, 'getTwoFactorSettings'));
+    $saved   = user_controller()->saveTwoFactorSettings(user_controller_request('POST', [
+        'twoFaSettings' => [
+            'enabled' => true,
+            'method'  => 'email',
+        ],
+    ], $user, 'saveTwoFactorSettings'));
+    $updated = user_controller()->getTwoFactorSettings(user_controller_request('GET', [], $user, 'getTwoFactorSettings'));
+
+    expect($initial->getStatusCode())->toBe(200)
+        ->and($initial->getData(true))->toBe([
+            'enabled' => false,
+            'method'  => 'email',
+        ])
+        ->and($saved->getData(true))->toBe([
+            'enabled' => true,
+            'method'  => 'email',
+        ])
+        ->and($updated->getData(true))->toBe([
+            'enabled' => true,
+            'method'  => 'email',
+        ]);
+});
+
+test('user controller current password and permission endpoints expose scoped response contracts', function () {
+    $capsule = user_controller_database();
+    $user    = user_controller_user('owner-1');
+
+    $capsule->getConnection('mysql')->table('permissions')->insert([
+        'id'          => 'permission-manage-users',
+        'name'        => 'iam manage users',
+        'guard_name'  => 'sanctum',
+        'description' => 'Manage users',
+        'created_at'  => '2026-07-18 10:00:00',
+        'updated_at'  => '2026-07-18 10:00:00',
+    ]);
+    $capsule->getConnection('mysql')->table('model_has_permissions')->insert([
+        'permission_id' => 'permission-manage-users',
+        'model_type'    => Fleetbase\Models\CompanyUser::class,
+        'model_uuid'    => 'pivot-owner-1',
+    ]);
+
+    $setPassword = user_controller()->setCurrentUserPassword(user_controller_request('POST', [
+        'password' => 'current-new-password',
+    ], $user, 'setCurrentUserPassword', UpdatePasswordRequest::class));
+    $permissions = user_controller()->getUserPermissions(user_controller_request('GET', [], $user, 'getUserPermissions'));
+
+    expect($setPassword->getStatusCode())->toBe(200)
+        ->and($setPassword->getData(true))->toBe(['status' => 'ok'])
+        ->and(password_verify('current-new-password', $capsule->getConnection('mysql')->table('users')->where('uuid', 'owner-1')->value('password')))->toBeTrue()
+        ->and($permissions->getStatusCode())->toBe(200)
+        ->and($permissions->getData(true)['permissions'])->toHaveCount(1)
+        ->and($permissions->getData(true)['permissions'][0]['id'])->toBe('permission-manage-users')
+        ->and($permissions->getData(true)['permissions'][0]['name'])->toBe('iam manage users');
 });
