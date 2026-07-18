@@ -128,9 +128,11 @@ namespace {
     use Fleetbase\Http\Requests\ExportReportRequest;
     use Fleetbase\Http\Requests\ExportRequest;
     use Fleetbase\Http\Requests\Internal\ConfirmCurrentPassword;
+    use Fleetbase\Http\Requests\Internal\ChangeCurrentUserEmailRequest;
     use Fleetbase\Http\Requests\Internal\CreateCustomFieldRequest;
     use Fleetbase\Http\Requests\Internal\DownloadFileRequest;
     use Fleetbase\Http\Requests\Internal\ResetPasswordRequest;
+    use Fleetbase\Http\Requests\Internal\UpdatePasswordRequest;
     use Fleetbase\Http\Requests\Internal\UploadBase64FileRequest;
     use Fleetbase\Http\Requests\Internal\UploadFileRequest;
     use Fleetbase\Http\Requests\Internal\ValidatePasswordRequest;
@@ -428,6 +430,73 @@ namespace {
             ->and($resetRules['password_confirmation'])->toBe(['required', 'string'])
             ->and((new ResetPasswordRequest())->messages()['code'])->toBe('Invalid password reset request!')
             ->and((new ResetPasswordRequest())->messages()['password.required'])->toBe('You must enter a password.');
+    });
+
+    it('keeps current user credential change request contracts strict', function () {
+        $user = new class {
+            public string $uuid = 'user-1';
+            public array $checked = [];
+
+            public function checkPassword(string $password): bool
+            {
+                $this->checked[] = $password;
+
+                return $password === 'CurrentPass1!';
+            }
+        };
+
+        $emailRequest = ChangeCurrentUserEmailRequest::create('/int/v1/auth/change-email', 'POST', [
+            'email'    => 'new@example.test',
+            'password' => 'wrong',
+        ]);
+        $emailRequest->setUserResolver(fn () => $user);
+
+        $validator = new class {
+            public array $callbacks = [];
+            public array $errors = [];
+
+            public function after(callable $callback): void
+            {
+                $this->callbacks[] = $callback;
+            }
+
+            public function errors(): object
+            {
+                return new class($this) {
+                    public function __construct(private object $validator)
+                    {
+                    }
+
+                    public function add(string $key, string $message): void
+                    {
+                        $this->validator->errors[$key][] = $message;
+                    }
+                };
+            }
+        };
+
+        $emailRequest->withValidator($validator);
+        $validator->callbacks[0]($validator);
+
+        $emailRules     = $emailRequest->rules();
+        $passwordRules  = (new UpdatePasswordRequest())->rules();
+        $emailMessages  = $emailRequest->messages();
+        $passwordErrors = (new UpdatePasswordRequest())->messages();
+
+        expect($emailRequest->authorize())->toBe($user)
+            ->and(request_rule_strings($emailRules['email']))->toContain('required', 'email')
+            ->and(request_rule_strings($emailRules['email']))->toContain('unique:users,email,user-1,uuid,deleted_at,"NULL"')
+            ->and($emailRules['password'])->toBe(['required', 'string'])
+            ->and($validator->errors['password'][0])->toBe('The current password provided is invalid.')
+            ->and($user->checked)->toBe(['wrong'])
+            ->and($emailMessages['email.required'])->toBe('A new email address is required.')
+            ->and($emailMessages['email.unique'])->toBe('An account with this email address already exists.')
+            ->and((new ChangeCurrentUserEmailRequest())->authorize())->toBeNull()
+            ->and((new UpdatePasswordRequest())->authorize())->toBeNull()
+            ->and(request_rule_strings($passwordRules['password']))->toContain('required', 'confirmed', 'string')
+            ->and($passwordRules['password_confirmation'])->toBe(['required', 'string'])
+            ->and($passwordErrors['password.symbols'])->toBe('Password must contain at least one symbol.')
+            ->and($passwordErrors['password.uncompromised'])->toContain('data breach');
     });
 
     it('keeps internal custom field request authorization and rules explicit', function () {

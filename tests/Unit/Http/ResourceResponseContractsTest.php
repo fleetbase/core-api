@@ -1,11 +1,15 @@
 <?php
 
 use Fleetbase\Http\Resources\Category as CategoryResource;
+use Fleetbase\Http\Resources\Json\FleetbasePaginatedResourceResponse;
+use Fleetbase\Http\Resources\Policy as PolicyResource;
 use Fleetbase\Http\Resources\Role as RoleResource;
+use Fleetbase\Http\Resources\Template as TemplateResource;
 use Fleetbase\Models\Category;
 use Fleetbase\Models\Permission;
 use Fleetbase\Models\Policy;
 use Fleetbase\Models\Role;
+use Fleetbase\Models\Template as TemplateModel;
 use Illuminate\Container\Container;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Http\Request;
@@ -131,6 +135,40 @@ function role_resource_model(array $attributes = []): Role
     return $role;
 }
 
+function template_resource_model(array $attributes = []): TemplateModel
+{
+    $template = new TemplateModel();
+    $template->setRawAttributes(array_merge([
+        'id' => 77,
+        'uuid' => 'template-uuid',
+        'public_id' => 'template_public',
+        'company_uuid' => 'company-1',
+        'created_by_uuid' => 'user-1',
+        'updated_by_uuid' => 'user-2',
+        'background_image_uuid' => 'file-1',
+        'name' => 'Invoice Template',
+        'description' => 'Printable invoice template',
+        'context_type' => 'invoice',
+        'unit' => 'px',
+        'width' => 800,
+        'height' => 600,
+        'orientation' => 'portrait',
+        'margins' => '{"top":12,"right":16,"bottom":12,"left":16}',
+        'background_color' => '#ffffff',
+        'content' => '[{"type":"text","value":"Invoice"}]',
+        'element_schemas' => '[{"key":"customer.name","type":"string"}]',
+        'is_default' => true,
+        'is_system' => false,
+        'is_public' => true,
+        'updated_at' => Carbon::parse('2026-07-18 00:00:00'),
+        'created_at' => Carbon::parse('2026-07-17 00:00:00'),
+    ], $attributes), true);
+    $template->id = 77;
+    $template->setRelation('queries', collect());
+
+    return $template;
+}
+
 afterEach(function () {
     Container::setInstance(new FleetbaseTestContainer());
     Facade::clearResolvedInstances();
@@ -252,4 +290,107 @@ test('role resource identifies fleetbase managed roles as immutable and non dele
         ->and($payload['type'])->toBe('FLB Managed')
         ->and($payload['is_mutable'])->toBeFalse()
         ->and($payload['is_deletable'])->toBeFalse();
+});
+
+test('policy resource serializes permissions and mutability metadata directly', function () {
+    resource_contract_container();
+
+    $payload = (new PolicyResource(policy_resource_model([
+        'id' => 'policy-direct',
+        'company_uuid' => null,
+    ])))->resolve(resource_contract_request('/int/v1/policies/policy-direct'));
+
+    expect($payload['id'])->toBe('policy-direct')
+        ->and($payload['company_uuid'])->toBeNull()
+        ->and($payload['name'])->toBe('DispatchPolicy')
+        ->and($payload['guard_name'])->toBe('sanctum')
+        ->and($payload['type'])->toBe('FLB Managed')
+        ->and($payload['is_mutable'])->toBeFalse()
+        ->and($payload['is_deletable'])->toBeFalse()
+        ->and($payload['permissions'])->toHaveCount(1)
+        ->and($payload['permissions'][0])->toMatchArray([
+            'id' => 'permission-policy',
+            'name' => 'iam policy permission',
+            'guard_name' => 'sanctum',
+            'description' => 'Can view role',
+            'service' => 'iam',
+        ]);
+});
+
+test('template resource switches internal identifiers for public response shape', function () {
+    resource_contract_container();
+
+    $template = template_resource_model();
+
+    $internal = (new TemplateResource($template))->resolve(resource_contract_request('/int/v1/templates/template_public'));
+    $public   = (new TemplateResource($template))->resolve(resource_contract_request('/v1/templates/template_public'));
+
+    expect($internal['id'])->toBe(77)
+        ->and($internal['uuid'])->toBe('template-uuid')
+        ->and($internal['public_id'])->toBe('template_public')
+        ->and($internal['company_uuid'])->toBe('company-1')
+        ->and($internal['created_by_uuid'])->toBe('user-1')
+        ->and($internal['background_image_uuid'])->toBe('file-1')
+        ->and($internal['name'])->toBe('Invoice Template')
+        ->and($internal['margins'])->toBe(['top' => 12, 'right' => 16, 'bottom' => 12, 'left' => 16])
+        ->and($internal['content'])->toBe([['type' => 'text', 'value' => 'Invoice']])
+        ->and($internal['element_schemas'])->toBe([['key' => 'customer.name', 'type' => 'string']])
+        ->and($internal['queries'])->toBeInstanceOf(Fleetbase\Http\Resources\FleetbaseResourceCollection::class)
+        ->and($internal['queries']->collection->isEmpty())->toBeTrue()
+        ->and($internal['is_default'])->toBeTrue()
+        ->and($public['id'])->toBe('template_public')
+        ->and($public)->not->toHaveKeys(['uuid', 'public_id', 'company_uuid', 'created_by_uuid', 'updated_by_uuid', 'background_image_uuid'])
+        ->and($public['name'])->toBe('Invoice Template')
+        ->and($public['queries'])->toBeInstanceOf(Fleetbase\Http\Resources\FleetbaseResourceCollection::class)
+        ->and($public['queries']->collection->isEmpty())->toBeTrue();
+});
+
+test('paginated resource response keeps fleetbase pagination metadata compact with timing', function () {
+    resource_contract_container();
+
+    $request = resource_contract_request('/int/v1/resources');
+    $request->attributes->set('request_start_time', microtime(true) - 0.042);
+
+    $resource = new class {
+        public object $resource;
+
+        public function __construct()
+        {
+            $this->resource = new class {
+                public function toArray(): array
+                {
+                    return [
+                        'current_page' => 2,
+                        'data' => [['id' => 'one']],
+                        'first_page_url' => 'https://fleetbase.test/resources?page=1',
+                        'from' => 11,
+                        'last_page' => 4,
+                        'last_page_url' => 'https://fleetbase.test/resources?page=4',
+                        'next_page_url' => 'https://fleetbase.test/resources?page=3',
+                        'path' => 'https://fleetbase.test/resources',
+                        'per_page' => 10,
+                        'prev_page_url' => 'https://fleetbase.test/resources?page=1',
+                        'to' => 20,
+                        'total' => 35,
+                    ];
+                }
+            };
+        }
+    };
+
+    $response = new FleetbasePaginatedResourceResponse($resource);
+    $method   = new ReflectionMethod($response, 'paginationInformation');
+    $method->setAccessible(true);
+
+    $pagination = $method->invoke($response, $request);
+
+    expect($pagination)->toHaveKey('meta')
+        ->and($pagination)->not->toHaveKey('links')
+        ->and($pagination['meta']['total'])->toBe(35)
+        ->and($pagination['meta']['per_page'])->toBe(10)
+        ->and($pagination['meta']['current_page'])->toBe(2)
+        ->and($pagination['meta']['last_page'])->toBe(4)
+        ->and($pagination['meta']['from'])->toBe(11)
+        ->and($pagination['meta']['to'])->toBe(20)
+        ->and($pagination['meta']['time'])->toBeGreaterThanOrEqual(0);
 });
