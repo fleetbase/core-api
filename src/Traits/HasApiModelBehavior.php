@@ -1201,15 +1201,17 @@ trait HasApiModelBehavior
             ? $this->qualifyColumn($column_name)
             : $column_name;
 
-        if ($op_key == '_in') {
+        $normalizedOperator = strtolower($op_key);
+
+        if ($normalizedOperator == '_in') {
             $builder->whereIn($column_name, explode(',', $value));
-        } elseif ($op_key == strtolower('_notIn')) {
+        } elseif ($normalizedOperator == strtolower('_notIn')) {
             $builder->whereNotIn($column_name, explode(',', $value));
-        } elseif ($op_key == strtolower('_isNull')) {
+        } elseif ($normalizedOperator == strtolower('_isNull')) {
             $builder->whereNull($column_name);
-        } elseif ($op_key == strtolower('_isNotNull')) {
+        } elseif ($normalizedOperator == strtolower('_isNotNull')) {
             $builder->whereNotNull($column_name);
-        } elseif ($op_key == '_like') {
+        } elseif ($normalizedOperator == '_like') {
             $builder->where($column_name, 'LIKE', "{$value}%");
         } else {
             $builder->where($column_name, $op_type, $value);

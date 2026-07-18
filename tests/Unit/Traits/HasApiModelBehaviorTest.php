@@ -141,6 +141,39 @@ class HasApiModelBehaviorSessionAgnosticRecord extends HasApiModelBehaviorRecord
     protected $sessionAgnosticColumns = ['company_uuid'];
 }
 
+class HasApiModelBehaviorDefaultSearchRecord extends HasApiModelBehaviorRecord
+{
+    protected $searchableColumns = [];
+}
+
+class HasApiModelBehaviorOptionRecord extends HasApiModelBehaviorRecord
+{
+    protected $option_key = 'uuid';
+
+    protected $option_label = 'name';
+}
+
+class HasApiModelBehaviorSnakeRelationRecord extends Model
+{
+    use HasApiModelBehavior;
+
+    protected $table = 'api_model_behavior_records';
+
+    protected $guarded = [];
+
+    protected $fillable = [
+        'uuid',
+        'public_id',
+        'company_uuid',
+        'name',
+    ];
+
+    public function child_items()
+    {
+        return $this->hasMany(HasApiModelBehaviorChild::class, 'record_uuid', 'uuid');
+    }
+}
+
 class HasApiModelBehaviorChild extends Model
 {
     protected $table = 'api_model_behavior_children';
@@ -494,4 +527,116 @@ test('api model behavior validates update parameters and find record scoping con
         ->and($found->uuid)->toBe('record-1')
         ->and($safeMissing)->toBeInstanceOf(Illuminate\Database\Eloquent\ModelNotFoundException::class)
         ->and($safeMissing->getModel())->toBe(HasApiModelBehaviorRecord::class);
+});
+
+test('api model behavior exposes default searchable fields options and no-op query branches', function () {
+    $capsule = has_api_model_behavior_database();
+    has_api_model_behavior_seed_records($capsule);
+    $capsule->getConnection('mysql')->table('api_model_behavior_records')->insert([
+        [
+            'uuid'            => 'record-blank',
+            'public_id'       => 'record_blank',
+            'company_uuid'    => 'company-a',
+            'user_uuid'       => null,
+            'created_by_uuid' => null,
+            'updated_by_uuid' => null,
+            'name'            => null,
+            'status'          => null,
+            'amount'          => 0,
+            'slug'            => null,
+            'deleted_at'      => null,
+            'created_at'      => '2026-07-18 09:00:00',
+            'updated_at'      => '2026-07-18 09:00:00',
+        ],
+    ]);
+
+    $defaultSearch = new HasApiModelBehaviorDefaultSearchRecord();
+    $model         = new HasApiModelBehaviorRecord();
+
+    $plainBuilder = $model->searchBuilder(has_api_model_behavior_request());
+    $sameBuilder  = $model->withRelationships(has_api_model_behavior_request(), HasApiModelBehaviorRecord::query());
+    $countBuilder = $model->withCounts(has_api_model_behavior_request(), HasApiModelBehaviorRecord::query());
+    $sortBuilder  = $model->applySorts(has_api_model_behavior_request(['sort' => ['', 'latest', 'oldest', 'amount:desc']]), HasApiModelBehaviorRecord::query());
+
+    expect($defaultSearch->searcheableFields())->toContain('uuid', 'public_id', 'company_uuid', 'name', 'created_at', 'updated_at')
+        ->and((new HasApiModelBehaviorOptionRecord())->getOptions())->toBe([
+            ['value' => 'record-1', 'label' => 'Alpha Dispatch'],
+            ['value' => 'record-2', 'label' => 'Beta Dispatch'],
+            ['value' => 'record-3', 'label' => 'Gamma Dispatch'],
+        ])
+        ->and($plainBuilder->getQuery()->orders)->toBeNull()
+        ->and($sameBuilder->getEagerLoads())->toBe([])
+        ->and($countBuilder->getEagerLoads())->toBe([])
+        ->and(array_map(fn ($order) => [$order['column'], $order['direction']], $sortBuilder->getQuery()->orders))->toBe([
+            ['api_model_behavior_records.created_at', 'desc'],
+            ['api_model_behavior_records.created_at', 'asc'],
+            ['api_model_behavior_records.amount', 'desc'],
+        ]);
+});
+
+test('api model behavior applies explicit filter operators and relation normalization branches', function () {
+    $capsule = has_api_model_behavior_database();
+    has_api_model_behavior_seed_records($capsule);
+    $capsule->getConnection('mysql')->table('api_model_behavior_records')->where('uuid', 'record-3')->update(['status' => null]);
+
+    $model = new HasApiModelBehaviorRecord();
+
+    $notInactive = $model->applyFilters(
+        has_api_model_behavior_request(['filters' => ['status' => '_not:inactive']]),
+        HasApiModelBehaviorRecord::query()
+    )->pluck('uuid')->sort()->values()->all();
+
+    $inAmounts = $model->applyFilters(
+        has_api_model_behavior_request(['filters' => ['amount' => '_in:15,35']]),
+        HasApiModelBehaviorRecord::query()
+    )->pluck('uuid')->sort()->values()->all();
+
+    $notInAmounts = $model->applyFilters(
+        has_api_model_behavior_request(['filters' => ['amount' => '_notIn:25,35']]),
+        HasApiModelBehaviorRecord::query()
+    )->pluck('uuid')->sort()->values()->all();
+
+    $nullStatuses = $model->buildSearchParams(
+        has_api_model_behavior_request(['status_isNull' => '1', 'name' => '', 'unknown' => 'ignored']),
+        HasApiModelBehaviorRecord::query()
+    )->pluck('uuid')->sort()->values()->all();
+
+    $notNullStatuses = $model->buildSearchParams(
+        has_api_model_behavior_request(['status_isNotNull' => '1']),
+        HasApiModelBehaviorRecord::query()
+    )->pluck('uuid')->sort()->values()->all();
+
+    $likeNames = $model->buildSearchParams(
+        has_api_model_behavior_request(['name_like' => 'Alpha']),
+        HasApiModelBehaviorRecord::query()
+    )->pluck('uuid')->sort()->values()->all();
+
+    $relationshipBuilder = $model->withRelationships(
+        has_api_model_behavior_request([
+            'with'    => ['child_items', 'child_items.grand_children'],
+            'without' => ['child_items'],
+        ]),
+        HasApiModelBehaviorRecord::query()
+    );
+
+    $snakeRelationBuilder = (new HasApiModelBehaviorSnakeRelationRecord())->withRelationships(
+        has_api_model_behavior_request(['with' => ['child_items']]),
+        HasApiModelBehaviorSnakeRelationRecord::query()
+    );
+
+    $countBuilder = $model->withCounts(
+        has_api_model_behavior_request(['with_count' => 'child_items']),
+        HasApiModelBehaviorRecord::query()
+    );
+
+    expect($notInactive)->toBe(['record-1'])
+        ->and($inAmounts)->toBe(['record-1', 'record-3'])
+        ->and($notInAmounts)->toBe(['record-1'])
+        ->and($nullStatuses)->toBe(['record-3'])
+        ->and($notNullStatuses)->toBe(['record-1', 'record-2'])
+        ->and($likeNames)->toBe(['record-1'])
+        ->and(array_keys($relationshipBuilder->getEagerLoads()))->toBe(['childItems', 'childItems.grandChildren'])
+        ->and($relationshipBuilder->getQuery()->columns)->toBeNull()
+        ->and(array_keys($snakeRelationBuilder->getEagerLoads()))->toBe(['child_items'])
+        ->and($countBuilder->toSql())->toContain('api_model_behavior_children', 'child_items_count');
 });
