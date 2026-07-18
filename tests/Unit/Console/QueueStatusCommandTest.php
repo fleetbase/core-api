@@ -1,5 +1,11 @@
 <?php
 
+use Aws\CommandInterface;
+use Aws\Credentials\Credentials;
+use Aws\Exception\AwsException;
+use Aws\MockHandler;
+use Aws\Result;
+use Aws\Sqs\SqsClient;
 use Fleetbase\Console\Commands\QueueStatusCommand;
 use Illuminate\Support\Facades\Facade;
 
@@ -20,6 +26,24 @@ class QueueStatusCommandOutputFake extends QueueStatusCommand
     public function warn($string, $verbosity = null): void
     {
         $this->messages[] = ['warn', $string];
+    }
+}
+
+class QueueStatusCommandSqsFake extends QueueStatusCommandOutputFake
+{
+    public function __construct(private MockHandler $handler)
+    {
+        parent::__construct();
+    }
+
+    protected function makeSqsClient(array $sqsConfig, Credentials $credentials): SqsClient
+    {
+        return new SqsClient([
+            'version'     => 'latest',
+            'region'      => $sqsConfig['region'],
+            'credentials' => $credentials,
+            'handler'     => $this->handler,
+        ]);
     }
 }
 
@@ -157,6 +181,45 @@ it('reports healthy and failing database queue connections', function () {
         ->and($failing->messages)->toBe([
             ['info', 'Checking queue status for driver: database'],
             ['error', 'Database queue connection failed: database down'],
+        ]);
+});
+
+it('reports healthy and failing sqs queue connections', function () {
+    bind_test_container([
+        'queue.default'                => 'sqs',
+        'queue.connections.sqs.key'    => 'test-key',
+        'queue.connections.sqs.secret' => 'test-secret',
+        'queue.connections.sqs.token'  => 'test-token',
+        'queue.connections.sqs.region' => 'us-east-1',
+    ]);
+
+    $healthyHandler = new MockHandler([
+        new Result([
+            'QueueUrls' => [
+                'https://sqs.us-east-1.amazonaws.com/123/default',
+                'https://sqs.us-east-1.amazonaws.com/123/critical',
+            ],
+        ]),
+    ]);
+    $healthy       = new QueueStatusCommandSqsFake($healthyHandler);
+    $healthyResult = $healthy->handle();
+
+    $failingHandler = new MockHandler([
+        function (CommandInterface $command) {
+            throw new AwsException('AWS credentials rejected', $command);
+        },
+    ]);
+    $failing = new QueueStatusCommandSqsFake($failingHandler);
+
+    expect($healthyResult)->toBe(0)
+        ->and($healthy->messages)->toBe([
+            ['info', 'Checking queue status for driver: sqs'],
+            ['info', 'SQS connection is healthy. Queues: https://sqs.us-east-1.amazonaws.com/123/default, https://sqs.us-east-1.amazonaws.com/123/critical'],
+        ])
+        ->and($failing->handle())->toBe(1)
+        ->and($failing->messages)->toBe([
+            ['info', 'Checking queue status for driver: sqs'],
+            ['error', 'SQS connection failed: AWS credentials rejected'],
         ]);
 });
 
