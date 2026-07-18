@@ -52,6 +52,8 @@ class SchedulingModelsResponseCacheFake
 
 function scheduling_models_database(): Capsule
 {
+    Illuminate\Database\Eloquent\Model::clearBootedModels();
+
     $connectionConfig = [
         'driver'   => 'sqlite',
         'database' => ':memory:',
@@ -278,9 +280,19 @@ it('reports unavailable schedule template rrule support clearly in this package 
     $from = Carbon::parse('2026-05-04 00:00:00', 'UTC');
     $to   = Carbon::parse('2026-05-12 23:59:59', 'UTC');
 
-    expect($template->hasRrule())->toBeTrue()
-        ->and(fn () => $template->getOccurrencesBetween($from, $to, 'UTC'))
-        ->toThrow(RuntimeException::class, 'php-rrule is not installed.');
+    expect($template->hasRrule())->toBeTrue();
+
+    if (class_exists('RRule\\RRule')) {
+        expect($template->getOccurrencesBetween($from, $to, 'UTC'))
+            ->sequence(
+                fn ($occurrence) => $occurrence->toDateTimeString()->toBe('2026-05-04 08:30:00'),
+                fn ($occurrence) => $occurrence->toDateTimeString()->toBe('2026-05-06 08:30:00'),
+                fn ($occurrence) => $occurrence->toDateTimeString()->toBe('2026-05-11 08:30:00'),
+            );
+    } else {
+        expect(fn () => $template->getOccurrencesBetween($from, $to, 'UTC'))
+            ->toThrow(RuntimeException::class, 'php-rrule is not installed.');
+    }
 
     $template->rrule = null;
 

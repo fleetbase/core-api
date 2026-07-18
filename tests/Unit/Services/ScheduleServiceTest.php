@@ -15,6 +15,69 @@ use Spatie\Activitylog\ActivityLogger;
 use Spatie\Activitylog\Contracts\Activity as ActivityContract;
 use Spatie\Activitylog\PendingActivityLog;
 
+if (!class_exists('RRule\\RRule')) {
+    eval(<<<'PHP'
+        namespace RRule;
+
+        class RRuleException extends \Exception
+        {
+        }
+
+        class RRule implements \IteratorAggregate
+        {
+            private \DateTimeImmutable $dtStart;
+            private string $frequency = 'DAILY';
+            private int $count = 1;
+            private array $byDays = [];
+
+            public function __construct(string $definition)
+            {
+                [$dtStartLine, $ruleLine] = explode("\n", $definition, 2);
+
+                if (str_starts_with($dtStartLine, 'DTSTART;TZID=')) {
+                    [, $datePart] = explode(':', $dtStartLine, 2);
+                    [, $timezone] = explode('=', explode(':', $dtStartLine, 2)[0], 2);
+                    $this->dtStart = new \DateTimeImmutable($datePart, new \DateTimeZone($timezone));
+                } else {
+                    [, $datePart] = explode(':', $dtStartLine, 2);
+                    $this->dtStart = new \DateTimeImmutable(rtrim($datePart, 'Z'), new \DateTimeZone('UTC'));
+                }
+
+                $rule = [];
+                foreach (explode(';', preg_replace('/^RRULE:/', '', trim($ruleLine))) as $part) {
+                    [$key, $value] = explode('=', $part, 2);
+                    $rule[$key] = $value;
+                }
+
+                $this->frequency = $rule['FREQ'] ?? 'DAILY';
+                $this->count = (int) ($rule['COUNT'] ?? 1);
+                $this->byDays = isset($rule['BYDAY']) ? explode(',', $rule['BYDAY']) : [];
+            }
+
+            public function getIterator(): \Traversable
+            {
+                $emitted = 0;
+                $cursor = $this->dtStart;
+                $weekdayMap = ['MO' => 1, 'TU' => 2, 'WE' => 3, 'TH' => 4, 'FR' => 5, 'SA' => 6, 'SU' => 7];
+
+                while ($emitted < $this->count) {
+                    $matchesByDay = empty($this->byDays) || in_array((int) $cursor->format('N'), array_map(fn ($day) => $weekdayMap[$day] ?? 0, $this->byDays), true);
+
+                    if ($matchesByDay) {
+                        yield $cursor;
+                        $emitted++;
+                    }
+
+                    $cursor = match ($this->frequency) {
+                        'WEEKLY' => empty($this->byDays) ? $cursor->modify('+1 week') : $cursor->modify('+1 day'),
+                        default => $cursor->modify('+1 day'),
+                    };
+                }
+            }
+        }
+    PHP);
+}
+
 class ScheduleServiceTaggedCacheFake
 {
     public function tags(array $tags): self
@@ -47,6 +110,18 @@ class ScheduleServiceResponseCacheFake
 {
     public function clear(): void
     {
+    }
+}
+
+class ScheduleServiceMaterializeAllFake extends ScheduleService
+{
+    public function materializeSchedule(Schedule $schedule, ?\Carbon\Carbon $horizon = null): int
+    {
+        if ($schedule->uuid === 'schedule-error') {
+            throw new RuntimeException('Materialization failed');
+        }
+
+        return parent::materializeSchedule($schedule, $horizon);
     }
 }
 
@@ -207,6 +282,7 @@ function schedule_service_database(): Capsule
         $table->string('subject_uuid')->nullable();
         $table->string('subject_type')->nullable();
         $table->string('name')->nullable();
+        $table->string('description')->nullable();
         $table->date('start_date')->nullable();
         $table->date('end_date')->nullable();
         $table->string('timezone')->nullable();
@@ -265,6 +341,7 @@ function schedule_service_database(): Capsule
         $table->string('subject_uuid')->nullable();
         $table->string('subject_type')->nullable();
         $table->string('name')->nullable();
+        $table->string('description')->nullable();
         $table->string('start_time')->nullable();
         $table->string('end_time')->nullable();
         $table->integer('duration')->nullable();
@@ -625,4 +702,242 @@ it('skips template materialization when the template has no rrule', function () 
     ], true);
 
     expect((new ScheduleService())->materializeTemplate($template, $schedule, Carbon::parse('2026-10-01', 'UTC')))->toBe(0);
+});
+
+it('applies a library template to a draft schedule and immediately materializes shifts', function () {
+    $capsule  = schedule_service_database();
+    $activity = schedule_service_bind_activity();
+    Carbon::setTestNow(Carbon::parse('2026-07-01 08:00:00', 'UTC'));
+
+    $capsule->getConnection()->table('schedules')->insert([
+        'uuid'         => 'schedule-1',
+        'company_uuid' => 'company-1',
+        'subject_type' => 'driver',
+        'subject_uuid' => 'driver-1',
+        'name'         => 'Driver schedule',
+        'timezone'     => 'UTC',
+        'status'       => 'draft',
+        'created_at'   => now(),
+        'updated_at'   => now(),
+    ]);
+    $capsule->getConnection()->table('schedule_templates')->insert([
+        'uuid'           => 'template-library',
+        'company_uuid'   => 'company-1',
+        'schedule_uuid'  => null,
+        'subject_type'   => null,
+        'subject_uuid'   => null,
+        'name'           => 'Weekday mornings',
+        'description'    => 'Library copy',
+        'start_time'     => '09:00',
+        'end_time'       => '11:00',
+        'duration'       => null,
+        'break_duration' => null,
+        'rrule'          => 'FREQ=DAILY;COUNT=2',
+        'color'          => '#2563eb',
+        'created_at'     => now(),
+        'updated_at'     => now(),
+    ]);
+
+    $schedule = Schedule::find('schedule-1');
+    $template = ScheduleTemplate::find('template-library');
+    $result   = (new ScheduleService())->applyTemplateToSchedule($template, $schedule);
+
+    $appliedTemplate = $result['template'];
+    $items           = ScheduleItem::orderBy('start_at')->get();
+
+    expect($result['items_created'])->toBe(2)
+        ->and($appliedTemplate)->toBeInstanceOf(ScheduleTemplate::class)
+        ->and($appliedTemplate->uuid)->not->toBe('template-library')
+        ->and($appliedTemplate->schedule_uuid)->toBe('schedule-1')
+        ->and($appliedTemplate->subject_type)->toBe('\Fleetbase\Models\Driver')
+        ->and($appliedTemplate->subject_uuid)->toBe('driver-1')
+        ->and(Schedule::find('schedule-1')->status)->toBe('active')
+        ->and($items)->toHaveCount(2)
+        ->and($items->pluck('schedule_uuid')->all())->toBe(['schedule-1', 'schedule-1'])
+        ->and($items->pluck('template_uuid')->unique()->values()->all())->toBe([$appliedTemplate->uuid])
+        ->and($items->pluck('start_at')->map->toDateTimeString()->all())->toBe([
+            '2026-07-01 09:00:00',
+            '2026-07-02 09:00:00',
+        ])
+        ->and($items->pluck('end_at')->map->toDateTimeString()->all())->toBe([
+            '2026-07-01 11:00:00',
+            '2026-07-02 11:00:00',
+        ])
+        ->and($activity->entries)->toHaveCount(1)
+        ->and($activity->entries[0]['event'])->toBe('schedule_template.applied')
+        ->and($activity->entries[0]['properties'])->toBe(['template_uuid' => 'template-library']);
+});
+
+it('materializes recurring templates idempotently around approved exceptions and break windows', function () {
+    $capsule = schedule_service_database();
+    Carbon::setTestNow(Carbon::parse('2026-07-01 00:00:00', 'UTC'));
+
+    $capsule->getConnection()->table('schedules')->insert([
+        'uuid'         => 'schedule-1',
+        'company_uuid' => 'company-1',
+        'subject_type' => 'driver',
+        'subject_uuid' => 'driver-1',
+        'name'         => 'Driver schedule',
+        'timezone'     => 'UTC',
+        'status'       => 'active',
+        'created_at'   => now(),
+        'updated_at'   => now(),
+    ]);
+    $capsule->getConnection()->table('schedule_templates')->insert([
+        'uuid'           => 'template-1',
+        'company_uuid'   => 'company-1',
+        'schedule_uuid'  => 'schedule-1',
+        'subject_type'   => 'driver',
+        'subject_uuid'   => 'driver-1',
+        'name'           => 'Daily shift',
+        'start_time'     => '09:00',
+        'end_time'       => '17:00',
+        'duration'       => null,
+        'break_duration' => 60,
+        'rrule'          => 'FREQ=DAILY;COUNT=5',
+        'created_at'     => now(),
+        'updated_at'     => now(),
+    ]);
+    $capsule->getConnection()->table('schedule_items')->insert([
+        'uuid'          => 'existing-july-2',
+        'company_uuid'  => 'company-1',
+        'schedule_uuid' => 'schedule-1',
+        'template_uuid' => 'template-1',
+        'assignee_type' => 'driver',
+        'assignee_uuid' => 'driver-1',
+        'start_at'      => '2026-07-02 09:00:00',
+        'end_at'        => '2026-07-02 17:00:00',
+        'duration'      => 480,
+        'status'        => 'scheduled',
+        'is_exception'  => false,
+        'created_at'    => now(),
+        'updated_at'    => now(),
+    ]);
+    $capsule->getConnection()->table('schedule_exceptions')->insert([
+        'uuid'          => 'exception-july-3',
+        'company_uuid'  => 'company-1',
+        'schedule_uuid' => 'schedule-1',
+        'subject_type'  => 'driver',
+        'subject_uuid'  => 'driver-1',
+        'start_at'      => '2026-07-03 00:00:00',
+        'end_at'        => '2026-07-03 23:59:59',
+        'type'          => 'time_off',
+        'status'        => 'approved',
+        'created_at'    => now(),
+        'updated_at'    => now(),
+    ]);
+
+    $schedule = Schedule::find('schedule-1');
+    $template = ScheduleTemplate::find('template-1');
+    $created  = (new ScheduleService())->materializeTemplate($template, $schedule, Carbon::parse('2026-07-05 23:59:59', 'UTC'));
+    $items    = ScheduleItem::orderBy('start_at')->get();
+
+    expect($created)->toBe(3)
+        ->and($items->pluck('uuid')->contains('existing-july-2'))->toBeTrue()
+        ->and($items->pluck('start_at')->map->toDateTimeString()->all())->toBe([
+            '2026-07-01 09:00:00',
+            '2026-07-02 09:00:00',
+            '2026-07-04 09:00:00',
+            '2026-07-05 09:00:00',
+        ])
+        ->and($items->firstWhere('start_at', Carbon::parse('2026-07-01 09:00:00', 'UTC'))->break_start_at->toDateTimeString())->toBe('2026-07-01 12:30:00')
+        ->and($items->firstWhere('start_at', Carbon::parse('2026-07-01 09:00:00', 'UTC'))->break_end_at->toDateTimeString())->toBe('2026-07-01 13:30:00')
+        ->and($items->where('start_at', Carbon::parse('2026-07-03 09:00:00', 'UTC'))->count())->toBe(0);
+});
+
+it('materializes all active schedules into materialized skipped and error buckets', function () {
+    $capsule = schedule_service_database();
+    Carbon::setTestNow(Carbon::parse('2026-07-18 00:00:00', 'UTC'));
+
+    $capsule->getConnection()->table('schedules')->insert([
+        [
+            'uuid'                    => 'schedule-materialized',
+            'company_uuid'            => 'company-1',
+            'subject_type'            => 'driver',
+            'subject_uuid'            => 'driver-1',
+            'name'                    => 'Needs work',
+            'timezone'                => 'UTC',
+            'status'                  => 'active',
+            'materialization_horizon' => null,
+            'created_at'              => now(),
+            'updated_at'              => now(),
+        ],
+        [
+            'uuid'                    => 'schedule-skipped',
+            'company_uuid'            => 'company-1',
+            'subject_type'            => 'driver',
+            'subject_uuid'            => 'driver-2',
+            'name'                    => 'No templates',
+            'timezone'                => 'UTC',
+            'status'                  => 'active',
+            'materialization_horizon' => '2026-07-01',
+            'created_at'              => now(),
+            'updated_at'              => now(),
+        ],
+        [
+            'uuid'                    => 'schedule-error',
+            'company_uuid'            => 'company-1',
+            'subject_type'            => 'driver',
+            'subject_uuid'            => 'driver-3',
+            'name'                    => 'Runtime error',
+            'timezone'                => 'UTC',
+            'status'                  => 'active',
+            'materialization_horizon' => null,
+            'created_at'              => now(),
+            'updated_at'              => now(),
+        ],
+        [
+            'uuid'                    => 'schedule-current',
+            'company_uuid'            => 'company-1',
+            'subject_type'            => 'driver',
+            'subject_uuid'            => 'driver-4',
+            'name'                    => 'Already current',
+            'timezone'                => 'UTC',
+            'status'                  => 'active',
+            'materialization_horizon' => '2026-10-01',
+            'created_at'              => now(),
+            'updated_at'              => now(),
+        ],
+    ]);
+    $capsule->getConnection()->table('schedule_templates')->insert([
+        [
+            'uuid'           => 'template-materialized',
+            'company_uuid'   => 'company-1',
+            'schedule_uuid'  => 'schedule-materialized',
+            'subject_type'   => 'driver',
+            'subject_uuid'   => 'driver-1',
+            'name'           => 'Daily shift',
+            'start_time'     => '08:00',
+            'end_time'       => null,
+            'duration'       => 120,
+            'break_duration' => null,
+            'rrule'          => 'FREQ=DAILY;COUNT=1',
+            'created_at'     => now(),
+            'updated_at'     => now(),
+        ],
+        [
+            'uuid'           => 'template-error',
+            'company_uuid'   => 'company-1',
+            'schedule_uuid'  => 'schedule-error',
+            'subject_type'   => 'driver',
+            'subject_uuid'   => 'driver-3',
+            'name'           => 'Bad shift',
+            'start_time'     => '08:00',
+            'end_time'       => null,
+            'duration'       => 120,
+            'break_duration' => null,
+            'rrule'          => 'FREQ=DAILY;COUNT=1',
+            'created_at'     => now(),
+            'updated_at'     => now(),
+        ],
+    ]);
+
+    $stats = (new ScheduleServiceMaterializeAllFake())->materializeAll();
+
+    expect($stats)->toBe(['materialized' => 1, 'skipped' => 1, 'errors' => 1])
+        ->and(ScheduleItem::where('schedule_uuid', 'schedule-materialized')->count())->toBe(1)
+        ->and(ScheduleItem::where('schedule_uuid', 'schedule-current')->count())->toBe(0)
+        ->and(Schedule::find('schedule-materialized')->materialization_horizon->toDateString())->toBe('2026-09-16')
+        ->and(Schedule::find('schedule-skipped')->materialization_horizon->toDateString())->toBe('2026-09-16')
+        ->and(Schedule::find('schedule-error')->materialization_horizon)->toBeNull();
 });
