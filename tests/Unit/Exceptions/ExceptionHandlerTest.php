@@ -24,6 +24,15 @@ namespace Illuminate\Foundation\Exceptions {
     }
 }
 
+namespace Fleetbase\Exceptions {
+    if (!function_exists(__NAMESPACE__ . '\logger')) {
+        function logger()
+        {
+            return app('log');
+        }
+    }
+}
+
 namespace {
     use Fleetbase\Exceptions\FleetbaseRequestValidationException;
     use Fleetbase\Exceptions\Handler;
@@ -35,6 +44,21 @@ namespace {
     use Illuminate\Session\TokenMismatchException;
     use Illuminate\Support\Facades\Facade;
     use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+
+    class TestableExceptionHandler extends Handler
+    {
+        public array $reportableCallbacks = [];
+
+        public function exposeUnauthenticated(Request $request, AuthenticationException $exception)
+        {
+            return $this->unauthenticated($request, $exception);
+        }
+
+        protected function reportable(callable $callback): void
+        {
+            $this->reportableCallbacks[] = $callback;
+        }
+    }
 
     function exception_handler_subject(): Handler
     {
@@ -100,6 +124,62 @@ namespace {
             ->and($response->getData(true))->toBe([
                 'errors' => ['columns.0 is required', 'filters must be an array'],
             ]);
+    });
+
+    it('registers a reportable exception callback for external monitoring', function () {
+        bind_test_container();
+        Facade::clearResolvedInstances();
+
+        $handler = new TestableExceptionHandler(app());
+
+        $handler->register();
+
+        expect($handler->reportableCallbacks)->toHaveCount(1)
+            ->and($handler->reportableCallbacks[0])->toBeCallable();
+    });
+
+    it('returns the stable unauthenticated json response from the framework hook', function () {
+        bind_test_container();
+        Facade::clearResolvedInstances();
+
+        $handler = new TestableExceptionHandler(app());
+
+        $response = $handler->exposeUnauthenticated(
+            Request::create('/int/v1/users', 'GET'),
+            new AuthenticationException()
+        );
+
+        expect($response->getStatusCode())->toBe(401)
+            ->and($response->getData(true))->toBe([
+                'errors' => ['Unauthenticated.'],
+            ]);
+    });
+
+    it('logs cloudwatch-safe exception payloads before delegating reports', function () {
+        $handler   = exception_handler_subject();
+        $exception = new RuntimeException('Webhook failed', 500);
+
+        $handler->report($exception);
+
+        $entries = app('log')->entries;
+        $payload = json_decode($entries[0][1], true);
+
+        expect($entries)->toHaveCount(1)
+            ->and($entries[0][0])->toBe('error')
+            ->and($payload)->toMatchArray([
+                'message' => 'Webhook failed',
+                'code'    => 500,
+                'file'    => $exception->getFile(),
+                'line'    => $exception->getLine(),
+            ]);
+    });
+
+    it('delegates unknown exceptions to the framework renderer', function () {
+        $handler   = exception_handler_subject();
+        $exception = new RuntimeException('Unexpected failure');
+
+        expect(fn () => $handler->render(Request::create('/int/v1/test', 'GET'), $exception))
+            ->toThrow(RuntimeException::class, 'Unexpected failure');
     });
 
     it('formats exceptions for CloudWatch without leaking the full throwable object', function () {
