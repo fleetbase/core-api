@@ -4,6 +4,9 @@ use Fleetbase\Console\Commands\Recovery;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\User;
+use Illuminate\Database\Capsule\Manager as Capsule;
+use Illuminate\Database\Eloquent\Model as EloquentModel;
+use Illuminate\Events\Dispatcher;
 use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\Facades\Mail;
 
@@ -235,12 +238,101 @@ class RecoveryMailFake
     }
 }
 
+class RecoveryPromptTestCommand extends Recovery
+{
+    public array $anticipateChoices = [];
+    public array $choiceQuestions   = [];
+
+    public function __construct(
+        public array $anticipateInputs = [],
+        public array $choiceAnswers = [],
+    ) {
+        parent::__construct();
+    }
+
+    public function anticipate($question, $choices, $default = null)
+    {
+        $input                     = array_shift($this->anticipateInputs) ?? $default;
+        $this->anticipateChoices[] = is_callable($choices) ? $choices($input) : $choices;
+
+        return $input;
+    }
+
+    public function choice($question, array $choices, $default = null, $attempts = null, $multiple = false)
+    {
+        $this->choiceQuestions[] = [$question, $choices];
+
+        return array_shift($this->choiceAnswers) ?? $default ?? $choices[0] ?? null;
+    }
+}
+
+function recovery_prompt_database(): Capsule
+{
+    EloquentModel::clearBootedModels();
+
+    $connection = [
+        'driver'   => 'sqlite',
+        'database' => ':memory:',
+        'prefix'   => '',
+    ];
+
+    $container = bind_test_container([
+        'database.default'           => 'mysql',
+        'database.connections.mysql' => $connection,
+    ]);
+
+    $capsule = new Capsule($container);
+    $capsule->addConnection($connection, 'mysql');
+    $capsule->setEventDispatcher(new Dispatcher($container));
+    $capsule->setAsGlobal();
+    $capsule->bootEloquent();
+
+    $databaseManager = $capsule->getDatabaseManager();
+    $databaseManager->setDefaultConnection('mysql');
+    $container->instance('db', $databaseManager);
+    Facade::clearResolvedInstance('db');
+
+    $schema = $capsule->getConnection('mysql')->getSchemaBuilder();
+    $schema->create('users', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('public_id')->nullable();
+        $table->string('company_uuid')->nullable();
+        $table->string('name')->nullable();
+        $table->string('email')->nullable();
+        $table->string('username')->nullable();
+        $table->string('type')->nullable();
+        $table->string('status')->nullable();
+        $table->timestamps();
+        $table->softDeletes();
+    });
+    $schema->create('companies', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('public_id')->nullable();
+        $table->string('owner_uuid')->nullable();
+        $table->string('name')->nullable();
+        $table->timestamps();
+        $table->softDeletes();
+    });
+    $schema->create('company_users', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('company_uuid')->nullable();
+        $table->string('user_uuid')->nullable();
+        $table->string('status')->nullable();
+        $table->timestamps();
+        $table->softDeletes();
+    });
+
+    return $capsule;
+}
+
 beforeEach(function () {
     bind_test_container();
     Facade::clearResolvedInstances();
 });
 
 afterEach(function () {
+    EloquentModel::unsetEventDispatcher();
+    EloquentModel::clearBootedModels();
     Facade::clearResolvedInstances();
 });
 
@@ -604,5 +696,177 @@ it('leaves an existing role unchanged when assignment confirmation is declined',
     expect($pivot->calls)->toBe([])
         ->and($command->messages)->toBe([
             ['info', 'Done'],
+        ]);
+});
+
+it('prompts for users by name username public id email and returns the selected record', function () {
+    $capsule = recovery_prompt_database();
+    $db      = $capsule->getConnection('mysql');
+
+    $db->table('users')->insert([
+        [
+            'uuid'       => 'user-ada',
+            'public_id'  => 'user_ada',
+            'name'       => 'Ada Lovelace',
+            'email'      => 'ada@example.test',
+            'username'   => 'ada',
+            'type'       => 'user',
+            'status'     => 'active',
+            'created_at' => '2026-07-18 00:00:00',
+            'updated_at' => '2026-07-18 00:00:00',
+        ],
+        [
+            'uuid'       => 'user-booker',
+            'public_id'  => 'user_booker',
+            'name'       => 'Operations Lead',
+            'email'      => 'booker@example.test',
+            'username'   => 'booker',
+            'type'       => 'user',
+            'status'     => 'active',
+            'created_at' => '2026-07-18 00:00:00',
+            'updated_at' => '2026-07-18 00:00:00',
+        ],
+        [
+            'uuid'       => 'user-runner',
+            'public_id'  => 'user_runner',
+            'name'       => 'Dispatch Runner',
+            'email'      => 'runner@example.test',
+            'username'   => 'runner',
+            'type'       => 'user',
+            'status'     => 'active',
+            'created_at' => '2026-07-18 00:00:00',
+            'updated_at' => '2026-07-18 00:00:00',
+        ],
+    ]);
+
+    $byName = new RecoveryPromptTestCommand(
+        anticipateInputs: ['ada'],
+        choiceAnswers: ['Ada Lovelace - ada@example.test - user_ada'],
+    );
+    $byUsername = new RecoveryPromptTestCommand(
+        anticipateInputs: ['book'],
+        choiceAnswers: ['Operations Lead - booker@example.test - user_booker'],
+    );
+    $byPublicId = new RecoveryPromptTestCommand(
+        anticipateInputs: ['user_run'],
+        choiceAnswers: ['Dispatch Runner - runner@example.test - user_runner'],
+    );
+    $byEmail = new RecoveryPromptTestCommand(
+        anticipateInputs: ['runner@example'],
+        choiceAnswers: ['Dispatch Runner - runner@example.test - user_runner'],
+    );
+
+    expect($byName->promptForUser()->uuid)->toBe('user-ada')
+        ->and($byName->anticipateChoices)->toBe([['Ada Lovelace']])
+        ->and($byUsername->promptForUser()->uuid)->toBe('user-booker')
+        ->and($byUsername->anticipateChoices)->toBe([['booker']])
+        ->and($byPublicId->promptForUser()->uuid)->toBe('user-runner')
+        ->and($byPublicId->anticipateChoices)->toBe([['user_runner']])
+        ->and($byEmail->promptForUser()->uuid)->toBe('user-runner')
+        ->and($byEmail->anticipateChoices)->toBe([['runner@example.test']]);
+});
+
+it('prompts for companies by name public id uuid and returns the selected record', function () {
+    $capsule = recovery_prompt_database();
+    $db      = $capsule->getConnection('mysql');
+
+    $db->table('companies')->insert([
+        [
+            'uuid'       => 'company-acme',
+            'public_id'  => 'company_acme',
+            'name'       => 'Acme Logistics',
+            'created_at' => '2026-07-18 00:00:00',
+            'updated_at' => '2026-07-18 00:00:00',
+        ],
+        [
+            'uuid'       => 'company-fleet',
+            'public_id'  => 'company_fleet',
+            'name'       => 'City Dispatch',
+            'created_at' => '2026-07-18 00:00:00',
+            'updated_at' => '2026-07-18 00:00:00',
+        ],
+    ]);
+
+    $byName = new RecoveryPromptTestCommand(
+        anticipateInputs: ['acme'],
+        choiceAnswers: ['Acme Logistics - company_acme'],
+    );
+    $byPublicId = new RecoveryPromptTestCommand(
+        anticipateInputs: ['company_fleet'],
+        choiceAnswers: ['City Dispatch - company_fleet'],
+    );
+    $byUuid = new RecoveryPromptTestCommand(
+        anticipateInputs: ['company-fleet'],
+        choiceAnswers: ['City Dispatch - company_fleet'],
+    );
+
+    expect($byName->promptForCompany()->uuid)->toBe('company-acme')
+        ->and($byName->anticipateChoices)->toBe([['Acme Logistics']])
+        ->and($byPublicId->promptForCompany()->uuid)->toBe('company-fleet')
+        ->and($byPublicId->anticipateChoices)->toBe([['company_fleet']])
+        ->and($byUuid->promptForCompany()->uuid)->toBe('company-fleet')
+        ->and($byUuid->choiceQuestions[0][0])->toBe('Found user, select the company below:');
+});
+
+it('prompts for one of a users companies and returns the selected membership company', function () {
+    $capsule = recovery_prompt_database();
+    $db      = $capsule->getConnection('mysql');
+
+    $db->table('users')->insert([
+        'uuid'       => 'user-ada',
+        'public_id'  => 'user_ada',
+        'name'       => 'Ada Lovelace',
+        'email'      => 'ada@example.test',
+        'username'   => 'ada',
+        'created_at' => '2026-07-18 00:00:00',
+        'updated_at' => '2026-07-18 00:00:00',
+    ]);
+    $db->table('companies')->insert([
+        [
+            'uuid'       => 'company-acme',
+            'public_id'  => 'company_acme',
+            'name'       => 'Acme Logistics',
+            'created_at' => '2026-07-18 00:00:00',
+            'updated_at' => '2026-07-18 00:00:00',
+        ],
+        [
+            'uuid'       => 'company-fleet',
+            'public_id'  => 'company_fleet',
+            'name'       => 'City Dispatch',
+            'created_at' => '2026-07-18 00:00:00',
+            'updated_at' => '2026-07-18 00:00:00',
+        ],
+    ]);
+    $db->table('company_users')->insert([
+        [
+            'uuid'         => 'company-user-acme',
+            'company_uuid' => 'company-acme',
+            'user_uuid'    => 'user-ada',
+            'status'       => 'active',
+            'created_at'   => '2026-07-18 00:00:00',
+            'updated_at'   => '2026-07-18 00:00:00',
+        ],
+        [
+            'uuid'         => 'company-user-fleet',
+            'company_uuid' => 'company-fleet',
+            'user_uuid'    => 'user-ada',
+            'status'       => 'active',
+            'created_at'   => '2026-07-18 00:00:00',
+            'updated_at'   => '2026-07-18 00:00:00',
+        ],
+    ]);
+
+    $user    = User::where('public_id', 'user_ada')->first();
+    $command = new RecoveryPromptTestCommand(
+        choiceAnswers: ['City Dispatch - company_fleet'],
+    );
+
+    expect($command->promptForUserCompany($user, 'Select company for role repair')->uuid)->toBe('company-fleet')
+        ->and($command->choiceQuestions[0])->toBe([
+            'Found users, Select company for role repair',
+            [
+                'Acme Logistics - company_acme',
+                'City Dispatch - company_fleet',
+            ],
         ]);
 });
