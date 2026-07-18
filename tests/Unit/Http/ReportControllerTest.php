@@ -220,6 +220,17 @@ function report_controller_database(): Capsule
         $table->timestamp('updated_at')->nullable();
     });
 
+    $schema->create('orders', function ($table) {
+        $table->increments('id');
+        $table->string('uuid')->nullable()->index();
+        $table->string('company_uuid')->nullable()->index();
+        $table->string('public_id')->nullable();
+        $table->string('customer_uuid')->nullable();
+        $table->string('status')->nullable();
+        $table->timestamp('created_at')->nullable();
+        $table->timestamp('updated_at')->nullable();
+    });
+
     $capsule->getConnection('testing')->table('reports')->insert([
         [
             'uuid'         => 'report-current',
@@ -232,6 +243,36 @@ function report_controller_database(): Capsule
             'public_id'    => 'report_2',
             'company_uuid' => 'company-2',
             'query_config' => json_encode(report_controller_query_config()),
+        ],
+    ]);
+
+    $capsule->getConnection('testing')->table('orders')->insert([
+        [
+            'uuid'          => 'order-current-1',
+            'company_uuid'  => 'company-1',
+            'public_id'     => 'order_1',
+            'customer_uuid' => 'customer-1',
+            'status'        => 'created',
+            'created_at'    => '2026-01-01 10:00:00',
+            'updated_at'    => '2026-01-01 10:00:00',
+        ],
+        [
+            'uuid'          => 'order-current-2',
+            'company_uuid'  => 'company-1',
+            'public_id'     => 'order_2',
+            'customer_uuid' => 'customer-2',
+            'status'        => 'dispatched',
+            'created_at'    => '2026-01-02 10:00:00',
+            'updated_at'    => '2026-01-02 10:00:00',
+        ],
+        [
+            'uuid'          => 'order-other',
+            'company_uuid'  => 'company-2',
+            'public_id'     => 'order_3',
+            'customer_uuid' => 'customer-3',
+            'status'        => 'created',
+            'created_at'    => '2026-01-03 10:00:00',
+            'updated_at'    => '2026-01-03 10:00:00',
         ],
     ]);
 
@@ -375,6 +416,73 @@ test('report controller exposes query analysis and export format contracts witho
         ->and($invalidFormat['error']['allowed_formats'])->toBe(['csv', 'excel', 'json', 'pdf', 'xml']);
 });
 
+test('report controller executes direct queries with active company scoping', function () {
+    report_controller_bind();
+    report_controller_database();
+    $controller = new ReportController();
+
+    $response = $controller->executeQuery(Request::create('/int/v1/reports/execute-query', 'POST', [
+        'query_config' => report_controller_query_config([
+            'columns' => [
+                ['name' => 'status'],
+                ['name' => 'created_at'],
+            ],
+            'sortBy' => [
+                [
+                    'column'    => ['name' => 'status'],
+                    'direction' => ['value' => 'asc'],
+                ],
+            ],
+            'limit' => 10,
+        ]),
+    ]));
+    $payload = report_controller_payload($response);
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($payload['success'])->toBeTrue()
+        ->and($payload['data'])->toHaveCount(2)
+        ->and(array_column($payload['data'], 'order_status'))->toBe(['created', 'dispatched'])
+        ->and(array_column($payload['data'], 'created_at'))->toBe(['2026-01-01 10:00:00', '2026-01-02 10:00:00'])
+        ->and($payload['meta']['total_rows'])->toBe(2)
+        ->and($payload['meta']['table_name'])->toBe('orders')
+        ->and($payload['meta']['query_bindings'])->toBe(['company-1'])
+        ->and($payload['meta']['query_sql'])->toContain('company_uuid');
+});
+
+test('report controller exports direct query results and exposes download metadata', function () {
+    report_controller_bind();
+    report_controller_database();
+    $controller = new ReportController();
+
+    $response = $controller->exportQuery(Request::create('/int/v1/reports/export-query', 'POST', [
+        'query_config' => report_controller_query_config([
+            'columns' => [
+                ['name' => 'status'],
+                ['name' => 'created_at'],
+            ],
+        ]),
+        'format'  => 'json',
+        'options' => ['compact' => true],
+    ]));
+    $payload = report_controller_payload($response);
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($payload['success'])->toBeTrue()
+        ->and($payload['format'])->toBe('json')
+        ->and($payload['filename'])->toStartWith('report-orders-')
+        ->and($payload['filename'])->toEndWith('.json')
+        ->and($payload['rows'])->toBe(2)
+        ->and($payload['size'])->toBeGreaterThan(0)
+        ->and($payload['download_url'])->toBe('http://fleetbase.test/reports/download/' . rawurlencode($payload['filename']))
+        ->and(file_exists($payload['filepath']))->toBeTrue();
+
+    $export = json_decode(file_get_contents($payload['filepath']), true);
+
+    expect($export['metadata']['total_rows'])->toBe(2)
+        ->and($export['metadata']['format'])->toBe('json')
+        ->and(array_column($export['data'], 'order_status'))->toBe(['created', 'dispatched']);
+});
+
 test('report controller returns handled errors for report execution and export outside the active company', function () {
     report_controller_bind();
     report_controller_database();
@@ -438,6 +546,30 @@ test('report controller rejects missing and unsafe export download filenames bef
         ->and(report_controller_payload($traversal)['error']['code'])->toBe('INVALID_FILENAME')
         ->and($nested->getStatusCode())->toBe(400)
         ->and(report_controller_payload($nested)['error']['code'])->toBe('INVALID_FILENAME');
+});
+
+test('report controller downloads existing export files with stable cache and content headers', function () {
+    report_controller_bind();
+    $controller = new ReportController();
+
+    $exportDir = storage_path('app/exports');
+    if (!is_dir($exportDir)) {
+        mkdir($exportDir, 0755, true);
+    }
+
+    $filename = 'report-orders-download.csv';
+    file_put_contents($exportDir . DIRECTORY_SEPARATOR . $filename, "Order,Status\norder_1,created\n");
+
+    $response = $controller->download(Request::create('/int/v1/reports/download/' . $filename), $filename);
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($response->headers->get('content-type'))->toBe('text/csv')
+        ->and($response->headers->getCacheControlDirective('no-cache'))->toBeTrue()
+        ->and($response->headers->getCacheControlDirective('no-store'))->toBeTrue()
+        ->and($response->headers->getCacheControlDirective('must-revalidate'))->toBeTrue()
+        ->and($response->headers->get('pragma'))->toBe('no-cache')
+        ->and($response->headers->get('expires'))->toBe('0')
+        ->and($response->headers->get('content-disposition'))->toContain($filename);
 });
 
 test('report controller report query scopes custom actions to the active company', function () {

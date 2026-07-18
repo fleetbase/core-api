@@ -362,5 +362,16 @@ namespace {
         {
             return new JsonResponse($data, $statusCode);
         }
+
+        public function download(string $file, ?string $name = null, array $headers = []): Symfony\Component\HttpFoundation\BinaryFileResponse
+        {
+            $response = new Symfony\Component\HttpFoundation\BinaryFileResponse($file, 200, $headers, true, null, false, false);
+
+            if ($name !== null) {
+                $response->setContentDisposition(Symfony\Component\HttpFoundation\ResponseHeaderBag::DISPOSITION_ATTACHMENT, $name);
+            }
+
+            return $response;
+        }
     }
 }
