@@ -952,26 +952,54 @@ test('schedule filter scopes tenant schedules and applies subject and status fil
 });
 
 test('schedule exception and template filters scope tenants and resolve subjects and schedules', function () {
-    $capsule = concrete_filter_database();
+    $capsule            = concrete_filter_database();
+    $scheduleUuid       = '11111111-1111-4111-8111-111111111111';
+    $hiddenScheduleUuid = '22222222-2222-4222-8222-222222222222';
     $capsule->getConnection('mysql')->table('schedules')->insert([
-        ['uuid' => 'schedule-1', 'public_id' => 'schedule_public_1', 'company_uuid' => 'company-1'],
-        ['uuid' => 'schedule-2', 'public_id' => 'schedule_public_2', 'company_uuid' => 'company-2'],
+        ['uuid' => $scheduleUuid, 'public_id' => 'schedule_public_1', 'company_uuid' => 'company-1'],
+        ['uuid' => $hiddenScheduleUuid, 'public_id' => 'schedule_public_2', 'company_uuid' => 'company-2'],
     ]);
     $capsule->getConnection('mysql')->table('schedule_exceptions')->insert([
-        ['uuid' => 'exception-1', 'company_uuid' => 'company-1', 'schedule_uuid' => 'schedule-1', 'subject_uuid' => 'driver-1', 'subject_type' => 'Fleetbase\\FleetOps\\Models\\Driver'],
-        ['uuid' => 'exception-hidden', 'company_uuid' => 'company-2', 'schedule_uuid' => 'schedule-2', 'subject_uuid' => 'driver-2', 'subject_type' => 'Fleetbase\\FleetOps\\Models\\Driver'],
+        ['uuid' => 'exception-1', 'company_uuid' => 'company-1', 'schedule_uuid' => $scheduleUuid, 'subject_uuid' => 'driver-1', 'subject_type' => 'Fleetbase\\FleetOps\\Models\\Driver'],
+        ['uuid' => 'exception-hidden', 'company_uuid' => 'company-2', 'schedule_uuid' => $hiddenScheduleUuid, 'subject_uuid' => 'driver-2', 'subject_type' => 'Fleetbase\\FleetOps\\Models\\Driver'],
     ]);
     $capsule->getConnection('mysql')->table('schedule_templates')->insert([
-        ['uuid' => 'template-1', 'company_uuid' => 'company-1', 'schedule_uuid' => 'schedule-1', 'subject_uuid' => 'driver-1', 'subject_type' => 'Fleetbase\\FleetOps\\Models\\Driver'],
-        ['uuid' => 'template-hidden', 'company_uuid' => 'company-2', 'schedule_uuid' => 'schedule-2', 'subject_uuid' => 'driver-2', 'subject_type' => 'Fleetbase\\FleetOps\\Models\\Driver'],
+        ['uuid' => 'template-1', 'company_uuid' => 'company-1', 'schedule_uuid' => $scheduleUuid, 'subject_uuid' => 'driver-1', 'subject_type' => 'Fleetbase\\FleetOps\\Models\\Driver'],
+        ['uuid' => 'template-hidden', 'company_uuid' => 'company-2', 'schedule_uuid' => $hiddenScheduleUuid, 'subject_uuid' => 'driver-2', 'subject_type' => 'Fleetbase\\FleetOps\\Models\\Driver'],
     ]);
 
+    $emptyExceptionBuilder = ScheduleException::query();
+    $emptyExceptionFilter  = concrete_filter_with_builder(
+        new ScheduleExceptionFilter(concrete_filter_request([], 'int/v1/schedule-exceptions')),
+        $emptyExceptionBuilder
+    );
+    $emptyExceptionFilter->scheduleUuid(null);
+    $emptyExceptionFilter->subjectType(null);
+    $emptyExceptionFilter->subjectUuid(null);
+
+    $emptyTemplateBuilder = ScheduleTemplate::query();
+    $emptyTemplateFilter  = concrete_filter_with_builder(
+        new ScheduleTemplateFilter(concrete_filter_request([], 'int/v1/schedule-templates')),
+        $emptyTemplateBuilder
+    );
+    $emptyTemplateFilter->scheduleUuid(null);
+    $emptyTemplateFilter->subjectType(null);
+    $emptyTemplateFilter->subjectUuid(null);
+
     expect(concrete_filter_uuids(ScheduleExceptionFilter::class, ScheduleException::class, ['schedule_uuid' => 'schedule_public_1'], 'int/v1/schedule-exceptions'))->toBe(['exception-1'])
+        ->and(concrete_filter_uuids(ScheduleExceptionFilter::class, ScheduleException::class, ['schedule_uuid' => $scheduleUuid], 'int/v1/schedule-exceptions'))->toBe(['exception-1'])
+        ->and(concrete_filter_uuids(ScheduleExceptionFilter::class, ScheduleException::class, ['schedule_uuid' => $scheduleUuid], 'v1/schedule-exceptions'))->toBe(['exception-1'])
         ->and(concrete_filter_uuids(ScheduleExceptionFilter::class, ScheduleException::class, ['subject_type' => 'Fleetbase\\FleetOps\\Models\\Driver', 'subject_uuid' => 'driver-1'], 'int/v1/schedule-exceptions'))->toBe(['exception-1'])
+        ->and(concrete_filter_uuids(ScheduleExceptionFilter::class, ScheduleException::class, ['subject_type' => 'unknown:driver'], 'int/v1/schedule-exceptions'))->toBe([])
         ->and(concrete_filter_uuids(ScheduleExceptionFilter::class, ScheduleException::class, ['schedule_uuid' => 'missing_schedule'], 'int/v1/schedule-exceptions'))->toBe([])
+        ->and($emptyExceptionBuilder->orderBy('uuid')->pluck('uuid')->all())->toBe(['exception-1', 'exception-hidden'])
         ->and(concrete_filter_uuids(ScheduleTemplateFilter::class, ScheduleTemplate::class, ['schedule_uuid' => 'schedule_public_1'], 'int/v1/schedule-templates'))->toBe(['template-1'])
+        ->and(concrete_filter_uuids(ScheduleTemplateFilter::class, ScheduleTemplate::class, ['schedule_uuid' => $scheduleUuid], 'int/v1/schedule-templates'))->toBe(['template-1'])
+        ->and(concrete_filter_uuids(ScheduleTemplateFilter::class, ScheduleTemplate::class, ['schedule_uuid' => $scheduleUuid], 'v1/schedule-templates'))->toBe(['template-1'])
         ->and(concrete_filter_uuids(ScheduleTemplateFilter::class, ScheduleTemplate::class, ['subject_type' => 'Fleetbase\\FleetOps\\Models\\Driver', 'subject_uuid' => 'driver-1'], 'int/v1/schedule-templates'))->toBe(['template-1'])
-        ->and(concrete_filter_uuids(ScheduleTemplateFilter::class, ScheduleTemplate::class, ['schedule_uuid' => 'missing_schedule'], 'int/v1/schedule-templates'))->toBe([]);
+        ->and(concrete_filter_uuids(ScheduleTemplateFilter::class, ScheduleTemplate::class, ['subject_type' => 'unknown:driver'], 'int/v1/schedule-templates'))->toBe([])
+        ->and(concrete_filter_uuids(ScheduleTemplateFilter::class, ScheduleTemplate::class, ['schedule_uuid' => 'missing_schedule'], 'int/v1/schedule-templates'))->toBe([])
+        ->and($emptyTemplateBuilder->orderBy('uuid')->pluck('uuid')->all())->toBe(['template-1', 'template-hidden']);
 });
 
 test('notification filter limits internal results to current user or company and supports unread search', function () {
