@@ -31,6 +31,6 @@ trait HasSubject
      */
     public function subject()
     {
-        return $this->morphTo();
+        return $this->morphTo(__FUNCTION__, 'subject_type', 'subject_uuid');
     }
 }

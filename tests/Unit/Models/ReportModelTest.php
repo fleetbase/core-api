@@ -2,6 +2,7 @@
 
 use Carbon\Carbon;
 use Fleetbase\Models\Report;
+use Fleetbase\Support\Reporting\ReportSchemaRegistry;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Support\Facades\Cache;
@@ -31,6 +32,16 @@ class ReportModelCacheFake
         $this->forgotten[] = $key;
         unset($this->values[$key]);
 
+        return true;
+    }
+
+    public function tags(array $tags): self
+    {
+        return $this;
+    }
+
+    public function flush(): bool
+    {
         return true;
     }
 }
@@ -71,6 +82,54 @@ class ReportModelSpy extends Report
     {
         return $this->calculateNextRun($frequency, $time, $timezone);
     }
+
+    public function recordExecutionStats(float $executionTime, int $resultCount): void
+    {
+        $this->updateExecutionStats($executionTime, $resultCount);
+    }
+
+    public function writeExecutionLog(float $executionTime, int $resultCount, ?string $error = null): void
+    {
+        $this->logExecution($executionTime, $resultCount, $error);
+    }
+
+    public function writeExportLog(string $format, int $rowCount): void
+    {
+        $this->logExport($format, $rowCount);
+    }
+}
+
+class ReportModelRegistrySpy extends ReportSchemaRegistry
+{
+    public array $calls = [];
+
+    public function getAvailableTables(string $extension, ?string $category = null): array
+    {
+        $this->calls[] = ['getAvailableTables', $extension, $category];
+
+        return [['name' => 'orders', 'extension' => $extension, 'category' => $category]];
+    }
+
+    public function getTableColumns(string $tableName): array
+    {
+        $this->calls[] = ['getTableColumns', $tableName];
+
+        return [['name' => 'public_id']];
+    }
+
+    public function getTableRelationships(string $tableName): array
+    {
+        $this->calls[] = ['getTableRelationships', $tableName];
+
+        return [['name' => 'payload']];
+    }
+
+    public function getTableSchema(string $tableName): array
+    {
+        $this->calls[] = ['getTableSchema', $tableName];
+
+        return ['table' => ['name' => $tableName]];
+    }
 }
 
 function report_model_container(): ReportModelCacheFake
@@ -105,6 +164,35 @@ function report_model_container(): ReportModelCacheFake
     $container->instance('cache', $cache);
     Cache::swap($cache);
 
+    $schema = $capsule->getConnection('mysql')->getSchemaBuilder();
+    $schema->create('report_executions', function ($table) {
+        $table->string('uuid')->nullable();
+        $table->string('report_uuid')->nullable();
+        $table->string('user_uuid')->nullable();
+        $table->float('execution_time')->nullable();
+        $table->integer('result_count')->nullable();
+        $table->text('query_config')->nullable();
+        $table->string('status')->nullable();
+        $table->text('error_message')->nullable();
+        $table->timestamp('executed_at')->nullable();
+        $table->timestamps();
+    });
+    $schema->create('report_audit_logs', function ($table) {
+        $table->string('uuid')->nullable();
+        $table->string('report_uuid')->nullable();
+        $table->string('user_uuid')->nullable();
+        $table->string('action')->nullable();
+        $table->float('execution_time')->nullable();
+        $table->integer('result_count')->nullable();
+        $table->text('error_message')->nullable();
+        $table->text('query_config')->nullable();
+        $table->string('ip_address')->nullable();
+        $table->string('user_agent')->nullable();
+        $table->text('metadata')->nullable();
+        $table->text('details')->nullable();
+        $table->timestamps();
+    });
+
     return $cache;
 }
 
@@ -121,6 +209,30 @@ function report_model_query_config(array $overrides = []): array
         ],
     ], $overrides);
 }
+
+it('exposes report relationships and forwards schema lookups to the registry', function () {
+    report_model_container();
+
+    $registry = new ReportModelRegistrySpy();
+    app()->instance(ReportSchemaRegistry::class, $registry);
+
+    $report = new Report();
+
+    expect($report->company()->getForeignKeyName())->toBe('company_uuid')
+        ->and($report->createdBy()->getForeignKeyName())->toBe('created_by_uuid')
+        ->and($report->executions()->getForeignKeyName())->toBe('report_uuid')
+        ->and($report->auditLogs()->getForeignKeyName())->toBe('report_uuid')
+        ->and(Report::getAvailableTables('fleetops', 'operations'))->toBe([['name' => 'orders', 'extension' => 'fleetops', 'category' => 'operations']])
+        ->and(Report::getTableColumns('orders'))->toBe([['name' => 'public_id']])
+        ->and(Report::getTableRelationships('orders'))->toBe([['name' => 'payload']])
+        ->and(Report::getTableSchema('orders'))->toBe(['table' => ['name' => 'orders']])
+        ->and($registry->calls)->toBe([
+            ['getAvailableTables', 'fleetops', 'operations'],
+            ['getTableColumns', 'orders'],
+            ['getTableRelationships', 'orders'],
+            ['getTableSchema', 'orders'],
+        ]);
+});
 
 it('validates report query config shape and exposes simple source metadata', function () {
     report_model_container();
@@ -241,6 +353,54 @@ it('caches and clears report result payloads with stable report cache keys', fun
 
     expect($cache->forgotten)->toBe(['report_results_report-1'])
         ->and($report->getCachedResults())->toBeNull();
+
+    Carbon::setTestNow();
+});
+
+it('updates report execution metrics using rolling averages', function () {
+    report_model_container();
+    Carbon::setTestNow(Carbon::parse('2026-07-17 15:30:00', 'UTC'));
+
+    $report = new ReportModelSpy();
+    $report->setRawAttributes([
+        'uuid'                   => 'report-averages',
+        'execution_count'        => 2,
+        'average_execution_time' => 100.0,
+        'last_result_count'      => 50,
+        'last_executed_at'       => Carbon::parse('2026-07-16 15:30:00', 'UTC'),
+    ], true);
+
+    $report->recordExecutionStats(40.0, 12);
+
+    expect($report->execution_count)->toBe(3)
+        ->and($report->average_execution_time)->toBe(80.0)
+        ->and($report->last_result_count)->toBe(12)
+        ->and($report->last_executed_at->toISOString())->toBe('2026-07-17T15:30:00.000000Z')
+        ->and($report->saves)->toBe(1);
+
+    Carbon::setTestNow();
+});
+
+it('writes report execution and export audit records through model relationships', function () {
+    report_model_container();
+    Carbon::setTestNow(Carbon::parse('2026-07-17 16:45:00', 'UTC'));
+
+    $report = new ReportModelSpy();
+    $report->setRawAttributes([
+        'uuid'         => 'report-loggable',
+        'query_config' => report_model_query_config(),
+    ], true);
+
+    $report->writeExecutionLog(75.25, 9, 'timeout');
+    $report->writeExportLog('csv', 9);
+
+    $execution = Capsule::connection('mysql')->table('report_executions')->where('report_uuid', 'report-loggable')->first();
+    $audit     = Capsule::connection('mysql')->table('report_audit_logs')->where('report_uuid', 'report-loggable')->first();
+
+    expect($execution->execution_time)->toBe(75.25)
+        ->and($execution->result_count)->toBe(9)
+        ->and($execution->error_message)->toBe('timeout')
+        ->and($audit->action)->toBe('export');
 
     Carbon::setTestNow();
 });
