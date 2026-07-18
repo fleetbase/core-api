@@ -1,6 +1,8 @@
 <?php
 
 use Fleetbase\Http\Controllers\Internal\v1\AuthController;
+use Fleetbase\Http\Requests\AdminRequest;
+use Fleetbase\Http\Requests\ChangePasswordRequest;
 use Fleetbase\Http\Requests\LoginRequest;
 use Fleetbase\Models\User;
 use Illuminate\Database\Capsule\Manager as Capsule;
@@ -94,6 +96,29 @@ class AuthControllerLoginBootstrapPermissionRegistrarFake
     public string $pivotPermission = 'permission_id';
     public bool $teams             = false;
     public string $teamsKey        = 'team_id';
+
+    public function getRoleClass(): string
+    {
+        return Fleetbase\Models\Role::class;
+    }
+
+    public function getPermissionClass(): string
+    {
+        return Fleetbase\Models\Permission::class;
+    }
+}
+
+class AuthControllerLoginBootstrapUserSpy extends User
+{
+    public function hasRole($roles, ?string $guard = null): bool
+    {
+        return false;
+    }
+
+    public function hasPermissionTo($permission, ?string $guardName = null): bool
+    {
+        return false;
+    }
 }
 
 function auth_controller_login_bootstrap_database(): Capsule
@@ -295,6 +320,17 @@ function auth_controller_bootstrap_request(User $user, string $token = 'bootstra
     return $request;
 }
 
+function auth_controller_authenticated_request(string $method, array $input, User $user, string $uri = '/int/v1/auth', ?string $requestClass = null): Request
+{
+    $requestClass ??= Request::class;
+    $request = $requestClass::create($uri, $method, $input);
+    $request->setUserResolver(fn () => $user);
+    app()->instance('request', $request);
+    session(['user' => $user->uuid, 'company' => $user->company_uuid]);
+
+    return $request;
+}
+
 afterEach(function () {
     Carbon::setTestNow();
     session()->flush();
@@ -482,4 +518,203 @@ test('bootstrap returns cached session and organization response contracts', fun
         ->and($payload['organizations'][0]['owner']['name'])->toBe('Owner User')
         ->and($payload['organizations'][0]['owner']['email'])->toBe('owner@example.test')
         ->and($payload['organizations'][0]['branding'])->toHaveKeys(['id', 'uuid', 'default_theme']);
+});
+
+test('get user organizations returns active membership organizations with cache validators', function () {
+    $capsule = auth_controller_login_bootstrap_database();
+    auth_controller_login_insert_user($capsule, [
+        'uuid'  => 'member-user',
+        'email' => 'member@example.test',
+        'name'  => 'Member User',
+        'type'  => 'user',
+    ]);
+    auth_controller_login_insert_user($capsule, [
+        'uuid'  => 'owner-user',
+        'email' => 'owner@example.test',
+        'name'  => 'Owner User',
+    ]);
+    $capsule->getConnection('mysql')->table('companies')->insert([
+        [
+            'id'                      => 1,
+            'uuid'                    => 'company-1',
+            'public_id'               => 'company_public_1',
+            'owner_uuid'              => 'owner-user',
+            'name'                    => 'Visible Company',
+            'description'             => 'Visible membership',
+            'phone'                   => '+15555550111',
+            'logo_uuid'               => null,
+            'backdrop_uuid'           => null,
+            'options'                 => json_encode(['region' => 'west']),
+            'currency'                => 'USD',
+            'country'                 => 'US',
+            'timezone'                => 'UTC',
+            'plan'                    => 'starter',
+            'trial_ends_at'           => null,
+            'status'                  => 'active',
+            'type'                    => 'business',
+            'slug'                    => 'visible-company',
+            'onboarding_completed_at' => '2026-07-18 10:00:00',
+            'created_at'              => '2026-07-18 10:00:00',
+            'updated_at'              => '2026-07-18 11:00:00',
+            'deleted_at'              => null,
+        ],
+        [
+            'id'                      => 2,
+            'uuid'                    => 'company-2',
+            'public_id'               => 'company_public_2',
+            'owner_uuid'              => null,
+            'name'                    => 'Installer Draft',
+            'description'             => null,
+            'phone'                   => null,
+            'logo_uuid'               => null,
+            'backdrop_uuid'           => null,
+            'options'                 => null,
+            'currency'                => null,
+            'country'                 => null,
+            'timezone'                => null,
+            'plan'                    => null,
+            'trial_ends_at'           => null,
+            'status'                  => 'pending',
+            'type'                    => null,
+            'slug'                    => 'installer-draft',
+            'onboarding_completed_at' => null,
+            'created_at'              => '2026-07-18 10:00:00',
+            'updated_at'              => '2026-07-18 11:00:00',
+            'deleted_at'              => null,
+        ],
+    ]);
+    $capsule->getConnection('mysql')->table('company_users')->insert([
+        ['uuid' => 'membership-visible', 'user_uuid' => 'member-user', 'company_uuid' => 'company-1', 'status' => 'active', 'external' => false, 'deleted_at' => null, 'created_at' => '2026-07-18 09:00:00', 'updated_at' => '2026-07-18 09:00:00'],
+        ['uuid' => 'membership-draft', 'user_uuid' => 'member-user', 'company_uuid' => 'company-2', 'status' => 'active', 'external' => false, 'deleted_at' => null, 'created_at' => '2026-07-18 09:00:00', 'updated_at' => '2026-07-18 09:00:00'],
+    ]);
+
+    $response = (new AuthController())->getUserOrganizations(auth_controller_authenticated_request('GET', [], User::find('member-user'), '/int/v1/auth/organizations'));
+    $payload  = $response->getData(true);
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($response->getEtag())->not->toBeNull()
+        ->and($response->headers->get('Cache-Control'))->toContain('private')
+        ->and($payload['data'])->toHaveCount(1)
+        ->and($payload['data'][0]['uuid'])->toBe('company-1')
+        ->and($payload['data'][0]['name'])->toBe('Visible Company')
+        ->and($payload['data'][0]['owner'])->toBe([
+            'uuid'  => 'owner-user',
+            'name'  => 'Owner User',
+            'email' => 'owner@example.test',
+        ])
+        ->and($payload['data'][0]['users_count'])->toBe(1)
+        ->and($payload['data'][0]['onboarding_completed'])->toBeTrue();
+});
+
+test('admin password change enforces authorization target and confirmation contracts', function () {
+    $capsule = auth_controller_login_bootstrap_database();
+    auth_controller_login_insert_user($capsule, [
+        'uuid'  => 'admin-user',
+        'email' => 'admin@example.test',
+        'type'  => 'admin',
+    ]);
+    auth_controller_login_insert_user($capsule, [
+        'uuid'     => 'target-user',
+        'email'    => 'target@example.test',
+        'password' => password_hash('old-password', PASSWORD_BCRYPT),
+        'type'     => 'user',
+    ]);
+    auth_controller_login_insert_user($capsule, [
+        'uuid'  => 'other-user',
+        'email' => 'other@example.test',
+        'type'  => 'user',
+    ]);
+    $capsule->getConnection('mysql')->table('company_users')->insert([
+        ['uuid' => 'target-membership', 'user_uuid' => 'target-user', 'company_uuid' => 'company-1', 'status' => 'active', 'external' => false, 'deleted_at' => null, 'created_at' => '2026-07-18 10:00:00', 'updated_at' => '2026-07-18 10:00:00'],
+    ]);
+
+    $missingActor = (new AuthController())->changeUserPassword(ChangePasswordRequest::create('/int/v1/auth/change-password', 'POST', [
+        'user'                  => 'target-user',
+        'password'              => 'New-password1!',
+        'password_confirmation' => 'New-password1!',
+    ]));
+    $limitedActor = new AuthControllerLoginBootstrapUserSpy([
+        'uuid'         => 'limited-user',
+        'company_uuid' => 'company-1',
+        'email'        => 'limited@example.test',
+        'type'         => 'user',
+    ]);
+    $limitedActor->exists = true;
+
+    $unauthorized = (new AuthController())->changeUserPassword(auth_controller_authenticated_request('POST', [
+        'user'                  => 'target-user',
+        'password'              => 'New-password1!',
+        'password_confirmation' => 'New-password1!',
+    ], $limitedActor, '/int/v1/auth/change-password', ChangePasswordRequest::class));
+    $missingTarget = (new AuthController())->changeUserPassword(auth_controller_authenticated_request('POST', [
+        'password'              => 'New-password1!',
+        'password_confirmation' => 'New-password1!',
+    ], User::find('admin-user'), '/int/v1/auth/change-password', ChangePasswordRequest::class));
+    $mismatch = (new AuthController())->changeUserPassword(auth_controller_authenticated_request('POST', [
+        'user'                  => 'target-user',
+        'password'              => 'New-password1!',
+        'password_confirmation' => 'Different-password1!',
+    ], User::find('admin-user'), '/int/v1/auth/change-password', ChangePasswordRequest::class));
+    $foreignTarget = (new AuthController())->changeUserPassword(auth_controller_authenticated_request('POST', [
+        'user'                  => 'other-user',
+        'password'              => 'New-password1!',
+        'password_confirmation' => 'New-password1!',
+    ], User::find('admin-user'), '/int/v1/auth/change-password', ChangePasswordRequest::class));
+    $success = (new AuthController())->changeUserPassword(auth_controller_authenticated_request('POST', [
+        'user'                  => 'target-user',
+        'password'              => 'New-password1!',
+        'password_confirmation' => 'New-password1!',
+    ], User::find('admin-user'), '/int/v1/auth/change-password', ChangePasswordRequest::class));
+
+    expect($missingActor->getStatusCode())->toBe(401)
+        ->and($missingActor->getData(true))->toBe(['errors' => ['Not authorized to change user password.']])
+        ->and($unauthorized->getStatusCode())->toBe(401)
+        ->and($unauthorized->getData(true))->toBe(['errors' => ['Not authorized to change user password.']])
+        ->and($missingTarget->getStatusCode())->toBe(400)
+        ->and($missingTarget->getData(true))->toBe(['errors' => ['No user specified to change password for.']])
+        ->and($mismatch->getStatusCode())->toBe(400)
+        ->and($mismatch->getData(true))->toBe(['errors' => ['Passwords do not match.']])
+        ->and($foreignTarget->getStatusCode())->toBe(400)
+        ->and($foreignTarget->getData(true))->toBe(['errors' => ['User not found to change password for.']])
+        ->and($success->getStatusCode())->toBe(200)
+        ->and($success->getData(true))->toBe(['status' => 'ok'])
+        ->and(password_verify('New-password1!', User::find('target-user')->password))->toBeTrue();
+});
+
+test('admin impersonation protects role target and session token contracts', function () {
+    $capsule = auth_controller_login_bootstrap_database();
+    auth_controller_login_insert_user($capsule, [
+        'uuid'  => 'admin-user',
+        'email' => 'admin@example.test',
+        'type'  => 'admin',
+    ]);
+    auth_controller_login_insert_user($capsule, [
+        'uuid'  => 'regular-user',
+        'email' => 'regular@example.test',
+        'type'  => 'user',
+    ]);
+
+    $unauthorized = (new AuthController())->impersonate(auth_controller_authenticated_request('POST', [
+        'user' => 'admin-user',
+    ], User::find('regular-user'), '/int/v1/auth/impersonate', AdminRequest::class));
+    $missingSelected = (new AuthController())->impersonate(auth_controller_authenticated_request('POST', [], User::find('admin-user'), '/int/v1/auth/impersonate', AdminRequest::class));
+    $missingTarget   = (new AuthController())->impersonate(auth_controller_authenticated_request('POST', [
+        'user' => 'missing-user',
+    ], User::find('admin-user'), '/int/v1/auth/impersonate', AdminRequest::class));
+    $success = (new AuthController())->impersonate(auth_controller_authenticated_request('POST', [
+        'user' => 'regular-user',
+    ], User::find('admin-user'), '/int/v1/auth/impersonate', AdminRequest::class));
+
+    expect($unauthorized->getStatusCode())->toBe(400)
+        ->and($unauthorized->getData(true))->toBe(['errors' => ['Not authorized to impersonate users.']])
+        ->and($missingSelected->getStatusCode())->toBe(400)
+        ->and($missingSelected->getData(true))->toBe(['errors' => ['Not target user selected to impersonate.']])
+        ->and($missingTarget->getStatusCode())->toBe(400)
+        ->and($missingTarget->getData(true))->toBe(['errors' => ['The selected user to impersonate was not found.']])
+        ->and($success->getStatusCode())->toBe(200)
+        ->and($success->getData(true)['status'])->toBe('ok')
+        ->and($success->getData(true)['token'])->toContain('|')
+        ->and(session('user'))->toBe('regular-user')
+        ->and(session('impersonator'))->toBe('admin-user')
+        ->and($capsule->getConnection('mysql')->table('personal_access_tokens')->where('tokenable_id', 'regular-user')->count())->toBe(1);
 });
