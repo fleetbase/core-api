@@ -52,6 +52,7 @@ namespace {
     use Illuminate\Cache\RateLimiter;
     use Illuminate\Cache\Repository;
     use Illuminate\Contracts\Bus\Dispatcher as BusDispatcher;
+    use Illuminate\Contracts\Config\Repository as ConfigRepositoryContract;
     use Illuminate\Database\Capsule\Manager as Capsule;
     use Illuminate\Database\Eloquent\Model as EloquentModel;
     use Illuminate\Events\Dispatcher;
@@ -158,6 +159,42 @@ namespace {
         }
     }
 
+    class MiddlewareContractsTaggedCacheFake
+    {
+        private array $values = [];
+
+        public function get(string $key, mixed $default = null): mixed
+        {
+            return $this->values[$key] ?? $default;
+        }
+
+        public function put(string $key, mixed $value, mixed $ttl = null): bool
+        {
+            $this->values[$key] = $value;
+
+            return true;
+        }
+
+        public function forget(string $key): bool
+        {
+            unset($this->values[$key]);
+
+            return true;
+        }
+
+        public function tags(array|string $tags): self
+        {
+            return $this;
+        }
+
+        public function flush(): bool
+        {
+            $this->values = [];
+
+            return true;
+        }
+    }
+
     class MiddlewareContractsUser extends FleetbaseUser
     {
         private bool $adminForTest;
@@ -214,6 +251,96 @@ namespace {
         Facade::clearResolvedInstance('config');
         Facade::clearResolvedInstance('log');
         middleware_contracts_set_cache_state(null, null);
+    }
+
+    function middleware_contracts_basic_auth_database(): Capsule
+    {
+        EloquentModel::clearBootedModels();
+
+        $connection = [
+            'driver'   => 'sqlite',
+            'database' => ':memory:',
+            'prefix'   => '',
+        ];
+
+        $container = bind_test_container([
+            'api.cache.enabled'            => false,
+            'database.default'             => 'mysql',
+            'database.connections.mysql'   => $connection,
+            'fleetbase.connection.db'      => 'mysql',
+        ]);
+        $container->instance('cache', new MiddlewareContractsTaggedCacheFake());
+        $container->instance('responsecache', new MiddlewareContractsResponseCacheFake());
+        $container->instance(ConfigRepositoryContract::class, $container->make('config'));
+        Facade::clearResolvedInstances();
+
+        $capsule = new Capsule($container);
+        $capsule->addConnection($connection, 'mysql');
+        $capsule->setEventDispatcher(new Dispatcher($container));
+        $capsule->setAsGlobal();
+        $capsule->bootEloquent();
+        EloquentModel::unsetEventDispatcher();
+        $capsule->getDatabaseManager()->setDefaultConnection('mysql');
+        $container->instance('db', $capsule->getDatabaseManager());
+        Facade::clearResolvedInstance('db');
+
+        $schema = $capsule->getConnection('mysql')->getSchemaBuilder();
+        $schema->create('users', function ($table) {
+            $table->string('uuid')->primary();
+            $table->string('company_uuid')->nullable();
+            $table->string('type')->nullable();
+            $table->timestamp('created_at')->nullable();
+            $table->timestamp('updated_at')->nullable();
+            $table->timestamp('deleted_at')->nullable();
+        });
+        $schema->create('companies', function ($table) {
+            $table->string('uuid')->primary();
+            $table->string('owner_id')->nullable();
+            $table->string('owner_uuid')->nullable();
+            $table->timestamp('created_at')->nullable();
+            $table->timestamp('updated_at')->nullable();
+            $table->timestamp('deleted_at')->nullable();
+        });
+        $schema->create('api_credentials', function ($table) {
+            $table->string('uuid')->primary();
+            $table->string('user_uuid')->nullable();
+            $table->string('company_uuid')->nullable();
+            $table->string('name')->nullable();
+            $table->string('key')->nullable();
+            $table->string('secret')->nullable();
+            $table->boolean('test_mode')->default(false);
+            $table->timestamp('last_used_at')->nullable();
+            $table->timestamp('expires_at')->nullable();
+            $table->timestamp('created_at')->nullable();
+            $table->timestamp('updated_at')->nullable();
+            $table->timestamp('deleted_at')->nullable();
+        });
+        $schema->create('personal_access_tokens', function ($table) {
+            $table->increments('id');
+            $table->string('tokenable_type');
+            $table->string('tokenable_id');
+            $table->string('name')->nullable();
+            $table->string('token', 64)->unique();
+            $table->text('abilities')->nullable();
+            $table->timestamp('last_used_at')->nullable();
+            $table->timestamp('expires_at')->nullable();
+            $table->timestamp('created_at')->nullable();
+            $table->timestamp('updated_at')->nullable();
+        });
+
+        $db = $capsule->getConnection('mysql');
+        $db->table('users')->insert([
+            ['uuid' => 'user-1', 'company_uuid' => 'company-1', 'type' => 'admin'],
+        ]);
+        $db->table('companies')->insert([
+            ['uuid' => 'company-1', 'owner_id' => 'user-1', 'owner_uuid' => 'user-1'],
+        ]);
+        $db->table('api_credentials')->insert([
+            ['uuid' => 'credential-live', 'user_uuid' => 'user-1', 'company_uuid' => 'company-1', 'name' => 'Live', 'key' => 'flb_live_auth', 'secret' => '$live_secret', 'test_mode' => 0, 'last_used_at' => null, 'expires_at' => null, 'created_at' => '2026-07-18 00:00:00', 'updated_at' => '2026-07-18 00:00:00'],
+            ['uuid' => 'credential-expired', 'user_uuid' => 'user-1', 'company_uuid' => 'company-1', 'name' => 'Expired', 'key' => 'flb_live_expired', 'secret' => '$expired_secret', 'test_mode' => 0, 'last_used_at' => null, 'expires_at' => '2020-01-01 00:00:00', 'created_at' => '2026-07-18 00:00:00', 'updated_at' => '2026-07-18 00:00:00'],
+        ]);
+
+        return $capsule;
     }
 
     function middleware_contracts_request(string $uri, string $routeUri, array $headers = []): Request
@@ -798,6 +925,71 @@ namespace {
         expect($continued)->toBeFalse()
             ->and($response->getStatusCode())->toBe(401)
             ->and($response->getData(true))->toBe([
+                'errors' => ['Oops! The API credentials provided were not valid'],
+            ]);
+    });
+
+    test('basic auth middleware authenticates valid API keys and stores session context', function () {
+        $capsule = middleware_contracts_basic_auth_database();
+        session()->flush();
+
+        $request = Request::create('/v1/orders', 'GET', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer flb_live_auth',
+        ]);
+        $continued = false;
+        $response = (new AuthenticateOnceWithBasicAuth())->handle(
+            $request,
+            function () use (&$continued) {
+                $continued = true;
+
+                return new JsonResponse(['ok' => true]);
+            }
+        );
+
+        expect($continued)->toBeTrue()
+            ->and($response->getData(true))->toBe(['ok' => true])
+            ->and(session('company'))->toBe('company-1')
+            ->and(session('user'))->toBe('user-1')
+            ->and(session('is_admin'))->toBeTrue()
+            ->and(session('api_credential'))->toBe('credential-live')
+            ->and(session('api_key'))->toBe('flb_live_auth')
+            ->and(session('api_secret'))->toBe('$live_secret')
+            ->and(session('api_environment'))->toBe('live')
+            ->and(session('api_test_mode'))->toBeFalse()
+            ->and($capsule->getConnection('mysql')->table('api_credentials')->where('uuid', 'credential-live')->value('last_used_at'))->not->toBeNull();
+    });
+
+    test('basic auth middleware allows sdk secret keys and rejects expired credentials', function () {
+        middleware_contracts_basic_auth_database();
+        session()->flush();
+
+        $secretRequest = Request::create('/v1/orders', 'GET', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer $live_secret',
+            'HTTP_USER_AGENT'    => '@fleetbase/sdk;node',
+        ]);
+        $secretResponse = (new AuthenticateOnceWithBasicAuth())->handle(
+            $secretRequest,
+            fn () => new JsonResponse(['source' => 'secret'])
+        );
+
+        $expiredRequest = Request::create('/v1/orders', 'GET', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer flb_live_expired',
+        ]);
+        $expiredContinued = false;
+        $expiredResponse = (new AuthenticateOnceWithBasicAuth())->handle(
+            $expiredRequest,
+            function () use (&$expiredContinued) {
+                $expiredContinued = true;
+
+                return new JsonResponse(['ok' => true]);
+            }
+        );
+
+        expect($secretResponse->getData(true))->toBe(['source' => 'secret'])
+            ->and(session('api_credential'))->toBe('credential-live')
+            ->and($expiredContinued)->toBeFalse()
+            ->and($expiredResponse->getStatusCode())->toBe(401)
+            ->and($expiredResponse->getData(true))->toBe([
                 'errors' => ['Oops! The API credentials provided were not valid'],
             ]);
     });
