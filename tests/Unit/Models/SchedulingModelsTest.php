@@ -12,6 +12,81 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Facade;
 
+if (!class_exists('Log')) {
+    class_alias(Illuminate\Support\Facades\Log::class, 'Log');
+}
+
+if (!class_exists('RRule\\RRule')) {
+    eval(<<<'PHP'
+        namespace RRule;
+
+        class RRuleException extends \Exception
+        {
+        }
+
+        class RRule implements \IteratorAggregate
+        {
+            private \DateTimeImmutable $dtStart;
+            private string $frequency = 'DAILY';
+            private int $count = 1;
+            private array $byDays = [];
+
+            public function __construct(string $definition)
+            {
+                if (str_contains($definition, 'THROW_INVALID_ARGUMENT')) {
+                    throw new \InvalidArgumentException('Invalid RRULE definition.');
+                }
+
+                if (str_contains($definition, 'THROW_RRULE_EXCEPTION')) {
+                    throw new RRuleException('Invalid recurrence rule.');
+                }
+
+                [$dtStartLine, $ruleLine] = explode("\n", $definition, 2);
+
+                if (str_starts_with($dtStartLine, 'DTSTART;TZID=')) {
+                    [, $datePart] = explode(':', $dtStartLine, 2);
+                    [, $timezone] = explode('=', explode(':', $dtStartLine, 2)[0], 2);
+                    $this->dtStart = new \DateTimeImmutable($datePart, new \DateTimeZone($timezone));
+                } else {
+                    [, $datePart] = explode(':', $dtStartLine, 2);
+                    $this->dtStart = new \DateTimeImmutable(rtrim($datePart, 'Z'), new \DateTimeZone('UTC'));
+                }
+
+                $rule = [];
+                foreach (explode(';', preg_replace('/^RRULE:/', '', trim($ruleLine))) as $part) {
+                    [$key, $value] = explode('=', $part, 2);
+                    $rule[$key] = $value;
+                }
+
+                $this->frequency = $rule['FREQ'] ?? 'DAILY';
+                $this->count = (int) ($rule['COUNT'] ?? 1);
+                $this->byDays = isset($rule['BYDAY']) ? explode(',', $rule['BYDAY']) : [];
+            }
+
+            public function getIterator(): \Traversable
+            {
+                $emitted = 0;
+                $cursor = $this->dtStart;
+                $weekdayMap = ['MO' => 1, 'TU' => 2, 'WE' => 3, 'TH' => 4, 'FR' => 5, 'SA' => 6, 'SU' => 7];
+
+                while ($emitted < $this->count) {
+                    $matchesByDay = empty($this->byDays) || in_array((int) $cursor->format('N'), array_map(fn ($day) => $weekdayMap[$day] ?? 0, $this->byDays), true);
+
+                    if ($matchesByDay) {
+                        yield $cursor;
+                        $emitted++;
+                    }
+
+                    $cursor = match ($this->frequency) {
+                        'WEEKLY' => empty($this->byDays) ? $cursor->modify('+1 week') : $cursor->modify('+1 day'),
+                        default => $cursor->modify('+1 day'),
+                    };
+                }
+            }
+        }
+    PHP);
+}
+
 class SchedulingModelsTaggedCacheFake
 {
     public function tags(array $tags): self
@@ -47,6 +122,16 @@ class SchedulingModelsResponseCacheFake
     public function clear(): void
     {
         $this->clears++;
+    }
+}
+
+class SchedulingModelsLogFake
+{
+    public array $entries = [];
+
+    public function warning(string $message, array $context = []): void
+    {
+        $this->entries[] = ['warning', $message, $context];
     }
 }
 
@@ -307,6 +392,52 @@ it('reports unavailable schedule template rrule support clearly in this package 
     expect($template->hasRrule())->toBeFalse()
         ->and($template->getRruleInstance($from, 'UTC'))->toBeNull()
         ->and($template->getOccurrencesBetween($from, $to, 'UTC'))->toBe([]);
+});
+
+it('handles schedule template rrule parsing timezones horizons and invalid rules', function () {
+    scheduling_models_database();
+
+    $logger = new SchedulingModelsLogFake();
+    app()->instance('log', $logger);
+    Facade::clearResolvedInstance('log');
+
+    $template = new ScheduleTemplate();
+    $template->setRawAttributes([
+        'uuid'       => 'template-rrule-branches',
+        'start_time' => '08:30',
+        'rrule'      => 'RRULE:FREQ=WEEKLY;COUNT=4;BYDAY=MO,WE',
+    ], true);
+
+    $from = Carbon::parse('2026-05-04 00:00:00', 'Asia/Ulaanbaatar');
+    $to   = Carbon::parse('2026-05-06 23:59:59', 'Asia/Ulaanbaatar');
+
+    expect($template->getRruleInstance($from, 'Asia/Ulaanbaatar'))->not->toBeNull()
+        ->and($template->getOccurrencesBetween($from, $to, 'Asia/Ulaanbaatar'))
+        ->sequence(
+            fn ($occurrence) => $occurrence->toDateTimeString()->toBe('2026-05-04 08:30:00'),
+            fn ($occurrence) => $occurrence->toDateTimeString()->toBe('2026-05-06 08:30:00'),
+        );
+
+    $template->rrule = 'FREQ=THROW_INVALID_ARGUMENT';
+
+    expect($template->getRruleInstance($from, 'UTC'))->toBeNull()
+        ->and($template->getOccurrencesBetween($from, $to, 'UTC'))->toBe([])
+        ->and($logger->entries[count($logger->entries) - 1][0])->toBe('warning')
+        ->and($logger->entries[count($logger->entries) - 1][1])->toBe('ScheduleTemplate: invalid RRULE string (RFC parse error)')
+        ->and($logger->entries[count($logger->entries) - 1][2]['template_uuid'])->toBe('template-rrule-branches')
+        ->and($logger->entries[count($logger->entries) - 1][2]['rrule_raw'])->toBe('FREQ=THROW_INVALID_ARGUMENT')
+        ->and($logger->entries[count($logger->entries) - 1][2]['rrule_built'])->toContain('RRULE:FREQ=THROW_INVALID_ARGUMENT')
+        ->and($logger->entries[count($logger->entries) - 1][2]['error'])->toBe('Invalid RRULE definition.');
+
+    $template->rrule = 'FREQ=THROW_RRULE_EXCEPTION';
+
+    expect($template->getRruleInstance($from, 'UTC'))->toBeNull()
+        ->and($logger->entries[count($logger->entries) - 1][0])->toBe('warning')
+        ->and($logger->entries[count($logger->entries) - 1][1])->toBe('ScheduleTemplate: invalid RRULE string')
+        ->and($logger->entries[count($logger->entries) - 1][2]['template_uuid'])->toBe('template-rrule-branches')
+        ->and($logger->entries[count($logger->entries) - 1][2]['rrule_raw'])->toBe('FREQ=THROW_RRULE_EXCEPTION')
+        ->and($logger->entries[count($logger->entries) - 1][2]['rrule_built'])->toContain('RRULE:FREQ=THROW_RRULE_EXCEPTION')
+        ->and($logger->entries[count($logger->entries) - 1][2]['error'])->toBe('Invalid recurrence rule.');
 });
 
 it('exposes schedule template relationship keys and rrule dependency failures', function () {

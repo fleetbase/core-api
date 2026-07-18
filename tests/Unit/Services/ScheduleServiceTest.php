@@ -33,6 +33,14 @@ if (!class_exists('RRule\\RRule')) {
 
             public function __construct(string $definition)
             {
+                if (str_contains($definition, 'THROW_INVALID_ARGUMENT')) {
+                    throw new \InvalidArgumentException('Invalid RRULE definition.');
+                }
+
+                if (str_contains($definition, 'THROW_RRULE_EXCEPTION')) {
+                    throw new RRuleException('Invalid recurrence rule.');
+                }
+
                 [$dtStartLine, $ruleLine] = explode("\n", $definition, 2);
 
                 if (str_starts_with($dtStartLine, 'DTSTART;TZID=')) {
