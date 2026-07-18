@@ -1,6 +1,8 @@
 <?php
 
 use Fleetbase\Support\ApiModelCache;
+use Fleetbase\Traits\HasApiModelCache;
+use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Session\Store;
@@ -12,6 +14,55 @@ class ApiModelCacheTestModel extends Model
     protected $primaryKey = 'uuid';
     public $incrementing = false;
     protected $keyType = 'string';
+}
+
+class ApiModelCacheTraitTestModel extends Model
+{
+    use HasApiModelCache;
+
+    protected $table = 'orders';
+    protected $primaryKey = 'uuid';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    protected $guarded = [];
+
+    public static array $mutatedRequestQueries = [];
+
+    public function searchBuilder(Request $request, array $columns = ['*'])
+    {
+        $builder = static::query();
+
+        if ($request->filled('status')) {
+            $builder->where('status', $request->input('status'));
+        }
+
+        return $builder->orderBy('uuid');
+    }
+
+    public static function mutateModelWithRequest(Request $request, $result)
+    {
+        static::$mutatedRequestQueries[] = $request->query();
+
+        return $result;
+    }
+
+    public function queryFromRequest(Request $request, ?Closure $queryCallback = null)
+    {
+        return $this->queryFromRequestWithoutCache($request, $queryCallback);
+    }
+
+    public function getCachedPayloadAttribute(): array
+    {
+        return [
+            'uuid' => $this->uuid,
+            'name' => 'payload for ' . $this->uuid,
+        ];
+    }
+}
+
+class ApiModelCacheTraitDisabledModel extends ApiModelCacheTraitTestModel
+{
+    public bool $disableApiCache = true;
 }
 
 class ApiModelCacheTestLock
@@ -177,6 +228,61 @@ function api_model_cache_request(array $query = [], mixed $company = 'company-1'
     $request->setLaravelSession($session);
 
     return $request;
+}
+
+function api_model_cache_trait_database(): Capsule
+{
+    Model::clearBootedModels();
+    Model::unsetEventDispatcher();
+
+    $connection = [
+        'driver'   => 'sqlite',
+        'database' => ':memory:',
+        'prefix'   => '',
+    ];
+
+    $container = bind_test_container([
+        'api.cache.enabled'          => true,
+        'api.cache.ttl.query'        => 111,
+        'api.cache.ttl.model'        => 222,
+        'api.cache.ttl.relationship' => 333,
+        'database.default'           => 'mysql',
+        'database.connections.mysql' => $connection,
+        'fleetbase.connection.db'    => 'mysql',
+    ]);
+
+    $store = new ApiModelCacheTestStore();
+    $container->instance('cache', $store);
+    Facade::clearResolvedInstance('cache');
+
+    $capsule = new Capsule($container);
+    $capsule->addConnection($connection, 'mysql');
+    $capsule->setAsGlobal();
+    $capsule->bootEloquent();
+    Model::unsetEventDispatcher();
+    $capsule->getDatabaseManager()->setDefaultConnection('mysql');
+    $container->instance('db', $capsule->getDatabaseManager());
+    Facade::clearResolvedInstance('db');
+    ApiModelCache::resetCacheStatus();
+    ApiModelCacheTraitTestModel::$mutatedRequestQueries = [];
+
+    $schema = $capsule->getConnection('mysql')->getSchemaBuilder();
+    $schema->create('orders', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('public_id')->nullable();
+        $table->string('company_uuid')->nullable();
+        $table->string('status')->nullable();
+        $table->timestamp('created_at')->nullable();
+        $table->timestamp('updated_at')->nullable();
+    });
+
+    $capsule->getConnection('mysql')->table('orders')->insert([
+        ['uuid' => 'order-1', 'public_id' => 'order_public_1', 'company_uuid' => 'company-1', 'status' => 'active'],
+        ['uuid' => 'order-2', 'public_id' => 'order_public_2', 'company_uuid' => 'company-1', 'status' => 'active'],
+        ['uuid' => 'order-3', 'public_id' => 'order_public_3', 'company_uuid' => 'company-1', 'status' => 'inactive'],
+    ]);
+
+    return $capsule;
 }
 
 class ApiModelCacheArraySessionHandler implements SessionHandlerInterface
@@ -362,4 +468,88 @@ test('api model cache falls back to callbacks when tagged cache operations fail'
     expect($modelResult)->toBe(['fallback' => true])
         ->and(ApiModelCache::getCacheStatus())->toBe('ERROR')
         ->and(ApiModelCache::getCacheKey())->toBe('{api_model}:orders:order-1');
+});
+
+test('has api model cache caches request queries with callback markers page offsets and mutation hooks', function () {
+    api_model_cache_trait_database();
+    $model = new ApiModelCacheTraitTestModel();
+    $request = api_model_cache_request([
+        'status' => 'active',
+        'limit'  => 1,
+        'page'   => 2,
+    ]);
+    $callbackCalls = 0;
+
+    $first = $model->queryFromRequestCached($request, function ($builder) use (&$callbackCalls) {
+        $callbackCalls++;
+        $builder->where('company_uuid', 'company-1');
+    });
+    $second = ApiModelCacheTraitTestModel::queryWithRequestCached($request, function ($builder) use (&$callbackCalls) {
+        $callbackCalls++;
+        $builder->whereRaw('1 = 0');
+    });
+
+    expect($first->pluck('uuid')->all())->toBe(['order-2'])
+        ->and($second->pluck('uuid')->all())->toBe(['order-2'])
+        ->and($callbackCalls)->toBe(1)
+        ->and(ApiModelCache::getCacheStatus())->toBe('HIT')
+        ->and(ApiModelCache::getCacheKey())->toStartWith('{api_query}:orders:company_company-1:v1:')
+        ->and(ApiModelCacheTraitTestModel::$mutatedRequestQueries)->toHaveCount(1)
+        ->and(ApiModelCacheTraitTestModel::$mutatedRequestQueries[0])->toMatchArray([
+            'status' => 'active',
+            'limit'  => 1,
+            'page'   => 2,
+        ]);
+});
+
+test('has api model cache wraps id public id relationship invalidation and stats helpers', function () {
+    $capsule = api_model_cache_trait_database();
+    $store = app('cache');
+
+    $byId = ApiModelCacheTraitTestModel::findCached('order-1');
+    $capsule->getConnection('mysql')->table('orders')->where('uuid', 'order-1')->delete();
+    $cachedById = ApiModelCacheTraitTestModel::findCached('order-1');
+
+    $byPublicId = ApiModelCacheTraitTestModel::findByPublicIdCached('order_public_2');
+    $capsule->getConnection('mysql')->table('orders')->where('uuid', 'order-2')->delete();
+    $cachedByPublicId = ApiModelCacheTraitTestModel::findByPublicIdCached('order_public_2');
+
+    $model = new ApiModelCacheTraitTestModel([
+        'uuid'         => 'order-relationship',
+        'company_uuid' => 'company-1',
+    ]);
+    $model->exists = true;
+    $model->loadCached('cached_payload');
+    $firstRelation = $model->getRelation('cached_payload');
+    $model->unsetRelation('cached_payload');
+    $model->loadMultipleCached(['cached_payload']);
+
+    $model->invalidateApiCache();
+    $model->invalidateQueryCache(api_model_cache_request(['status' => 'active']));
+    ApiModelCacheTraitTestModel::invalidateApiCacheManually('company-1');
+    ApiModelCacheTraitTestModel::warmUpCache(api_model_cache_request(['status' => 'inactive']));
+
+    expect($byId?->uuid)->toBe('order-1')
+        ->and($cachedById?->uuid)->toBe('order-1')
+        ->and($byPublicId?->uuid)->toBe('order-2')
+        ->and($cachedByPublicId?->uuid)->toBe('order-2')
+        ->and($firstRelation)->toBe([
+            'uuid' => 'order-relationship',
+            'name' => 'payload for order-relationship',
+        ])
+        ->and($model->getRelation('cached_payload'))->toBe($firstRelation)
+        ->and($store->flushedTags)->toContain(['api_cache', 'api_model:orders', 'company:company-1'])
+        ->and($store->flushedTags)->toContain(['api_cache', 'api_model:orders', 'api_query:orders', 'company:company-1'])
+        ->and($store->forgotten[0]['key'])->toStartWith('{api_query}:orders:company_company-1:')
+        ->and(ApiModelCacheTraitTestModel::getCacheStats())->toMatchArray([
+            'enabled' => true,
+            'driver'  => 'array',
+            'ttl'     => [
+                'query'        => 111,
+                'model'        => 222,
+                'relationship' => 333,
+            ],
+        ])
+        ->and((new ApiModelCacheTraitTestModel())->isCachingEnabled())->toBeTrue()
+        ->and((new ApiModelCacheTraitDisabledModel())->isCachingEnabled())->toBeFalse();
 });
