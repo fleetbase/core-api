@@ -1301,7 +1301,7 @@ class User extends Authenticatable
      */
     public function setUserInfoFromRequest($request, bool $save = false): self
     {
-        $userInfoAttributes = static::getUserInfoFromRequest($request);
+        $userInfoAttributes = static::applyUserInfoFromRequest($request);
 
         foreach ($userInfoAttributes as $key => $value) {
             if ($this->isFillable($key)) {

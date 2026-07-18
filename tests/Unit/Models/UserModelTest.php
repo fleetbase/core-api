@@ -2,11 +2,13 @@
 
 use Fleetbase\Exceptions\InvalidVerificationCodeException;
 use Fleetbase\Models\Company;
+use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\User;
 use Fleetbase\Models\VerificationCode;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Events\Dispatcher;
+use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Facade;
@@ -53,6 +55,18 @@ class UserModelSyncTarget extends Model
     }
 }
 
+class UserModelCompanyUserSpy extends CompanyUser
+{
+    public array $assignedRoles = [];
+
+    public function assignSingleRole($role): CompanyUser
+    {
+        $this->assignedRoles[] = $role;
+
+        return $this;
+    }
+}
+
 class UserModelHashFake
 {
     public function make(mixed $value, array $options = []): string
@@ -71,6 +85,8 @@ function user_model_container(): void
     $container = bind_test_container();
     $container->instance('hash', new UserModelHashFake());
     Facade::clearResolvedInstance('hash');
+    Facade::clearResolvedInstance('cache');
+    Facade::clearResolvedInstance('log');
 
     $connection = [
         'driver'   => 'sqlite',
@@ -93,6 +109,65 @@ function user_model_container(): void
     $databaseManager->setDefaultConnection('mysql');
     $container->instance('db', $databaseManager);
     Facade::clearResolvedInstance('db');
+}
+
+function user_model_schema(): void
+{
+    user_model_container();
+
+    $schema = app('db')->connection('mysql')->getSchemaBuilder();
+
+    $schema->create('users', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('public_id')->nullable();
+        $table->string('company_uuid')->nullable();
+        $table->string('email')->nullable();
+        $table->string('phone')->nullable();
+        $table->string('username')->nullable();
+        $table->string('name')->nullable();
+        $table->string('type')->nullable();
+        $table->string('status')->nullable();
+        $table->string('timezone')->nullable();
+        $table->string('country')->nullable();
+        $table->string('ip_address')->nullable();
+        $table->text('meta')->nullable();
+        $table->timestamp('email_verified_at')->nullable();
+        $table->timestamp('phone_verified_at')->nullable();
+        $table->timestamps();
+        $table->softDeletes();
+    });
+
+    $schema->create('companies', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('public_id')->nullable();
+        $table->string('name')->nullable();
+        $table->string('owner_uuid')->nullable();
+        $table->timestamps();
+        $table->softDeletes();
+    });
+
+    $schema->create('company_users', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('company_uuid');
+        $table->string('user_uuid');
+        $table->string('status')->nullable();
+        $table->boolean('external')->default(false);
+        $table->timestamps();
+        $table->softDeletes();
+    });
+
+    $schema->create('verification_codes', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('subject_uuid');
+        $table->string('subject_type')->nullable();
+        $table->string('code');
+        $table->string('for');
+        $table->string('status');
+        $table->timestamp('expires_at')->nullable();
+        $table->text('meta')->nullable();
+        $table->timestamps();
+        $table->softDeletes();
+    });
 }
 
 it('exposes identity type status timezone and company-derived attributes', function () {
@@ -281,4 +356,105 @@ it('syncs fillable identity properties in either direction only when the target 
         ->and($emptyUser->phone)->toBe('+15555550100')
         ->and($emptyUser->syncProperty('phone', $source))->toBeFalse()
         ->and($emptyUser->syncProperty('password', $source))->toBeFalse();
+});
+
+it('assigns companies from uuid or public id and ignores invalid identifiers', function () {
+    user_model_schema();
+
+    app('db')->connection('mysql')->table('companies')->insert([
+        'uuid'       => '11111111-1111-4111-8111-111111111111',
+        'public_id'  => 'company_ABC1234',
+        'name'       => 'Acme Logistics',
+        'owner_uuid' => 'user-1',
+    ]);
+    app('db')->connection('mysql')->table('company_users')->insert([
+        'uuid'         => 'company-user-1',
+        'company_uuid' => '11111111-1111-4111-8111-111111111111',
+        'user_uuid'    => 'user-1',
+        'status'       => 'active',
+    ]);
+
+    $user = new UserModelSaveSpy();
+    $user->setRawAttributes([
+        'uuid' => 'user-1',
+        'type' => 'admin',
+    ], true);
+
+    expect($user->assignCompanyFromId('not-a-valid-company-id'))->toBe($user)
+        ->and($user->company_uuid)->toBeNull()
+        ->and($user->assignCompanyFromId('missing_company_1'))->toBe($user)
+        ->and($user->company_uuid)->toBeNull()
+        ->and($user->assignCompanyFromId('company_ABC1234'))->toBe($user)
+        ->and($user->company_uuid)->toBe('11111111-1111-4111-8111-111111111111')
+        ->and($user->saves)->toBe(1);
+});
+
+it('falls back to database lookups for company and verification code helpers', function () {
+    user_model_schema();
+
+    app('db')->connection('mysql')->table('companies')->insert([
+        'uuid'       => '22222222-2222-4222-8222-222222222222',
+        'public_id'  => 'company_public_2',
+        'name'       => 'Globex',
+        'owner_uuid' => 'user-2',
+    ]);
+    app('db')->connection('mysql')->table('verification_codes')->insert([
+        'uuid'         => 'verify-1',
+        'subject_uuid' => 'user-2',
+        'subject_type' => User::class,
+        'code'         => '123456',
+        'for'          => 'email_verification',
+        'status'       => 'active',
+        'expires_at'   => Carbon::parse('2026-07-20 00:00:00', 'UTC')->toDateTimeString(),
+    ]);
+
+    $user = new UserModelSaveSpy();
+    $user->setRawAttributes([
+        'uuid'         => 'user-2',
+        'company_uuid' => '22222222-2222-4222-8222-222222222222',
+    ], true);
+
+    $company = $user->getCompany();
+    $code    = $user->getVerificationCodeOrFail('123456', ['email_verification']);
+
+    expect($company)->toBeInstanceOf(Company::class)
+        ->and($company->uuid)->toBe('22222222-2222-4222-8222-222222222222')
+        ->and($code)->toBeInstanceOf(VerificationCode::class)
+        ->and($code->uuid)->toBe('verify-1')
+        ->and($user->verify('123456'))->toBe($user)
+        ->and($user->email_verified_at)->toBeInstanceOf(Carbon::class);
+});
+
+it('enriches new and existing users from request timezone data without calling missing helpers', function () {
+    user_model_container();
+
+    $request = Request::create('/signup', 'POST', [
+        'timezone' => 'Asia/Ulaanbaatar',
+    ]);
+
+    $newUser = User::newUserWithRequestInfo($request, [
+        'email' => 'request@example.com',
+    ]);
+
+    $existing = new UserModelSaveSpy();
+
+    expect($newUser)->toBeInstanceOf(User::class)
+        ->and($newUser->email)->toBe('request@example.com')
+        ->and($newUser->timezone)->toBe('Asia/Ulaanbaatar')
+        ->and($existing->setUserInfoFromRequest($request, true))->toBe($existing)
+        ->and($existing->timezone)->toBe('Asia/Ulaanbaatar')
+        ->and($existing->saves)->toBe(1);
+});
+
+it('assigns a single company role only when the company-user relation exists', function () {
+    user_model_container();
+
+    $companyUser = new UserModelCompanyUserSpy();
+    $user        = new UserModelSaveSpy();
+    $user->setRelation('companyUser', $companyUser);
+
+    expect($user->assignSingleRole('Dispatcher'))->toBe($user)
+        ->and($companyUser->assignedRoles)->toBe(['Dispatcher'])
+        ->and(fn () => (new UserModelSaveSpy())->assignSingleRole('Dispatcher'))
+        ->toThrow(Exception::class, 'Company User relationship not found!');
 });
