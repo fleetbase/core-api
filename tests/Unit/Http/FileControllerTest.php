@@ -164,6 +164,11 @@ function file_controller_fixtures(): Capsule
             'root'   => $storageRoot,
             'url'    => 'http://fleetbase.test/storage',
         ],
+        'filesystems.disks.uploads' => [
+            'driver' => 'local',
+            'root'   => $storageRoot . '/uploads-disk',
+            'url'    => 'http://fleetbase.test/uploads',
+        ],
         'filesystems.disks.archive' => [
             'driver' => 'local',
             'root'   => $storageRoot . '/archive',
@@ -681,6 +686,30 @@ test('public file controller uploads multipart files with session ownership and 
         ->and(Storage::disk('testing')->exists($record->path))->toBeTrue();
 });
 
+test('public file controller reports multipart storage and record creation failures', function () {
+    $capsule = file_controller_fixtures();
+
+    $storageFailure = public_file_controller()->create(public_file_controller_upload_request([
+        'disk' => 'missing-disk',
+        'path' => 'uploads/documents',
+        'type' => 'document',
+    ], 'uploaded body'));
+
+    expect($storageFailure->getStatusCode())->toBe(400)
+        ->and($storageFailure->getData(true)['error'])->toContain('Disk [missing-disk] does not have a configured driver')
+        ->and($capsule->getConnection('mysql')->table('files')->count())->toBe(0);
+
+    $capsule->getConnection('mysql')->getSchemaBuilder()->drop('files');
+
+    $recordFailure = public_file_controller()->create(public_file_controller_upload_request([
+        'path' => 'uploads/documents',
+        'type' => 'document',
+    ], 'uploaded body'));
+
+    expect($recordFailure->getStatusCode())->toBe(400)
+        ->and($recordFailure->getData(true)['error'])->toContain('no such table: files');
+});
+
 test('public file controller creates base64 files and reports missing data using api error shape', function () {
     $capsule = file_controller_fixtures();
 
@@ -709,6 +738,46 @@ test('public file controller creates base64 files and reports missing data using
         ->and(Storage::disk('testing')->get('uploads/documents/manifest.txt'))->toBe('plain text body')
         ->and($missing->getStatusCode())->toBe(400)
         ->and($missing->getData(true))->toBe(['error' => 'Oops! Looks like nodata was provided for upload.']);
+});
+
+test('public file controller normalizes uploads disk base64 paths and reports failure branches', function () {
+    $capsule = file_controller_fixtures();
+
+    $normalized = public_file_controller()->createFromBase64(public_file_controller_upload_base64_request([
+        'data'      => base64_encode('avatar body'),
+        'disk'      => 'uploads',
+        'path'      => 'uploads/avatars',
+        'file_name' => 'avatar.png',
+    ]));
+
+    $payload = public_file_controller_payload($normalized);
+    $record  = $capsule->getConnection('mysql')->table('files')->first();
+
+    expect($payload['original_filename'])->toBe('avatar.png')
+        ->and($record->path)->toBe('avatars/avatar.png')
+        ->and($record->disk)->toBe('uploads')
+        ->and(Storage::disk('uploads')->get('avatars/avatar.png'))->toBe('avatar body');
+
+    $storageFailure = public_file_controller()->createFromBase64(public_file_controller_upload_base64_request([
+        'data'      => base64_encode('body'),
+        'disk'      => 'missing-disk',
+        'path'      => 'uploads/documents',
+        'file_name' => 'failed.txt',
+    ]));
+
+    expect($storageFailure->getStatusCode())->toBe(400)
+        ->and($storageFailure->getData(true)['error'])->toContain('Disk [missing-disk] does not have a configured driver');
+
+    $capsule->getConnection('mysql')->getSchemaBuilder()->drop('files');
+
+    $recordFailure = public_file_controller()->createFromBase64(public_file_controller_upload_base64_request([
+        'data'      => base64_encode('body'),
+        'path'      => 'uploads/documents',
+        'file_name' => 'failed.txt',
+    ]));
+
+    expect($recordFailure->getStatusCode())->toBe(400)
+        ->and($recordFailure->getData(true)['errors'][0])->toContain('no such table: files');
 });
 
 test('public file controller downloads updates finds queries and deletes active company files', function () {
@@ -773,4 +842,21 @@ test('public file controller downloads updates finds queries and deletes active 
         ->and($missing->getData(true))->toBe(['error' => 'File resource not found.'])
         ->and($foreign->getStatusCode())->toBe(404)
         ->and($foreign->getData(true))->toBe(['error' => 'File resource not found.']);
+});
+
+test('public file controller returns stable missing resource responses for download update and delete', function () {
+    file_controller_fixtures();
+
+    $download = public_file_controller()->download('missing-file', public_file_controller_download_request());
+    $update   = public_file_controller()->update('missing-file', Request::create('/v1/files/missing-file', 'PUT', [
+        'caption' => 'No file',
+    ]));
+    $delete = public_file_controller()->delete('missing-file');
+
+    expect($download->getStatusCode())->toBe(404)
+        ->and($download->getData(true))->toBe(['error' => 'File resource not found.'])
+        ->and($update->getStatusCode())->toBe(404)
+        ->and($update->getData(true))->toBe(['error' => 'File resource not found.'])
+        ->and($delete->getStatusCode())->toBe(404)
+        ->and($delete->getData(true))->toBe(['error' => 'File resource not found.']);
 });
