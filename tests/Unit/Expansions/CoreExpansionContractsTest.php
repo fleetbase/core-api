@@ -7,14 +7,18 @@ use Fleetbase\Expansions\Carbon as CarbonExpansion;
 use Fleetbase\Expansions\Request as RequestExpansion;
 use Fleetbase\Expansions\Response as ResponseExpansion;
 use Fleetbase\Expansions\Str as StrExpansion;
+use Illuminate\Contracts\Validation\Validator as ValidatorContract;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request as HttpRequest;
+use Illuminate\Routing\Route;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Facade;
+use Illuminate\Support\MessageBag;
+use Illuminate\Validation\ValidationException;
 
 class CoreExpansionBuilderModel extends EloquentModel
 {
@@ -31,12 +35,102 @@ class CoreExpansionResponseFactoryFake
     }
 }
 
+class CoreExpansionResponseControllerStub
+{
+    public function getResourceSingularName(): string
+    {
+        return 'api_credential';
+    }
+}
+
+class CoreExpansionValidatorFake implements ValidatorContract
+{
+    public function __construct(private array $messages)
+    {
+    }
+
+    public function validate()
+    {
+        return [];
+    }
+
+    public function validated()
+    {
+        return [];
+    }
+
+    public function fails()
+    {
+        return $this->errors()->isNotEmpty();
+    }
+
+    public function failed()
+    {
+        return [];
+    }
+
+    public function sometimes($attribute, $rules, callable $callback)
+    {
+        return $this;
+    }
+
+    public function after($callback)
+    {
+        return $this;
+    }
+
+    public function errors(): MessageBag
+    {
+        return new MessageBag($this->messages);
+    }
+
+    public function getMessageBag(): MessageBag
+    {
+        return $this->errors();
+    }
+}
+
 afterEach(function () {
     HttpRequest::flushMacros();
     EloquentModel::clearBootedModels();
     Facade::clearResolvedInstances();
     Carbon::setTestNow();
 });
+
+function core_expansion_request(string $uri = '/int/v1/api-credentials', string $method = 'GET', ?object $controller = null): HttpRequest
+{
+    $request           = HttpRequest::create($uri, $method);
+    $route             = new Route([$method], ltrim($uri, '/'), ['controller' => CoreExpansionResponseControllerStub::class . '@deleteRecord']);
+    $route->controller = $controller ?? new CoreExpansionResponseControllerStub();
+
+    $request->setRouteResolver(fn () => $route);
+    app()->instance('request', $request);
+
+    if (!HttpRequest::hasMacro('getController')) {
+        HttpRequest::macro('getController', fn () => $this->route()?->controller);
+    }
+
+    return $request;
+}
+
+function core_expansion_validator(array $messages): ValidatorContract
+{
+    return new CoreExpansionValidatorFake($messages);
+}
+
+function core_expansion_define_validation_exception(): void
+{
+    if (class_exists(ValidationException::class)) {
+        return;
+    }
+
+    eval('namespace Illuminate\\Validation; class ValidationException extends \\Exception { public function __construct(public mixed $validator = null, private mixed $response = null) { parent::__construct("The given data was invalid."); } public function getResponse(): mixed { return $this->response; } }');
+}
+
+function core_expansion_validation_response(ValidationException $exception): mixed
+{
+    return method_exists($exception, 'getResponse') ? $exception->getResponse() : $exception->response;
+}
 
 function core_expansion_builder_database(): Capsule
 {
@@ -272,20 +366,88 @@ test('response expansion helpers keep internal and public error response shapes 
     $factory           = new CoreExpansionResponseFactoryFake();
     $responseExpansion = new ResponseExpansion();
 
-    $error    = $responseExpansion->error()->bindTo($factory, CoreExpansionResponseFactoryFake::class);
-    $apiError = $responseExpansion->apiError()->bindTo($factory, CoreExpansionResponseFactoryFake::class);
+    $error              = $responseExpansion->error()->bindTo($factory, CoreExpansionResponseFactoryFake::class);
+    $apiError           = $responseExpansion->apiError()->bindTo($factory, CoreExpansionResponseFactoryFake::class);
+    $authorizationError = $responseExpansion->authorizationError()->bindTo($factory, CoreExpansionResponseFactoryFake::class);
+    $compressedJson     = $responseExpansion->compressedJson()->bindTo($factory, CoreExpansionResponseFactoryFake::class);
 
     $internalResponse = $error('Unable to continue', 409, ['code' => 'conflict']);
+    $messageBagError  = $error(new MessageBag(['email' => ['Email is required.'], 'name' => ['Name is required.']]), 422);
     $publicResponse   = $apiError(['message' => 'Invalid request'], 422, ['request_id' => 'req_123']);
+    $apiBagResponse   = $apiError(new MessageBag(['token' => ['Token expired.']]), 401);
+    $compressed       = $compressedJson(['name' => 'Fleetbase', 'enabled' => true], 202, ['X-Trace' => 'trace_123']);
+
+    core_expansion_request('/int/v1/api-credentials', 'DELETE');
+    $authResponse = $authorizationError(['required' => true]);
 
     expect($internalResponse->getStatusCode())->toBe(409)
         ->and($internalResponse->getData(true))->toBe([
             'errors' => ['Unable to continue'],
             'code'   => 'conflict',
         ])
+        ->and($messageBagError->getData(true))->toBe([
+            'errors' => ['Email is required.', 'Name is required.'],
+        ])
         ->and($publicResponse->getStatusCode())->toBe(422)
         ->and($publicResponse->getData(true))->toBe([
             'error'      => ['message' => 'Invalid request'],
             'request_id' => 'req_123',
+        ])
+        ->and($apiBagResponse->getData(true))->toBe([
+            'error' => ['Token expired.'],
+        ])
+        ->and($authResponse->getStatusCode())->toBe(401)
+        ->and($authResponse->getData(true))->toBe([
+            'errors'   => ['User is not authorized to delete api-credential'],
+            'required' => true,
+        ])
+        ->and($compressed->getStatusCode())->toBe(202)
+        ->and($compressed->headers->get('X-Compressed-Json'))->toBe('1')
+        ->and($compressed->headers->get('X-Trace'))->toBe('trace_123')
+        ->and($compressed->getData(true))->toBe([
+            ['{"name":"Fleetbase","enabled":true}'],
+            '0',
+        ]);
+});
+
+test('response expansion validation errors distinguish internal and public api response shapes', function () {
+    core_expansion_define_validation_exception();
+
+    $factory           = new CoreExpansionResponseFactoryFake();
+    $responseExpansion = new ResponseExpansion();
+    $validationError   = $responseExpansion->validationError()->bindTo($factory, CoreExpansionResponseFactoryFake::class);
+
+    core_expansion_request('/int/v1/users');
+
+    try {
+        $validationError(core_expansion_validator([
+            'email' => ['Email is required.'],
+            'name'  => ['Name is required.'],
+        ]));
+    } catch (ValidationException $exception) {
+        $internal = core_expansion_validation_response($exception);
+    }
+
+    core_expansion_request('/v1/users');
+
+    try {
+        $validationError(core_expansion_validator([
+            'email' => ['Email is required.'],
+            'name'  => ['Name is required.'],
+        ]));
+    } catch (ValidationException $exception) {
+        $public = core_expansion_validation_response($exception);
+    }
+
+    expect($internal)->toBeInstanceOf(JsonResponse::class)
+        ->and($internal->getStatusCode())->toBe(422)
+        ->and($internal->getData(true))->toBe([
+            'errors' => ['Email is required.', 'Name is required.'],
+        ])
+        ->and($public)->toBeInstanceOf(JsonResponse::class)
+        ->and($public->getStatusCode())->toBe(422)
+        ->and($public->getData(true))->toBe([
+            'error'  => 'Email is required.',
+            'errors' => ['Email is required.', 'Name is required.'],
         ]);
 });
