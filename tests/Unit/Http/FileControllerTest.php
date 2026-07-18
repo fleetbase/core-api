@@ -283,6 +283,11 @@ function file_controller(): FileController
     });
 }
 
+function file_controller_with_image_service(ImageService $imageService): FileController
+{
+    return new FileController($imageService);
+}
+
 function public_file_controller(): PublicFileController
 {
     return new PublicFileController();
@@ -300,6 +305,15 @@ function public_file_controller_upload_request(array $input = [], string $conten
     $file = new UploadedFile($path, 'manifest.txt', 'text/plain', null, true);
 
     return UploadFileRequest::create('/v1/files', 'POST', $input, [], ['file' => $file]);
+}
+
+function file_controller_upload_request(array $input = [], string $contents = 'uploaded body'): UploadFileRequest
+{
+    $path = tempnam(sys_get_temp_dir(), 'fleetbase-upload-');
+    file_put_contents($path, $contents);
+    $file = new UploadedFile($path, 'manifest.txt', 'text/plain', null, true);
+
+    return UploadFileRequest::create('/int/v1/files', 'POST', $input, [], ['file' => $file]);
 }
 
 function public_file_controller_upload_base64_request(array $input = []): UploadBase64FileRequest
@@ -370,6 +384,195 @@ test('file controller uploads base64 data with session ownership storage and sub
         ->and($record->subject_uuid)->toBe('user-subject')
         ->and($record->subject_type)->toBe(User::class)
         ->and(Storage::disk('testing')->get('uploads/documents/manifest.txt'))->toBe('plain text body');
+});
+
+test('file controller uploads multipart files with generated storage path and subject metadata', function () {
+    $capsule = file_controller_fixtures();
+
+    $response = file_controller()->upload(file_controller_upload_request([
+        'path'         => 'uploads/documents',
+        'type'         => 'document',
+        'file_size'    => 13,
+        'subject_uuid' => 'user-subject',
+        'subject_type' => User::class,
+    ], 'uploaded body'));
+
+    $payload = $response->getData(true);
+    $record  = $capsule->getConnection('mysql')->table('files')->first();
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($payload['file']['company_uuid'])->toBe('company-1')
+        ->and($payload['file']['uploader_uuid'])->toBe('user-1')
+        ->and($payload['file']['disk'])->toBe('testing')
+        ->and($payload['file']['bucket'])->toBe('fallback-bucket')
+        ->and($payload['file']['path'])->toStartWith('uploads/documents/')
+        ->and($payload['file']['path'])->toEndWith('.txt')
+        ->and($payload['file']['original_filename'])->toBe('manifest.txt')
+        ->and($payload['file']['type'])->toBe('document')
+        ->and($payload['file']['content_type'])->toBe('text/plain')
+        ->and($payload['file']['file_size'])->toBe(13)
+        ->and($record->subject_uuid)->toBe('user-subject')
+        ->and($record->subject_type)->toBe(User::class)
+        ->and(Storage::disk('testing')->get($record->path))->toBe('uploaded body');
+});
+
+test('file controller upload reports storage failures before creating records', function () {
+    $capsule = file_controller_fixtures();
+
+    $response = file_controller()->upload(file_controller_upload_request([
+        'disk'      => 'missing-disk',
+        'path'      => 'uploads/documents',
+        'type'      => 'document',
+        'file_size' => 13,
+    ], 'uploaded body'));
+
+    expect($response->getStatusCode())->toBe(400)
+        ->and($response->getData(true)['errors'][0])->toContain('Disk [missing-disk] does not have a configured driver')
+        ->and($capsule->getConnection('mysql')->table('files')->count())->toBe(0);
+});
+
+test('file controller uploads resized multipart files with preset metadata', function () {
+    $capsule = file_controller_fixtures();
+    $service = new class extends ImageService {
+        public array $presetCall = [];
+
+        public function __construct()
+        {
+        }
+
+        public function isImage(UploadedFile $file): bool
+        {
+            return true;
+        }
+
+        public function resizePreset(UploadedFile $file, string $preset, string $mode = 'fit', ?int $quality = null, ?bool $allowUpscale = null): string
+        {
+            $this->presetCall = compact('preset', 'mode', 'quality', 'allowUpscale');
+
+            return 'resized preset body';
+        }
+    };
+
+    $response = file_controller_with_image_service($service)->upload(file_controller_upload_request([
+        'path'             => 'uploads/images',
+        'type'             => 'avatar',
+        'resize'           => 'sm',
+        'resize_mode'      => 'crop',
+        'resize_quality'   => 72,
+        'resize_upscale'   => 'true',
+        'resize_width'     => 100,
+        'resize_height'    => 80,
+        'subject_uuid'     => 'user-subject',
+        'subject_type'     => User::class,
+    ]));
+
+    $payload = $response->getData(true);
+    $record  = $capsule->getConnection('mysql')->table('files')->first();
+    $meta    = json_decode($record->meta, true);
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($service->presetCall)->toBe([
+            'preset'       => 'sm',
+            'mode'         => 'crop',
+            'quality'      => 72,
+            'allowUpscale' => true,
+        ])
+        ->and($payload['file']['path'])->toStartWith('uploads/images/')
+        ->and($payload['file']['file_size'])->toBe(strlen('resized preset body'))
+        ->and($payload['file']['type'])->toBe('avatar')
+        ->and($record->subject_uuid)->toBe('user-subject')
+        ->and($meta['resized'])->toBeTrue()
+        ->and($meta['resize_params'])->toMatchArray([
+            'preset'  => 'sm',
+            'width'   => 100,
+            'height'  => 80,
+            'mode'    => 'crop',
+            'quality' => 72,
+            'upscale' => true,
+        ])
+        ->and(Storage::disk('testing')->get($record->path))->toBe('resized preset body');
+});
+
+test('file controller uploads resized multipart files with explicit dimensions and format rewrite', function () {
+    $capsule = file_controller_fixtures();
+    $service = new class extends ImageService {
+        public array $resizeCall = [];
+
+        public function __construct()
+        {
+        }
+
+        public function isImage(UploadedFile $file): bool
+        {
+            return true;
+        }
+
+        public function resize(UploadedFile $file, ?int $width = null, ?int $height = null, string $mode = 'fit', ?int $quality = null, ?string $format = null, ?bool $allowUpscale = null): string
+        {
+            $this->resizeCall = compact('width', 'height', 'mode', 'quality', 'format', 'allowUpscale');
+
+            return 'resized explicit body';
+        }
+    };
+
+    $response = file_controller_with_image_service($service)->upload(file_controller_upload_request([
+        'path'             => 'uploads/images',
+        'resize_width'     => 120,
+        'resize_height'    => 90,
+        'resize_mode'      => 'fit',
+        'resize_quality'   => 81,
+        'resize_format'    => 'webp',
+        'resize_upscale'   => 'false',
+    ]));
+
+    $payload = $response->getData(true);
+    $record  = $capsule->getConnection('mysql')->table('files')->first();
+    $meta    = json_decode($record->meta, true);
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($service->resizeCall)->toBe([
+            'width'        => 120,
+            'height'       => 90,
+            'mode'         => 'fit',
+            'quality'      => 81,
+            'format'       => 'webp',
+            'allowUpscale' => false,
+        ])
+        ->and($payload['file']['path'])->toStartWith('uploads/images/')
+        ->and($payload['file']['path'])->toEndWith('.webp')
+        ->and($payload['file']['file_size'])->toBe(strlen('resized explicit body'))
+        ->and($meta['resized'])->toBeTrue()
+        ->and($meta['resize_params']['format'])->toBe('webp')
+        ->and(Storage::disk('testing')->get($record->path))->toBe('resized explicit body');
+});
+
+test('file controller returns stable errors when multipart image resizing fails', function () {
+    $capsule = file_controller_fixtures();
+    $service = new class extends ImageService {
+        public function __construct()
+        {
+        }
+
+        public function isImage(UploadedFile $file): bool
+        {
+            return true;
+        }
+
+        public function resize(UploadedFile $file, ?int $width = null, ?int $height = null, string $mode = 'fit', ?int $quality = null, ?string $format = null, ?bool $allowUpscale = null): string
+        {
+            throw new RuntimeException('resize unavailable');
+        }
+    };
+
+    $response = file_controller_with_image_service($service)->upload(file_controller_upload_request([
+        'path'          => 'uploads/images',
+        'resize_width'  => 120,
+        'resize_height' => 90,
+    ]));
+
+    expect($response->getStatusCode())->toBe(400)
+        ->and($response->getData(true))->toBe(['errors' => ['Image resize failed: resize unavailable']])
+        ->and($capsule->getConnection('mysql')->table('files')->count())->toBe(0);
 });
 
 test('file controller upload base64 reports missing data and storage failures consistently', function () {
