@@ -179,6 +179,10 @@ function core_expansion_builder_database(): Capsule
 }
 
 test('string carbon and blade expansions preserve formatting contracts', function () {
+    bind_test_container([
+        'filesystems.disks.s3.region' => null,
+    ]);
+
     Carbon::setTestNow(Carbon::parse('2026-05-15 08:30:00'));
 
     $strExpansion    = new StrExpansion();
@@ -189,7 +193,9 @@ test('string carbon and blade expansions preserve formatting contracts', functio
     $domain     = $strExpansion->domain();
     $fromString = $carbonExpansion->fromString()->bindTo(null, Carbon::class);
 
-    expect(\Fleetbase\Expansions\args(' created_at , "Y-m-d" '))->toBe(['created_at', '"Y-m-d"'])
+    expect(BladeExpansion::target())->toBe(Illuminate\Support\Facades\Blade::class)
+        ->and(\Fleetbase\Expansions\args(' created_at , "Y-m-d" '))->toBe(['created_at', '"Y-m-d"'])
+        ->and(\Fleetbase\Expansions\args(['created_at', 'timestamp']))->toBe(['created_at', 'timestamp'])
         ->and($humanize('apiCredentialID'))->toBe('API credential i d')
         ->and($humanize('apiCredentialID', false))->toBe('API credential i d')
         ->and($humanize(null))->toBe('')
@@ -199,6 +205,8 @@ test('string carbon and blade expansions preserve formatting contracts', functio
         ->and($fromString('start of decade')->toDateTimeString())->toBe('2020-01-01 00:00:00')
         ->and($fromString('end of decade')->toDateTimeString())->toBe('2029-12-31 23:59:59')
         ->and($fromString('2026-07-17 12:45:00')->toDateTimeString())->toBe('2026-07-17 12:45:00')
+        ->and(($bladeExpansion->assetFromS3())('icons/logo.png'))->toBe('https://flb-assets.amazonaws.com/icons/logo.png')
+        ->and(($bladeExpansion->fontFromS3())('inter.woff2'))->toBe('https://flb-assets.amazonaws.com/fonts/inter.woff2')
         ->and(($bladeExpansion->toTimeString())('2026-07-17 12:45:00'))->toBe('12:45:00')
         ->and(($bladeExpansion->toDateTimeString())('2026-07-17 12:45:00'))->toBe('2026-07-17 12:45:00')
         ->and(($bladeExpansion->formatFromCarbon())('created_at, "Y-m-d"'))->toBe('<?= \Illuminate\Support\Carbon::parse(created_at)->format("Y-m-d") ?>')
