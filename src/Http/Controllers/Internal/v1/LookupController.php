@@ -26,7 +26,7 @@ class LookupController extends Controller
         $prefix = $request->input('prefix');
         $limit  = $request->input('limit');
 
-        $content = file_get_contents('https://raw.githubusercontent.com/FortAwesome/Font-Awesome/master/metadata/icons.json');
+        $content = $this->fetchFontAwesomeIconMetadata();
         $json    = json_decode($content);
         $icons   = [];
 
@@ -75,6 +75,11 @@ class LookupController extends Controller
         }
 
         return $icons;
+    }
+
+    protected function fetchFontAwesomeIconMetadata(): string
+    {
+        return file_get_contents('https://raw.githubusercontent.com/FortAwesome/Font-Awesome/master/metadata/icons.json');
     }
 
     /**

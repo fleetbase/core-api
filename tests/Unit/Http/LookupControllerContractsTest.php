@@ -4,6 +4,7 @@ use Fleetbase\Http\Controllers\Internal\v1\LookupController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Facade;
+use Illuminate\Support\Facades\Http;
 
 class LookupControllerContractsCacheFake
 {
@@ -63,6 +64,36 @@ class LookupControllerContractsController extends LookupController
     protected function getFleetbaseBlogUrl(): string
     {
         return 'https://www.example.test/blog';
+    }
+}
+
+class LookupControllerContractsRssController extends LookupController
+{
+    public function parseFixtureRss(string $rssXml, int $limit): array
+    {
+        return $this->parseBlogPostsFromRss($rssXml, $limit);
+    }
+
+    protected function getFleetbaseBlogFeedUrl(): string
+    {
+        return 'https://feeds.example.test/fleetbase.xml';
+    }
+
+    protected function getFleetbaseBlogUrl(): string
+    {
+        return 'https://www.example.test/blog';
+    }
+}
+
+class LookupControllerContractsIconController extends LookupController
+{
+    public function __construct(private string $metadata)
+    {
+    }
+
+    protected function fetchFontAwesomeIconMetadata(): string
+    {
+        return $this->metadata;
     }
 }
 
@@ -254,4 +285,139 @@ test('lookup timezones returns php timezone identifiers as a json response', fun
 
     expect($response->getStatusCode())->toBe(200)
         ->and($payload)->toContain('UTC', 'Asia/Ulaanbaatar', 'America/New_York');
+});
+
+test('lookup font awesome icons filters by query id prefix and limit without network access', function () {
+    lookup_controller_boot();
+
+    $controller = new LookupControllerContractsIconController(json_encode([
+        'truck-fast' => [
+            'label'  => 'Truck Fast',
+            'styles' => ['solid', 'regular'],
+            'search' => [
+                'terms' => ['delivery', 'transport'],
+            ],
+        ],
+        'warehouse' => [
+            'label'  => 'Warehouse',
+            'styles' => ['solid'],
+            'search' => [
+                'terms' => ['storage', 'inventory'],
+            ],
+        ],
+    ]));
+
+    $queryMatches  = $controller->fontAwesomeIcons(lookup_controller_request(['query' => 'deliver']));
+    $prefixMatches = $controller->fontAwesomeIcons(lookup_controller_request(['id' => 'truck-fast', 'prefix' => 'far']));
+    $limited       = $controller->fontAwesomeIcons(lookup_controller_request(['limit' => 1]));
+    $missing       = $controller->fontAwesomeIcons(lookup_controller_request(['query' => 'airplane']));
+
+    expect($queryMatches)->toBe([
+        ['prefix' => 'fas', 'label' => 'Truck Fast', 'id' => 'truck-fast'],
+        ['prefix' => 'far', 'label' => 'Truck Fast', 'id' => 'truck-fast'],
+    ])
+        ->and($prefixMatches)->toBe([
+            ['prefix' => 'far', 'label' => 'Truck Fast', 'id' => 'truck-fast'],
+        ])
+        ->and($limited)->toBe([
+            ['prefix' => 'fas', 'label' => 'Truck Fast', 'id' => 'truck-fast'],
+            ['prefix' => 'far', 'label' => 'Truck Fast', 'id' => 'truck-fast'],
+        ])
+        ->and($missing)->toBe([]);
+});
+
+test('lookup whois returns resolved payloads and stable error responses', function () {
+    lookup_controller_boot();
+    config(['fleetbase.services.ipinfo.api_key' => null]);
+    Http::fake([
+        'https://json.geoiplookup.io/8.8.8.8' => Http::response([
+            'ip'           => '8.8.8.8',
+            'country_code' => 'US',
+        ]),
+        'https://json.geoiplookup.io/1.1.1.1' => Http::response([
+            'message' => 'lookup quota exceeded',
+        ], 429),
+    ]);
+
+    $controller = new LookupController();
+    $success    = $controller->whois(Request::create('/int/v1/lookup/whois', 'GET', [], [], [], ['REMOTE_ADDR' => '8.8.8.8']));
+    $failure    = $controller->whois(Request::create('/int/v1/lookup/whois', 'GET', [], [], [], ['REMOTE_ADDR' => '1.1.1.1']));
+
+    expect($success->getStatusCode())->toBe(200)
+        ->and($success->getData(true))->toBe([
+            'ip'           => '8.8.8.8',
+            'country_code' => 'US',
+        ])
+        ->and($failure->getStatusCode())->toBe(400)
+        ->and($failure->getData(true))->toBe(['errors' => ['lookup quota exceeded']]);
+});
+
+test('lookup blog rss parsing normalizes links limits posts and fetches through http client', function () {
+    lookup_controller_boot();
+    Http::fake([
+        'https://feeds.example.test/fleetbase.xml' => Http::response(<<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <item>
+      <title>First Update</title>
+      <link>https://fleetbase.ghost.io/first-update/</link>
+      <description><![CDATA[<p>First description</p>]]></description>
+      <pubDate>Sat, 18 Jul 2026 10:00:00 GMT</pubDate>
+      <category>Release</category>
+    </item>
+    <item>
+      <title>Second Update</title>
+      <link>https://www.example.test/blog/second-update/</link>
+      <description>Second description</description>
+      <pubDate>Sat, 18 Jul 2026 11:00:00 GMT</pubDate>
+      <category>Engineering</category>
+    </item>
+  </channel>
+</rss>
+XML),
+    ]);
+
+    $controller = new LookupControllerContractsRssController();
+    $parsed     = $controller->parseFixtureRss(<<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <item>
+      <title>Direct Parse</title>
+      <link>https://fleetbase.ghost.io/direct-parse/</link>
+      <description><![CDATA[<p>Direct description</p>]]></description>
+      <pubDate>Sat, 18 Jul 2026 12:00:00 GMT</pubDate>
+      <category>Product</category>
+    </item>
+  </channel>
+</rss>
+XML, 1);
+    $response   = $controller->fleetbaseBlog(lookup_controller_request(['limit' => 2]));
+    $payload    = $response->getData(true);
+
+    expect($parsed)->toHaveCount(1)
+        ->and($parsed[0]['title'])->toBe('Direct Parse')
+        ->and($parsed[0]['link'])->toBe('https://www.example.test/blog/direct-parse')
+        ->and($parsed[0]['description'])->toBe('<p>Direct description</p>')
+        ->and($parsed[0]['published_at'])->toBe('2026-07-18T12:00:00+00:00')
+        ->and($response->getStatusCode())->toBe(200)
+        ->and($payload)->toHaveCount(2)
+        ->and($payload[0]['title'])->toBe('First Update')
+        ->and($payload[0]['link'])->toBe('https://www.example.test/blog/first-update')
+        ->and($payload[1]['title'])->toBe('Second Update')
+        ->and($payload[1]['link'])->toBe('https://www.example.test/blog/second-update/');
+});
+
+test('lookup blog fetch returns empty payload when upstream rss fails', function () {
+    lookup_controller_boot();
+    Http::fake([
+        'https://feeds.example.test/fleetbase.xml' => Http::response('not found', 404),
+    ]);
+
+    $response = (new LookupControllerContractsController())->fleetbaseBlog(lookup_controller_request(['limit' => 3]));
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($response->getData(true))->toBe([])
+        ->and($response->headers->get('X-Cache-Status'))->toBe('HIT');
 });
