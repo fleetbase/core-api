@@ -1,6 +1,8 @@
 <?php
 
 use Fleetbase\Events\BroadcastNotificationCreated;
+use Fleetbase\Events\ChatParticipantAdded;
+use Fleetbase\Events\ChatParticipantRemoved;
 use Fleetbase\Events\ResourceLifecycleEvent;
 use Fleetbase\Events\ScheduleConstraintViolated;
 use Fleetbase\Events\ScheduleCreated;
@@ -23,6 +25,7 @@ use Fleetbase\Models\Company;
 use Fleetbase\Models\Model as FleetbaseModel;
 use Fleetbase\Models\Schedule;
 use Fleetbase\Models\ScheduleItem;
+use Fleetbase\Models\User;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -66,6 +69,69 @@ class EventsAndExceptionsNotifiable
     public function receivesBroadcastNotificationsOn(Notification $notification): string
     {
         return 'notifiable.direct';
+    }
+}
+
+class EventsAndExceptionsRoute
+{
+    public function __construct(private string $uri)
+    {
+    }
+
+    public function uri(): string
+    {
+        return $this->uri;
+    }
+}
+
+class EventsAndExceptionsChatParticipant extends ChatParticipant
+{
+    public function load($relations)
+    {
+        return $this;
+    }
+
+    public function getIsOnlineAttribute(): bool
+    {
+        return true;
+    }
+
+    public function getLastSeenAtAttribute(): Carbon
+    {
+        return Carbon::parse('2026-07-18 14:10:00', 'UTC');
+    }
+
+    public function getUpdatedAtAttribute(): string
+    {
+        return '2026-07-18 14:01:00';
+    }
+
+    public function getCreatedAtAttribute(): string
+    {
+        return '2026-07-18 14:00:00';
+    }
+
+    public function getDeletedAtAttribute(): null
+    {
+        return null;
+    }
+}
+
+class EventsAndExceptionsUser extends User
+{
+    public function getAvatarUrlAttribute(): string
+    {
+        return 'https://fleetbase.test/avatar.png';
+    }
+
+    public function isOnline(): bool
+    {
+        return true;
+    }
+
+    public function lastSeenAt(): Carbon
+    {
+        return Carbon::parse('2026-07-18 14:10:00', 'UTC');
     }
 }
 
@@ -137,7 +203,7 @@ test('policy exceptions include the missing policy identity', function () {
 test('company membership events carry user and company payloads without stale relations', function () {
     bind_test_container();
 
-    $user = new Fleetbase\Models\User();
+    $user = new User();
     $user->setRawAttributes(['uuid' => 'user-1', 'email' => 'owner@example.test']);
     $user->setRelation('companies', collect(['stale']));
 
@@ -234,6 +300,75 @@ test('schedule events expose the schedule or schedule item they were created wit
     expect($constraintEvent->scheduleItem)->toBe($item)
         ->and($constraintEvent->violations)->toBe($violations);
 });
+
+test('chat participant events broadcast participant payloads to chat and user channels', function (string $eventClass, string $broadcastName) {
+    bind_test_container();
+    Carbon::setTestNow(Carbon::parse('2026-07-18 14:15:16', 'UTC'));
+
+    $request = Illuminate\Http\Request::create('/int/v1/chat-participants');
+    $request->setRouteResolver(fn () => new EventsAndExceptionsRoute('int/v1/chat-participants'));
+    app()->instance('request', $request);
+
+    $channel = new ChatChannel();
+    $channel->setRawAttributes([
+        'uuid'      => 'channel-uuid',
+        'public_id' => 'chat_channel_public',
+    ], true);
+
+    $user = new EventsAndExceptionsUser();
+    $user->setRawAttributes([
+        'uuid'      => 'user-uuid',
+        'public_id' => 'user_public',
+        'name'      => 'Ada Lovelace',
+        'username'  => 'ada',
+        'email'     => 'ada@example.test',
+        'phone'     => '+15555550123',
+    ], true);
+
+    $participant = new EventsAndExceptionsChatParticipant();
+    $participant->setRawAttributes([
+        'id'                => 42,
+        'uuid'              => 'participant-uuid',
+        'public_id'         => 'participant_public',
+        'chat_channel_uuid' => 'channel-uuid',
+        'user_uuid'         => 'user-uuid',
+        'created_at'        => '2026-07-18 14:00:00',
+        'updated_at'        => '2026-07-18 14:01:00',
+    ], true);
+    $participant->setRelation('chatChannel', $channel);
+    $participant->setRelation('user', $user);
+
+    $event    = new $eventClass($participant);
+    $channels = array_map(fn ($channel) => (string) $channel, $event->broadcastOn());
+    $payload  = $event->broadcastWith();
+
+    expect($event->eventId)->toStartWith('event_')
+        ->and($event->createdAt->toDateTimeString())->toBe('2026-07-18 14:15:16')
+        ->and($event->broadcastAs())->toBe($broadcastName)
+        ->and($channels)->toBe([
+            'chat.channel-uuid',
+            'chat.chat_channel_public',
+            'user.user-uuid',
+            'user.user_public',
+        ])
+        ->and($payload['id'])->toBe($event->eventId)
+        ->and($payload['event'])->toBe($broadcastName)
+        ->and($payload['created_at'])->toBe('2026-07-18 14:15:16')
+        ->and($payload['channel_id'])->toBe('chat_channel_public')
+        ->and($payload['data']['id'])->toBe(42)
+        ->and($payload['data']['uuid'])->toBe('participant-uuid')
+        ->and($payload['data']['chat_channel_uuid'])->toBe('channel-uuid')
+        ->and($payload['data']['user_uuid'])->toBe('user-uuid')
+        ->and($payload['data']['name'])->toBe('Ada Lovelace')
+        ->and($payload['data']['username'])->toBe('ada')
+        ->and($payload['data']['email'])->toBe('ada@example.test')
+        ->and($payload['data']['phone'])->toBe('+15555550123');
+
+    Carbon::setTestNow();
+})->with([
+    'participant added'   => [ChatParticipantAdded::class, 'chat.added_participant'],
+    'participant removed' => [ChatParticipantRemoved::class, 'chat.removed_participant'],
+]);
 
 test('resource lifecycle events normalize payload children without dropping chat message relations', function () {
     bind_test_container(['api.version' => 'v1']);
