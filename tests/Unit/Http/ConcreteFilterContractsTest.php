@@ -790,9 +790,12 @@ test('api event and webhook request log filters scope tenant logs and date windo
     ]);
 
     expect(concrete_filter_uuids(ApiEventFilter::class, ApiEvent::class, [], 'int/v1/api-events'))->toBe(['event-1', 'event-2'])
+        ->and(concrete_filter_uuids(ApiEventFilter::class, ApiEvent::class, [], 'v1/api-events'))->toBe(['event-1', 'event-2'])
         ->and(concrete_filter_uuids(ApiEventFilter::class, ApiEvent::class, ['query' => 'uploaded'], 'int/v1/api-events'))->toBe(['event-2'])
         ->and(concrete_filter_uuids(ApiEventFilter::class, ApiEvent::class, ['created_at' => '2026-07-18,2026-07-18 23:59:59'], 'int/v1/api-events'))->toBe(['event-1'])
+        ->and(concrete_filter_uuids(ApiEventFilter::class, ApiEvent::class, ['created_at' => '2026-07-19'], 'int/v1/api-events'))->toBe(['event-2'])
         ->and(concrete_filter_uuids(ApiEventFilter::class, ApiEvent::class, ['updated_at' => '2026-07-19'], 'int/v1/api-events'))->toBe(['event-2'])
+        ->and(concrete_filter_uuids(ApiEventFilter::class, ApiEvent::class, ['updated_at' => '2026-07-18,2026-07-18 23:59:59'], 'int/v1/api-events'))->toBe(['event-1'])
         ->and(concrete_filter_uuids(WebhookRequestLogFilter::class, Fleetbase\Models\WebhookRequestLog::class, [], 'int/v1/webhook-request-logs'))->toBe(['webhook-log-1', 'webhook-log-2'])
         ->and(concrete_filter_uuids(WebhookRequestLogFilter::class, Fleetbase\Models\WebhookRequestLog::class, ['query' => 'files'], 'int/v1/webhook-request-logs'))->toBe(['webhook-log-1', 'webhook-log-2'])
         ->and(concrete_filter_uuids(WebhookRequestLogFilter::class, Fleetbase\Models\WebhookRequestLog::class, ['created_at' => '2026-07-18,2026-07-18 23:59:59'], 'int/v1/webhook-request-logs'))->toBe(['webhook-log-1'])
