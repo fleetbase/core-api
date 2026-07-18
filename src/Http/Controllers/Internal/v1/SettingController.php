@@ -627,8 +627,8 @@ class SettingController extends Controller
      */
     public function saveNotificationChannelsConfig(AdminRequest $request)
     {
-        $apn         = $request->array('apn', config('broadcasting.connections.apn'));
-        $firebase    = $request->array('firebase', config('firebase.projects.app'));
+        $apn         = array_merge(config('broadcasting.connections.apn', []), $request->array('apn', []));
+        $firebase    = array_merge(config('firebase.projects.app', []), $request->array('firebase', []));
 
         // Get the APN key file and it's contents and store to config
         $apn = static::_setupApnConfigUsingFileId($apn);
@@ -636,8 +636,8 @@ class SettingController extends Controller
         // Get credentials config array from file contents
         $firebase = static::_setupFcmConfigUsingFileId($firebase);
 
-        Setting::configureSystem('broadcasting.apn', array_merge(config('broadcasting.connections.apn', []), $apn));
-        Setting::configureSystem('firebase.app', array_merge(config('firebase.projects.app', []), $firebase));
+        Setting::configureSystem('broadcasting.apn', $apn);
+        Setting::configureSystem('firebase.app', $firebase);
 
         // Refresh config
         $this->refreshConfigCache();
