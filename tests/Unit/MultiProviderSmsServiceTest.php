@@ -374,6 +374,132 @@ test('smpp gateway client reports command-aware submit failures', function () {
     fclose($serverSocket);
 });
 
+test('smpp gateway client binds with configured mode and credentials', function (string $bindType, int $expectedCommand) {
+    $sockets = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+    expect($sockets)->not->toBeFalse();
+
+    [$clientSocket, $serverSocket] = $sockets;
+    $client                        = new SmppGatewayClient([
+        'host'              => 'smpp.example.test',
+        'port'              => 2775,
+        'bind_type'         => $bindType,
+        'system_id'         => 'fleetbase-system',
+        'password'          => 'secret',
+        'system_type'       => 'fleetbase',
+        'interface_version' => 0x34,
+        'addr_ton'          => 1,
+        'addr_npi'          => 1,
+        'address_range'     => '1555',
+    ]);
+
+    $socketProperty = new ReflectionProperty($client, 'socket');
+    $socketProperty->setAccessible(true);
+    $socketProperty->setValue($client, $clientSocket);
+
+    fwrite($serverSocket, pack('NNNN', 16, $expectedCommand | 0x80000000, 0, 1));
+
+    $bind = new ReflectionMethod($client, 'bind');
+    $bind->setAccessible(true);
+    $bind->invoke($client);
+
+    $packet = fread($serverSocket, 4096);
+    $body   = substr($packet, 16);
+
+    expect(unpack('Nlength/Ncommand/Nstatus/Nsequence', substr($packet, 0, 16)))->toMatchArray([
+        'length'   => strlen($packet),
+        'command'  => $expectedCommand,
+        'status'   => 0,
+        'sequence' => 1,
+    ])
+        ->and($body)->toStartWith("fleetbase-system\0secret\0fleetbase\0")
+        ->and(ord($body[strlen("fleetbase-system\0secret\0fleetbase\0")]))->toBe(0x34);
+
+    fclose($clientSocket);
+    fclose($serverSocket);
+})->with([
+    ['transmitter', 0x00000002],
+    ['receiver', 0x00000001],
+    ['transceiver', 0x00000009],
+]);
+
+test('smpp gateway client returns early when closing without a socket', function () {
+    $client = new SmppGatewayClient([
+        'host' => 'smpp.example.test',
+        'port' => 2775,
+    ]);
+
+    $client->close();
+
+    $socketProperty = new ReflectionProperty($client, 'socket');
+    $socketProperty->setAccessible(true);
+
+    expect($socketProperty->getValue($client))->toBeNull();
+});
+
+test('smpp gateway client closes socket after unbind failures', function () {
+    $sockets = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+    expect($sockets)->not->toBeFalse();
+
+    [$clientSocket, $serverSocket] = $sockets;
+    $client                        = new SmppGatewayClient([
+        'host' => 'smpp.example.test',
+        'port' => 2775,
+    ]);
+
+    $socketProperty = new ReflectionProperty($client, 'socket');
+    $socketProperty->setAccessible(true);
+    $socketProperty->setValue($client, $clientSocket);
+
+    fwrite($serverSocket, pack('NNNN', 16, 0x80000006, 196, 1));
+
+    $client->close();
+
+    expect($socketProperty->getValue($client))->toBeNull();
+
+    fclose($serverSocket);
+});
+
+test('smpp gateway client reports invalid response header and body lengths', function () {
+    $sockets = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+    expect($sockets)->not->toBeFalse();
+
+    [$clientSocket, $serverSocket] = $sockets;
+    $client                        = new SmppGatewayClient([
+        'host' => 'smpp.example.test',
+        'port' => 2775,
+    ]);
+
+    $socketProperty = new ReflectionProperty($client, 'socket');
+    $socketProperty->setAccessible(true);
+    $socketProperty->setValue($client, $clientSocket);
+
+    fwrite($serverSocket, 'short');
+
+    $sendPdu = new ReflectionMethod($client, 'sendPdu');
+    $sendPdu->setAccessible(true);
+
+    expect(fn () => $sendPdu->invoke($client, 0x00000004, ''))
+        ->toThrow(RuntimeException::class, 'submit_sm failed: invalid SMPP response header, expected 16 bytes, read 5 bytes');
+
+    fclose($clientSocket);
+    fclose($serverSocket);
+
+    $sockets = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+    expect($sockets)->not->toBeFalse();
+
+    [$clientSocket, $serverSocket] = $sockets;
+    $socketProperty->setValue($client, $clientSocket);
+
+    stream_set_blocking($clientSocket, false);
+    fwrite($serverSocket, pack('NNNN', 20, 0x80000004, 0, 2) . 'xx');
+
+    expect(fn () => $sendPdu->invoke($client, 0x00000004, ''))
+        ->toThrow(RuntimeException::class, 'submit_sm failed: invalid SMPP response body, expected 4 bytes, read 2 bytes from submit_sm_resp');
+
+    fclose($clientSocket);
+    fclose($serverSocket);
+});
+
 test('sms service routes explicit provider and prefix rules to new providers', function () {
     Http::fake([
         'https://rest.messagebird.com/messages' => Http::response([
