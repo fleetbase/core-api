@@ -1,6 +1,7 @@
 <?php
 
 use Fleetbase\Models\Company;
+use Fleetbase\Models\File;
 use Fleetbase\Models\User;
 use Fleetbase\Support\Utils;
 use Illuminate\Database\Capsule\Manager as Capsule;
@@ -69,6 +70,11 @@ function utils_database(): Capsule
         $table->string('uuid')->primary();
         $table->string('public_id')->nullable();
         $table->string('type')->nullable();
+        $table->string('original_filename')->nullable();
+        $table->string('disk')->nullable();
+        $table->string('path')->nullable();
+        $table->timestamps();
+        $table->timestamp('deleted_at')->nullable();
     });
 
     return $capsule;
@@ -99,6 +105,7 @@ test('utils formats urls headers strings and dates', function () {
         ->and(Utils::getDomainFromUrl('api.fleetbase.test:8000', true))->toBe('api.fleetbase.test:8000')
         ->and(Utils::getDomainFromUrl('//api.fleetbase.test'))->toBe('api.fleetbase.test')
         ->and(Utils::fromS3('avatars/user.png'))->toBe('https://fleetbase-media.s3-ap-southeast-1.amazonaws.com/avatars/user.png')
+        ->and(Utils::assetFromS3('icons/logo.png', 'us-east-1'))->toBe('https://flb-assets.s3-us-east-1.amazonaws.com/icons/logo.png')
         ->and(Utils::assetFromFleetbase('icons/logo.png'))->toBe('https://flb-assets.s3-ap-southeast-1.amazonaws.com/icons/logo.png')
         ->and(Utils::keyHeaders(['Content-Type: application/json']))->toBe(['Content-Type' => ' application/json'])
         ->and(Utils::unkeyHeaders(['Accept' => 'application/json', 'X-Test']))->toBe(['Accept: application/json', 'X-Test'])
@@ -168,6 +175,7 @@ test('utils resolves model class mutation and ember resource type contracts', fu
     expect(Utils::getModelClassName('users'))->toBe('\Fleetbase\Models\User')
         ->and(Utils::getModelClassName($user))->toBe('\Fleetbase\Models\User')
         ->and(Utils::getModelClassName('orders', ['Fleetbase', 'FleetOps', 'Models']))->toBe('Fleetbase\FleetOps\Models\Order')
+        ->and(Utils::getModelClassName('\\' . User::class))->toBe('\\' . User::class)
         ->and(fn () => Utils::getModelClassName('orders', 123))->toThrow(InvalidArgumentException::class)
         ->and(Utils::getMutationType($user))->toBe(User::class)
         ->and(Utils::getMutationType(User::class))->toBe(User::class)
@@ -259,6 +267,19 @@ test('utils resolves uuids and models across tables and ember style resource typ
         ->and(Utils::getUuid(['order', 'file'], ['public_id' => 'none']))->toBeNull()
         ->and($orderModel->uuid)->toBe('order-1')
         ->and($fileModel->uuid)->toBe('file-1');
+});
+
+test('utils deletes model collections and keeps empty deletes as no ops', function () {
+    $capsule = utils_database();
+    $capsule->getConnection('mysql')->table('files')->insert([
+        ['uuid' => 'file-delete-1', 'public_id' => 'file_delete_1', 'type' => 'pod', 'original_filename' => 'one.jpg'],
+        ['uuid' => 'file-delete-2', 'public_id' => 'file_delete_2', 'type' => 'pod', 'original_filename' => 'two.jpg'],
+        ['uuid' => 'file-keep-1', 'public_id' => 'file_keep_1', 'type' => 'avatar', 'original_filename' => 'keep.jpg'],
+    ]);
+
+    expect(Utils::deleteModels(new Illuminate\Database\Eloquent\Collection()))->toBeTrue()
+        ->and(Utils::deleteModels(File::where('type', 'pod')->get()))->toBe(2)
+        ->and(File::pluck('uuid')->all())->toBe(['file-keep-1']);
 });
 
 test('utils resolves country metadata cache fallback and locale helpers', function () {
