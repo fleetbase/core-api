@@ -105,12 +105,17 @@ function scheduling_models_database(): Capsule
         $table->string('template_uuid')->nullable();
         $table->string('assignee_type')->nullable();
         $table->string('assignee_uuid')->nullable();
+        $table->string('resource_type')->nullable();
+        $table->string('resource_uuid')->nullable();
         $table->dateTime('start_at')->nullable();
         $table->dateTime('end_at')->nullable();
         $table->integer('duration')->nullable();
+        $table->dateTime('break_start_at')->nullable();
+        $table->dateTime('break_end_at')->nullable();
         $table->string('status')->nullable();
         $table->boolean('is_exception')->default(false);
         $table->date('exception_for_date')->nullable();
+        $table->json('meta')->nullable();
         $table->timestamps();
         $table->softDeletes();
     });
@@ -138,6 +143,7 @@ function scheduling_models_database(): Capsule
         $table->string('subject_uuid')->nullable();
         $table->string('subject_type')->nullable();
         $table->string('name')->nullable();
+        $table->text('description')->nullable();
         $table->string('start_time')->nullable();
         $table->string('end_time')->nullable();
         $table->integer('duration')->nullable();
@@ -299,6 +305,186 @@ it('reports unavailable schedule template rrule support clearly in this package 
     expect($template->hasRrule())->toBeFalse()
         ->and($template->getRruleInstance($from, 'UTC'))->toBeNull()
         ->and($template->getOccurrencesBetween($from, $to, 'UTC'))->toBe([]);
+});
+
+it('scopes schedule templates and applies library copies to schedules', function () {
+    scheduling_models_database();
+
+    $schedule = Schedule::create([
+        'uuid'         => 'schedule-driver-1',
+        'company_uuid' => 'company-1',
+        'subject_type' => Fleetbase\Models\User::class,
+        'subject_uuid' => 'driver-1',
+        'name'         => 'Driver Schedule',
+        'start_date'   => '2026-03-01',
+        'timezone'     => 'Asia/Ulaanbaatar',
+        'status'       => 'active',
+    ]);
+
+    $library = ScheduleTemplate::create([
+        'uuid'           => 'template-library',
+        'company_uuid'   => 'company-1',
+        'name'           => 'Morning Shift',
+        'description'    => 'Weekday morning shift',
+        'start_time'     => '08:00',
+        'end_time'       => '16:00',
+        'duration'       => 480,
+        'break_duration' => 30,
+        'rrule'          => 'RRULE:FREQ=WEEKLY;COUNT=4;BYDAY=MO,WE',
+        'color'          => '#2563eb',
+        'meta'           => ['source' => 'library'],
+    ]);
+
+    $applied = ScheduleTemplate::create([
+        'uuid'          => 'template-applied',
+        'company_uuid'  => 'company-1',
+        'schedule_uuid' => $schedule->uuid,
+        'subject_type'  => Fleetbase\Models\User::class,
+        'subject_uuid'  => 'driver-1',
+        'name'          => 'Applied Shift',
+        'start_time'    => '10:00',
+        'end_time'      => '14:00',
+        'duration'      => 240,
+        'rrule'         => 'FREQ=DAILY;COUNT=1',
+    ]);
+
+    ScheduleItem::create([
+        'uuid'          => 'item-template-applied',
+        'schedule_uuid' => $schedule->uuid,
+        'template_uuid' => $applied->uuid,
+        'start_at'      => '2026-03-02 10:00:00',
+        'end_at'        => '2026-03-02 14:00:00',
+        'status'        => 'scheduled',
+    ]);
+
+    expect(ScheduleTemplate::library()->pluck('uuid')->all())->toBe([$library->uuid])
+        ->and(ScheduleTemplate::applied()->pluck('uuid')->all())->toBe([$applied->uuid])
+        ->and(ScheduleTemplate::forCompany('company-1')->count())->toBe(2)
+        ->and(ScheduleTemplate::forSubject(Fleetbase\Models\User::class, 'driver-1')->pluck('uuid')->all())->toBe([$applied->uuid])
+        ->and($applied->schedule()->first()->uuid)->toBe($schedule->uuid)
+        ->and($applied->items()->count())->toBe(1);
+
+    $copy = $library->applyToSchedule($schedule);
+
+    expect($copy->schedule_uuid)->toBe($schedule->uuid)
+        ->and($copy->subject_type)->toBe(Fleetbase\Models\User::class)
+        ->and($copy->subject_uuid)->toBe('driver-1')
+        ->and($copy->description)->toBe('Weekday morning shift')
+        ->and($copy->meta)->toBe(['source' => 'library']);
+
+    $override = $library->applyToSchedule($schedule, Fleetbase\Models\Company::class, 'vehicle-1');
+
+    expect($override->subject_type)->toBe(Fleetbase\Models\Company::class)
+        ->and($override->subject_uuid)->toBe('vehicle-1');
+});
+
+it('filters schedule items by assignment recurrence status and time windows', function () {
+    scheduling_models_database();
+    session()->flush();
+    session(['company' => 'session-company']);
+    Carbon::setTestNow(Carbon::parse('2026-03-10 12:00:00', 'UTC'));
+
+    $schedule = Schedule::create([
+        'uuid'         => 'schedule-1',
+        'company_uuid' => 'schedule-company',
+        'subject_type' => Fleetbase\Models\User::class,
+        'subject_uuid' => 'driver-1',
+        'name'         => 'Driver Schedule',
+        'status'       => 'active',
+    ]);
+
+    $fromSchedule = ScheduleItem::create([
+        'uuid'          => 'item-from-schedule-company',
+        'schedule_uuid' => $schedule->uuid,
+        'template_uuid' => 'template-1',
+        'assignee_type' => Fleetbase\Models\User::class,
+        'assignee_uuid' => 'driver-1',
+        'resource_type' => Fleetbase\Models\Company::class,
+        'resource_uuid' => 'vehicle-1',
+        'start_at'      => '2026-03-12 08:00:00',
+        'end_at'        => '2026-03-12 12:00:00',
+        'status'        => 'scheduled',
+        'is_exception'  => false,
+    ]);
+
+    $fromSession = ScheduleItem::create([
+        'uuid'          => 'item-from-session-company',
+        'assignee_type' => Fleetbase\Models\User::class,
+        'assignee_uuid' => 'driver-2',
+        'start_at'      => '2026-03-09 08:00:00',
+        'end_at'        => '2026-03-09 12:00:00',
+        'status'        => 'completed',
+        'is_exception'  => true,
+    ]);
+
+    $containingWindow = ScheduleItem::create([
+        'uuid'          => 'item-window-containing',
+        'company_uuid'  => 'company-explicit',
+        'template_uuid' => 'template-1',
+        'assignee_type' => Fleetbase\Models\User::class,
+        'assignee_uuid' => 'driver-1',
+        'start_at'      => '2026-03-11 00:00:00',
+        'end_at'        => '2026-03-15 00:00:00',
+        'status'        => 'in_progress',
+        'is_exception'  => false,
+    ]);
+
+    $sortedUuids = function ($query): array {
+        $uuids = $query->pluck('uuid')->all();
+        sort($uuids);
+
+        return $uuids;
+    };
+
+    $driverOneUuids = [$fromSchedule->uuid, $containingWindow->uuid];
+    sort($driverOneUuids);
+
+    expect($fromSchedule->company_uuid)->toBe('schedule-company')
+        ->and($fromSchedule->duration)->toBe(240)
+        ->and($fromSession->company_uuid)->toBe('session-company')
+        ->and($sortedUuids(ScheduleItem::forAssignee(Fleetbase\Models\User::class, 'driver-1')))->toBe($driverOneUuids)
+        ->and($sortedUuids(ScheduleItem::fromTemplate('template-1')))->toBe($driverOneUuids)
+        ->and(ScheduleItem::exceptions()->pluck('uuid')->all())->toBe([$fromSession->uuid])
+        ->and($sortedUuids(ScheduleItem::generated()))->toBe($driverOneUuids)
+        ->and($sortedUuids(ScheduleItem::withinTimeRange('2026-03-12 09:00:00', '2026-03-12 10:00:00')))->toBe($driverOneUuids)
+        ->and(ScheduleItem::onDate('2026-03-12')->pluck('uuid')->all())->toBe([$fromSchedule->uuid])
+        ->and(ScheduleItem::upcoming()->pluck('uuid')->all())->toBe([
+            $containingWindow->uuid,
+            $fromSchedule->uuid,
+        ])
+        ->and(ScheduleItem::byStatus('completed')->pluck('uuid')->all())->toBe([$fromSession->uuid])
+        ->and($sortedUuids(ScheduleItem::byStatus(['scheduled', 'in_progress'])))->toBe($driverOneUuids);
+
+    Carbon::setTestNow();
+});
+
+it('marks generated schedule items as exceptions when schedule fields change', function () {
+    scheduling_models_database();
+
+    $generated = ScheduleItem::create([
+        'uuid'          => 'generated-item',
+        'company_uuid'  => 'company-1',
+        'template_uuid' => 'template-1',
+        'start_at'      => '2026-03-16 08:00:00',
+        'end_at'        => '2026-03-16 12:00:00',
+        'status'        => 'scheduled',
+        'is_exception'  => false,
+        'meta'          => ['source' => 'materializer'],
+    ]);
+
+    $generated->update(['meta' => ['source' => 'dispatcher-note']]);
+
+    expect($generated->refresh()->is_exception)->toBeFalse()
+        ->and($generated->exception_for_date)->toBeNull();
+
+    $generated->update(['break_start_at' => '2026-03-16 10:00:00']);
+
+    expect($generated->refresh()->is_exception)->toBeTrue()
+        ->and($generated->exception_for_date)->toBe('2026-03-16');
+
+    $generated->markAsException();
+
+    expect($generated->refresh()->exception_for_date)->toBe('2026-03-16');
 });
 
 it('scopes schedule constraints by active state type category subject and priority', function () {
