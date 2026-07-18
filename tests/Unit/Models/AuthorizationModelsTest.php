@@ -7,7 +7,9 @@ use Fleetbase\Models\Role;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Facade;
+use Spatie\Permission\PermissionRegistrar;
 
 class AuthorizationCompanyUserSpy extends CompanyUser
 {
@@ -55,12 +57,62 @@ class AuthorizationCompanyUserSpy extends CompanyUser
     }
 }
 
+class AuthorizationModelsTaggedCacheFake
+{
+    private array $values = [];
+
+    public function tags(array|string $tags): self
+    {
+        return $this;
+    }
+
+    public function increment(string $key, int $value = 1): int
+    {
+        $this->values[$key] = ($this->values[$key] ?? 0) + $value;
+
+        return $this->values[$key];
+    }
+
+    public function flush(): bool
+    {
+        $this->values = [];
+
+        return true;
+    }
+}
+
+class AuthorizationModelsPermissionRegistrarFake
+{
+    public string $pivotPermission = 'permission_id';
+    public bool $teams             = false;
+    public string $teamsKey        = 'team_id';
+
+    public function forgetWildcardPermissionIndex(mixed $record = null): void
+    {
+    }
+}
+
 function authorization_models_database(): Capsule
 {
+    Illuminate\Database\Eloquent\Model::clearBootedModels();
+
     $container = bind_test_container([
-        'database.default'                        => 'mysql',
-        'permission.column_names.model_morph_key' => 'model_uuid',
+        'database.default'                             => 'mysql',
+        'permission.models.permission'                 => Permission::class,
+        'permission.models.role'                       => Role::class,
+        'permission.table_names.permissions'           => 'permissions',
+        'permission.table_names.roles'                 => 'roles',
+        'permission.table_names.model_has_permissions' => 'model_has_permissions',
+        'permission.table_names.model_has_roles'       => 'model_has_roles',
+        'permission.column_names.model_morph_key'      => 'model_uuid',
     ]);
+    $container->instance('responsecache', new class {
+        public function clear(): bool
+        {
+            return true;
+        }
+    });
+    $container->instance(PermissionRegistrar::class, new AuthorizationModelsPermissionRegistrarFake());
 
     $connection = [
         'driver'   => 'sqlite',
@@ -86,6 +138,26 @@ function authorization_models_database(): Capsule
         $table->string('role_id')->nullable();
         $table->string('model_type')->nullable();
         $table->string('model_uuid')->nullable();
+    });
+    $schema->create('permissions', function ($table) {
+        $table->string('id')->primary();
+        $table->string('name')->nullable();
+        $table->string('guard_name')->nullable();
+    });
+    $schema->create('model_has_permissions', function ($table) {
+        $table->string('permission_id')->nullable();
+        $table->string('model_type')->nullable();
+        $table->string('model_uuid')->nullable();
+    });
+    $schema->create('policies', function ($table) {
+        $table->string('id')->primary();
+        $table->string('company_uuid')->nullable();
+        $table->string('name')->nullable();
+        $table->string('guard_name')->nullable();
+        $table->string('service')->nullable();
+        $table->string('description')->nullable();
+        $table->timestamps();
+        $table->softDeletes();
     });
 
     return $capsule;
@@ -166,4 +238,23 @@ it('exposes role policy and permission mutator and response metadata contracts',
         ->and($companyPolicy->getAttributes())->not->toHaveKey('permissions')
         ->and($companyPolicy->getAttribute('guard_name'))->toBe('sanctum')
         ->and($permission->scopeWithTrashed(Permission::query()))->toBeInstanceOf(Illuminate\Database\Eloquent\Builder::class);
+});
+
+it('finds and creates policies by name and guard contract', function () {
+    authorization_models_database();
+    $cache = new AuthorizationModelsTaggedCacheFake();
+    app()->instance('cache', $cache);
+    Cache::swap($cache);
+
+    $existing = Policy::create(['name' => 'View reports', 'guard_name' => 'web', 'company_uuid' => 'company-1']);
+    $found    = Policy::findByName('View reports', 'sanctum');
+    $created  = Policy::findOrCreate('Manage reports', 'web');
+
+    expect($found->is($existing))->toBeTrue()
+        ->and(Policy::findByIdentifier($existing->id, 'sanctum')->is($existing))->toBeTrue()
+        ->and($created)->toBeInstanceOf(Policy::class)
+        ->and($created->name)->toBe('Manage reports')
+        ->and($created->guard_name)->toBe('sanctum')
+        ->and(Policy::where('name', 'Manage reports')->count())->toBe(1)
+        ->and(Policy::findOrCreate('Manage reports', 'sanctum')->is($created))->toBeTrue();
 });

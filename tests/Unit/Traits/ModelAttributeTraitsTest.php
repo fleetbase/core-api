@@ -2,10 +2,13 @@
 
 use Fleetbase\Traits\HasMetaAttributes;
 use Fleetbase\Traits\HasOptionsAttributes;
+use Fleetbase\Traits\HasPresence;
 use Fleetbase\Traits\HasSessionAttributes;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Events\Dispatcher;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Facade;
 
 class ModelAttributeTraitsRecord extends Model
@@ -24,6 +27,46 @@ class ModelAttributeTraitsRecord extends Model
         'meta'    => 'array',
         'options' => 'array',
     ];
+}
+
+class ModelAttributeTraitsPresenceRecord
+{
+    use HasPresence;
+
+    public function __construct(private string $key)
+    {
+    }
+
+    public function getKey(): string
+    {
+        return $this->key;
+    }
+}
+
+class ModelAttributeTraitsCacheFake
+{
+    public array $values  = [];
+    public array $deleted = [];
+
+    public function put(string $key, mixed $value): bool
+    {
+        $this->values[$key] = $value;
+
+        return true;
+    }
+
+    public function get(string $key, mixed $default = null): mixed
+    {
+        return $this->values[$key] ?? $default;
+    }
+
+    public function delete(string $key): bool
+    {
+        $this->deleted[] = $key;
+        unset($this->values[$key]);
+
+        return true;
+    }
 }
 
 function model_attribute_traits_database(): Capsule
@@ -149,4 +192,29 @@ test('has session attributes tracks strict session agnostic columns', function (
         ->and($record->getSessionAgnosticColumns())->toBe(['company_uuid', 'created_by_uuid'])
         ->and($record->isSessionAgnosticColumn('company_uuid'))->toBeTrue()
         ->and($record->isSessionAgnosticColumn('Company_UUID'))->toBeFalse();
+});
+
+test('has presence records last seen state and evaluates online windows', function () {
+    bind_test_container();
+    Carbon::setTestNow(Carbon::parse('2026-07-18 12:00:00', 'UTC'));
+    $cache = new ModelAttributeTraitsCacheFake();
+    Cache::swap($cache);
+
+    $record = new ModelAttributeTraitsPresenceRecord('user-1');
+
+    expect($record->getPresenceCacheKey())->toBe('last-seen-at:user-1')
+        ->and($record->lastSeenAt())->toBeNull()
+        ->and($record->isPresent())->toBeFalse()
+        ->and($record->rememberPresence())->toBeTrue()
+        ->and($cache->values['last-seen-at:user-1']->toISOString())->toBe('2026-07-18T12:00:00.000000Z')
+        ->and($record->lastSeenAt()->toISOString())->toBe('2026-07-18T12:00:00.000000Z')
+        ->and($record->isPresent())->toBeTrue()
+        ->and($record->isOnline())->toBeTrue();
+
+    $cache->values['last-seen-at:user-1'] = Carbon::parse('2026-07-18 11:57:00', 'UTC');
+
+    expect($record->isPresent())->toBeFalse()
+        ->and($record->forgetPresence())->toBeTrue()
+        ->and($cache->deleted)->toBe(['last-seen-at:user-1'])
+        ->and($record->lastSeenAt())->toBeNull();
 });
