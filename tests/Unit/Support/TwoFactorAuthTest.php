@@ -6,6 +6,7 @@ use Fleetbase\Models\User;
 use Fleetbase\Models\VerificationCode;
 use Fleetbase\Support\TwoFactorAuth;
 use Illuminate\Database\Capsule\Manager as Capsule;
+use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Facade;
@@ -120,6 +121,31 @@ class TwoFactorAuthCacheFake
     }
 }
 
+class TwoFactorAuthMailerFake
+{
+    public array $recipients = [];
+    public array $sent       = [];
+
+    public function to(mixed $recipient): self
+    {
+        $this->recipients[] = $recipient;
+
+        return $this;
+    }
+
+    public function send(mixed $mail): void
+    {
+        $this->sent[] = $mail;
+    }
+}
+
+class TwoFactorAuthResponseCacheFake
+{
+    public function clear(): void
+    {
+    }
+}
+
 function two_factor_auth_fixtures(): array
 {
     $container = bind_test_container([
@@ -128,10 +154,16 @@ function two_factor_auth_fixtures(): array
     ]);
 
     $redis = new TwoFactorAuthRedisFake();
+    $mail  = new TwoFactorAuthMailerFake();
     $container->instance('redis', $redis);
     $container->instance('cache', new TwoFactorAuthCacheFake());
+    $container->instance('mail.manager', $mail);
+    $container->instance(Illuminate\Contracts\Config\Repository::class, $container->make('config'));
+    $container->instance('responsecache', new TwoFactorAuthResponseCacheFake());
     Facade::clearResolvedInstance('redis');
     Facade::clearResolvedInstance('cache');
+    Facade::clearResolvedInstance('mail.manager');
+    Facade::clearResolvedInstance('responsecache');
 
     session()->flush();
     two_factor_auth_database();
@@ -198,9 +230,10 @@ function two_factor_auth_database(): void
     $databaseManager->setDefaultConnection('mysql');
     $container->instance('db', $databaseManager);
     Facade::clearResolvedInstance('db');
+    EloquentModel::clearBootedModels();
 
     $schema = $capsule->getConnection('mysql')->getSchemaBuilder();
-    foreach (['verification_codes', 'settings', 'users', 'companies'] as $table) {
+    foreach (['personal_access_tokens', 'verification_codes', 'settings', 'users', 'companies'] as $table) {
         $schema->dropIfExists($table);
     }
 
@@ -233,6 +266,17 @@ function two_factor_auth_database(): void
         $table->text('meta')->nullable();
         $table->string('status')->nullable();
         $table->timestamp('deleted_at')->nullable();
+        $table->timestamps();
+    });
+    $schema->create('personal_access_tokens', function ($table) {
+        $table->increments('id');
+        $table->morphs('tokenable');
+        $table->string('name');
+        $table->string('token', 64)->unique();
+        $table->text('abilities')->nullable();
+        $table->timestamp('last_used_at')->nullable();
+        $table->timestamp('expires_at')->nullable();
+        $table->timestamps();
     });
 }
 
@@ -346,4 +390,92 @@ test('two factor auth clears redis sessions when client verification code is exp
 
     expect(TwoFactorAuth::validateSessionToken($token, $user->phone, $clientToken))->toBeFalse()
         ->and($redis->deleted)->toBe([$redis->sets[0]['key']]);
+});
+
+test('two factor auth validates delivery method requirements before creating verification codes', function () {
+    [$user] = two_factor_auth_fixtures();
+
+    $user->forceFill(['email' => null, 'phone' => null]);
+
+    TwoFactorAuth::saveTwoFaSettingsForUser($user, ['enabled' => true, 'method' => 'email']);
+    expect(fn () => TwoFactorAuth::sendVerificationCode($user))->toThrow(Exception::class, 'No email to send 2FA code to.');
+
+    TwoFactorAuth::saveTwoFaSettingsForUser($user, ['enabled' => true, 'method' => 'sms']);
+    expect(fn () => TwoFactorAuth::sendVerificationCode($user))->toThrow(Exception::class, 'No phone number to send 2FA code to.');
+
+    $user->forceFill(['email' => 'user@example.com']);
+    TwoFactorAuth::saveTwoFaSettingsForUser($user, ['enabled' => true, 'method' => 'push']);
+
+    expect(fn () => TwoFactorAuth::sendVerificationCode($user))->toThrow(Exception::class, 'Invalid 2FA method selected in settings.')
+        ->and(app('db')->table('verification_codes')->count())->toBe(0);
+});
+
+test('two factor auth issues and reuses client tokens for valid active sessions', function () {
+    [$user, , $redis] = two_factor_auth_fixtures();
+
+    TwoFactorAuth::saveTwoFaSettingsForUser($user, ['enabled' => true, 'method' => 'email']);
+
+    $token       = TwoFactorAuth::createTwoFaSessionIfEnabled($user->email);
+    $clientToken = TwoFactorAuth::getClientSessionTokenFromTwoFaSession($token, $user->email);
+
+    expect($token)->toBeString()
+        ->and($clientToken)->toBeString()
+        ->and(app('db')->table('verification_codes')->count())->toBe(1)
+        ->and(TwoFactorAuth::getClientSessionTokenFromTwoFaSession($token, $user->email, $clientToken))->toBe($clientToken)
+        ->and($redis->deleted)->toBe([]);
+});
+
+test('two factor auth rejects invalid client tokens and missing identities with stable errors', function () {
+    [$user, , $redis] = two_factor_auth_fixtures();
+    TwoFactorAuth::saveTwoFaSettingsForUser($user, ['enabled' => true, 'method' => 'email']);
+
+    $token = TwoFactorAuth::start($user->email, 10);
+
+    expect(fn () => TwoFactorAuth::getClientSessionTokenFromTwoFaSession($token, 'missing@example.com'))->toThrow(Exception::class, 'No user found for the identity provided.')
+        ->and(fn () => TwoFactorAuth::getClientSessionTokenFromTwoFaSession($token, $user->email, base64_encode('expires|missing-code|nonce')))->toThrow(Exception::class, '2FA Verification code is invalid or has expired.')
+        ->and($redis->deleted)->toContain($redis->sets[0]['key']);
+});
+
+test('two factor auth verifies matching codes creates access tokens and forgets sessions', function () {
+    [$user, , $redis] = two_factor_auth_fixtures();
+    TwoFactorAuth::saveTwoFaSettingsForUser($user, ['enabled' => true, 'method' => 'email']);
+
+    $token            = TwoFactorAuth::start($user->email, 10);
+    $verificationCode = two_factor_auth_verification_code($user, Carbon::now()->addMinutes(5));
+    $clientToken      = TwoFactorAuth::createClientSessionToken($verificationCode);
+    $accessToken      = TwoFactorAuth::verifyCode('123456', $token, $clientToken);
+
+    expect($accessToken)->toContain('|')
+        ->and(app('db')->table('personal_access_tokens')->where('tokenable_id', $user->uuid)->count())->toBe(1)
+        ->and($redis->deleted)->toBe([$redis->sets[0]['key']]);
+});
+
+test('two factor auth verify code rejects invalid and mismatched codes', function () {
+    [$user] = two_factor_auth_fixtures();
+    TwoFactorAuth::saveTwoFaSettingsForUser($user, ['enabled' => true, 'method' => 'email']);
+
+    $token            = TwoFactorAuth::start($user->email, 10);
+    $verificationCode = two_factor_auth_verification_code($user, Carbon::now()->addMinutes(5));
+    $clientToken      = TwoFactorAuth::createClientSessionToken($verificationCode);
+
+    expect(fn () => TwoFactorAuth::verifyCode('000000', $token, $clientToken))->toThrow(Exception::class, 'Verification code does not match.')
+        ->and(fn () => TwoFactorAuth::verifyCode('123456', 'invalid-token', $clientToken))->toThrow(Exception::class, 'Verification code is invalid.');
+
+    app('db')->table('verification_codes')->where('uuid', $verificationCode->uuid)->delete();
+
+    expect(fn () => TwoFactorAuth::verifyCode('123456', $token, $clientToken))->toThrow(Exception::class, 'Verification code is invalid.');
+});
+
+test('two factor auth resends codes only for valid users and sessions', function () {
+    [$user] = two_factor_auth_fixtures();
+
+    TwoFactorAuth::saveTwoFaSettingsForUser($user, ['enabled' => true, 'method' => 'email']);
+
+    $token       = TwoFactorAuth::start($user->email, 10);
+    $clientToken = TwoFactorAuth::resendCode($user->email, $token);
+
+    expect($clientToken)->toBeString()
+        ->and(app('db')->table('verification_codes')->count())->toBe(1)
+        ->and(fn () => TwoFactorAuth::resendCode('missing@example.com', $token))->toThrow(Exception::class, 'No user found using the provided identity')
+        ->and(fn () => TwoFactorAuth::resendCode($user->email, 'invalid-token'))->toThrow(Exception::class, '2FA session is invalid.');
 });

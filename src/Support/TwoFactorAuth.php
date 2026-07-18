@@ -537,8 +537,12 @@ class TwoFactorAuth
      *
      * @return bool true if the session key is valid, false otherwise
      */
-    public static function isTwoFaSessionKeyValid(string $twoFaSessionKey, User $user): bool
+    public static function isTwoFaSessionKeyValid(?string $twoFaSessionKey, User $user): bool
     {
+        if (!$twoFaSessionKey) {
+            return false;
+        }
+
         $exists = Redis::exists($twoFaSessionKey);
 
         if ($exists) {
@@ -709,10 +713,16 @@ class TwoFactorAuth
     private static function decryptSessionKey(string $encrypted, string $key): ?string
     {
         // Decode from base64
-        $data = base64_decode($encrypted);
+        $data = base64_decode($encrypted, true);
+        if ($data === false) {
+            return null;
+        }
 
         // Extract IV and encrypted data
         $ivLength      = openssl_cipher_iv_length('aes-256-cbc');
+        if ($ivLength === false || strlen($data) <= $ivLength) {
+            return null;
+        }
         $iv            = substr($data, 0, $ivLength);
         $encryptedData = substr($data, $ivLength);
 
