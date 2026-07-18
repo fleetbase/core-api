@@ -17,6 +17,8 @@ class AuthControllerVerificationRedisFake
 {
     public array $deleted = [];
 
+    public array $ttls = [];
+
     public array $values = [];
 
     public function get(string $key): mixed
@@ -41,9 +43,26 @@ class AuthControllerVerificationRedisFake
 
     public function setex(string $key, int $ttl, mixed $value): bool
     {
+        $this->ttls[$key]   = $ttl;
         $this->values[$key] = $value;
 
         return true;
+    }
+}
+
+class AuthControllerVerificationTwilioFake
+{
+    public array $messages = [];
+
+    public ?Throwable $exception = null;
+
+    public function message(string $to, string $message): void
+    {
+        if ($this->exception) {
+            throw $this->exception;
+        }
+
+        $this->messages[] = compact('to', 'message');
     }
 }
 
@@ -147,8 +166,10 @@ function auth_controller_verification_database(): array
     $redis  = new AuthControllerVerificationRedisFake();
     $mailer = new AuthControllerVerificationMailerFake();
     $cache  = new AuthControllerVerificationCacheFake();
+    $twilio = new AuthControllerVerificationTwilioFake();
     $container->instance('redis', $redis);
     $container->instance('cache', $cache);
+    $container->instance('twilio', $twilio);
     $container->instance(Illuminate\Contracts\Config\Repository::class, $container->make('config'));
     $container->instance('responsecache', new AuthControllerVerificationResponseCacheFake());
     $container->instance('mail.manager', $mailer);
@@ -156,6 +177,7 @@ function auth_controller_verification_database(): array
     Cache::swap($cache);
     Facade::clearResolvedInstance('redis');
     Facade::clearResolvedInstance('cache');
+    Facade::clearResolvedInstance('twilio');
     Facade::clearResolvedInstance('mail.manager');
     Mail::swap($mailer);
 
@@ -227,7 +249,7 @@ function auth_controller_verification_database(): array
         $table->timestamps();
     });
 
-    return [$capsule, $redis, $mailer];
+    return [$capsule, $redis, $mailer, $twilio];
 }
 
 function auth_controller_verification_insert_user(Capsule $capsule, array $attributes = []): void
@@ -457,6 +479,62 @@ test('verify sms code rejects mismatched codes without deleting the stored code'
         ])
         ->and($redis->deleted)->toBe([])
         ->and($redis->values[$key])->toBe('765432');
+});
+
+test('send verification sms requires a matching user and honors the driver filter', function () {
+    [$capsule] = auth_controller_verification_database();
+    auth_controller_verification_insert_user($capsule, [
+        'type' => 'user',
+    ]);
+
+    $missingUser = (new AuthController())->sendVerificationSms(auth_controller_verification_request([
+        'phone'       => '555550123',
+        'countryCode' => '1',
+    ]));
+    $wrongType = (new AuthController())->sendVerificationSms(auth_controller_verification_request([
+        'phone'       => '5555550123',
+        'countryCode' => '1',
+        'driver'      => 'driver',
+    ]));
+
+    expect($missingUser->getStatusCode())->toBe(400)
+        ->and($missingUser->getData(true))->toBe([
+            'errors' => ['No user with this phone # found.'],
+        ])
+        ->and($wrongType->getStatusCode())->toBe(400)
+        ->and($wrongType->getData(true))->toBe([
+            'errors' => ['No user with this phone # found.'],
+        ]);
+});
+
+test('send verification sms stores a ttl backed code and reports twilio failures', function () {
+    [$capsule, $redis, , $twilio] = auth_controller_verification_database();
+    auth_controller_verification_insert_user($capsule, [
+        'type' => 'driver',
+    ]);
+
+    $success = (new AuthController())->sendVerificationSms(auth_controller_verification_request([
+        'phone'       => '5555550123',
+        'countryCode' => '1',
+        'driver'      => 'driver',
+    ]));
+    $key = auth_controller_verification_phone_key('+15555550123');
+
+    $twilio->exception = new RuntimeException('twilio unavailable');
+    $failure           = (new AuthController())->sendVerificationSms(auth_controller_verification_request([
+        'phone'       => '+15555550123',
+        'countryCode' => '1',
+    ]));
+
+    expect($success->getStatusCode())->toBe(200)
+        ->and($success->getData(true))->toBe(['status' => 'OK'])
+        ->and($twilio->messages)->toHaveCount(1)
+        ->and($twilio->messages[0]['to'])->toBe('+15555550123')
+        ->and($twilio->messages[0]['message'])->toStartWith('Your Fleetbase authentication code is ')
+        ->and($redis->ttls[$key])->toBe(600)
+        ->and($redis->values[$key])->toBeInt()
+        ->and($failure->getStatusCode())->toBe(400)
+        ->and($failure->getData(true))->toBe(['error' => 'twilio unavailable']);
 });
 
 test('authenticate sms code rejects invalid otp before querying users or deleting redis state', function () {
