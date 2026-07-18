@@ -2735,7 +2735,7 @@ class Utils
         // List of zero-decimal currencies, including MNT as a workaround
         $zeroDecimalCurrencies = [
             'BIF', 'CLP', 'DJF', 'GNF', 'JPY', 'KMF', 'KRW', 'MGA', 'PYG',
-            'RWF', 'UGX', 'VND', 'VUV', 'XAF', 'XOF', 'XPF',
+            'RWF', 'UGX', 'VND', 'VUV', 'XAF', 'XOF', 'XPF', 'MNT',
         ];
 
         // If the currency is zero-decimal, return the amount as is

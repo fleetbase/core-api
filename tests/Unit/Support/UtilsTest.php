@@ -269,3 +269,59 @@ test('utils resolves country metadata cache fallback and locale helpers', functi
         ->and(Utils::getCapitalCityFromCountryCode('US'))->toBe('Washington D.C.')
         ->and(Utils::smartHumanize('api_id_and_sku'))->toBe('API ID And SKU');
 });
+
+test('utils handles numeric text url formatting and encoded string edge cases', function () {
+    putenv('MAIL_FROM_ADDRESS');
+    putenv('CONSOLE_HOST');
+
+    expect(Utils::randomNumber(6))->toMatch('/^\d{6}$/')
+        ->and(Utils::ordinalNumber(21))->toBe('21st')
+        ->and(Utils::numberAsWord(42))->toBe('forty-two')
+        ->and(Utils::numericStringToDigits('one hundred twenty-three thousand four hundred fifty-six'))->toBe('123456')
+        ->and(Utils::numericStringToDigits('two million three'))->toBe('2000003')
+        ->and(Utils::unicodeDecode('Fleetbase \\u2713'))->toBe('Fleetbase ✓')
+        ->and(Utils::isUnicodeString('Fleetbase ✓'))->toBeTrue()
+        ->and(Utils::isUnicodeString('Fleetbase'))->toBeFalse()
+        ->and(Utils::parseUrl('https://fleetbase.test/%E2%9C%93?name=Fleetbase%20Core'))->toMatchArray([
+            'scheme' => 'https',
+            'host'   => 'fleetbase.test',
+            'path'   => '/✓',
+            'query'  => 'name=Fleetbase Core',
+        ])
+        ->and(fn () => Utils::parseUrl('http:///path'))->toThrow(InvalidArgumentException::class, 'Malformed URL')
+        ->and(Utils::addWwwToUrl(null))->toBeNull()
+        ->and(Utils::addWwwToUrl('fleetbase.io'))->toBe('www.fleetbase.io')
+        ->and(Utils::addWwwToUrl('www.fleetbase.io'))->toBe('www.fleetbase.io')
+        ->and(Utils::addWwwToUrl('https://fleetbase.io/docs?tab=api#intro'))->toBe('https://www.fleetbase.io/docs?tab=api#intro')
+        ->and(Utils::formatSeconds(90))->toContain('minute')
+        ->and(Utils::isEmail('ron@example.test'))->toBeTrue()
+        ->and(Utils::isEmail('not-an-email'))->toBeFalse()
+        ->and(Utils::classExists(Utils::class))->toBeTrue()
+        ->and(Utils::classExists(''))->toBeFalse()
+        ->and(Utils::classExists(null))->toBeFalse()
+        ->and(Utils::getObjectKeyValue((object) ['status' => 'active'], 'status', 'pending'))->toBe('active')
+        ->and(Utils::getObjectKeyValue((object) [], 'status', 'pending'))->toBe('pending')
+        ->and(Utils::slugify('HelloWorld API v2!'))->toBe('hello-world-api-v2')
+        ->and(Utils::formatPhoneNumber('+1 561-276-7156'))->toBe('+15612767156')
+        ->and(Utils::delinkify('Email ron@example.test or visit https://fleetbase.io'))->toContain('&#8203;@')
+        ->and(Utils::delinkify('Email ron@example.test or visit https://fleetbase.io'))->toContain('https://&#8203;');
+});
+
+test('utils converts arrays from nullable strings objects and iterables', function () {
+    $iterator = new ArrayIterator(['first' => 'alpha', 'second' => 'beta']);
+    $object   = (object) ['status' => 'active', 'type' => 'order'];
+
+    expect(Utils::arrayFrom(null))->toBe([])
+        ->and(Utils::arrayFrom(['ready', 'done']))->toBe(['ready', 'done'])
+        ->and(Utils::arrayFrom('ready, done, cancelled'))->toBe(['ready', 'done', 'cancelled'])
+        ->and(Utils::arrayFrom('ready|done|cancelled'))->toBe(['ready', 'done', 'cancelled'])
+        ->and(Utils::arrayFrom('ready'))->toBe(['ready'])
+        ->and(Utils::arrayFrom($iterator))->toBe(['first' => 'alpha', 'second' => 'beta'])
+        ->and(Utils::arrayFrom($object))->toBe(['status' => 'active', 'type' => 'order']);
+});
+
+test('utils formats stripe amounts for zero decimal and precision backed currencies', function () {
+    expect(Utils::formatAmountForStripe(1250, 'JPY'))->toBe(1250)
+        ->and(Utils::formatAmountForStripe(1250, 'USD'))->toBe(1250)
+        ->and(Utils::formatAmountForStripe(1250, 'MNT'))->toBe(1250);
+});
