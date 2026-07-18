@@ -21,10 +21,33 @@ if (!function_exists('__')) {
     }
 }
 
+if (!function_exists('base_path')) {
+    function base_path(string $path = ''): string
+    {
+        $path = ltrim($path, DIRECTORY_SEPARATOR);
+
+        if (str_starts_with($path, 'vendor/fleetbase/core-api/')) {
+            $path = substr($path, strlen('vendor/fleetbase/core-api/'));
+        }
+
+        return $path === '' ? getcwd() : getcwd() . DIRECTORY_SEPARATOR . $path;
+    }
+}
+
 class CreatePermissionsCommandSpy extends CreatePermissions
 {
     public array $errors   = [];
     public array $messages = [];
+
+    public function __construct(private array $options = [])
+    {
+        parent::__construct();
+    }
+
+    public function option($key = null)
+    {
+        return $key === null ? $this->options : ($this->options[$key] ?? null);
+    }
 
     public function error($string, $verbosity = null): int
     {
@@ -68,6 +91,7 @@ class CreatePermissionsSubjectFake extends EloquentModel
 function create_permissions_database(): Capsule
 {
     EloquentModel::clearBootedModels();
+    create_permissions_auth_schema_fixtures();
 
     $connection = [
         'driver'   => 'sqlite',
@@ -117,6 +141,14 @@ function create_permissions_database(): Capsule
     Facade::clearResolvedInstance('responsecache');
 
     $schema = $capsule->getConnection('mysql')->getSchemaBuilder();
+    $container->instance('db.schema', $schema);
+    Facade::clearResolvedInstance('schema');
+
+    $schema->create('sequence_bootstrap', function ($table) {
+        $table->increments('id');
+    });
+    $capsule->getConnection('mysql')->table('sequence_bootstrap')->insert([]);
+
     $schema->create('permissions', function ($table) {
         $table->string('id')->primary();
         $table->string('name');
@@ -136,6 +168,16 @@ function create_permissions_database(): Capsule
     $schema->create('role_has_permissions', function ($table) {
         $table->string('permission_id')->nullable();
         $table->string('role_id')->nullable();
+    });
+    $schema->create('model_has_roles', function ($table) {
+        $table->string('role_id')->nullable();
+        $table->string('model_type')->nullable();
+        $table->string('model_uuid')->nullable();
+    });
+    $schema->create('model_has_policies', function ($table) {
+        $table->string('policy_id')->nullable();
+        $table->string('model_type')->nullable();
+        $table->string('model_uuid')->nullable();
     });
     $schema->create('model_has_permissions', function ($table) {
         $table->string('permission_id')->nullable();
@@ -196,9 +238,146 @@ function create_permissions_database(): Capsule
     return $capsule;
 }
 
+function create_permissions_auth_schema_fixtures(): void
+{
+    $sourceDirectory  = getcwd() . '/src/Auth/Schemas';
+    $basePaths        = [base_path()];
+
+    if (function_exists('Fleetbase\\Support\\base_path')) {
+        $basePaths[] = Fleetbase\Support\base_path();
+    }
+
+    foreach (array_unique($basePaths) as $basePath) {
+        $composerLock = $basePath . '/composer.lock';
+        if (!file_exists($composerLock)) {
+            if (!is_dir(dirname($composerLock))) {
+                mkdir(dirname($composerLock), 0777, true);
+            }
+
+            file_put_contents($composerLock, json_encode(['packages' => []]));
+        }
+
+        $targetDirectory = $basePath . '/vendor/fleetbase/core-api/src/Auth/Schemas';
+        if (realpath($sourceDirectory) === realpath($targetDirectory)) {
+            continue;
+        }
+
+        if (!is_dir($targetDirectory)) {
+            mkdir($targetDirectory, 0777, true);
+        }
+
+        foreach (['Developers.php', 'IAM.php'] as $schema) {
+            copy($sourceDirectory . '/' . $schema, $targetDirectory . '/' . $schema);
+        }
+    }
+}
+
+function create_permissions_command_counts(Capsule $capsule): array
+{
+    $db = $capsule->getConnection('mysql');
+
+    return [
+        'permissions'           => $db->table('permissions')->count(),
+        'policies'              => $db->table('policies')->count(),
+        'roles'                 => $db->table('roles')->count(),
+        'model_has_permissions' => $db->table('model_has_permissions')->count(),
+        'model_has_policies'    => $db->table('model_has_policies')->count(),
+        'directives'            => $db->table('directives')->count(),
+    ];
+}
+
 afterEach(function () {
     EloquentModel::clearBootedModels();
     Facade::clearResolvedInstances();
+});
+
+it('creates core schema permissions policies roles and policy bindings through handle', function () {
+    $capsule = create_permissions_database();
+    $command = new CreatePermissionsCommandSpy(['reset' => false]);
+
+    $result = $command->handle();
+
+    $db = $capsule->getConnection('mysql');
+
+    expect($result)->toBeNull()
+        ->and($command->errors)->toBe([])
+        ->and($db->table('permissions')->where('name', 'developers see extension')->where('service', 'developers')->exists())->toBeTrue()
+        ->and($db->table('permissions')->where('name', 'developers * api-key')->where('service', 'developers')->exists())->toBeTrue()
+        ->and($db->table('permissions')->where('name', 'iam change-password')->where('service', 'iam')->exists())->toBeTrue()
+        ->and($db->table('permissions')->where('name', 'iam execute report')->where('service', 'iam')->exists())->toBeTrue()
+        ->and($db->table('permissions')->where('name', 'developers create socket')->exists())->toBeFalse()
+        ->and($db->table('permissions')->where('name', 'developers see socket')->exists())->toBeTrue()
+        ->and($db->table('policies')->where('name', 'AdministratorAccess')->exists())->toBeTrue()
+        ->and($db->table('policies')->where('name', 'DevelopersFullAccess')->exists())->toBeTrue()
+        ->and($db->table('policies')->where('name', 'DevelopersReadOnly')->exists())->toBeTrue()
+        ->and($db->table('policies')->where('name', 'FLBDeveloper')->where('description', 'Policy for developers to create api credentials, webhooks and view logs.')->exists())->toBeTrue()
+        ->and($db->table('roles')->where('name', 'Administrator')->where('description', 'Role for full administrator access to an organization')->exists())->toBeTrue()
+        ->and($db->table('roles')->where('name', 'Fleetbase Developer')->where('service', 'developers')->exists())->toBeTrue()
+        ->and($db->table('model_has_permissions')->where('permission_id', 'permission-orders-view')->exists())->toBeFalse()
+        ->and($db->table('model_has_permissions')->where('permission_id', 'permission-orders-list')->exists())->toBeFalse()
+        ->and($db->table('model_has_permissions')->where('model_type', Fleetbase\Models\Policy::class)->count())->toBeGreaterThan(0)
+        ->and($db->table('model_has_policies')->where('model_type', Fleetbase\Models\Role::class)->count())->toBeGreaterThan(0)
+        ->and($command->messages)->toContain('Created permission: developers see extension')
+        ->and($command->messages)->toContain('New Policy for service developers created as FLBDeveloper')
+        ->and($command->messages)->toContain('New Role for service developers created as Fleetbase Developer');
+});
+
+it('reset option clears stale permissions policies role assignments and directives before rebuilding schemas', function () {
+    $capsule = create_permissions_database();
+    $db      = $capsule->getConnection('mysql');
+
+    $db->table('permissions')->insert([
+        'id'         => 'permission-stale',
+        'name'       => 'stale permission',
+        'guard_name' => 'sanctum',
+        'service'    => 'legacy',
+        'created_at' => '2026-07-18 10:00:00',
+        'updated_at' => '2026-07-18 10:00:00',
+    ]);
+    $db->table('policies')->insert([
+        'id'          => 'policy-stale',
+        'name'        => 'StalePolicy',
+        'guard_name'  => 'sanctum',
+        'service'     => 'legacy',
+        'description' => 'Should be removed',
+        'created_at'  => '2026-07-18 10:00:00',
+        'updated_at'  => '2026-07-18 10:00:00',
+    ]);
+    $db->table('model_has_permissions')->insert(['permission_id' => 'permission-stale', 'model_type' => 'Legacy', 'model_uuid' => 'legacy-model']);
+    $db->table('model_has_roles')->insert(['role_id' => 'role-stale', 'model_type' => 'Legacy', 'model_uuid' => 'legacy-model']);
+    $db->table('model_has_policies')->insert(['policy_id' => 'policy-stale', 'model_type' => 'Legacy', 'model_uuid' => 'legacy-model']);
+    $db->table('directives')->insert([
+        'uuid'            => 'directive-stale',
+        'permission_uuid' => 'permission-stale',
+        'subject_type'    => 'Legacy',
+        'subject_uuid'    => 'legacy-model',
+        'key'             => 'legacy-key',
+        'rules'           => json_encode(['legacy']),
+        'created_at'      => '2026-07-18 10:00:00',
+        'updated_at'      => '2026-07-18 10:00:00',
+    ]);
+
+    $before = create_permissions_command_counts($capsule);
+
+    $command = new CreatePermissionsCommandSpy(['reset' => true]);
+    $result  = $command->handle();
+
+    expect($before['permissions'])->toBe(3)
+        ->and($before['policies'])->toBe(2)
+        ->and($before['model_has_permissions'])->toBe(1)
+        ->and($before['model_has_policies'])->toBe(1)
+        ->and($before['directives'])->toBe(1)
+        ->and($result)->toBeNull()
+        ->and($command->errors)->toBe([])
+        ->and($db->table('permissions')->where('name', 'stale permission')->exists())->toBeFalse()
+        ->and($db->table('policies')->where('name', 'StalePolicy')->exists())->toBeFalse()
+        ->and($db->table('model_has_permissions')->where('model_type', 'Legacy')->exists())->toBeFalse()
+        ->and($db->table('model_has_roles')->where('model_type', 'Legacy')->exists())->toBeFalse()
+        ->and($db->table('model_has_policies')->where('model_type', 'Legacy')->exists())->toBeFalse()
+        ->and($db->table('directives')->where('key', 'legacy-key')->exists())->toBeFalse()
+        ->and($db->table('permissions')->where('name', 'iam see extension')->exists())->toBeTrue()
+        ->and($db->table('roles')->where('name', 'IAM Administrator')->exists())->toBeTrue()
+        ->and($db->table('model_has_policies')->where('model_type', Fleetbase\Models\Role::class)->count())->toBeGreaterThan(0);
 });
 
 it('normalizes permission names and reports invalid permission helper entries', function () {
