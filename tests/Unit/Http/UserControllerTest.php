@@ -1,8 +1,10 @@
 <?php
 
 use Fleetbase\Http\Controllers\Internal\v1\UserController;
+use Fleetbase\Http\Requests\Internal\AcceptCompanyInvite;
 use Fleetbase\Http\Requests\Internal\ChangeCurrentUserEmailRequest;
 use Fleetbase\Http\Requests\Internal\ChangeUserEmailRequest;
+use Fleetbase\Http\Requests\Internal\InviteUserRequest;
 use Fleetbase\Http\Requests\Internal\ResendUserInvite;
 use Fleetbase\Http\Requests\Internal\UpdatePasswordRequest;
 use Fleetbase\Http\Requests\Internal\ValidatePasswordRequest;
@@ -53,14 +55,33 @@ class UserControllerCacheFake
         return true;
     }
 
+    public function increment(string $key, int $value = 1): int
+    {
+        $this->values[$key] = (int) ($this->values[$key] ?? 0) + $value;
+
+        return $this->values[$key];
+    }
+
     public function rememberForever(string $key, callable $callback): mixed
     {
         return $this->values[$key] ??= $callback();
     }
 
+    public function tags(array|string $names): self
+    {
+        return $this;
+    }
+
     public function forget(string $key): bool
     {
         unset($this->values[$key]);
+
+        return true;
+    }
+
+    public function flush(): bool
+    {
+        $this->values = [];
 
         return true;
     }
@@ -72,6 +93,31 @@ class UserControllerPermissionRegistrarFake
     public string $pivotPermission = 'permission_id';
     public bool $teams             = false;
     public string $teamsKey        = 'team_id';
+
+    public function getRoleClass(): string
+    {
+        return Fleetbase\Models\Role::class;
+    }
+
+    public function getPermissionClass(): string
+    {
+        return Fleetbase\Models\Permission::class;
+    }
+}
+
+class UserControllerNotificationDispatcherFake implements Illuminate\Contracts\Notifications\Dispatcher
+{
+    public array $sent = [];
+
+    public function send($notifiables, $notification): void
+    {
+        $this->sent[] = [$notifiables, $notification, null];
+    }
+
+    public function sendNow($notifiables, $notification, ?array $channels = null): void
+    {
+        $this->sent[] = [$notifiables, $notification, $channels];
+    }
 }
 
 class UserControllerRouteStub
@@ -131,6 +177,7 @@ function user_controller_database(): Capsule
         'permission.table_names.model_has_permissions' => 'model_has_permissions',
         'permission.table_names.model_has_roles'       => 'model_has_roles',
         'permission.column_names.model_morph_key'      => 'model_uuid',
+        'activitylog.enabled'                          => false,
     ]);
 
     if (!Request::hasMacro('or')) {
@@ -165,6 +212,13 @@ function user_controller_database(): Capsule
 
     $container->instance('hash', new UserControllerHashFake());
     $container->instance('cache', new UserControllerCacheFake());
+    $container->instance(Illuminate\Contracts\Config\Repository::class, $container->make('config'));
+    $container->instance('responsecache', new class {
+        public function clear(): void
+        {
+        }
+    });
+    $container->instance(Illuminate\Contracts\Notifications\Dispatcher::class, new UserControllerNotificationDispatcherFake());
     $container->instance(Spatie\Permission\PermissionRegistrar::class, new UserControllerPermissionRegistrarFake());
     Facade::clearResolvedInstance('hash');
     Facade::clearResolvedInstance('cache');
@@ -205,6 +259,7 @@ function user_controller_database(): Capsule
         $table->string('email')->nullable();
         $table->string('phone')->nullable();
         $table->string('username')->nullable();
+        $table->string('slug')->nullable();
         $table->string('name')->nullable();
         $table->string('password')->nullable();
         $table->string('remember_token')->nullable();
@@ -260,6 +315,17 @@ function user_controller_database(): Capsule
         $table->text('meta')->nullable();
         $table->timestamp('expires_at')->nullable();
         $table->timestamp('deleted_at')->nullable();
+        $table->timestamps();
+    });
+    $schema->create('personal_access_tokens', function ($table) {
+        $table->increments('id');
+        $table->string('tokenable_type');
+        $table->string('tokenable_id');
+        $table->string('name');
+        $table->string('token', 64)->unique();
+        $table->text('abilities')->nullable();
+        $table->timestamp('last_used_at')->nullable();
+        $table->timestamp('expires_at')->nullable();
         $table->timestamps();
     });
     $schema->create('directives', function ($table) {
@@ -336,6 +402,9 @@ function user_controller_database(): Capsule
         ['uuid' => 'pivot-member-2', 'company_uuid' => 'company-2', 'user_uuid' => 'member-1', 'status' => 'active', 'created_at' => $now, 'updated_at' => $now],
         ['uuid' => 'pivot-single-1', 'company_uuid' => 'company-1', 'user_uuid' => 'single-1', 'status' => 'active', 'created_at' => $now, 'updated_at' => $now],
         ['uuid' => 'pivot-foreign-1', 'company_uuid' => 'company-2', 'user_uuid' => 'foreign-1', 'status' => 'active', 'created_at' => $now, 'updated_at' => $now],
+    ]);
+    $capsule->getConnection('mysql')->table('roles')->insert([
+        ['id' => 'Administrator', 'company_uuid' => null, 'name' => 'Administrator', 'guard_name' => 'sanctum', 'created_at' => $now, 'updated_at' => $now],
     ]);
 
     return $capsule;
@@ -628,4 +697,167 @@ test('user controller rejects resending invitations outside the active company c
         ->and($missingTarget->getData(true))->toBe(['errors' => ['Unable to resend invitation.']])
         ->and($notInvitable->getStatusCode())->toBe(404)
         ->and($notInvitable->getData(true))->toBe(['errors' => ['Unable to resend invitation.']]);
+});
+
+test('user controller invites a brand new user and prevents duplicate organization invitations', function () {
+    $capsule = user_controller_database();
+    EloquentModel::setEventDispatcher(new Dispatcher(app()));
+
+    $invite = user_controller()->inviteUser(user_controller_request('POST', [
+        'user' => [
+            'uuid'      => 'fresh-1',
+            'email'     => 'fresh@example.test',
+            'name'      => 'Fresh User',
+            'role_uuid' => 'Administrator',
+        ],
+    ], user_controller_user('owner-1'), 'inviteUser', InviteUserRequest::class));
+    $duplicate = user_controller()->inviteUser(user_controller_request('POST', [
+        'user' => [
+            'email' => 'fresh@example.test',
+            'name'  => 'Fresh User',
+        ],
+    ], user_controller_user('owner-1'), 'inviteUser', InviteUserRequest::class));
+
+    $freshUser = User::where('email', 'fresh@example.test')->first();
+
+    expect($invite->getStatusCode())->toBe(200)
+        ->and($invite->getData(true)['user']['email'])->toBe('fresh@example.test')
+        ->and($invite->getData(true)['user']['status'])->toBe('pending')
+        ->and($freshUser)->not->toBeNull()
+        ->and($freshUser->company_uuid)->toBe('company-1')
+        ->and($capsule->getConnection('mysql')->table('company_users')->where('company_uuid', 'company-1')->where('user_uuid', $freshUser->uuid)->exists())->toBeTrue()
+        ->and($capsule->getConnection('mysql')->table('invites')->where('company_uuid', 'company-1')->where('reason', 'join_company')->count())->toBe(1)
+        ->and($duplicate->getStatusCode())->toBe(400)
+        ->and($duplicate->getData(true))->toBe(['errors' => ['This user is already a member of your organisation.']]);
+});
+
+test('user controller invites existing users from another organization without creating duplicates', function () {
+    $capsule = user_controller_database();
+    EloquentModel::setEventDispatcher(new Dispatcher(app()));
+
+    $invite = user_controller()->inviteUser(user_controller_request('POST', [
+        'user' => [
+            'email'     => 'foreign@example.test',
+            'role_uuid' => 'Administrator',
+        ],
+    ], user_controller_user('owner-1'), 'inviteUser', InviteUserRequest::class));
+    $duplicateInvite = user_controller()->inviteUser(user_controller_request('POST', [
+        'user' => [
+            'email' => 'foreign@example.test',
+        ],
+    ], user_controller_user('owner-1'), 'inviteUser', InviteUserRequest::class));
+
+    expect($invite->getStatusCode())->toBe(200)
+        ->and($invite->getData(true)['invited'])->toBeTrue()
+        ->and($invite->getData(true)['user']['uuid'])->toBe('foreign-1')
+        ->and(User::where('email', 'foreign@example.test')->count())->toBe(1)
+        ->and($capsule->getConnection('mysql')->table('company_users')->where('company_uuid', 'company-1')->where('user_uuid', 'foreign-1')->exists())->toBeFalse()
+        ->and($capsule->getConnection('mysql')->table('invites')->where('company_uuid', 'company-1')->where('reason', 'join_company')->count())->toBe(1)
+        ->and($duplicateInvite->getStatusCode())->toBe(400)
+        ->and($duplicateInvite->getData(true))->toBe(['errors' => ['This user has already been invited to join your organisation.']]);
+});
+
+test('user controller accepts company invitations and activates pending users with a token', function () {
+    $capsule = user_controller_database();
+    EloquentModel::setEventDispatcher(new Dispatcher(app()));
+
+    $pending = User::create([
+        'uuid'         => 'pending-1',
+        'public_id'    => 'user_pending_1',
+        'email'        => 'pending@example.test',
+        'name'         => 'Pending User',
+        'company_uuid' => 'company-2',
+        'status'       => 'pending',
+        'type'         => 'user',
+    ]);
+
+    $capsule->getConnection('mysql')->table('invites')->insert([
+        'uuid'            => 'invite-1',
+        'public_id'       => 'invite_public_1',
+        'code'            => 'JOIN123',
+        'uri'             => 'join123',
+        'company_uuid'    => 'company-1',
+        'created_by_uuid' => 'owner-1',
+        'subject_uuid'    => 'company-1',
+        'subject_type'    => Fleetbase\Support\Utils::getMutationType(Fleetbase\Models\Company::where('uuid', 'company-1')->first()),
+        'protocol'        => 'email',
+        'recipients'      => json_encode(['pending@example.test']),
+        'reason'          => 'join_company',
+        'meta'            => json_encode(['role_uuid' => 'Administrator']),
+        'expires_at'      => now()->addHours(48),
+        'created_at'      => now(),
+        'updated_at'      => now(),
+    ]);
+
+    $accepted = user_controller()->acceptCompanyInvite(user_controller_request('POST', [
+        'code' => 'JOIN123',
+    ], $pending, 'acceptCompanyInvite', AcceptCompanyInvite::class));
+
+    expect($accepted->getStatusCode())->toBe(200)
+        ->and($accepted->getData(true)['status'])->toBe('ok')
+        ->and($accepted->getData(true)['needs_password'])->toBeTrue()
+        ->and($accepted->getData(true)['token'])->toContain('|')
+        ->and($capsule->getConnection('mysql')->table('company_users')->where('company_uuid', 'company-1')->where('user_uuid', 'pending-1')->exists())->toBeTrue()
+        ->and($capsule->getConnection('mysql')->table('users')->where('uuid', 'pending-1')->value('company_uuid'))->toBe('company-1')
+        ->and($capsule->getConnection('mysql')->table('users')->where('uuid', 'pending-1')->value('status'))->toBe('active')
+        ->and($capsule->getConnection('mysql')->table('users')->where('uuid', 'pending-1')->value('email_verified_at'))->not->toBeNull()
+        ->and($capsule->getConnection('mysql')->table('invites')->where('uuid', 'invite-1')->whereNull('deleted_at')->exists())->toBeFalse()
+        ->and($capsule->getConnection('mysql')->table('personal_access_tokens')->where('tokenable_id', 'pending-1')->count())->toBe(1);
+});
+
+test('user controller rejects unavailable and malformed company invitations', function () {
+    $capsule = user_controller_database();
+
+    $missingInvite = user_controller()->acceptCompanyInvite(user_controller_request('POST', [
+        'code' => 'missing-code',
+    ], user_controller_user('owner-1'), 'acceptCompanyInvite', AcceptCompanyInvite::class));
+
+    $capsule->getConnection('mysql')->table('invites')->insert([
+        'uuid'            => 'invite-no-recipient',
+        'public_id'       => 'invite_public_no_recipient',
+        'code'            => 'EMPTY01',
+        'uri'             => 'empty01',
+        'company_uuid'    => 'company-1',
+        'created_by_uuid' => 'owner-1',
+        'subject_uuid'    => 'company-1',
+        'subject_type'    => Fleetbase\Support\Utils::getMutationType(Fleetbase\Models\Company::where('uuid', 'company-1')->first()),
+        'protocol'        => 'email',
+        'recipients'      => json_encode([]),
+        'reason'          => 'join_company',
+        'meta'            => null,
+        'expires_at'      => now()->addHours(48),
+        'created_at'      => now(),
+        'updated_at'      => now(),
+    ]);
+    $missingRecipient = user_controller()->acceptCompanyInvite(user_controller_request('POST', [
+        'code' => 'EMPTY01',
+    ], user_controller_user('owner-1'), 'acceptCompanyInvite', AcceptCompanyInvite::class));
+
+    $capsule->getConnection('mysql')->table('invites')->insert([
+        'uuid'            => 'invite-no-user',
+        'public_id'       => 'invite_public_no_user',
+        'code'            => 'ABSENT1',
+        'uri'             => 'absent1',
+        'company_uuid'    => 'company-1',
+        'created_by_uuid' => 'owner-1',
+        'subject_uuid'    => 'company-1',
+        'subject_type'    => Fleetbase\Support\Utils::getMutationType(Fleetbase\Models\Company::where('uuid', 'company-1')->first()),
+        'protocol'        => 'email',
+        'recipients'      => json_encode(['absent@example.test']),
+        'reason'          => 'join_company',
+        'meta'            => null,
+        'expires_at'      => now()->addHours(48),
+        'created_at'      => now(),
+        'updated_at'      => now(),
+    ]);
+    $missingUser = user_controller()->acceptCompanyInvite(user_controller_request('POST', [
+        'code' => 'ABSENT1',
+    ], user_controller_user('owner-1'), 'acceptCompanyInvite', AcceptCompanyInvite::class));
+
+    expect($missingInvite->getStatusCode())->toBe(400)
+        ->and($missingInvite->getData(true))->toBe(['errors' => ['This invitation has already been accepted or is no longer available.']])
+        ->and($missingRecipient->getStatusCode())->toBe(400)
+        ->and($missingRecipient->getData(true))->toBe(['errors' => ['Unable to locate the user for this invitation.']])
+        ->and($missingUser->getStatusCode())->toBe(400)
+        ->and($missingUser->getData(true))->toBe(['errors' => ['Unable to locate the user for this invitation.']]);
 });
