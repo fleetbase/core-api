@@ -37,6 +37,18 @@ namespace {
         }
     }
 
+    class SeedDatabaseExplicitSeederTestCommand extends SeedDatabase
+    {
+        public array $calls = [];
+
+        protected function runSeeder(string $class): int
+        {
+            $this->calls[] = $class;
+
+            return 7;
+        }
+    }
+
     function seed_database_command_base(): string
     {
         $base = sys_get_temp_dir() . '/fleetbase-core-api-seed-command';
@@ -52,6 +64,20 @@ namespace {
 
     afterEach(function () {
         Facade::clearResolvedInstances();
+    });
+
+    it('runs a single requested fleetbase seeder class with force enabled', function () {
+        Container::setInstance(new SeedDatabaseCommandContainer());
+        $container = bind_test_container();
+        Facade::clearResolvedInstances();
+
+        $command = new SeedDatabaseExplicitSeederTestCommand();
+        $command->setLaravel($container);
+        $tester = new CommandTester($command);
+
+        expect($tester->execute(['--class' => 'RolesSeeder']))->toBe(7)
+            ->and($command->calls)->toBe(['Fleetbase\\Seeders\\RolesSeeder'])
+            ->and($tester->getDisplay())->not->toContain('Running Fleetbase core seeder');
     });
 
     it('runs the core seeder and warns when no extension seeders are installed', function () {

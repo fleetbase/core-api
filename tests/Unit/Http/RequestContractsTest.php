@@ -349,6 +349,14 @@ namespace {
         }
     }
 
+    class RequestContractsLoginRequestProbe extends Fleetbase\Http\Requests\LoginRequest
+    {
+        public function triggerFailedValidation(ValidatorContract $validator): mixed
+        {
+            return $this->failedValidation($validator);
+        }
+    }
+
     it('keeps authentication request validation contracts security-safe', function () {
         $loginRules = (new Fleetbase\Http\Requests\LoginRequest())->rules();
         $twoFaRules = (new TwoFaValidationRequest())->rules();
@@ -363,13 +371,40 @@ namespace {
             ->and((new TwoFaValidationRequest())->messages()['identity.exists'])->toBe('No user found by this email');
     });
 
+    it('keeps login validation errors generic and correctly shaped', function () {
+        $login = new RequestContractsLoginRequestProbe();
+
+        $singleError = $login->triggerFailedValidation(new RequestContractsValidatorFake([
+            'identity' => ['An email address or phone number is required.'],
+        ]));
+
+        $multipleErrors = $login->triggerFailedValidation(new RequestContractsValidatorFake([
+            'identity' => ['An email address or phone number is required.'],
+            'password' => ['A password is required.'],
+        ]));
+
+        expect($singleError->getStatusCode())->toBe(422)
+            ->and($singleError->getData(true))->toBe([
+                'errors' => ['An email address or phone number is required.'],
+            ])
+            ->and($multipleErrors->getStatusCode())->toBe(422)
+            ->and($multipleErrors->getData(true))->toBe([
+                'errors' => [
+                    'An email address or phone number is required.',
+                    'A password is required.',
+                ],
+            ]);
+    });
+
     it('keeps signup onboarding and password rules strict', function () {
         $signupRules  = (new SignUpRequest())->rules();
-        $onboardRules = (new OnboardRequest())->rules();
+        $onboard      = new OnboardRequest();
+        $onboardRules = $onboard->rules();
+        $messages     = $onboard->messages();
         $changeRules  = (new ChangePasswordRequest())->rules();
 
         expect((new SignUpRequest())->authorize())->toBeTrue()
-            ->and((new OnboardRequest())->authorize())->toBeTrue()
+            ->and($onboard->authorize())->toBeTrue()
             ->and((new ChangePasswordRequest())->authorize())->toBeTrue()
             ->and($signupRules['user.name'])->toBe(['required'])
             ->and($signupRules['user.email'])->toBe(['required', 'email'])
@@ -382,7 +417,18 @@ namespace {
             ])
             ->and(request_rule_strings($onboardRules['email']))->toContain('required', 'email')
             ->and(request_rule_strings($onboardRules['phone']))->toContain('required')
+            ->and(request_rule_strings($onboardRules['name']))->toContain('required', 'min:2', 'max:50')
             ->and(request_rule_strings($onboardRules['organization_name']))->toContain('required', 'min:4', 'max:100')
+            ->and($messages['*.required'])->toBe('Your :attribute is required to signup')
+            ->and($messages['email'])->toBe('You must enter a valid :attribute to signup')
+            ->and($messages['email.unique'])->toBe('An account with this email address already exists')
+            ->and($messages['phone.unique'])->toBe('An account with this phone number already exists')
+            ->and($messages['password.required'])->toBe('You must enter a password.')
+            ->and($messages['password.mixed'])->toBe('Password must contain both uppercase and lowercase letters.')
+            ->and($messages['password.letters'])->toBe('Password must contain at least 1 letter.')
+            ->and($messages['password.numbers'])->toBe('Password must contain at least 1 number.')
+            ->and($messages['password.symbols'])->toBe('Password must contain at least 1 symbol.')
+            ->and($messages['password.uncompromised'])->toBe('The password you entered has appeared in a data breach. Please choose a different one.')
             ->and(request_rule_strings($changeRules['password']))->toContain('required', 'confirmed', 'string')
             ->and($changeRules['password_confirmation'])->toBe(['sometimes', 'min:4', 'max:64'])
             ->and((new ChangePasswordRequest())->messages()['password.symbols'])->toBe('Password must contain at least 1 symbol.');
