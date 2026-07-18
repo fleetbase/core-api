@@ -26,6 +26,39 @@ function intMetric(SimpleXMLElement $node, string $name): int
     return (int) ($node->metrics[$name] ?? 0);
 }
 
+function hasMetric(SimpleXMLElement $node, string $name): bool
+{
+    foreach ($node->metrics->attributes() as $metricName => $value) {
+        if ($metricName === $name) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function derivedClassCoverageMetrics(SimpleXMLElement $project): array
+{
+    $classes        = 0;
+    $coveredClasses = 0;
+
+    foreach ($project->xpath('.//class') ?: [] as $class) {
+        $classes++;
+
+        $statements        = intMetric($class, 'statements');
+        $coveredStatements = intMetric($class, 'coveredstatements');
+
+        if ($statements > 0 && $coveredStatements === $statements) {
+            $coveredClasses++;
+        }
+    }
+
+    return [
+        'classes' => $classes,
+        'covered' => $coveredClasses,
+    ];
+}
+
 $project = $xml->project;
 $metrics = $project->metrics;
 
@@ -35,6 +68,14 @@ $methods           = (int) ($metrics['methods'] ?? 0);
 $coveredMethods    = (int) ($metrics['coveredmethods'] ?? 0);
 $classes           = (int) ($metrics['classes'] ?? 0);
 $coveredClasses    = (int) ($metrics['coveredclasses'] ?? 0);
+$classCoverageNote = '';
+
+if (!hasMetric($project, 'coveredclasses')) {
+    $derivedClasses      = derivedClassCoverageMetrics($project);
+    $classes             = $classes ?: $derivedClasses['classes'];
+    $coveredClasses      = $derivedClasses['covered'];
+    $classCoverageNote   = ' derived from fully covered class statement metrics';
+}
 
 $files       = [];
 $directories = [];
@@ -96,7 +137,7 @@ usort($directoryRows, function (array $a, array $b): int {
 
 printf("Line coverage: %.2f%% (%d/%d statements)\n", coveragePercent($coveredStatements, $statements), $coveredStatements, $statements);
 printf("Method coverage: %.2f%% (%d/%d methods)\n", coveragePercent($coveredMethods, $methods), $coveredMethods, $methods);
-printf("Class coverage: %.2f%% (%d/%d classes)\n", coveragePercent($coveredClasses, $classes), $coveredClasses, $classes);
+printf("Class coverage: %.2f%% (%d/%d classes%s)\n", coveragePercent($coveredClasses, $classes), $coveredClasses, $classes, $classCoverageNote);
 
 echo "\nLowest covered directories:\n";
 foreach (array_slice($directoryRows, 0, 10) as $row) {
