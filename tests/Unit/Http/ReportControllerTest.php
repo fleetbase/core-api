@@ -91,6 +91,29 @@ class ReportControllerValidatorResult
     }
 }
 
+class ReportControllerThrowingRegistry extends ReportSchemaRegistry
+{
+    public function getAvailableTables(string $extension = 'core', ?string $category = null): array
+    {
+        throw new RuntimeException('Reporting table not found');
+    }
+
+    public function getTableColumns(string $tableName): array
+    {
+        throw new RuntimeException("Reporting table {$tableName} not found");
+    }
+
+    public function getTableRelationships(string $tableName): array
+    {
+        throw new RuntimeException("Reporting table {$tableName} not found");
+    }
+
+    public function getTableSchema(string $tableName): array
+    {
+        throw new RuntimeException("Reporting table {$tableName} not found");
+    }
+}
+
 function report_controller_registry(): ReportSchemaRegistry
 {
     $registry = new ReportSchemaRegistry();
@@ -215,9 +238,40 @@ function report_controller_database(): Capsule
         $table->string('public_id')->nullable();
         $table->string('company_uuid')->nullable()->index();
         $table->text('query_config')->nullable();
+        $table->integer('execution_count')->nullable();
+        $table->float('average_execution_time')->nullable();
+        $table->integer('last_result_count')->nullable();
+        $table->timestamp('last_executed_at')->nullable();
         $table->timestamp('deleted_at')->nullable();
         $table->timestamp('created_at')->nullable();
         $table->timestamp('updated_at')->nullable();
+    });
+    $schema->create('report_executions', function ($table) {
+        $table->string('uuid')->nullable();
+        $table->string('report_uuid')->nullable();
+        $table->string('user_uuid')->nullable();
+        $table->float('execution_time')->nullable();
+        $table->integer('result_count')->nullable();
+        $table->text('query_config')->nullable();
+        $table->string('status')->nullable();
+        $table->text('error_message')->nullable();
+        $table->timestamp('started_at')->nullable();
+        $table->timestamp('completed_at')->nullable();
+        $table->timestamps();
+    });
+    $schema->create('report_audit_logs', function ($table) {
+        $table->string('uuid')->nullable();
+        $table->string('report_uuid')->nullable();
+        $table->string('user_uuid')->nullable();
+        $table->string('action')->nullable();
+        $table->float('execution_time')->nullable();
+        $table->integer('result_count')->nullable();
+        $table->text('error_message')->nullable();
+        $table->text('query_config')->nullable();
+        $table->string('ip_address')->nullable();
+        $table->string('user_agent')->nullable();
+        $table->text('metadata')->nullable();
+        $table->timestamps();
     });
 
     $schema->create('orders', function ($table) {
@@ -318,6 +372,30 @@ test('report controller exposes table schema column and relationship metadata co
         ->and($columns['meta']['total_columns'])->toBe(count($columns['columns']))
         ->and($relationships['relationships'][0]['name'])->toBe('customer')
         ->and($relationships['meta']['total_relationships'])->toBe(1);
+});
+
+test('report controller returns stable metadata errors for unavailable reporting tables', function () {
+    report_controller_bind();
+    app()->instance(ReportSchemaRegistry::class, new ReportControllerThrowingRegistry());
+    $controller = new ReportController();
+
+    $tables        = $controller->getTables(Request::create('/int/v1/reports/tables', 'GET'));
+    $schema        = $controller->getTableSchema(Request::create('/int/v1/reports/tables/missing/schema'), 'missing');
+    $columns       = $controller->getTableColumns(Request::create('/int/v1/reports/tables/missing/columns'), 'missing');
+    $relationships = $controller->getTableRelationships(Request::create('/int/v1/reports/tables/missing/relationships'), 'missing');
+
+    expect($tables->getStatusCode())->toBe(500)
+        ->and(report_controller_payload($tables)['success'])->toBeFalse()
+        ->and(report_controller_payload($tables)['error']['code'])->toBe('TABLE_NOT_FOUND')
+        ->and($schema->getStatusCode())->toBe(404)
+        ->and(report_controller_payload($schema)['success'])->toBeFalse()
+        ->and(report_controller_payload($schema)['error']['code'])->toBe('TABLE_NOT_FOUND')
+        ->and($columns->getStatusCode())->toBe(404)
+        ->and(report_controller_payload($columns)['success'])->toBeFalse()
+        ->and(report_controller_payload($columns)['error']['code'])->toBe('TABLE_NOT_FOUND')
+        ->and($relationships->getStatusCode())->toBe(404)
+        ->and(report_controller_payload($relationships)['success'])->toBeFalse()
+        ->and(report_controller_payload($relationships)['error']['code'])->toBe('TABLE_NOT_FOUND');
 });
 
 test('report controller validates query configuration and reports validation errors', function () {
@@ -449,6 +527,22 @@ test('report controller executes direct queries with active company scoping', fu
         ->and($payload['meta']['query_sql'])->toContain('company_uuid');
 });
 
+test('report controller executes saved reports with active company scoping', function () {
+    report_controller_bind();
+    report_controller_database();
+    $controller = new ReportController();
+
+    $response = $controller->execute(Request::create('/int/v1/reports/report-current/execute'), 'report-current');
+    $payload  = report_controller_payload($response);
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($payload['success'])->toBeTrue()
+        ->and($payload['results'])->toHaveCount(2)
+        ->and(array_column($payload['results'], 'order_status'))->toBe(['created', 'dispatched'])
+        ->and($payload['meta']['total_rows'])->toBe(2)
+        ->and($payload['meta']['query_sql'])->toContain('company_uuid');
+});
+
 test('report controller exports direct query results and exposes download metadata', function () {
     report_controller_bind();
     report_controller_database();
@@ -481,6 +575,32 @@ test('report controller exports direct query results and exposes download metada
     expect($export['metadata']['total_rows'])->toBe(2)
         ->and($export['metadata']['format'])->toBe('json')
         ->and(array_column($export['data'], 'order_status'))->toBe(['created', 'dispatched']);
+});
+
+test('report controller validates and exports saved reports inside the active company', function () {
+    report_controller_bind();
+    report_controller_database();
+    $controller = new ReportController();
+
+    $invalidFormat = $controller->export(Request::create('/int/v1/reports/report-current/export', 'POST', [
+        'format' => 'yaml',
+    ]), 'report-current');
+
+    $export = $controller->export(Request::create('/int/v1/reports/report-current/export', 'POST', [
+        'format'  => 'json',
+        'options' => ['compact' => true],
+    ]), 'report-current');
+    $payload = report_controller_payload($export);
+
+    expect($invalidFormat->getStatusCode())->toBe(400)
+        ->and(report_controller_payload($invalidFormat)['success'])->toBeFalse()
+        ->and(report_controller_payload($invalidFormat)['error']['code'])->toBe('INVALID_CONFIGURATION')
+        ->and(report_controller_payload($invalidFormat)['error']['allowed_formats'])->toBe(['csv', 'excel', 'json', 'pdf', 'xml'])
+        ->and($export->getStatusCode())->toBe(200)
+        ->and($payload['success'])->toBeTrue()
+        ->and($payload['format'])->toBe('json')
+        ->and($payload['rows'])->toBe(2)
+        ->and($payload['download_url'])->toBe('http://fleetbase.test/reports/download/' . rawurlencode($payload['filename']));
 });
 
 test('report controller returns handled errors for report execution and export outside the active company', function () {
