@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
+use Fleetbase\Events\UserRemovedFromCompany;
 use Fleetbase\Exceptions\FleetbaseRequestValidationException;
 use Fleetbase\Exports\CompanyExport;
 use Fleetbase\Http\Controllers\FleetbaseController;

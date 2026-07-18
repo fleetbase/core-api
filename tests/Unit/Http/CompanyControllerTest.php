@@ -51,6 +51,16 @@ class CompanyControllerPermissionRegistrarFake
     public string $pivotPermission = 'permission_id';
     public bool $teams             = false;
     public string $teamsKey        = 'team_id';
+
+    public function getRoleClass(): string
+    {
+        return Fleetbase\Models\Role::class;
+    }
+
+    public function getPermissionClass(): string
+    {
+        return Fleetbase\Models\Permission::class;
+    }
 }
 
 class CompanyControllerRouteStub
@@ -226,6 +236,10 @@ function company_controller_fixtures(): Capsule
     EloquentModel::clearBootedModels();
     $_SERVER['REQUEST_METHOD'] = 'GET';
 
+    if (!function_exists('Fleetbase\\Http\\Controllers\\Internal\\v1\\event')) {
+        eval('namespace Fleetbase\\Http\\Controllers\\Internal\\v1; function event($event = null) { return $event; }');
+    }
+
     $container = bind_test_container([
         'app.env'                                      => 'testing',
         'app.url'                                      => 'http://fleetbase.test',
@@ -357,6 +371,50 @@ function company_controller_fixtures(): Capsule
         $table->string('key')->nullable()->index();
         $table->text('value')->nullable();
     });
+    $schema->create('roles', function ($table) {
+        $table->string('id')->primary();
+        $table->string('company_uuid')->nullable();
+        $table->string('name');
+        $table->string('guard_name')->default('sanctum');
+        $table->timestamps();
+        $table->softDeletes();
+    });
+    $schema->create('permissions', function ($table) {
+        $table->string('id')->primary();
+        $table->string('name');
+        $table->string('guard_name')->default('sanctum');
+        $table->string('description')->nullable();
+        $table->timestamps();
+    });
+    $schema->create('policies', function ($table) {
+        $table->string('id')->primary();
+        $table->string('company_uuid')->nullable();
+        $table->string('name');
+        $table->string('guard_name')->default('sanctum');
+        $table->string('service')->nullable();
+        $table->text('description')->nullable();
+        $table->timestamps();
+        $table->softDeletes();
+    });
+    $schema->create('model_has_roles', function ($table) {
+        $table->string('role_id');
+        $table->string('model_type');
+        $table->string('model_uuid');
+    });
+    $schema->create('model_has_permissions', function ($table) {
+        $table->string('permission_id');
+        $table->string('model_type');
+        $table->string('model_uuid');
+    });
+    $schema->create('model_has_policies', function ($table) {
+        $table->string('policy_id');
+        $table->string('model_type');
+        $table->string('model_uuid');
+    });
+    $schema->create('role_has_permissions', function ($table) {
+        $table->string('permission_id');
+        $table->string('role_id');
+    });
 
     $now = '2026-07-18 00:00:00';
     $capsule->getConnection('mysql')->table('companies')->insert([
@@ -453,6 +511,9 @@ function company_controller_fixtures(): Capsule
         ['uuid' => 'pivot-member-1', 'company_uuid' => 'company-1', 'user_uuid' => 'member-1', 'status' => 'active', 'created_at' => $now, 'updated_at' => $now],
         ['uuid' => 'pivot-member-3', 'company_uuid' => 'company-3', 'user_uuid' => 'member-1', 'status' => 'active', 'created_at' => $now, 'updated_at' => $now],
         ['uuid' => 'pivot-foreign-1', 'company_uuid' => 'company-2', 'user_uuid' => 'foreign-1', 'status' => 'active', 'created_at' => $now, 'updated_at' => $now],
+    ]);
+    $capsule->getConnection('mysql')->table('roles')->insert([
+        ['id' => 'Administrator', 'company_uuid' => null, 'name' => 'Administrator', 'guard_name' => 'sanctum', 'created_at' => $now, 'updated_at' => $now],
     ]);
 
     return $capsule;
@@ -628,6 +689,69 @@ test('company controller admin onboarding toggles completion metadata and handle
         ->and($activity->entries[1]['properties']['attributes'])->toBe(['onboarding_completed_at' => null]);
 });
 
+test('company controller admin user lifecycle updates membership verification and removal contracts', function () {
+    $capsule  = company_controller_fixtures();
+    $activity = company_controller_bind_activity();
+    $admin    = company_controller_user('admin-1');
+
+    $missingCompany = company_controller()->deactivateAdminUser('missing-company', 'member-1', company_controller_admin_request('POST', [], $admin));
+    $missingUser    = company_controller()->deactivateAdminUser('company_public_1', 'missing-user', company_controller_admin_request('POST', [], $admin));
+    $notMember      = company_controller()->deactivateAdminUser('company_public_1', 'foreign-1', company_controller_admin_request('POST', [], $admin));
+    $ownerBlocked   = company_controller()->deactivateAdminUser('company_public_1', 'owner-1', company_controller_admin_request('POST', [], $admin));
+
+    expect($missingCompany->getStatusCode())->toBe(404)
+        ->and($missingCompany->getData(true))->toBe(['error' => 'Organization not found.'])
+        ->and($missingUser->getStatusCode())->toBe(404)
+        ->and($missingUser->getData(true))->toBe(['error' => 'User not found.'])
+        ->and($notMember->getStatusCode())->toBe(404)
+        ->and($notMember->getData(true))->toBe(['error' => 'User is not a member of this organization.'])
+        ->and($ownerBlocked->getStatusCode())->toBe(422)
+        ->and($ownerBlocked->getData(true))->toBe(['error' => 'Transfer ownership before deactivating the organization owner.']);
+
+    $deactivated       = company_controller()->deactivateAdminUser('company_public_1', 'member-1', company_controller_admin_request('POST', [], $admin));
+    $deactivatedStatus = $capsule->getConnection('mysql')->table('company_users')->where('uuid', 'pivot-member-1')->value('status');
+    $activated         = company_controller()->activateAdminUser('company_public_1', 'member-1', company_controller_admin_request('POST', [], $admin));
+    $activatedStatus   = $capsule->getConnection('mysql')->table('company_users')->where('uuid', 'pivot-member-1')->value('status');
+    $verified          = company_controller()->verifyAdminUser('company_public_1', 'member-1', company_controller_admin_request('POST', [], $admin));
+    $removed           = company_controller()->removeAdminUser('company_public_1', 'member-1', company_controller_admin_request('POST', [], $admin));
+
+    expect($deactivated->getStatusCode())->toBe(200)
+        ->and($deactivated->getData(true)['message'])->toBe('User deactivated')
+        ->and($deactivated->getData(true)['status'])->toBe('inactive')
+        ->and($deactivatedStatus)->toBe('inactive')
+        ->and($activated->getStatusCode())->toBe(200)
+        ->and($activated->getData(true)['message'])->toBe('User activated')
+        ->and($activatedStatus)->toBe('active')
+        ->and($verified->getStatusCode())->toBe(200)
+        ->and($verified->getData(true)['message'])->toBe('User verified')
+        ->and($capsule->getConnection('mysql')->table('users')->where('uuid', 'member-1')->value('email_verified_at'))->not->toBeNull()
+        ->and($removed->getStatusCode())->toBe(200)
+        ->and($removed->getData(true))->toBe(['message' => 'User removed'])
+        ->and($capsule->getConnection('mysql')->table('company_users')->where('uuid', 'pivot-member-1')->whereNull('deleted_at')->exists())->toBeFalse()
+        ->and($capsule->getConnection('mysql')->table('users')->where('uuid', 'member-1')->value('company_uuid'))->toBe('company-3')
+        ->and($activity->entries)->toHaveCount(4)
+        ->and(array_column($activity->entries, 'message'))->toBe([
+            'Organization user deactivated',
+            'Organization user activated',
+            'Organization user verified',
+            'Organization user removed',
+        ])
+        ->and($activity->entries[0]['properties']['old'])->toBe(['status' => 'active'])
+        ->and($activity->entries[0]['properties']['attributes'])->toBe(['status' => 'inactive', 'user_uuid' => 'member-1'])
+        ->and($activity->entries[3]['event'])->toBe('deleted')
+        ->and($activity->entries[3]['properties']['attributes'])->toBe(['user_uuid' => 'member-1', 'email' => 'member@example.test']);
+});
+
+test('company controller admin user removal protects organization owners', function () {
+    company_controller_fixtures();
+    $admin = company_controller_user('admin-1');
+
+    $response = company_controller()->removeAdminUser('company_public_1', 'owner-1', company_controller_admin_request('POST', [], $admin));
+
+    expect($response->getStatusCode())->toBe(422)
+        ->and($response->getData(true))->toBe(['error' => 'Transfer ownership before removing the organization owner.']);
+});
+
 test('company controller transfer ownership rejects invalid session ownership and company mismatches', function () {
     company_controller_fixtures();
 
@@ -657,6 +781,42 @@ test('company controller transfer ownership rejects invalid session ownership an
 
     expect($wrongCompany->getStatusCode())->toBe(400)
         ->and($wrongCompany->getData(true))->toBe(['errors' => ['No organization found to transfer ownership for.']]);
+});
+
+test('company controller transfers ownership to another organization member and can remove the previous owner', function () {
+    $capsule = company_controller_fixtures();
+
+    $transfer = company_controller()->transferOwnership(company_controller_request('POST', [
+        'company'  => 'company-1',
+        'newOwner' => 'member-1',
+    ], company_controller_user('owner-1')));
+
+    expect($transfer->getStatusCode())->toBe(200)
+        ->and($transfer->getData(true)['status'])->toBe('ok')
+        ->and($transfer->getData(true)['newOwner']['uuid'])->toBe('member-1')
+        ->and($transfer->getData(true)['currentUserLeft'])->toBeFalse()
+        ->and($capsule->getConnection('mysql')->table('companies')->where('uuid', 'company-1')->value('owner_uuid'))->toBe('member-1')
+        ->and($capsule->getConnection('mysql')->table('company_users')->where('uuid', 'pivot-owner-1')->whereNull('deleted_at')->exists())->toBeTrue();
+
+    $capsule->getConnection('mysql')->table('company_users')->where('uuid', 'pivot-owner-1')->update([
+        'deleted_at' => null,
+    ]);
+    $capsule->getConnection('mysql')->table('companies')->where('uuid', 'company-1')->update([
+        'owner_uuid' => 'owner-1',
+    ]);
+    session(['company' => 'company-1', 'user' => 'owner-1']);
+
+    $leave = company_controller()->transferOwnership(company_controller_request('POST', [
+        'company'  => 'company-1',
+        'newOwner' => 'member-1',
+        'leave'    => true,
+    ], company_controller_user('owner-1')));
+
+    expect($leave->getStatusCode())->toBe(200)
+        ->and($leave->getData(true)['status'])->toBe('ok')
+        ->and($leave->getData(true)['currentUserLeft'])->toBeTrue()
+        ->and($capsule->getConnection('mysql')->table('companies')->where('uuid', 'company-1')->value('owner_uuid'))->toBe('member-1')
+        ->and($capsule->getConnection('mysql')->table('company_users')->where('uuid', 'pivot-owner-1')->whereNull('deleted_at')->exists())->toBeFalse();
 });
 
 test('company controller blocks owners from leaving and moves non owners to their next organization', function () {
