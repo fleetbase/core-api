@@ -303,9 +303,13 @@ test('expiry scope resolves qualified expiry columns for joined builders', funct
 
 test('disables soft deletes forces hard deletes and makes restore a no op', function () {
     $record = new LifecycleTraitsHardDeleteRecord();
+    $scope  = LifecycleTraitsHardDeleteRecord::getGlobalScope('disablesSoftDeletes');
+    $query  = $record->newQueryWithoutScopes();
+    $scope($query);
 
     expect($record->trashed())->toBeFalse()
-        ->and($record->restore())->toBe($record);
+        ->and($record->restore())->toBe($record)
+        ->and($query->removedScopes())->toContain(Illuminate\Database\Eloquent\SoftDeletingScope::class);
 
     $record->performHardDeleteForTest();
 

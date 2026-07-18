@@ -63,12 +63,14 @@ function scheduling_models_database(): Capsule
     $container = bind_test_container([
         'api.cache.enabled'            => false,
         'database.default'             => 'testing',
+        'database.connections.mysql'   => $connectionConfig,
         'database.connections.testing' => $connectionConfig,
         'fleetbase.connection.db'      => 'testing',
     ]);
 
     $capsule = new Capsule($container);
     $capsule->addConnection($connectionConfig, 'testing');
+    $capsule->addConnection($connectionConfig, 'mysql');
     $capsule->setEventDispatcher(new Dispatcher($container));
     $capsule->setAsGlobal();
     $capsule->bootEloquent();
@@ -532,11 +534,20 @@ it('scopes schedule constraints by active state type category subject and priori
         'is_active'      => false,
     ]);
 
-    $constraint = ScheduleConstraint::where('uuid', 'constraint-low')->first();
+    $constraint         = ScheduleConstraint::where('uuid', 'constraint-low')->first();
+    $relationConstraint = new ScheduleConstraint();
+    $relationConstraint->setRawAttributes([
+        'subject_type' => Schedule::class,
+        'subject_uuid' => 'schedule-1',
+    ], true);
 
     expect($constraint->priority)->toBe(5)
         ->and($constraint->is_active)->toBeTrue()
         ->and($constraint->meta)->toBe(['source' => 'policy'])
+        ->and($constraint->company()->getForeignKeyName())->toBe('company_uuid')
+        ->and($constraint->company()->getOwnerKeyName())->toBe('uuid')
+        ->and($relationConstraint->subject()->getMorphType())->toBe('subject_type')
+        ->and($relationConstraint->subject()->getForeignKeyName())->toBe('subject_uuid')
         ->and(ScheduleConstraint::active()->orderBy('uuid')->pluck('uuid')->all())->toBe(['constraint-high', 'constraint-low'])
         ->and(ScheduleConstraint::byType('availability')->orderBy('uuid')->pluck('uuid')->all())->toBe(['constraint-high', 'constraint-low'])
         ->and(ScheduleConstraint::byCategory('asset')->pluck('uuid')->all())->toBe(['constraint-inactive'])
