@@ -74,6 +74,32 @@ class DataPurgerProbe extends DataPurger
     {
         $this->skipPrefixes = $prefixes;
     }
+
+    public function toggleForeignKeyChecks(bool $enable): void
+    {
+        $this->toggleForeignKeys($enable);
+    }
+}
+
+class DataPurgerToggleConnection extends Illuminate\Database\Connection
+{
+    public array $statements = [];
+
+    public function __construct(private string $driverName)
+    {
+    }
+
+    public function getDriverName()
+    {
+        return $this->driverName;
+    }
+
+    public function statement($query, $bindings = [])
+    {
+        $this->statements[] = compact('query', 'bindings');
+
+        return true;
+    }
 }
 
 function data_purger_database(): Capsule
@@ -300,12 +326,17 @@ test('data purger discovers allowed tenant tables and detects safe key columns',
         $table->increments('id');
         $table->string('company_uuid')->nullable();
     });
+    $schema->create('jobs', function ($table) {
+        $table->increments('id');
+        $table->string('queue')->nullable();
+    });
 
     $purger = new DataPurgerProbe($db);
     $purger->setSkipPrefixes(['global_']);
 
     expect($purger->tenantTables())->toContain('companies', 'orders', 'api_events', 'order_notes', 'audit_rows', 'id_only_rows')
         ->and($purger->tenantTables())->not->toContain('global_settings')
+        ->and($purger->tenantTables())->not->toContain('jobs')
         ->and($purger->keyFor('companies'))->toBe('uuid')
         ->and($purger->keyFor('orders'))->toBe('uuid')
         ->and($purger->keyFor('id_only_rows'))->toBe('id')
@@ -368,4 +399,39 @@ test('data purger uses the default log facade when no logger closure is provided
         '[DataPurger] Purge complete',
         ['total_deleted' => 1],
     ]);
+});
+
+test('data purger toggles foreign key checks only for mysql compatible connections', function () {
+    $mysql = new DataPurgerToggleConnection('mysql');
+    $pgsql = new DataPurgerToggleConnection('pgsql');
+
+    $mysqlPurger = new DataPurgerProbe($mysql);
+    $pgsqlPurger = new DataPurgerProbe($pgsql);
+
+    $mysqlPurger->toggleForeignKeyChecks(false);
+    $mysqlPurger->toggleForeignKeyChecks(true);
+    $pgsqlPurger->toggleForeignKeyChecks(false);
+
+    expect($mysql->statements)->toBe([
+        ['query' => 'SET FOREIGN_KEY_CHECKS = 0', 'bindings' => []],
+        ['query' => 'SET FOREIGN_KEY_CHECKS = 1', 'bindings' => []],
+    ])->and($pgsql->statements)->toBe([]);
+});
+
+test('data purger deep reference pass stops cleanly when parent tables have no tenant ids', function () {
+    $capsule = data_purger_database();
+    $db      = $capsule->getConnection('mysql');
+
+    $result = (new DataPurgerTestPurger(
+        $db,
+        null,
+        ['orders', 'order_notes'],
+        [['order_notes', 'order_uuid', 'orders', 'uuid']]
+    ))->purgeCompany('company-missing', deleteCompanyRow: false, deepReferencePass: true);
+
+    expect($result)->toBe([
+        'tables' => ['orders' => 0],
+        'total'  => 0,
+    ])->and($db->table('order_notes')->pluck('body')->all())->toBe(['tenant note', 'other note'])
+        ->and($db->table('orders')->pluck('uuid')->all())->toBe(['order-1', 'order-2', 'order-3']);
 });
