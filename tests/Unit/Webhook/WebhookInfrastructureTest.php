@@ -8,13 +8,94 @@ namespace Illuminate\Foundation\Bus {
     }
 }
 
+namespace Fleetbase\Webhook {
+    if (!function_exists('Fleetbase\\Webhook\\event')) {
+        function event(mixed $event = null): mixed
+        {
+            return \Fleetbase\Tests\WebhookFixtures\WebhookJobEventRecorder::record($event);
+        }
+    }
+}
+
 namespace Fleetbase\Tests\WebhookFixtures {
     use Fleetbase\Webhook\BackoffStrategy\BackoffStrategy;
     use Fleetbase\Webhook\CallWebhookJob;
     use Fleetbase\Webhook\Signer\Signer;
+    use GuzzleHttp\Psr7\Response;
 
     class ConfiguredWebhookJob extends CallWebhookJob
     {
+    }
+
+    class WebhookJobEventRecorder
+    {
+        public static array $events = [];
+
+        public static function reset(): void
+        {
+            static::$events = [];
+        }
+
+        public static function record(mixed $event = null): mixed
+        {
+            static::$events[] = $event;
+
+            return $event;
+        }
+    }
+
+    class InspectableWebhookJob extends CallWebhookJob
+    {
+        public array $createdRequests = [];
+        public array $releasedFor = [];
+        public int $attempt = 1;
+        public ?Response $nextResponse = null;
+        public ?\Throwable $nextException = null;
+        public bool $removedFromQueue = false;
+        public bool $deleted = false;
+        public ?\Throwable $failedWith = null;
+
+        public function attempts()
+        {
+            return $this->attempt;
+        }
+
+        public function release($delay = 0)
+        {
+            $this->releasedFor[] = $delay;
+
+            return true;
+        }
+
+        public function delete()
+        {
+            $this->deleted = true;
+
+            return true;
+        }
+
+        public function fail($exception = null)
+        {
+            $this->failedWith = $exception;
+
+            return true;
+        }
+
+        protected function createRequest(array $body): Response
+        {
+            $this->createdRequests[] = $body;
+
+            if ($this->nextException) {
+                throw $this->nextException;
+            }
+
+            return $this->nextResponse ?? new Response(204, ['X-Hook' => 'ok'], 'accepted');
+        }
+
+        protected function shouldBeRemovedFromQueue(): bool
+        {
+            return $this->removedFromQueue;
+        }
     }
 
     class ConfiguredSigner implements Signer
@@ -43,14 +124,22 @@ namespace {
     use Fleetbase\Tests\WebhookFixtures\ConfiguredBackoffStrategy;
     use Fleetbase\Tests\WebhookFixtures\ConfiguredSigner;
     use Fleetbase\Tests\WebhookFixtures\ConfiguredWebhookJob;
+    use Fleetbase\Tests\WebhookFixtures\InspectableWebhookJob;
+    use Fleetbase\Tests\WebhookFixtures\WebhookJobEventRecorder;
     use Fleetbase\Webhook\BackoffStrategy\ExponentialBackoffStrategy;
     use Fleetbase\Webhook\CallWebhookJob;
+    use Fleetbase\Webhook\Events\FinalWebhookCallFailedEvent;
+    use Fleetbase\Webhook\Events\WebhookCallFailedEvent;
+    use Fleetbase\Webhook\Events\WebhookCallSucceededEvent;
     use Fleetbase\Webhook\Exceptions\CouldNotCallWebhook;
     use Fleetbase\Webhook\Exceptions\InvalidBackoffStrategy;
     use Fleetbase\Webhook\Exceptions\InvalidSigner;
     use Fleetbase\Webhook\Exceptions\InvalidWebhookJob;
     use Fleetbase\Webhook\Signer\DefaultSigner;
     use Fleetbase\Webhook\WebhookCall;
+    use GuzzleHttp\Exception\ConnectException;
+    use GuzzleHttp\Psr7\Request;
+    use GuzzleHttp\Psr7\Response;
     use Illuminate\Support\Facades\Facade;
 
     function webhook_test_container(): void
@@ -95,6 +184,7 @@ namespace {
 
     afterEach(function () {
         Facade::clearResolvedInstances();
+        WebhookJobEventRecorder::reset();
     });
 
     test('webhook call applies configured job transport signing headers and metadata before dispatch', function () {
@@ -185,5 +275,113 @@ namespace {
             ->and($backoff->waitInSecondsAfterAttempt(1))->toBe(10)
             ->and($backoff->waitInSecondsAfterAttempt(4))->toBe(10000)
             ->and($backoff->waitInSecondsAfterAttempt(5))->toBe(100000);
+    });
+
+    test('webhook job sends get payload as query data and dispatches success event details', function () {
+        webhook_test_container();
+        WebhookJobEventRecorder::reset();
+
+        $job = new InspectableWebhookJob();
+        $job->httpVerb = 'GET';
+        $job->webhookUrl = 'https://example.test/hooks/orders';
+        $job->payload = ['order' => 'order-1'];
+        $job->headers = ['X-App' => 'core-api'];
+        $job->meta = ['company_uuid' => 'company-1'];
+        $job->tags = ['orders'];
+        $job->uuid = 'webhook-call-1';
+        $job->tries = 3;
+        $job->requestTimeout = 8;
+        $job->verifySsl = true;
+        $job->throwExceptionOnFailure = false;
+        $job->backoffStrategyClass = ConfiguredBackoffStrategy::class;
+        $job->proxy = ['https' => 'http://proxy.test:8080'];
+        $job->nextResponse = new Response(202, ['X-Request-Id' => 'req-1'], 'queued');
+
+        $job->handle();
+
+        $event = WebhookJobEventRecorder::$events[0];
+
+        expect($job->createdRequests)->toHaveCount(1)
+            ->and($job->createdRequests[0])->toBe(['query' => ['order' => 'order-1']])
+            ->and($job->getResponse()?->getStatusCode())->toBe(202)
+            ->and($event)->toBeInstanceOf(WebhookCallSucceededEvent::class)
+            ->and($event->httpVerb)->toBe('GET')
+            ->and($event->webhookUrl)->toBe('https://example.test/hooks/orders')
+            ->and($event->payload)->toBe(['order' => 'order-1'])
+            ->and($event->headers)->toBe(['X-App' => 'core-api'])
+            ->and($event->meta)->toBe(['company_uuid' => 'company-1'])
+            ->and($event->tags)->toBe(['orders'])
+            ->and($event->attempt)->toBe(1)
+            ->and($event->response?->getStatusCode())->toBe(202)
+            ->and($event->errorType)->toBeNull()
+            ->and($event->errorMessage)->toBeNull()
+            ->and($event->uuid)->toBe('webhook-call-1');
+    });
+
+    test('webhook job sends non get payload as json body and releases before final retry', function () {
+        webhook_test_container();
+        WebhookJobEventRecorder::reset();
+
+        $job = new InspectableWebhookJob();
+        $job->httpVerb = 'post';
+        $job->webhookUrl = 'https://example.test/hooks/orders';
+        $job->payload = ['event' => 'order.updated'];
+        $job->headers = ['Content-Type' => 'application/json'];
+        $job->meta = ['company_uuid' => 'company-1'];
+        $job->tags = ['orders'];
+        $job->uuid = 'webhook-call-2';
+        $job->tries = 3;
+        $job->attempt = 2;
+        $job->requestTimeout = 8;
+        $job->verifySsl = false;
+        $job->throwExceptionOnFailure = false;
+        $job->backoffStrategyClass = ConfiguredBackoffStrategy::class;
+        $job->nextResponse = new Response(500, [], 'server error');
+
+        $job->handle();
+
+        $event = WebhookJobEventRecorder::$events[0];
+
+        expect($job->createdRequests[0])->toBe(['body' => '{"event":"order.updated"}'])
+            ->and($job->releasedFor)->toBe([44])
+            ->and($job->deleted)->toBeFalse()
+            ->and($job->failedWith)->toBeNull()
+            ->and($event)->toBeInstanceOf(WebhookCallFailedEvent::class)
+            ->and($event->response?->getStatusCode())->toBe(500)
+            ->and(WebhookJobEventRecorder::$events)->toHaveCount(1);
+    });
+
+    test('webhook job dispatches final failure event and deletes failed calls when exceptions are swallowed', function () {
+        webhook_test_container();
+        WebhookJobEventRecorder::reset();
+
+        $job = new InspectableWebhookJob();
+        $job->httpVerb = 'POST';
+        $job->webhookUrl = 'https://example.test/hooks/orders';
+        $job->payload = ['event' => 'order.failed'];
+        $job->headers = [];
+        $job->meta = [];
+        $job->tags = [];
+        $job->uuid = 'webhook-call-3';
+        $job->tries = 2;
+        $job->attempt = 2;
+        $job->requestTimeout = 8;
+        $job->verifySsl = true;
+        $job->throwExceptionOnFailure = false;
+        $job->backoffStrategyClass = ConfiguredBackoffStrategy::class;
+        $job->nextException = new ConnectException('connection refused', new Request('POST', 'https://example.test/hooks/orders'));
+
+        $job->handle();
+
+        [$failedEvent, $finalEvent] = WebhookJobEventRecorder::$events;
+
+        expect($job->releasedFor)->toBe([])
+            ->and($job->deleted)->toBeTrue()
+            ->and($job->failedWith)->toBeNull()
+            ->and($failedEvent)->toBeInstanceOf(WebhookCallFailedEvent::class)
+            ->and($failedEvent->errorType)->toBe(ConnectException::class)
+            ->and($failedEvent->errorMessage)->toContain('connection refused')
+            ->and($finalEvent)->toBeInstanceOf(FinalWebhookCallFailedEvent::class)
+            ->and($finalEvent->errorType)->toBe(ConnectException::class);
     });
 }

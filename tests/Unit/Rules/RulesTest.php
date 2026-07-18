@@ -2,6 +2,7 @@
 
 use Fleetbase\Rules\ExistsInAny;
 use Fleetbase\Rules\ExcludeWords;
+use Fleetbase\Rules\EmailDomainExcluded;
 use Fleetbase\Rules\FileInput;
 use Fleetbase\Rules\RequiredIfCreating;
 use Fleetbase\Rules\ValidPhoneNumber;
@@ -95,6 +96,22 @@ test('valid phone number requires leading plus and digits only', function (strin
     ['+', false],
     ['+abc', false],
 ]);
+
+test('email domain excluded rejects configured disposable domains and keeps stable message', function () {
+    $reflection = new ReflectionClass(EmailDomainExcluded::class);
+    $rule = $reflection->newInstanceWithoutConstructor();
+    $domains = $reflection->getProperty('domains');
+    $domains->setAccessible(true);
+    $domains->setValue($rule, [
+        'mailinator.test' => 0,
+        'throwaway.test' => 1,
+    ]);
+
+    expect($rule->passes('email', 'owner@fleetbase.test'))->toBeTrue()
+        ->and($rule->passes('email', 'owner@mailinator.test'))->toBeFalse()
+        ->and($rule->passes('email', 'owner@throwaway.test'))->toBeFalse()
+        ->and($rule->message())->toBe('The email domain is not allowed.');
+});
 
 test('file input accepts uploads public ids base64 data uris and urls', function () {
     $rule = new FileInput();
