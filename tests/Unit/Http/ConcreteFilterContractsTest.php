@@ -899,9 +899,11 @@ test('category filter applies tenant core parent and list filters', function () 
     ]);
 
     expect(concrete_filter_uuids(CategoryFilter::class, Category::class, [], 'int/v1/categories'))->toBe(['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222'])
+        ->and(concrete_filter_uuids(CategoryFilter::class, Category::class, [], 'v1/categories'))->toBe(['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222'])
         ->and(concrete_filter_uuids(CategoryFilter::class, Category::class, ['parents_only' => '1'], 'int/v1/categories'))->toBe(['11111111-1111-4111-8111-111111111111'])
         ->and(concrete_filter_uuids(CategoryFilter::class, Category::class, ['core_category' => '1'], 'int/v1/categories'))->toBe(['33333333-3333-4333-8333-333333333333'])
         ->and(concrete_filter_uuids(CategoryFilter::class, Category::class, ['parent_category' => $parentUuid], 'int/v1/categories'))->toBe(['22222222-2222-4222-8222-222222222222'])
+        ->and(concrete_filter_uuids(CategoryFilter::class, Category::class, ['parent_category' => 'category_parent'], 'int/v1/categories'))->toBe(['22222222-2222-4222-8222-222222222222'])
         ->and(concrete_filter_uuids(CategoryFilter::class, Category::class, ['for' => 'shipment'], 'int/v1/categories'))->toBe([]);
 });
 
