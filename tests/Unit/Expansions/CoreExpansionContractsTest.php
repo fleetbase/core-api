@@ -165,13 +165,14 @@ function core_expansion_builder_database(): Capsule
         $table->string('name');
         $table->string('email')->nullable();
         $table->string('status')->nullable();
+        $table->text('meta')->nullable();
         $table->timestamps();
     });
 
     $capsule->getConnection('mysql')->table('builder_expansion_records')->insert([
-        ['name' => 'Alpha Fleet', 'email' => 'alpha@example.test', 'status' => 'active', 'created_at' => '2026-07-17 10:00:00', 'updated_at' => '2026-07-17 10:00:00'],
-        ['name' => 'Beta Dispatch', 'email' => 'beta@example.test', 'status' => 'inactive', 'created_at' => '2026-07-18 10:00:00', 'updated_at' => '2026-07-18 10:00:00'],
-        ['name' => 'Gamma Fleet', 'email' => 'gamma@example.test', 'status' => 'active', 'created_at' => '2026-07-19 10:00:00', 'updated_at' => '2026-07-19 10:00:00'],
+        ['name' => 'Alpha Fleet', 'email' => 'alpha@example.test', 'status' => 'active', 'meta' => '{"owner":"Ada"}', 'created_at' => '2026-07-17 10:00:00', 'updated_at' => '2026-07-17 10:00:00'],
+        ['name' => 'Beta Dispatch', 'email' => 'beta@example.test', 'status' => 'inactive', 'meta' => '{"owner":"Grace"}', 'created_at' => '2026-07-18 10:00:00', 'updated_at' => '2026-07-18 10:00:00'],
+        ['name' => 'Gamma Fleet', 'email' => 'gamma@example.test', 'status' => 'active', 'meta' => '{"owner":"Katherine"}', 'created_at' => '2026-07-19 10:00:00', 'updated_at' => '2026-07-19 10:00:00'],
     ]);
 
     return $capsule;
@@ -280,6 +281,8 @@ test('builder expansion search where applies strict and fuzzy search contracts',
     $builderExpansion = new BuilderExpansion();
     EloquentBuilder::macro('searchWhere', $builderExpansion->searchWhere());
 
+    expect(BuilderExpansion::target())->toBe(EloquentBuilder::class);
+
     $fuzzyNames = CoreExpansionBuilderModel::query()
         ->searchWhere(['name', 'email'], 'fleet')
         ->pluck('name')
@@ -299,9 +302,24 @@ test('builder expansion search where applies strict and fuzzy search contracts',
         ->pluck('name')
         ->all();
 
+    $strictEmail = CoreExpansionBuilderModel::query()
+        ->searchWhere('email', 'beta@example.test', true)
+        ->pluck('name')
+        ->all();
+
+    $jsonSearch = CoreExpansionBuilderModel::query()
+        ->searchWhere(['meta->owner', 'name'], 'ada')
+        ->toSql();
+
+    $invalidJsonSearch = CoreExpansionBuilderModel::query()
+        ->searchWhere('meta->nested->owner', 'ada');
+
     expect($fuzzyNames)->toBe(['Alpha Fleet', 'Gamma Fleet'])
         ->and($strictNames)->toBe(['Alpha Fleet', 'Gamma Fleet'])
-        ->and($commaAndDotSearch)->toBe(['Alpha Fleet']);
+        ->and($commaAndDotSearch)->toBe(['Alpha Fleet'])
+        ->and($strictEmail)->toBe(['Beta Dispatch'])
+        ->and($jsonSearch)->toContain("json_extract(meta, '$.owner')")
+        ->and($invalidJsonSearch)->toBeNull();
 });
 
 test('builder expansion removes only matching basic where clauses and bindings', function () {
@@ -351,6 +369,9 @@ test('builder expansion applies request sort aliases and explicit directions', f
         ->pluck('name')
         ->all();
 
+    $unsortedQuery = CoreExpansionBuilderModel::query()
+        ->applySortFromRequest(HttpRequest::create('/int/v1/test', 'GET', ['sort' => '']));
+
     $default = CoreExpansionBuilderModel::query()
         ->applySortFromRequest(HttpRequest::create('/int/v1/test', 'GET'))
         ->pluck('name')
@@ -359,6 +380,7 @@ test('builder expansion applies request sort aliases and explicit directions', f
     expect($latest)->toBe(['Gamma Fleet', 'Beta Dispatch', 'Alpha Fleet'])
         ->and($oldest)->toBe(['Alpha Fleet', 'Beta Dispatch', 'Gamma Fleet'])
         ->and($explicit)->toBe(['Beta Dispatch', 'Gamma Fleet', 'Alpha Fleet'])
+        ->and($unsortedQuery->getQuery()->orders)->toBeNull()
         ->and($default)->toBe(['Gamma Fleet', 'Beta Dispatch', 'Alpha Fleet']);
 });
 
