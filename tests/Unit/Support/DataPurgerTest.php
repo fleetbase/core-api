@@ -34,6 +34,48 @@ class DataPurgerTestPurger extends DataPurger
     }
 }
 
+class DataPurgerFailingPurger extends DataPurgerTestPurger
+{
+    protected function deleteByCompanyColumn(string $table, string $column, string $companyUuid): int
+    {
+        $deleted = parent::deleteByCompanyColumn($table, $column, $companyUuid);
+
+        if ($table === 'orders') {
+            throw new RuntimeException('simulated purge failure');
+        }
+
+        return $deleted;
+    }
+}
+
+class DataPurgerProbe extends DataPurger
+{
+    public function tenantTables(): array
+    {
+        return $this->listTenantTables()->all();
+    }
+
+    public function keyFor(string $table): ?string
+    {
+        return $this->detectKey($table);
+    }
+
+    public function deleteMatchingRows(string $table, Closure $where, int $batch = 1000): int
+    {
+        return $this->deleteRows($table, $where, $batch);
+    }
+
+    public function setDryRun(bool $dryRun): void
+    {
+        $this->dryRun = $dryRun;
+    }
+
+    public function setSkipPrefixes(array $prefixes): void
+    {
+        $this->skipPrefixes = $prefixes;
+    }
+}
+
 function data_purger_database(): Capsule
 {
     EloquentModel::clearBootedModels();
@@ -193,4 +235,58 @@ test('data purger deep reference pass deletes child rows before parent tenant ro
         ->and($db->table('order_notes')->pluck('body')->all())->toBe(['other note'])
         ->and($db->table('orders')->pluck('uuid')->all())->toBe(['order-3'])
         ->and($db->table('companies')->pluck('uuid')->all())->toBe(['company-1', 'company-2']);
+});
+
+test('data purger discovers allowed tenant tables and detects safe key columns', function () {
+    $capsule = data_purger_database();
+    $db      = $capsule->getConnection('mysql');
+    $schema  = $db->getSchemaBuilder();
+    $schema->create('audit_rows', function ($table) {
+        $table->string('event')->nullable();
+    });
+
+    $purger = new DataPurgerProbe($db);
+    $purger->setSkipPrefixes(['global_']);
+
+    expect($purger->tenantTables())->toContain('companies', 'orders', 'api_events', 'order_notes', 'audit_rows')
+        ->and($purger->tenantTables())->not->toContain('global_settings')
+        ->and($purger->keyFor('companies'))->toBe('uuid')
+        ->and($purger->keyFor('orders'))->toBe('uuid')
+        ->and($purger->keyFor('audit_rows'))->toBeNull();
+});
+
+test('data purger delete helper chunks filtered rows and honors dry run', function () {
+    $capsule = data_purger_database();
+    $db      = $capsule->getConnection('mysql');
+    $purger  = new DataPurgerProbe($db);
+
+    $deleted = $purger->deleteMatchingRows('orders', fn ($query) => $query->where('company_uuid', 'company-1'), 1);
+
+    expect($deleted)->toBe(2)
+        ->and($db->table('orders')->pluck('uuid')->all())->toBe(['order-3']);
+
+    $purger->setDryRun(true);
+    $dryRunDeleted = $purger->deleteMatchingRows('api_events', fn ($query) => $query->where('company_uuid', 'company-2'));
+
+    expect($dryRunDeleted)->toBe(0)
+        ->and($db->table('api_events')->pluck('uuid')->all())->toBe(['event-1', 'event-2']);
+});
+
+test('data purger rolls back failed purges logs errors and restores foreign key checks', function () {
+    $capsule = data_purger_database();
+    $db      = $capsule->getConnection('mysql');
+    $logs    = [];
+
+    $purger = new DataPurgerFailingPurger($db, function ($message, $context, $level) use (&$logs) {
+        $logs[] = compact('message', 'context', 'level');
+    }, ['orders']);
+
+    expect(fn () => $purger->purgeCompany('company-1'))->toThrow(RuntimeException::class, 'simulated purge failure')
+        ->and($db->table('orders')->pluck('uuid')->all())->toBe(['order-1', 'order-2', 'order-3'])
+        ->and($purger->foreignKeyToggles)->toBe([false, true])
+        ->and($logs[count($logs) - 1])->toMatchArray([
+            'message' => 'Purge failed',
+            'context' => ['error' => 'simulated purge failure'],
+            'level'   => 'error',
+        ]);
 });

@@ -157,6 +157,10 @@ class DataPurger
                 $this->db->commit();
             }
         } catch (\Throwable $e) {
+            if ($this->disableForeignKeys) {
+                $this->toggleForeignKeys(true);
+            }
+
             $this->db->rollBack();
             $this->log('Purge failed', ['error' => $e->getMessage()], 'error');
             throw $e;
