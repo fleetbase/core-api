@@ -132,22 +132,39 @@ test('file report and template query resources preserve api response contracts',
 
     $report = new ReportResourceFixtureModel();
     $report->setRawAttributes([
-        'uuid'             => 'report_uuid',
-        'public_id'        => 'report_public',
-        'title'            => 'Daily report',
-        'type'             => 'operations',
-        'status'           => 'ready',
-        'period_start'     => Carbon::parse('2026-07-01'),
-        'period_end'       => Carbon::parse('2026-07-17'),
-        'query_config'     => ['table' => ['name' => 'orders']],
-        'result_columns'   => [['key' => 'public_id']],
-        'last_executed_at' => Carbon::parse('2026-07-17 11:30:00'),
-        'execution_time'   => 123.45,
-        'row_count'        => 10,
-        'is_scheduled'     => true,
-        'is_generated'     => true,
+        'uuid'                 => 'report_uuid',
+        'public_id'            => 'report_public',
+        'title'                => 'Daily report',
+        'type'                 => 'operations',
+        'status'               => 'ready',
+        'subject_type'         => User::class,
+        'subject_uuid'         => 'user_subject',
+        'subject_name'         => 'Subject User',
+        'period_start'         => Carbon::parse('2026-07-01'),
+        'period_end'           => Carbon::parse('2026-07-17'),
+        'period_duration_days' => 16,
+        'query_config'         => ['table' => ['name' => 'orders']],
+        'result_columns'       => [['key' => 'public_id']],
+        'last_executed_at'     => Carbon::parse('2026-07-17 11:30:00'),
+        'execution_time'       => 123.45,
+        'row_count'            => 10,
+        'is_scheduled'         => true,
+        'schedule_config'      => ['frequency' => 'daily'],
+        'export_formats'       => ['csv', 'xlsx'],
+        'is_generated'         => true,
+        'tags'                 => ['ops'],
+        'meta'                 => ['source' => 'test'],
+        'options'              => ['notify' => true],
+        'body'                 => 'Report body',
+        'data'                 => [['public_id' => 'order_123']],
+        'has_valid_query'      => true,
+        'updated_at'           => Carbon::parse('2026-07-18 10:00:00'),
+        'created_at'           => Carbon::parse('2026-07-17 10:00:00'),
     ], true);
     $report->id = 6;
+    $report->setRelation('createdBy', (object) ['uuid' => 'user_created', 'name' => 'Creator', 'email' => 'creator@example.com']);
+    $report->setRelation('updatedBy', (object) ['uuid' => 'user_updated', 'name' => 'Updater', 'email' => 'updater@example.com']);
+    $report->setRelation('subject', new User(['uuid' => 'user_subject', 'name' => 'Subject User']));
 
     $templateQuery = (object) [
         'id'            => 7,
@@ -178,8 +195,29 @@ test('file report and template query resources preserve api response contracts',
         ->and($fileData['meta'])->toBe(['width' => 100])
         ->and($reportData['id'])->toBe(6)
         ->and($reportData['title'])->toBe('Daily report')
+        ->and($reportData['subject_type'])->toBe(User::class)
+        ->and($reportData['subject_uuid'])->toBe('user_subject')
+        ->and($reportData['period_duration_days'])->toBe(16)
+        ->and($reportData['schedule_config'])->toBe(['frequency' => 'daily'])
+        ->and($reportData['export_formats'])->toBe(['csv', 'xlsx'])
+        ->and($reportData['tags'])->toBe(['ops'])
+        ->and($reportData['meta'])->toBe(['source' => 'test'])
+        ->and($reportData['options'])->toBe(['notify' => true])
+        ->and($reportData['body'])->toBe('Report body')
+        ->and($reportData['data'])->toBe([['public_id' => 'order_123']])
+        ->and($reportData['created_by'])->toBe(['uuid' => 'user_created', 'name' => 'Creator', 'email' => 'creator@example.com'])
+        ->and($reportData['updated_by'])->toBe(['uuid' => 'user_updated', 'name' => 'Updater', 'email' => 'updater@example.com'])
+        ->and($reportData['subject'])->toBe(['type' => User::class, 'uuid' => 'user_subject', 'name' => 'Subject User'])
         ->and($reportData['period_start'])->toBe('2026-07-01T00:00:00.000000Z')
         ->and($reportData['last_executed_at'])->toBe('2026-07-17T11:30:00.000000Z')
+        ->and((new ReportResource($report))->with($request))->toBe([
+            'meta' => [
+                'can_execute'   => true,
+                'can_export'    => true,
+                'can_schedule'  => true,
+                'last_activity' => '2026-07-18T10:00:00.000000Z',
+            ],
+        ])
         ->and($queryData['id'])->toBe(7)
         ->and($queryData['model_type'])->toBe(User::class)
         ->and($queryData['conditions'])->toHaveCount(1)

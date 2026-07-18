@@ -4,6 +4,7 @@ use Fleetbase\Models\Activity;
 use Fleetbase\Models\Alert;
 use Fleetbase\Models\Comment;
 use Fleetbase\Models\Notification;
+use Fleetbase\Models\ReportAuditLog;
 use Fleetbase\Models\User;
 use Illuminate\Auth\AuthManager;
 use Illuminate\Database\Capsule\Manager as Capsule;
@@ -47,6 +48,18 @@ class OperationalNotificationSpy extends Notification
         $this->deletes++;
 
         return true;
+    }
+}
+
+class OperationalScopeBuilderFake
+{
+    public array $wheres = [];
+
+    public function where(string $column, mixed $value): self
+    {
+        $this->wheres[] = [$column, $value];
+
+        return $this;
     }
 }
 
@@ -343,6 +356,22 @@ it('filters alerts through type severity status acknowledgement and priority sco
         ->and(Alert::query()->unacknowledged()->pluck('uuid')->all())->toBe(['alert-1', 'alert-3'])
         ->and(Alert::query()->critical()->pluck('uuid')->all())->toBe(['alert-1'])
         ->and(Alert::query()->highPriority()->pluck('uuid')->all())->toBe(['alert-1', 'alert-3']);
+});
+
+it('report audit log scopes constrain execution and export actions', function () {
+    $auditLog   = new ReportAuditLog();
+    $actions    = new OperationalScopeBuilderFake();
+    $executions = new OperationalScopeBuilderFake();
+    $exports    = new OperationalScopeBuilderFake();
+
+    expect($auditLog->scopeAction($actions, 'preview'))->toBe($actions)
+        ->and($auditLog->scopeExecutions($executions))->toBe($executions)
+        ->and($auditLog->scopeExports($exports))->toBe($exports)
+        ->and($auditLog->report()->getForeignKeyName())->toBe('report_uuid')
+        ->and($auditLog->user()->getForeignKeyName())->toBe('user_uuid')
+        ->and($actions->wheres)->toBe([['action', 'preview']])
+        ->and($executions->wheres)->toBe([['action', 'execute']])
+        ->and($exports->wheres)->toBe([['action', 'export']]);
 });
 
 it('marks notifications as read and delegates delete notification calls', function () {
