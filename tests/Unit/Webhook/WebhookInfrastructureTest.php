@@ -21,7 +21,14 @@ namespace Fleetbase\Tests\WebhookFixtures {
     use Fleetbase\Webhook\BackoffStrategy\BackoffStrategy;
     use Fleetbase\Webhook\CallWebhookJob;
     use Fleetbase\Webhook\Signer\Signer;
+    use GuzzleHttp\ClientInterface;
+    use GuzzleHttp\Promise\Create;
+    use GuzzleHttp\Promise\PromiseInterface;
+    use GuzzleHttp\Psr7\Request;
     use GuzzleHttp\Psr7\Response;
+    use GuzzleHttp\TransferStats;
+    use Psr\Http\Message\RequestInterface;
+    use Psr\Http\Message\ResponseInterface;
 
     class ConfiguredWebhookJob extends CallWebhookJob
     {
@@ -98,6 +105,66 @@ namespace Fleetbase\Tests\WebhookFixtures {
         }
     }
 
+    class ClientBackedWebhookJob extends CallWebhookJob
+    {
+        public function createRequestForTest(array $body): Response
+        {
+            return $this->createRequest($body);
+        }
+
+        public function transferStatsForTest(): ?TransferStats
+        {
+            return $this->transferStats;
+        }
+
+        public function shouldBeRemovedFromQueueForTest(): bool
+        {
+            return $this->shouldBeRemovedFromQueue();
+        }
+    }
+
+    class RecordingWebhookClient implements ClientInterface
+    {
+        public array $requests = [];
+
+        public function __construct(private Response $response)
+        {
+        }
+
+        public function send(RequestInterface $request, array $options = []): ResponseInterface
+        {
+            $this->requests[] = ['method' => $request->getMethod(), 'uri' => (string) $request->getUri(), 'options' => $options];
+
+            return $this->response;
+        }
+
+        public function sendAsync(RequestInterface $request, array $options = []): PromiseInterface
+        {
+            return Create::promiseFor($this->send($request, $options));
+        }
+
+        public function request($method, $uri, array $options = []): ResponseInterface
+        {
+            $this->requests[] = ['method' => $method, 'uri' => $uri, 'options' => $options];
+
+            if (isset($options['on_stats'])) {
+                $options['on_stats'](new TransferStats(new Request($method, $uri), $this->response, 0.123));
+            }
+
+            return $this->response;
+        }
+
+        public function requestAsync($method, $uri, array $options = []): PromiseInterface
+        {
+            return Create::promiseFor($this->request($method, $uri, $options));
+        }
+
+        public function getConfig(?string $option = null): mixed
+        {
+            return null;
+        }
+    }
+
     class ConfiguredSigner implements Signer
     {
         public function signatureHeaderName(): string
@@ -121,10 +188,12 @@ namespace Fleetbase\Tests\WebhookFixtures {
 }
 
 namespace {
+    use Fleetbase\Tests\WebhookFixtures\ClientBackedWebhookJob;
     use Fleetbase\Tests\WebhookFixtures\ConfiguredBackoffStrategy;
     use Fleetbase\Tests\WebhookFixtures\ConfiguredSigner;
     use Fleetbase\Tests\WebhookFixtures\ConfiguredWebhookJob;
     use Fleetbase\Tests\WebhookFixtures\InspectableWebhookJob;
+    use Fleetbase\Tests\WebhookFixtures\RecordingWebhookClient;
     use Fleetbase\Tests\WebhookFixtures\WebhookJobEventRecorder;
     use Fleetbase\Webhook\BackoffStrategy\ExponentialBackoffStrategy;
     use Fleetbase\Webhook\CallWebhookJob;
@@ -137,7 +206,9 @@ namespace {
     use Fleetbase\Webhook\Exceptions\InvalidWebhookJob;
     use Fleetbase\Webhook\Signer\DefaultSigner;
     use Fleetbase\Webhook\WebhookCall;
+    use GuzzleHttp\Client;
     use GuzzleHttp\Exception\ConnectException;
+    use GuzzleHttp\Exception\RequestException;
     use GuzzleHttp\Psr7\Request;
     use GuzzleHttp\Psr7\Response;
     use Illuminate\Support\Facades\Facade;
@@ -318,6 +389,36 @@ namespace {
             ->and($event->uuid)->toBe('webhook-call-1');
     });
 
+    test('webhook job real client path builds request options and captures transfer stats', function () {
+        webhook_test_container();
+
+        $client = new RecordingWebhookClient(new Response(204, ['X-Hook' => 'ok'], 'accepted'));
+        app()->instance(Client::class, $client);
+
+        $job                 = new ClientBackedWebhookJob();
+        $job->httpVerb       = 'PATCH';
+        $job->webhookUrl     = 'https://example.test/hooks/options';
+        $job->payload        = ['event' => 'options.test'];
+        $job->headers        = ['Content-Type' => 'application/json', 'X-App' => 'core-api'];
+        $job->requestTimeout = 9;
+        $job->verifySsl      = false;
+        $job->proxy          = ['https' => 'http://proxy.test:8080'];
+
+        $response = $job->createRequestForTest(['body' => '{"event":"options.test"}']);
+        $request  = $client->requests[0];
+
+        expect($response->getStatusCode())->toBe(204)
+            ->and($request['method'])->toBe('PATCH')
+            ->and($request['uri'])->toBe('https://example.test/hooks/options')
+            ->and($request['options']['timeout'])->toBe(9)
+            ->and($request['options']['verify'])->toBeFalse()
+            ->and($request['options']['headers'])->toBe(['Content-Type' => 'application/json', 'X-App' => 'core-api'])
+            ->and($request['options']['body'])->toBe('{"event":"options.test"}')
+            ->and($request['options']['proxy'])->toBe(['https' => 'http://proxy.test:8080'])
+            ->and($job->transferStatsForTest()?->getTransferTime())->toBe(0.123)
+            ->and($job->shouldBeRemovedFromQueueForTest())->toBeFalse();
+    });
+
     test('webhook job sends non get payload as json body and releases before final retry', function () {
         webhook_test_container();
         WebhookJobEventRecorder::reset();
@@ -383,5 +484,43 @@ namespace {
             ->and($failedEvent->errorMessage)->toContain('connection refused')
             ->and($finalEvent)->toBeInstanceOf(FinalWebhookCallFailedEvent::class)
             ->and($finalEvent->errorType)->toBe(ConnectException::class);
+    });
+
+    test('webhook job captures request exception responses and fails final attempts when configured', function () {
+        webhook_test_container();
+        WebhookJobEventRecorder::reset();
+
+        $request                      = new Request('POST', 'https://example.test/hooks/orders');
+        $response                     = new Response(503, ['Retry-After' => '60'], 'temporarily unavailable');
+        $job                          = new InspectableWebhookJob();
+        $job->httpVerb                = 'POST';
+        $job->webhookUrl              = 'https://example.test/hooks/orders';
+        $job->payload                 = ['event' => 'order.request_exception'];
+        $job->headers                 = ['Content-Type' => 'application/json'];
+        $job->meta                    = ['company_uuid' => 'company-1'];
+        $job->tags                    = ['orders'];
+        $job->uuid                    = 'webhook-call-request-exception';
+        $job->tries                   = 2;
+        $job->attempt                 = 2;
+        $job->requestTimeout          = 8;
+        $job->verifySsl               = true;
+        $job->throwExceptionOnFailure = true;
+        $job->backoffStrategyClass    = ConfiguredBackoffStrategy::class;
+        $job->nextException           = new RequestException('upstream unavailable', $request, $response);
+
+        $job->handle();
+
+        [$failedEvent, $finalEvent] = WebhookJobEventRecorder::$events;
+
+        expect($job->releasedFor)->toBe([])
+            ->and($job->deleted)->toBeFalse()
+            ->and($job->failedWith)->toBeInstanceOf(RequestException::class)
+            ->and($job->getResponse()?->getStatusCode())->toBe(503)
+            ->and($failedEvent)->toBeInstanceOf(WebhookCallFailedEvent::class)
+            ->and($failedEvent->response?->getStatusCode())->toBe(503)
+            ->and($failedEvent->errorType)->toBe(RequestException::class)
+            ->and($failedEvent->errorMessage)->toContain('upstream unavailable')
+            ->and($finalEvent)->toBeInstanceOf(FinalWebhookCallFailedEvent::class)
+            ->and($finalEvent->response?->getStatusCode())->toBe(503);
     });
 }
