@@ -9,6 +9,7 @@ use Fleetbase\Http\Filter\CategoryFilter;
 use Fleetbase\Http\Filter\ChatLogFilter;
 use Fleetbase\Http\Filter\ChatMessageFilter;
 use Fleetbase\Http\Filter\ChatReceiptFilter;
+use Fleetbase\Http\Filter\CommentFilter;
 use Fleetbase\Http\Filter\CompanyFilter;
 use Fleetbase\Http\Filter\DashboardFilter;
 use Fleetbase\Http\Filter\FileFilter;
@@ -31,6 +32,7 @@ use Fleetbase\Models\Category;
 use Fleetbase\Models\ChatLog;
 use Fleetbase\Models\ChatMessage;
 use Fleetbase\Models\ChatReceipt;
+use Fleetbase\Models\Comment;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\Dashboard;
 use Fleetbase\Models\File;
@@ -85,6 +87,50 @@ class ConcreteFilterSearchBuilderFake
     }
 }
 
+class ConcreteFilterRelationBuilderFake
+{
+    public array $whereHas   = [];
+    public array $wheres     = [];
+    public array $orWheres   = [];
+    public array $whereNulls = [];
+
+    public function where(string $column, mixed $operator = null, mixed $value = null, string $boolean = 'and'): self
+    {
+        $this->wheres[] = [$column, $operator, $value, $boolean];
+
+        return $this;
+    }
+
+    public function orWhere(string $column, mixed $operator = null, mixed $value = null): self
+    {
+        $this->orWheres[] = [$column, $operator, $value];
+
+        return $this;
+    }
+
+    public function whereHas(string $relation, callable $callback): self
+    {
+        $related = new self();
+        $callback($related);
+
+        $this->whereHas[] = [
+            'relation'    => $relation,
+            'wheres'      => $related->wheres,
+            'orWheres'    => $related->orWheres,
+            'whereNulls'  => $related->whereNulls,
+        ];
+
+        return $this;
+    }
+
+    public function whereNull(string $column): self
+    {
+        $this->whereNulls[] = $column;
+
+        return $this;
+    }
+}
+
 function concrete_filter_database(): Capsule
 {
     EloquentModel::clearBootedModels();
@@ -128,6 +174,7 @@ function concrete_filter_database(): Capsule
         'chat_messages',
         'chat_participants',
         'chat_receipts',
+        'comments',
         'dashboards',
         'files',
         'groups',
@@ -398,6 +445,21 @@ function concrete_filter_database(): Capsule
         $table->softDeletes();
     });
 
+    $schema->create('comments', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('public_id')->nullable();
+        $table->string('company_uuid')->nullable();
+        $table->string('subject_uuid')->nullable();
+        $table->string('subject_type')->nullable();
+        $table->string('author_uuid')->nullable();
+        $table->string('parent_comment_uuid')->nullable();
+        $table->text('content')->nullable();
+        $table->text('tags')->nullable();
+        $table->text('meta')->nullable();
+        $table->timestamps();
+        $table->softDeletes();
+    });
+
     $schema->create('notifications', function ($table) {
         $table->string('id')->primary();
         $table->string('uuid')->nullable();
@@ -650,6 +712,53 @@ test('simple tenant filters delegate free text queries to searchable builders', 
     expect($apiCredentialBuilder->queries)->toBe(['primary'])
         ->and($groupBuilder->queries)->toBe(['dispatch'])
         ->and($webhookEndpointBuilder->queries)->toBe(['hooks']);
+});
+
+test('comment filter scopes subjects parent relationships and root comments', function () {
+    $capsule = concrete_filter_database();
+    $now     = '2026-07-18 08:00:00';
+
+    $capsule->getConnection('mysql')->table('users')->insert([
+        ['uuid' => 'user-subject', 'public_id' => 'user_subject', 'name' => 'Subject User', 'created_at' => $now, 'updated_at' => $now],
+        ['uuid' => 'user-other', 'public_id' => 'user_other', 'name' => 'Other User', 'created_at' => $now, 'updated_at' => $now],
+    ]);
+
+    $capsule->getConnection('mysql')->table('comments')->insert([
+        ['uuid' => '11111111-1111-4111-8111-111111111111', 'public_id' => 'comment_parent', 'company_uuid' => 'company-1', 'subject_uuid' => 'user-subject', 'subject_type' => User::class, 'author_uuid' => 'user-subject', 'parent_comment_uuid' => null, 'content' => 'Parent', 'created_at' => $now, 'updated_at' => $now],
+        ['uuid' => '22222222-2222-4222-8222-222222222222', 'public_id' => 'comment_reply', 'company_uuid' => 'company-1', 'subject_uuid' => 'user-subject', 'subject_type' => User::class, 'author_uuid' => 'user-subject', 'parent_comment_uuid' => '11111111-1111-4111-8111-111111111111', 'content' => 'Reply', 'created_at' => $now, 'updated_at' => $now],
+        ['uuid' => '33333333-3333-4333-8333-333333333333', 'public_id' => 'comment_other_subject', 'company_uuid' => 'company-1', 'subject_uuid' => 'user-other', 'subject_type' => User::class, 'author_uuid' => 'user-subject', 'parent_comment_uuid' => null, 'content' => 'Other subject', 'created_at' => $now, 'updated_at' => $now],
+        ['uuid' => '44444444-4444-4444-8444-444444444444', 'public_id' => 'comment_hidden', 'company_uuid' => 'company-2', 'subject_uuid' => 'user-subject', 'subject_type' => User::class, 'author_uuid' => 'user-subject', 'parent_comment_uuid' => null, 'content' => 'Hidden', 'created_at' => $now, 'updated_at' => $now],
+    ]);
+
+    $commentUuids = function (array $query): array {
+        $builder = (new CommentFilter(concrete_filter_request($query, 'int/v1/comments')))
+            ->apply(Comment::without(['author', 'replies']));
+
+        return $builder->orderBy('uuid')->pluck('uuid')->all();
+    };
+
+    expect($commentUuids(['subject' => 'user_subject']))->toBe(['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222'])
+        ->and($commentUuids(['subject_uuid' => 'user-subject']))->toBe(['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222'])
+        ->and($commentUuids(['subject_type' => User::class]))->toBe(['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222', '33333333-3333-4333-8333-333333333333'])
+        ->and($commentUuids(['parent' => '99999999-9999-4999-8999-999999999999']))->toBe([])
+        ->and($commentUuids(['parent' => '22222222-2222-4222-8222-222222222222']))->toBe([])
+        ->and($commentUuids(['parent' => '11111111-1111-4111-8111-111111111111']))->toBe(['22222222-2222-4222-8222-222222222222'])
+        ->and($commentUuids(['without_parent' => 1]))->toBe(['11111111-1111-4111-8111-111111111111', '33333333-3333-4333-8333-333333333333']);
+});
+
+test('comment filter records relation constraints for subject and parent public ids', function () {
+    $builder = new ConcreteFilterRelationBuilderFake();
+    $filter  = concrete_filter_with_any_builder(new CommentFilter(concrete_filter_request()), $builder);
+
+    $filter->subject('user_subject');
+    $filter->parent('comment_1234567');
+
+    expect($builder->whereHas[0])->toMatchArray([
+        'relation' => 'subject',
+        'wheres'   => [['uuid', 'user_subject', null, 'and']],
+        'orWheres' => [['public_id', 'user_subject', null]],
+    ])->and($builder->whereHas[1]['relation'])->toBe('parent')
+        ->and($builder->wheres)->toContain(['public_id', 'comment_1234567', null, 'and']);
 });
 
 test('file filter scopes files to the active company and filters type prefixes and suffixes', function () {
