@@ -603,11 +603,12 @@ namespace {
     });
 
     it('keeps report request query limits formats and status transitions stable', function () {
-        $createRules   = (new CreateReportRequest())->rules();
-        $updateRules   = (new UpdateReportRequest())->rules();
-        $validateRules = (new ValidateReportQueryRequest())->rules();
-        $executeRules  = (new ExecuteReportQueryRequest())->rules();
-        $exportRules   = (new ExportReportRequest())->rules();
+        $createRules      = (new CreateReportRequest())->rules();
+        $updateRules      = (new UpdateReportRequest())->rules();
+        $validateRules    = (new ValidateReportQueryRequest())->rules();
+        $validateMessages = (new ValidateReportQueryRequest())->messages();
+        $executeRules     = (new ExecuteReportQueryRequest())->rules();
+        $exportRules      = (new ExportReportRequest())->rules();
 
         expect((new CreateReportRequest())->authorize())->toBeTrue()
             ->and((new UpdateReportRequest())->authorize())->toBeTrue()
@@ -620,6 +621,15 @@ namespace {
             ->and($updateRules['title'])->toBe('sometimes|required|string|max:255')
             ->and($updateRules['status'])->toBe('sometimes|string|in:pending,generating,complete,failed')
             ->and($validateRules['query_config.limit'])->toBe('nullable|integer|min:1|max:10000')
+            ->and($validateMessages)->toBe([
+                'query_config.required'                  => 'Query configuration is required',
+                'query_config.select.required'           => 'At least one column must be selected',
+                'query_config.from.required'             => 'Primary table must be specified',
+                'query_config.joins.*.type.in'           => 'Join type must be one of: inner, left, right, full',
+                'query_config.where.*.operator.required' => 'Where condition operator is required',
+                'query_config.orderBy.*.direction.in'    => 'Order direction must be asc or desc',
+                'query_config.limit.max'                 => 'Query limit cannot exceed 10,000 rows',
+            ])
             ->and($executeRules['limit'])->toBe('nullable|integer|min:1|max:1000')
             ->and($executeRules['offset'])->toBe('nullable|integer|min:0')
             ->and($exportRules['format'])->toBe('required|string|in:json,csv,xlsx')
