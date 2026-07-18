@@ -548,10 +548,10 @@ afterEach(function () {
 test('company filter scopes non admin users to owned or joined companies and supports attention flags', function () {
     $capsule = concrete_filter_database();
     $capsule->getConnection('mysql')->table('companies')->insert([
-        ['uuid' => 'company-owned', 'name' => 'Owned Co', 'owner_uuid' => 'user-1', 'country' => 'SG', 'status' => 'active', 'onboarding_completed_at' => '2026-01-01 00:00:00'],
-        ['uuid' => 'company-joined', 'name' => 'Joined Co', 'owner_uuid' => 'user-2', 'country' => 'US', 'status' => 'active', 'onboarding_completed_at' => '2026-01-01 00:00:00'],
-        ['uuid' => 'company-attention', 'name' => 'Needs Help', 'owner_uuid' => null, 'country' => 'US', 'status' => 'pending', 'onboarding_completed_at' => null],
-        ['uuid' => 'company-hidden', 'name' => 'Hidden Co', 'owner_uuid' => 'user-3', 'country' => 'US', 'status' => 'active', 'onboarding_completed_at' => '2026-01-01 00:00:00'],
+        ['uuid' => 'company-owned', 'name' => 'Owned Co', 'owner_uuid' => 'user-1', 'country' => 'SG', 'status' => 'active', 'plan' => 'legacy', 'onboarding_completed_at' => '2026-01-01 00:00:00', 'created_at' => '2026-07-18 08:00:00'],
+        ['uuid' => 'company-joined', 'name' => 'Joined Co', 'owner_uuid' => 'user-2', 'country' => 'US', 'status' => 'active', 'plan' => null, 'onboarding_completed_at' => '2026-01-01 00:00:00', 'created_at' => '2026-07-19 08:00:00'],
+        ['uuid' => 'company-attention', 'name' => 'Needs Help', 'owner_uuid' => null, 'country' => 'US', 'status' => 'pending', 'plan' => null, 'onboarding_completed_at' => null, 'created_at' => '2026-07-20 08:00:00'],
+        ['uuid' => 'company-hidden', 'name' => 'Hidden Co', 'owner_uuid' => 'user-3', 'country' => 'US', 'status' => 'active', 'plan' => null, 'onboarding_completed_at' => '2026-01-01 00:00:00', 'created_at' => '2026-07-21 08:00:00'],
     ]);
     $capsule->getConnection('mysql')->table('users')->insert([
         ['uuid' => 'user-1', 'email' => 'member@example.test', 'type' => 'user'],
@@ -576,10 +576,17 @@ test('company filter scopes non admin users to owned or joined companies and sup
 
     expect($scoped)->toBe(['company-joined', 'company-owned'])
         ->and(concrete_filter_admin_uuids(CompanyFilter::class, Company::class, ['needs_attention' => '1']))->toBe(['company-attention'])
+        ->and(concrete_filter_admin_uuids(CompanyFilter::class, Company::class, ['needs_attention' => '0']))->toBe(['company-attention', 'company-hidden', 'company-joined', 'company-owned'])
         ->and(concrete_filter_admin_uuids(CompanyFilter::class, Company::class, ['missing_owner' => 'true']))->toBe(['company-attention'])
         ->and(concrete_filter_admin_uuids(CompanyFilter::class, Company::class, ['inactive_status' => 'true']))->toBe(['company-attention'])
         ->and(concrete_filter_admin_uuids(CompanyFilter::class, Company::class, ['onboarding_completed' => 'false']))->toBe(['company-attention'])
-        ->and(concrete_filter_admin_uuids(CompanyFilter::class, Company::class, ['billing_status' => 'legacy']))->toBe([]);
+        ->and(concrete_filter_admin_uuids(CompanyFilter::class, Company::class, ['onboarding_completed' => 'true']))->toBe(['company-hidden', 'company-joined', 'company-owned'])
+        ->and(concrete_filter_admin_uuids(CompanyFilter::class, Company::class, ['onboarding_completed' => '']))->toBe(['company-attention', 'company-hidden', 'company-joined', 'company-owned'])
+        ->and(concrete_filter_admin_uuids(CompanyFilter::class, Company::class, ['billing_status' => 'legacy']))->toBe(['company-owned'])
+        ->and(concrete_filter_admin_uuids(CompanyFilter::class, Company::class, ['billing_status' => '']))->toBe(['company-attention', 'company-hidden', 'company-joined', 'company-owned'])
+        ->and(concrete_filter_admin_uuids(CompanyFilter::class, Company::class, ['owner_email' => 'member']))->toBe(['company-owned'])
+        ->and(concrete_filter_admin_uuids(CompanyFilter::class, Company::class, ['created_at' => '2026-07-18']))->toBe(['company-owned'])
+        ->and(concrete_filter_admin_uuids(CompanyFilter::class, Company::class, ['created_at' => '']))->toBe(['company-attention', 'company-hidden', 'company-joined', 'company-owned']);
 });
 
 test('company filter leaves admin company listing unscoped and applies searchable fields', function () {
@@ -589,7 +596,7 @@ test('company filter leaves admin company listing unscoped and applies searchabl
         ['uuid' => 'company-2', 'name' => 'Beta Freight', 'owner_uuid' => 'user-2', 'country' => 'SG', 'status' => 'pending', 'plan' => null],
     ]);
 
-    $request = concrete_filter_request(['view' => 'admin', 'query' => 'Freight', 'country' => 'SG', 'status' => 'pending']);
+    $request = concrete_filter_request(['view' => 'admin', 'query' => 'Freight', 'name' => 'Beta', 'country' => 'SG', 'status' => 'pending']);
     $request->setUserResolver(fn () => new class {
         public function isAdmin(): bool
         {
@@ -603,6 +610,31 @@ test('company filter leaves admin company listing unscoped and applies searchabl
         ->all();
 
     expect($matches)->toBe(['company-2']);
+});
+
+test('company filter ignores blank controls and supports subscription billing status filters', function () {
+    concrete_filter_database();
+
+    if (!class_exists('\\Fleetbase\\Billing\\Models\\Subscription', false)) {
+        eval('namespace Fleetbase\\Billing\\Models; class Subscription { public static function where(...$arguments) { return new class { public function latest(...$arguments) { return $this; } public function first() { return null; } }; } }');
+    }
+
+    $filter = concrete_filter_with_any_builder(
+        new CompanyFilter(concrete_filter_request(['view' => 'admin'])),
+        $builder = new ConcreteFilterRelationBuilderFake()
+    );
+    $filter->needsAttention(false);
+    $filter->onboardingCompleted('');
+    $filter->billingStatus('');
+    $filter->createdAt(null);
+    $filter->billingStatus('active');
+
+    expect($builder->wheres)->toBe([])
+        ->and($builder->whereHas)->toHaveCount(1)
+        ->and($builder->whereHas[0]['relation'])->toBe('billingSubscriptions')
+        ->and($builder->whereHas[0]['wheres'])->toBe([
+            ['payment_gateway_status', 'active', null, 'and'],
+        ]);
 });
 
 test('role and policy filters include organization and fleetbase managed records unless type is explicit', function () {
