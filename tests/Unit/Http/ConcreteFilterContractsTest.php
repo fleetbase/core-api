@@ -3,6 +3,7 @@
 use Fleetbase\Expansions\Builder as BuilderExpansion;
 use Fleetbase\Http\Filter\CategoryFilter;
 use Fleetbase\Http\Filter\CompanyFilter;
+use Fleetbase\Http\Filter\ScheduleFilter;
 use Fleetbase\Http\Filter\ScheduleExceptionFilter;
 use Fleetbase\Http\Filter\ScheduleItemFilter;
 use Fleetbase\Http\Filter\ScheduleTemplateFilter;
@@ -136,6 +137,7 @@ function concrete_filter_database(): Capsule
         $table->string('company_uuid')->nullable();
         $table->string('subject_uuid')->nullable();
         $table->string('subject_type')->nullable();
+        $table->string('status')->nullable();
         $table->softDeletes();
     });
 
@@ -362,6 +364,22 @@ test('schedule item filter resolves schedule identifiers and date ranges within 
         ->and(concrete_filter_uuids(ScheduleItemFilter::class, ScheduleItem::class, ['schedule_uuid' => 'missing_schedule'], 'int/v1/schedule-items'))->toBe([])
         ->and(concrete_filter_uuids(ScheduleItemFilter::class, ScheduleItem::class, ['assignee_type' => 'Fleetbase\\FleetOps\\Models\\Driver', 'assignee_uuid' => 'driver-1'], 'int/v1/schedule-items'))->toBe(['item-direct'])
         ->and($rangeMatches)->toBe(['item-fallback']);
+});
+
+test('schedule filter scopes tenant schedules and applies subject and status filters', function () {
+    $capsule = concrete_filter_database();
+    $capsule->getConnection('mysql')->table('schedules')->insert([
+        ['uuid' => 'schedule-active', 'public_id' => 'schedule_active', 'company_uuid' => 'company-1', 'subject_uuid' => 'driver-1', 'subject_type' => 'Fleetbase\\FleetOps\\Models\\Driver', 'status' => 'active'],
+        ['uuid' => 'schedule-paused', 'public_id' => 'schedule_paused', 'company_uuid' => 'company-1', 'subject_uuid' => 'driver-2', 'subject_type' => 'Fleetbase\\FleetOps\\Models\\Driver', 'status' => 'paused'],
+        ['uuid' => 'schedule-hidden', 'public_id' => 'schedule_hidden', 'company_uuid' => 'company-2', 'subject_uuid' => 'driver-1', 'subject_type' => 'Fleetbase\\FleetOps\\Models\\Driver', 'status' => 'active'],
+        ['uuid' => 'schedule-alias', 'public_id' => 'schedule_alias', 'company_uuid' => 'company-1', 'subject_uuid' => 'vehicle-1', 'subject_type' => 'Fleetbase\\FleetOps\\Models\\Vehicle', 'status' => 'active'],
+    ]);
+
+    expect(concrete_filter_uuids(ScheduleFilter::class, Fleetbase\Models\Schedule::class, [], 'int/v1/schedules'))->toBe(['schedule-active', 'schedule-alias', 'schedule-paused'])
+        ->and(concrete_filter_uuids(ScheduleFilter::class, Fleetbase\Models\Schedule::class, ['subject_type' => 'Fleetbase\\FleetOps\\Models\\Driver'], 'int/v1/schedules'))->toBe(['schedule-active', 'schedule-paused'])
+        ->and(concrete_filter_uuids(ScheduleFilter::class, Fleetbase\Models\Schedule::class, ['subject_uuid' => 'driver-1'], 'int/v1/schedules'))->toBe(['schedule-active'])
+        ->and(concrete_filter_uuids(ScheduleFilter::class, Fleetbase\Models\Schedule::class, ['status' => 'paused'], 'int/v1/schedules'))->toBe(['schedule-paused'])
+        ->and(concrete_filter_uuids(ScheduleFilter::class, Fleetbase\Models\Schedule::class, ['subject_type' => 'fleet-ops:vehicle'], 'int/v1/schedules'))->toBe(['schedule-alias']);
 });
 
 test('schedule exception and template filters scope tenants and resolve subjects and schedules', function () {

@@ -1,0 +1,136 @@
+<?php
+
+namespace Fleetbase\Auth {
+    if (!function_exists(__NAMESPACE__ . '\\logger')) {
+        function logger(): mixed
+        {
+            return app('log');
+        }
+    }
+}
+
+namespace {
+    use Fleetbase\Auth\AppleVerifier;
+    use Fleetbase\Auth\GoogleVerifier;
+    use Fleetbase\Auth\Schemas\Developers;
+    use Fleetbase\Auth\Schemas\IAM;
+    use Fleetbase\Auth\Signers\AppleSignerInMemory;
+    use Fleetbase\Auth\Signers\AppleSignerNone;
+    use Illuminate\Container\Container;
+    use Illuminate\Support\Facades\Facade;
+
+class AuthContractCacheFake
+{
+    public array $remembered = [];
+
+    public function remember(string $key, int $ttl, callable $callback): mixed
+    {
+        $this->remembered[] = [$key, $ttl];
+
+        $privateKey = openssl_pkey_new([
+            'private_key_bits' => 2048,
+            'private_key_type' => OPENSSL_KEYTYPE_RSA,
+        ]);
+        $details = openssl_pkey_get_details($privateKey);
+        $encode  = fn (string $value): string => rtrim(strtr(base64_encode($value), '+/', '-_'), '=');
+
+        return [
+            'keys' => [
+                [
+                    'kty' => 'RSA',
+                    'kid' => 'other-key',
+                    'use' => 'sig',
+                    'alg' => 'RS256',
+                    'n' => $encode($details['rsa']['n']),
+                    'e' => $encode($details['rsa']['e']),
+                ],
+            ],
+        ];
+    }
+}
+
+function auth_contract_jwt(array $header, array $payload): string
+{
+    $encode = fn (array $data): string => rtrim(strtr(base64_encode(json_encode($data, JSON_THROW_ON_ERROR)), '+/', '-_'), '=');
+    $signature = rtrim(strtr(base64_encode('signature'), '+/', '-_'), '=');
+
+    return $encode($header) . '.' . $encode($payload) . '.' . $signature;
+}
+
+beforeEach(function () {
+    bind_test_container([
+        'app.debug' => false,
+        'app.env' => 'testing',
+    ]);
+});
+
+afterEach(function () {
+    Facade::clearResolvedInstances();
+    Container::setInstance(new FleetbaseTestContainer());
+});
+
+test('apple signer contracts keep plain text key material and none signature behavior stable', function () {
+    $key    = AppleSignerInMemory::plainText('private-key-material', 'secret');
+    $signer = new AppleSignerNone();
+
+    expect($key->contents())->toBe('private-key-material')
+        ->and($key->passphrase())->toBe('secret')
+        ->and($signer->algorithmId())->toBe('none')
+        ->and($signer->sign('payload', $key))->toBe('')
+        ->and($signer->verify('', 'payload', $key))->toBeTrue()
+        ->and($signer->verify('unexpected', 'payload', $key))->toBeFalse();
+});
+
+test('apple verifier rejects tokens when the cached apple key set does not contain the token key id', function () {
+    $cache = new AuthContractCacheFake();
+    app()->instance('cache', $cache);
+
+    $jwt = auth_contract_jwt(
+        ['alg' => 'RS256', 'kid' => 'missing-key'],
+        ['iss' => 'https://appleid.apple.com', 'sub' => 'apple-user']
+    );
+
+    expect(fn () => AppleVerifier::verifyAppleJwt($jwt))
+        ->toThrow(Exception::class, 'Invalid JWT Signature or missing key ID.')
+        ->and($cache->remembered)->toBe([['apple-JWKSet', 300]]);
+});
+
+test('google verifier returns null for invalid identity tokens instead of leaking verification exceptions', function () {
+    $result = GoogleVerifier::verifyIdToken('not-a-jwt', 'client-id.apps.googleusercontent.com');
+
+    expect($result)->toBeNull();
+});
+
+test('auth permission schemas expose stable guards resources policies and roles', function () {
+    $developers = new Developers();
+    $iam        = new IAM();
+
+    expect($developers->name)->toBe('developers')
+        ->and($developers->policyName)->toBe('Developers')
+        ->and($developers->guards)->toBe(['sanctum'])
+        ->and($developers->resources)->toContain([
+            'name' => 'api-key',
+            'actions' => ['roll', 'export'],
+        ])
+        ->and($developers->policies[0]['name'])->toBe('FLBDeveloper')
+        ->and($developers->policies[0]['permissions'])->toContain('* api-key', '* webhook', '* socket')
+        ->and($developers->roles[0])->toMatchArray([
+            'name' => 'Fleetbase Developer',
+            'policies' => ['FLBDeveloper'],
+        ])
+        ->and($iam->name)->toBe('iam')
+        ->and($iam->policyName)->toBe('IAM')
+        ->and($iam->guards)->toBe(['sanctum'])
+        ->and($iam->permissions)->toBe(['change-password'])
+        ->and($iam->resources[1])->toMatchArray([
+            'name' => 'user',
+            'actions' => ['deactivate', 'activate', 'verify', 'export', 'change-password-for', 'change-email-for'],
+        ])
+        ->and($iam->policies[1])->toMatchArray([
+            'name' => 'PolicyManager',
+            'permissions' => ['see extension', '* policy', '* role'],
+        ])
+        ->and($iam->roles[2]['name'])->toBe('IAM Administrator')
+        ->and($iam->roles[2]['permissions'])->toContain('* user', '* group', '* role', '* policy');
+});
+}
