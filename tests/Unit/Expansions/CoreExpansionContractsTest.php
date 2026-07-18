@@ -25,6 +25,11 @@ class CoreExpansionBuilderModel extends EloquentModel
     protected $connection = 'mysql';
     protected $table      = 'builder_expansion_records';
     protected $guarded    = [];
+
+    public function scopeOrderByDistance(EloquentBuilder $query): EloquentBuilder
+    {
+        return $query->orderBy('name');
+    }
 }
 
 class CoreExpansionResponseFactoryFake
@@ -40,6 +45,13 @@ class CoreExpansionResponseControllerStub
     public function getResourceSingularName(): string
     {
         return 'api_credential';
+    }
+}
+
+class CoreExpansionDirectiveControllerStub
+{
+    public function index(): void
+    {
     }
 }
 
@@ -143,6 +155,7 @@ function core_expansion_builder_database(): Capsule
     $container = bind_test_container([
         'database.default'           => 'mysql',
         'database.connections.mysql' => $connection,
+        'auth.defaults.guard'        => 'web',
     ]);
 
     $capsule = new Capsule($container);
@@ -166,6 +179,23 @@ function core_expansion_builder_database(): Capsule
         $table->string('email')->nullable();
         $table->string('status')->nullable();
         $table->text('meta')->nullable();
+        $table->timestamps();
+    });
+
+    $schema->create('permissions', function ($table) {
+        $table->string('id')->primary();
+        $table->string('name')->nullable();
+        $table->string('guard_name')->nullable();
+        $table->timestamps();
+    });
+
+    $schema->create('directives', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('permission_uuid')->nullable();
+        $table->string('subject_type')->nullable();
+        $table->string('subject_uuid')->nullable();
+        $table->text('rules')->nullable();
+        $table->dateTime('deleted_at')->nullable();
         $table->timestamps();
     });
 
@@ -319,6 +349,14 @@ test('builder expansion search where applies strict and fuzzy search contracts',
         ->searchWhere(['meta->owner', 'name'], 'ada')
         ->toSql();
 
+    $singleJsonSearch = CoreExpansionBuilderModel::query()
+        ->searchWhere('meta->owner', 'ada')
+        ->toSql();
+
+    $invalidArrayJsonSearch = CoreExpansionBuilderModel::query()
+        ->searchWhere(['meta->nested->owner', 'name'], 'ada')
+        ->toSql();
+
     $invalidJsonSearch = CoreExpansionBuilderModel::query()
         ->searchWhere('meta->nested->owner', 'ada');
 
@@ -327,6 +365,8 @@ test('builder expansion search where applies strict and fuzzy search contracts',
         ->and($commaAndDotSearch)->toBe(['Alpha Fleet'])
         ->and($strictEmail)->toBe(['Beta Dispatch'])
         ->and($jsonSearch)->toContain("json_extract(meta, '$.owner')")
+        ->and($singleJsonSearch)->toContain("json_extract(meta, '$.owner')")
+        ->and($invalidArrayJsonSearch)->not->toContain("json_extract(meta, '$.nested')")
         ->and($invalidJsonSearch)->toBeNull();
 });
 
@@ -377,6 +417,11 @@ test('builder expansion applies request sort aliases and explicit directions', f
         ->pluck('name')
         ->all();
 
+    $distance = CoreExpansionBuilderModel::query()
+        ->applySortFromRequest(HttpRequest::create('/int/v1/test', 'GET', ['sort' => 'distance']))
+        ->pluck('name')
+        ->all();
+
     $unsortedQuery = CoreExpansionBuilderModel::query()
         ->applySortFromRequest(HttpRequest::create('/int/v1/test', 'GET', ['sort' => '']));
 
@@ -388,8 +433,36 @@ test('builder expansion applies request sort aliases and explicit directions', f
     expect($latest)->toBe(['Gamma Fleet', 'Beta Dispatch', 'Alpha Fleet'])
         ->and($oldest)->toBe(['Alpha Fleet', 'Beta Dispatch', 'Gamma Fleet'])
         ->and($explicit)->toBe(['Beta Dispatch', 'Gamma Fleet', 'Alpha Fleet'])
+        ->and($distance)->toBe(['Alpha Fleet', 'Beta Dispatch', 'Gamma Fleet'])
         ->and($unsortedQuery->getQuery()->orders)->toBeNull()
         ->and($default)->toBe(['Gamma Fleet', 'Beta Dispatch', 'Alpha Fleet']);
+});
+
+test('builder expansion directive macros preserve builders when no directives resolve', function () {
+    core_expansion_builder_database();
+    session()->flush();
+
+    $builderExpansion = new BuilderExpansion();
+    EloquentBuilder::macro('applyDirectives', $builderExpansion->applyDirectives());
+    EloquentBuilder::macro('applyDirectivesForPermissions', $builderExpansion->applyDirectivesForPermissions());
+
+    $request           = HttpRequest::create('/int/v1/builder-records', 'GET');
+    $route             = new Route(['GET'], 'int/v1/builder-records', ['controller' => CoreExpansionDirectiveControllerStub::class . '@index']);
+    $route->controller = new CoreExpansionDirectiveControllerStub();
+    $request->setRouteResolver(fn () => $route);
+    app()->instance('request', $request);
+
+    if (!HttpRequest::hasMacro('getController')) {
+        HttpRequest::macro('getController', fn () => $this->route()?->controller);
+    }
+
+    $requestScoped = CoreExpansionBuilderModel::query()->where('status', 'active');
+    $namedScoped   = CoreExpansionBuilderModel::query()->where('status', 'active');
+
+    expect($requestScoped->applyDirectives())->toBe($requestScoped)
+        ->and($requestScoped->pluck('name')->all())->toBe(['Alpha Fleet', 'Gamma Fleet'])
+        ->and($namedScoped->applyDirectivesForPermissions('core list builder-record'))->toBe($namedScoped)
+        ->and($namedScoped->pluck('name')->all())->toBe(['Alpha Fleet', 'Gamma Fleet']);
 });
 
 test('response expansion helpers keep internal and public error response shapes stable', function () {
