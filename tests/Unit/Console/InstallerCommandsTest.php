@@ -2,6 +2,7 @@
 
 use Fleetbase\Console\Commands\NotifyInstalled;
 use Fleetbase\Console\Commands\SeedDatabase;
+use Fleetbase\Support\SocketCluster\SocketClusterService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Facade;
 use Psr\Log\AbstractLogger;
@@ -32,7 +33,7 @@ class NotifyInstalledTestCommand extends NotifyInstalled
 {
     public array $messages = [];
 
-    public function __construct(private array $options = [])
+    public function __construct(private array $options = [], private ?SocketClusterService $socketClusterService = null)
     {
         parent::__construct();
     }
@@ -50,6 +51,39 @@ class NotifyInstalledTestCommand extends NotifyInstalled
     public function warn($string, $verbosity = null): void
     {
         $this->messages[] = ['warn', $string];
+    }
+
+    protected function makeSocketClusterService(): SocketClusterService
+    {
+        return $this->socketClusterService ?? parent::makeSocketClusterService();
+    }
+}
+
+class NotifyInstalledSocketClusterFake extends SocketClusterService
+{
+    public array $sentPayloads = [];
+
+    public function __construct(private bool $sendResult = true, private ?string $sendError = null, private ?Throwable $throwable = null)
+    {
+    }
+
+    public function send($channel, array $data = []): bool
+    {
+        if ($this->throwable) {
+            throw $this->throwable;
+        }
+
+        $this->sentPayloads[] = [
+            'channel' => $channel,
+            'data'    => $data,
+        ];
+
+        return $this->sendResult;
+    }
+
+    public function error(): ?string
+    {
+        return $this->sendError;
     }
 }
 
@@ -118,6 +152,28 @@ it('warns and logs when install notification socket delivery fails on the defaul
         ->and($logger->records[0]['context']['error'])->toBeString()->not->toBe('');
 });
 
+it('sends install notification payloads on the configured channel', function () {
+    $socket  = new NotifyInstalledSocketClusterFake();
+    $command = new NotifyInstalledTestCommand([
+        'channel' => 'tenant.install.completed',
+    ], $socket);
+
+    expect($command->handle())->toBe(0)
+        ->and($command->messages)->toBe([
+            ['info', 'Install notification sent.'],
+        ])
+        ->and($socket->sentPayloads)->toBe([
+            [
+                'channel' => 'tenant.install.completed',
+                'data'    => [
+                    'event'     => 'fleetbase.installed',
+                    'installed' => true,
+                    'timestamp' => '2026-07-17T12:34:56+00:00',
+                ],
+            ],
+        ]);
+});
+
 it('uses the configured install notification channel in warning logs', function () {
     $logger = new InstallerCommandLogger();
     app()->instance('log', $logger);
@@ -130,4 +186,29 @@ it('uses the configured install notification channel in warning logs', function 
     expect($command->handle())->toBe(0)
         ->and($command->messages[0][1])->toStartWith('Install notification was not sent: ')
         ->and($logger->records[0]['context']['channel'])->toBe('tenant.install.completed');
+});
+
+it('logs thrown install notification failures without failing the command', function () {
+    $logger = new InstallerCommandLogger();
+    app()->instance('log', $logger);
+    Facade::clearResolvedInstance('log');
+
+    $command = new NotifyInstalledTestCommand([
+        'channel' => 'tenant.install.completed',
+    ], new NotifyInstalledSocketClusterFake(throwable: new RuntimeException('socket boom')));
+
+    expect($command->handle())->toBe(0)
+        ->and($command->messages)->toBe([
+            ['warn', 'Install notification failed: socket boom'],
+        ])
+        ->and($logger->records)->toBe([
+            [
+                'level'   => 'warning',
+                'message' => 'Fleetbase install notification failed.',
+                'context' => [
+                    'channel' => 'tenant.install.completed',
+                    'error'   => 'socket boom',
+                ],
+            ],
+        ]);
 });

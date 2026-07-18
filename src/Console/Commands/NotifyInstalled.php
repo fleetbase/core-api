@@ -37,7 +37,7 @@ class NotifyInstalled extends Command
         ];
 
         try {
-            $socketClusterClient = new SocketClusterService();
+            $socketClusterClient = $this->makeSocketClusterService();
             $sent                = $socketClusterClient->send($channel, $payload);
 
             if (!$sent) {
@@ -61,5 +61,10 @@ class NotifyInstalled extends Command
         }
 
         return 0;
+    }
+
+    protected function makeSocketClusterService(): SocketClusterService
+    {
+        return new SocketClusterService();
     }
 }
