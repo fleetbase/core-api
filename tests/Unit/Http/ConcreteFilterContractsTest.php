@@ -5,6 +5,9 @@ use Fleetbase\Http\Filter\ActivityFilter;
 use Fleetbase\Http\Filter\ApiEventFilter;
 use Fleetbase\Http\Filter\ApiRequestLogFilter;
 use Fleetbase\Http\Filter\CategoryFilter;
+use Fleetbase\Http\Filter\ChatLogFilter;
+use Fleetbase\Http\Filter\ChatMessageFilter;
+use Fleetbase\Http\Filter\ChatReceiptFilter;
 use Fleetbase\Http\Filter\CompanyFilter;
 use Fleetbase\Http\Filter\PolicyFilter;
 use Fleetbase\Http\Filter\RoleFilter;
@@ -14,10 +17,11 @@ use Fleetbase\Http\Filter\ScheduleItemFilter;
 use Fleetbase\Http\Filter\ScheduleTemplateFilter;
 use Fleetbase\Http\Filter\UserFilter;
 use Fleetbase\Http\Filter\WebhookRequestLogFilter;
-use Fleetbase\Http\Filter\ChatReceiptFilter;
-use Fleetbase\Models\Category;
-use Fleetbase\Models\ApiRequestLog;
 use Fleetbase\Models\ApiEvent;
+use Fleetbase\Models\ApiRequestLog;
+use Fleetbase\Models\Category;
+use Fleetbase\Models\ChatLog;
+use Fleetbase\Models\ChatMessage;
 use Fleetbase\Models\ChatReceipt;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\Policy;
@@ -95,6 +99,7 @@ function concrete_filter_database(): Capsule
         'api_request_logs',
         'activity_log',
         'chat_channels',
+        'chat_logs',
         'chat_messages',
         'chat_participants',
         'chat_receipts',
@@ -295,6 +300,18 @@ function concrete_filter_database(): Capsule
         $table->string('uuid')->primary();
         $table->string('company_uuid')->nullable();
         $table->string('chat_channel_uuid')->nullable();
+        $table->string('sender_uuid')->nullable();
+        $table->text('content')->nullable();
+        $table->softDeletes();
+    });
+
+    $schema->create('chat_logs', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('company_uuid')->nullable();
+        $table->string('chat_channel_uuid')->nullable();
+        $table->string('initiator_uuid')->nullable();
+        $table->string('event_type')->nullable();
+        $table->text('content')->nullable();
         $table->softDeletes();
     });
 
@@ -575,6 +592,39 @@ test('chat receipt filter limits receipts to channels that include current user'
     ]);
 
     expect(concrete_filter_uuids(ChatReceiptFilter::class, ChatReceipt::class, [], 'int/v1/chat-receipts'))->toBe(['receipt-visible']);
+});
+
+test('chat message and log filters expose only tenant channels with current user participation', function () {
+    $capsule = concrete_filter_database();
+    $capsule->getConnection('mysql')->table('users')->insert([
+        ['uuid' => 'user-1', 'name' => 'Visible Participant', 'email' => 'visible@example.test', 'type' => 'user'],
+        ['uuid' => 'user-2', 'name' => 'Other Participant', 'email' => 'other@example.test', 'type' => 'user'],
+    ]);
+    $capsule->getConnection('mysql')->table('chat_channels')->insert([
+        ['uuid' => 'channel-visible', 'company_uuid' => 'company-1', 'deleted_at' => null],
+        ['uuid' => 'channel-hidden', 'company_uuid' => 'company-1', 'deleted_at' => null],
+        ['uuid' => 'channel-other-company', 'company_uuid' => 'company-2', 'deleted_at' => null],
+    ]);
+    $capsule->getConnection('mysql')->table('chat_participants')->insert([
+        ['uuid' => 'participant-current', 'company_uuid' => 'company-1', 'chat_channel_uuid' => 'channel-visible', 'user_uuid' => 'user-1', 'deleted_at' => null],
+        ['uuid' => 'participant-other', 'company_uuid' => 'company-1', 'chat_channel_uuid' => 'channel-hidden', 'user_uuid' => 'user-2', 'deleted_at' => null],
+        ['uuid' => 'participant-other-company', 'company_uuid' => 'company-2', 'chat_channel_uuid' => 'channel-other-company', 'user_uuid' => 'user-1', 'deleted_at' => null],
+    ]);
+    $capsule->getConnection('mysql')->table('chat_messages')->insert([
+        ['uuid' => 'message-visible', 'company_uuid' => 'company-1', 'chat_channel_uuid' => 'channel-visible', 'sender_uuid' => 'participant-current', 'content' => 'visible', 'deleted_at' => null],
+        ['uuid' => 'message-hidden', 'company_uuid' => 'company-1', 'chat_channel_uuid' => 'channel-hidden', 'sender_uuid' => 'participant-other', 'content' => 'hidden', 'deleted_at' => null],
+        ['uuid' => 'message-other-company', 'company_uuid' => 'company-2', 'chat_channel_uuid' => 'channel-other-company', 'sender_uuid' => 'participant-other-company', 'content' => 'other company', 'deleted_at' => null],
+    ]);
+    $capsule->getConnection('mysql')->table('chat_logs')->insert([
+        ['uuid' => 'log-visible', 'company_uuid' => 'company-1', 'chat_channel_uuid' => 'channel-visible', 'initiator_uuid' => 'participant-current', 'event_type' => 'message_sent', 'content' => 'visible log', 'deleted_at' => null],
+        ['uuid' => 'log-hidden', 'company_uuid' => 'company-1', 'chat_channel_uuid' => 'channel-hidden', 'initiator_uuid' => 'participant-other', 'event_type' => 'message_sent', 'content' => 'hidden log', 'deleted_at' => null],
+        ['uuid' => 'log-other-company', 'company_uuid' => 'company-2', 'chat_channel_uuid' => 'channel-other-company', 'initiator_uuid' => 'participant-other-company', 'event_type' => 'message_sent', 'content' => 'other company log', 'deleted_at' => null],
+    ]);
+
+    expect(concrete_filter_uuids(ChatMessageFilter::class, ChatMessage::class, [], 'int/v1/chat-messages'))->toBe(['message-visible'])
+        ->and(concrete_filter_uuids(ChatMessageFilter::class, ChatMessage::class, [], 'v1/chat-messages'))->toBe(['message-visible'])
+        ->and(concrete_filter_uuids(ChatLogFilter::class, ChatLog::class, [], 'int/v1/chat-logs'))->toBe(['log-visible'])
+        ->and(concrete_filter_uuids(ChatLogFilter::class, ChatLog::class, [], 'v1/chat-logs'))->toBe(['log-visible']);
 });
 
 test('category filter applies tenant core parent and list filters', function () {

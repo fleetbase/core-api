@@ -1,5 +1,6 @@
 <?php
 
+use Fleetbase\Expansions\Arr as ArrExpansion;
 use Fleetbase\Expansions\Blade as BladeExpansion;
 use Fleetbase\Expansions\Builder as BuilderExpansion;
 use Fleetbase\Expansions\Carbon as CarbonExpansion;
@@ -107,6 +108,35 @@ test('string carbon and blade expansions preserve formatting contracts', functio
         ->and(($bladeExpansion->toDateTimeString())('2026-07-17 12:45:00'))->toBe('2026-07-17 12:45:00')
         ->and(($bladeExpansion->formatFromCarbon())('created_at, "Y-m-d"'))->toBe('<?= \Illuminate\Support\Carbon::parse(created_at)->format("Y-m-d") ?>')
         ->and(($bladeExpansion->getFromCarbonParse())('created_at, timestamp'))->toBe('<?= \Illuminate\Support\Carbon::parse(created_at)->{timestamp} ?>');
+});
+
+test('array expansion helpers preserve key order and search semantics', function () {
+    $expansion = new ArrExpansion();
+
+    $every = $expansion->every();
+    $insertAfterKey = $expansion->insertAfterKey();
+    $search = $expansion->search();
+    $map = $expansion->map();
+
+    expect($expansion::target())->toBe(\Illuminate\Support\Arr::class)
+        ->and($every([2, 4, 6], fn (int $number) => $number % 2 === 0))->toBeTrue()
+        ->and($every([2, 3, 6], fn (int $number) => $number % 2 === 0))->toBeFalse()
+        ->and($insertAfterKey(['first' => 1, 'second' => 2], ['middle' => 9], 'first'))->toBe([
+            'first' => 1,
+            'middle' => 9,
+            'second' => 2,
+        ])
+        ->and($insertAfterKey(['first' => 1], ['fallback' => 2], 'missing'))->toBe([
+            'first' => 1,
+            'fallback' => 2,
+        ])
+        ->and($search(['alpha' => 10, 'beta' => 20], 20))->toBe('beta')
+        ->and($search(['alpha' => 10, 'beta' => 20], fn (int $value) => $value > 15))->toBe('beta')
+        ->and($search(['alpha' => 10], fn (int $value) => $value > 15))->toBeNull()
+        ->and($map(['a' => 1, 'b' => 2], fn (int $value, string $key) => $key . ':' . ($value * 2)))->toBe([
+            'a:2',
+            'b:4',
+        ]);
 });
 
 test('request expansion helpers normalize parameters and global filter payloads', function () {

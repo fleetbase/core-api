@@ -144,9 +144,11 @@ namespace {
     use Fleetbase\Http\Requests\ImportRequest;
     use Fleetbase\Http\Requests\Internal\ConfirmCurrentPassword;
     use Fleetbase\Http\Requests\Internal\ChangeCurrentUserEmailRequest;
+    use Fleetbase\Http\Requests\Internal\ChangeUserEmailRequest;
     use Fleetbase\Http\Requests\Internal\CreateTemplateRequest;
     use Fleetbase\Http\Requests\Internal\CreateCustomFieldRequest;
     use Fleetbase\Http\Requests\Internal\DownloadFileRequest;
+    use Fleetbase\Http\Requests\Internal\InviteUserRequest;
     use Fleetbase\Http\Requests\Internal\ResetPasswordRequest;
     use Fleetbase\Http\Requests\Internal\UpdatePasswordRequest;
     use Fleetbase\Http\Requests\Internal\UploadBase64FileRequest;
@@ -610,6 +612,38 @@ namespace {
             ->and($passwordRules['password_confirmation'])->toBe(['required', 'string'])
             ->and($passwordErrors['password.symbols'])->toBe('Password must contain at least one symbol.')
             ->and($passwordErrors['password.uncompromised'])->toContain('data breach');
+    });
+
+    it('keeps administrative user email and invite request contracts stable', function () {
+        session()->flush();
+
+        $unauthorizedEmailChange = new ChangeUserEmailRequest();
+        $unauthorizedEmailChangeResult = $unauthorizedEmailChange->authorize();
+        $authorizedEmailChange = new ChangeUserEmailRequest();
+        session(['company' => 'company-1']);
+
+        $inviteUnauthorized = request_with_session(InviteUserRequest::class, 'POST');
+        $inviteAuthorized = request_with_session(InviteUserRequest::class, 'POST', [], ['company' => 'company-1']);
+        $emailRules = $authorizedEmailChange->rules();
+        $emailRuleText = implode('|', request_rule_strings($emailRules['email']));
+        $inviteRules = $inviteAuthorized->rules();
+
+        expect($unauthorizedEmailChangeResult)->toBeNull()
+            ->and($authorizedEmailChange->authorize())->toBe('company-1')
+            ->and(request_rule_strings($emailRules['email']))->toContain('required', 'email')
+            ->and($emailRuleText)->toContain('unique:users,email')
+            ->and($emailRuleText)->toContain('deleted_at')
+            ->and($authorizedEmailChange->messages()['email.required'])->toBe('A new email address is required.')
+            ->and($authorizedEmailChange->messages()['email.email'])->toBe('You must enter a valid email address.')
+            ->and($authorizedEmailChange->messages()['email.unique'])->toBe('An account with this email address already exists.')
+            ->and(bind_active_request($inviteUnauthorized)->authorize())->toBeFalse()
+            ->and(bind_active_request($inviteAuthorized)->authorize())->toBeTrue()
+            ->and($inviteRules['user.email'])->toBe('required|email')
+            ->and($inviteRules['user.name'])->toBe('required')
+            ->and($inviteAuthorized->attributes())->toBe([
+                'user.email' => 'email address',
+                'user.name' => 'name',
+            ]);
     });
 
     it('keeps internal custom field request authorization and rules explicit', function () {
