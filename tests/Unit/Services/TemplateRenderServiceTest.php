@@ -28,11 +28,11 @@ class TemplateRenderServiceOrder extends Model
     public function toArray(): array
     {
         return [
-            'number' => 'T-001',
+            'number'   => 'T-001',
             'customer' => [
                 'name' => 'Acme Logistics',
             ],
-            'subtotal' => 100,
+            'subtotal'   => 100,
             'line_items' => [
                 ['name' => 'Freight', 'amount' => 75],
                 ['name' => 'Handling', 'amount' => 25],
@@ -44,7 +44,7 @@ class TemplateRenderServiceOrder extends Model
 function template_render_service_container(): void
 {
     $container = bind_test_container([
-        'fleetbase.template_query_models' => [],
+        'fleetbase.template_query_models'        => [],
         'fleetbase.template_global_query_models' => [],
     ]);
 
@@ -58,12 +58,12 @@ function template_render_service_container(): void
 function template_render_service_template(array $content): Template
 {
     $template = new Template([
-        'context_type' => 'order',
-        'width' => 210,
-        'height' => 297,
-        'unit' => 'mm',
+        'context_type'     => 'order',
+        'width'            => 210,
+        'height'           => 297,
+        'unit'             => 'mm',
         'background_color' => '#fafafa',
-        'content' => $content,
+        'content'          => $content,
     ]);
     $template->setRelation('queries', new Collection());
 
@@ -74,10 +74,10 @@ test('template render service registers context schemas and query model allowlis
     template_render_service_container();
 
     TemplateRenderService::registerContextType('coverage_order', [
-        'label' => 'Coverage Order',
+        'label'       => 'Coverage Order',
         'description' => 'Order context used by coverage tests.',
-        'model' => TemplateRenderServiceOrder::class,
-        'variables' => [
+        'model'       => TemplateRenderServiceOrder::class,
+        'variables'   => [
             ['name' => 'Order Number', 'path' => 'coverage_order.number', 'type' => 'string'],
         ],
     ]);
@@ -87,9 +87,9 @@ test('template render service registers context schemas and query model allowlis
 
     expect($schemas['coverage_order']['label'])->toBe('Coverage Order')
         ->and($schemas['coverage_order']['global_variables'])->toContain([
-            'name' => 'Current Year',
-            'path' => 'year',
-            'type' => 'integer',
+            'name'        => 'Current Year',
+            'path'        => 'year',
+            'type'        => 'integer',
             'description' => 'Current 4-digit year.',
         ])
         ->and(TemplateRenderService::getTemplateQueryModels())->toContain(TemplateRenderServiceOrder::class)
@@ -103,33 +103,33 @@ test('template render service renders variables formulas loops tables and docume
 
     $template = template_render_service_template([
         [
-            'type' => 'heading',
-            'x' => 10,
-            'y' => 20,
-            'width' => 180,
-            'height' => 24,
-            'styles' => ['fontSize' => '18px', 'fontWeight' => '700'],
+            'type'    => 'heading',
+            'x'       => 10,
+            'y'       => 20,
+            'width'   => 180,
+            'height'  => 24,
+            'styles'  => ['fontSize' => '18px', 'fontWeight' => '700'],
             'content' => 'Order {order.number} for {order.customer.name} on {today}',
         ],
         [
-            'type' => 'text',
-            'x' => 10,
-            'y' => 50,
-            'width' => 180,
+            'type'    => 'text',
+            'x'       => 10,
+            'y'       => 50,
+            'width'   => 180,
             'content' => 'Taxed total: [{ {order.subtotal} * 1.1 }]',
         ],
         [
-            'type' => 'paragraph',
-            'x' => 10,
-            'y' => 80,
-            'width' => 180,
+            'type'    => 'paragraph',
+            'x'       => 10,
+            'y'       => 80,
+            'width'   => 180,
             'content' => '{{#each order.line_items}}{loop.index}:{this.name}:{this.amount}:{loop.first}:{loop.last};{{/each}}',
         ],
         [
-            'type' => 'table',
-            'x' => 10,
-            'y' => 120,
-            'width' => 180,
+            'type'    => 'table',
+            'x'       => 10,
+            'y'       => 120,
+            'width'   => 180,
             'columns' => [
                 ['label' => 'Item', 'key' => 'name', 'width' => '70%'],
                 ['label' => 'Amount', 'key' => 'amount'],

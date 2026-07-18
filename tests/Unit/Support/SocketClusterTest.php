@@ -47,7 +47,7 @@ function decode_socket_cluster_payload(string $payload): array
 }
 
 it('creates publish payloads for string and laravel channels', function () {
-    $payload = SocketClusterMessage::createSocketClusterPayload(['id' => 123], 'orders.created', 44);
+    $payload        = SocketClusterMessage::createSocketClusterPayload(['id' => 123], 'orders.created', 44);
     $channelPayload = SocketClusterMessage::createSocketClusterPayload(['status' => 'ready'], new Channel('dispatch'), 45);
 
     expect(decode_socket_cluster_payload($payload))->toBe([
@@ -80,7 +80,7 @@ it('omits the channel key for channel-less publish payloads', function () {
 });
 
 it('creates handshake payloads without publish data', function () {
-    $payload = SocketClusterMessage::createSocketClusterHandshake(98);
+    $payload   = SocketClusterMessage::createSocketClusterHandshake(98);
     $handshake = new SocketClusterHandshake(99);
 
     expect(decode_socket_cluster_payload($payload))->toBe([
@@ -97,7 +97,7 @@ it('creates handshake payloads without publish data', function () {
 
 it('stores message state and exposes a concrete text websocket message', function () {
     $message = new SocketClusterMessage('activity', ['count' => 2], 51);
-    $text = SocketClusterMessage::create('activity', ['count' => 3]);
+    $text    = SocketClusterMessage::create('activity', ['count' => 3]);
 
     expect($message->channel)->toBe('activity')
         ->and($message->data)->toBe(['count' => 2])
@@ -166,7 +166,7 @@ it('merges configured options and normalizes socket cluster uris', function () {
 });
 
 it('broadcasts payloads to every channel through the socket cluster service', function () {
-    $service = new RecordingSocketClusterService();
+    $service     = new RecordingSocketClusterService();
     $broadcaster = new SocketClusterBroadcaster($service);
 
     $broadcaster->broadcast(['company.1', 'company.2'], 'IgnoredEventName', ['message' => 'updated']);

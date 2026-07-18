@@ -1,8 +1,8 @@
 <?php
 
-use Fleetbase\Rules\ExistsInAny;
-use Fleetbase\Rules\ExcludeWords;
 use Fleetbase\Rules\EmailDomainExcluded;
+use Fleetbase\Rules\ExcludeWords;
+use Fleetbase\Rules\ExistsInAny;
 use Fleetbase\Rules\FileInput;
 use Fleetbase\Rules\RequiredIfCreating;
 use Fleetbase\Rules\ValidPhoneNumber;
@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Facade;
 function exists_in_any_database(): Capsule
 {
     $container = bind_test_container([
-        'database.default' => 'testing',
+        'database.default'             => 'testing',
         'database.connections.testing' => [
             'driver'   => 'sqlite',
             'database' => ':memory:',
@@ -99,12 +99,12 @@ test('valid phone number requires leading plus and digits only', function (strin
 
 test('email domain excluded rejects configured disposable domains and keeps stable message', function () {
     $reflection = new ReflectionClass(EmailDomainExcluded::class);
-    $rule = $reflection->newInstanceWithoutConstructor();
-    $domains = $reflection->getProperty('domains');
+    $rule       = $reflection->newInstanceWithoutConstructor();
+    $domains    = $reflection->getProperty('domains');
     $domains->setAccessible(true);
     $domains->setValue($rule, [
         'mailinator.test' => 0,
-        'throwaway.test' => 1,
+        'throwaway.test'  => 1,
     ]);
 
     expect($rule->passes('email', 'owner@fleetbase.test'))->toBeTrue()
@@ -114,7 +114,7 @@ test('email domain excluded rejects configured disposable domains and keeps stab
 });
 
 test('file input accepts uploads public ids base64 data uris and urls', function () {
-    $rule = new FileInput();
+    $rule       = new FileInput();
     $uploadPath = tempnam(sys_get_temp_dir(), 'fleetbase-file-input');
     file_put_contents($uploadPath, 'avatar');
 
@@ -134,7 +134,7 @@ test('file input accepts uploads public ids base64 data uris and urls', function
 
 test('required if creating follows the current request method contract', function () {
     $container = bind_test_container();
-    $rule = new RequiredIfCreating();
+    $rule      = new RequiredIfCreating();
 
     $container->instance('request', Request::create('/int/v1/resources', 'POST'));
     expect($rule->passes('name', null))->toBeTrue();

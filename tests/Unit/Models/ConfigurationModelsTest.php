@@ -79,16 +79,16 @@ function configuration_models_database(): Capsule
     EloquentModel::clearBootedModels();
 
     $connection = [
-        'driver' => 'sqlite',
+        'driver'   => 'sqlite',
         'database' => ':memory:',
-        'prefix' => '',
+        'prefix'   => '',
     ];
 
     $container = bind_test_container([
-        'api.cache.enabled' => false,
-        'database.default' => 'mysql',
+        'api.cache.enabled'          => false,
+        'database.default'           => 'mysql',
         'database.connections.mysql' => $connection,
-        'fleetbase.connection.db' => 'mysql',
+        'fleetbase.connection.db'    => 'mysql',
     ]);
     $container->instance('cache', new ConfigurationModelsCacheFake());
     $container->instance('responsecache', new class {
@@ -189,21 +189,21 @@ it('casts dashboard and widget configuration and preserves widget relation contr
     configuration_models_database();
 
     $dashboard = new Dashboard([
-        'user_uuid' => 'user-1',
+        'user_uuid'    => 'user-1',
         'company_uuid' => 'company-1',
-        'extension' => 'fleet-ops',
-        'name' => 'Operations',
-        'is_default' => 1,
-        'tags' => ['ops', 'dispatch'],
-        'meta' => ['layout' => 'wide'],
-        'options' => ['refresh' => 60],
+        'extension'    => 'fleet-ops',
+        'name'         => 'Operations',
+        'is_default'   => 1,
+        'tags'         => ['ops', 'dispatch'],
+        'meta'         => ['layout' => 'wide'],
+        'options'      => ['refresh' => 60],
     ]);
     $widget = new DashboardWidget([
         'dashboard_uuid' => 'dashboard-1',
-        'name' => 'Active Orders',
-        'component' => 'active-orders',
-        'grid_options' => ['x' => 0, 'y' => 0, 'w' => 6],
-        'options' => ['metric' => 'active_orders'],
+        'name'           => 'Active Orders',
+        'component'      => 'active-orders',
+        'grid_options'   => ['x' => 0, 'y' => 0, 'w' => 6],
+        'options'        => ['metric' => 'active_orders'],
     ]);
 
     expect($dashboard->is_default)->toBeTrue()
@@ -221,11 +221,11 @@ it('derives category slugs owner types icon URLs casts and relationship keys', f
     configuration_models_database();
 
     $category = new Category([
-        'name' => 'Service Quotes',
-        'description' => 'Quote categories',
-        'tags' => ['quotes', 'dispatch'],
-        'meta' => ['color' => 'blue'],
-        'translations' => ['mn' => ['name' => 'Uilchilgee']],
+        'name'          => 'Service Quotes',
+        'description'   => 'Quote categories',
+        'tags'          => ['quotes', 'dispatch'],
+        'meta'          => ['color' => 'blue'],
+        'translations'  => ['mn' => ['name' => 'Uilchilgee']],
         'core_category' => 1,
     ]);
     $category->owner_type = new Company();
@@ -253,13 +253,13 @@ it('casts type metadata and keeps company and subject relationship contracts sta
 
     $type = new Type([
         'company_uuid' => 'company-1',
-        'name' => 'Driver',
-        'description' => 'Driver subject type',
-        'key' => 'driver',
+        'name'         => 'Driver',
+        'description'  => 'Driver subject type',
+        'key'          => 'driver',
         'subject_uuid' => 'user-1',
         'subject_type' => User::class,
-        'for' => 'users',
-        'meta' => ['assignable' => true],
+        'for'          => 'users',
+        'meta'         => ['assignable' => true],
     ]);
 
     expect($type->meta)->toBe(['assignable' => true])
@@ -279,25 +279,25 @@ it('creates extension installs from session context and converts installs back t
     ]);
 
     $extension = Extension::query()->create([
-        'uuid' => 'extension-1',
-        'public_id' => 'ext_public',
-        'name' => 'Dispatch Maps',
+        'uuid'         => 'extension-1',
+        'public_id'    => 'ext_public',
+        'name'         => 'Dispatch Maps',
         'display_name' => 'Dispatch Maps',
-        'key' => 'dispatch-maps',
-        'namespace' => Extension::createNamespace('Fleetbase', 'Dispatch Maps', null, 'Realtime'),
+        'key'          => 'dispatch-maps',
+        'namespace'    => Extension::createNamespace('Fleetbase', 'Dispatch Maps', null, 'Realtime'),
         'core_service' => false,
-        'tags' => ['maps', 'dispatch'],
-        'meta' => ['default_region' => 'mn'],
-        'config' => ['enabled' => true],
-        'secret' => 'hidden-secret',
-        'status' => 'published',
+        'tags'         => ['maps', 'dispatch'],
+        'meta'         => ['default_region' => 'mn'],
+        'config'       => ['enabled' => true],
+        'secret'       => 'hidden-secret',
+        'status'       => 'published',
     ]);
 
     $install = $extension->install();
     $install->setRelation('extension', $extension);
     $install->overwrite = [
         'display_name' => 'Company Dispatch Maps',
-        'status' => 'installed',
+        'status'       => 'installed',
     ];
 
     $installedExtension = $install->asExtension();
@@ -330,7 +330,7 @@ it('keeps extension marketplace relationship keys and fallback cached labels sta
     configuration_models_database();
 
     $coreExtension = new Extension([
-        'name' => 'Core Dispatch',
+        'name'         => 'Core Dispatch',
         'core_service' => true,
     ]);
 

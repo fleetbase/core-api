@@ -20,8 +20,8 @@ function has_policies_policy(string|int $id, string $name, string $guard = 'sanc
 {
     $policy = new Policy();
     $policy->setRawAttributes([
-        'id' => $id,
-        'name' => $name,
+        'id'         => $id,
+        'name'       => $name,
         'guard_name' => $guard,
     ], true);
 
@@ -33,12 +33,12 @@ function has_policies_subject(): HasPoliciesSubject
     bind_test_container([
         'auth.defaults.guard' => 'sanctum',
         'auth.guards.sanctum' => [
-            'driver' => 'session',
+            'driver'   => 'session',
             'provider' => 'users',
         ],
         'auth.providers.users' => [
             'driver' => 'eloquent',
-            'model' => HasPoliciesSubject::class,
+            'model'  => HasPoliciesSubject::class,
         ],
     ]);
 

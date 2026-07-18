@@ -1,9 +1,7 @@
 <?php
 
 use Fleetbase\Http\Controllers\Internal\v1\OnboardController;
-use Fleetbase\Models\Company;
 use Fleetbase\Models\User;
-use Illuminate\Container\Container;
 use Illuminate\Contracts\Config\Repository as ConfigRepositoryContract;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
@@ -151,51 +149,51 @@ function onboard_controller_seed_user(Capsule $capsule, array $user = [], array 
 {
     $now = '2026-07-18 00:00:00';
     $capsule->getConnection('mysql')->table('companies')->insert(array_merge([
-        'uuid' => 'company-1',
-        'public_id' => 'company_1',
-        'name' => 'Acme Logistics',
-        'owner_uuid' => '11111111-1111-4111-8111-111111111111',
-        'onboarding_completed_at' => null,
+        'uuid'                         => 'company-1',
+        'public_id'                    => 'company_1',
+        'name'                         => 'Acme Logistics',
+        'owner_uuid'                   => '11111111-1111-4111-8111-111111111111',
+        'onboarding_completed_at'      => null,
         'onboarding_completed_by_uuid' => null,
-        'deleted_at' => null,
-        'created_at' => $now,
-        'updated_at' => $now,
+        'deleted_at'                   => null,
+        'created_at'                   => $now,
+        'updated_at'                   => $now,
     ], $company));
     $capsule->getConnection('mysql')->table('users')->insert(array_merge([
-        'uuid' => '11111111-1111-4111-8111-111111111111',
-        'public_id' => 'user_1',
-        'company_id' => 'company-1',
-        'company_uuid' => 'company-1',
-        'name' => 'Ada Lovelace',
-        'username' => 'ada',
-        'email' => 'ada@example.test',
-        'phone' => '+15555550123',
-        'type' => 'user',
-        'timezone' => 'UTC',
-        'status' => 'pending',
+        'uuid'              => '11111111-1111-4111-8111-111111111111',
+        'public_id'         => 'user_1',
+        'company_id'        => 'company-1',
+        'company_uuid'      => 'company-1',
+        'name'              => 'Ada Lovelace',
+        'username'          => 'ada',
+        'email'             => 'ada@example.test',
+        'phone'             => '+15555550123',
+        'type'              => 'user',
+        'timezone'          => 'UTC',
+        'status'            => 'pending',
         'email_verified_at' => null,
         'phone_verified_at' => null,
-        'last_login' => null,
-        'deleted_at' => null,
-        'created_at' => $now,
-        'updated_at' => $now,
+        'last_login'        => null,
+        'deleted_at'        => null,
+        'created_at'        => $now,
+        'updated_at'        => $now,
     ], $user));
 }
 
 function onboard_controller_seed_code(Capsule $capsule, array $attributes = []): void
 {
     $capsule->getConnection('mysql')->table('verification_codes')->insert(array_merge([
-        'uuid' => 'verification-code-1',
+        'uuid'         => 'verification-code-1',
         'subject_uuid' => '11111111-1111-4111-8111-111111111111',
         'subject_type' => User::class,
-        'code' => '123456',
-        'for' => 'email_verification',
-        'expires_at' => '2026-07-18 12:00:00',
-        'meta' => json_encode([]),
-        'status' => 'active',
-        'deleted_at' => null,
-        'created_at' => '2026-07-18 00:00:00',
-        'updated_at' => '2026-07-18 00:00:00',
+        'code'         => '123456',
+        'for'          => 'email_verification',
+        'expires_at'   => '2026-07-18 12:00:00',
+        'meta'         => json_encode([]),
+        'status'       => 'active',
+        'deleted_at'   => null,
+        'created_at'   => '2026-07-18 00:00:00',
+        'updated_at'   => '2026-07-18 00:00:00',
     ], $attributes));
 }
 
@@ -246,15 +244,15 @@ test('onboard controller validates verification resend session identity before c
 
     $emailMismatch = onboard_controller()->sendVerificationEmail(onboard_request([
         'session' => base64_encode('11111111-1111-4111-8111-111111111111'),
-        'email' => 'other@example.test',
+        'email'   => 'other@example.test',
     ]));
     $emailMissing = onboard_controller()->sendVerificationEmail(onboard_request([
         'session' => base64_encode('99999999-9999-4999-8999-999999999999'),
-        'email' => 'missing@example.test',
+        'email'   => 'missing@example.test',
     ]));
     $smsMismatch = onboard_controller()->sendVerificationSms(onboard_request([
         'session' => base64_encode('11111111-1111-4111-8111-111111111111'),
-        'phone' => '+15555550999',
+        'phone'   => '+15555550999',
     ]));
 
     expect($emailMismatch->getStatusCode())->toBe(400)
@@ -273,15 +271,15 @@ test('onboard controller rejects missing sessions invalid codes and missing user
 
     $missingSession = onboard_controller()->verifyEmail(onboard_request([
         'session' => 'not-base64-or-uuid',
-        'code' => '123456',
+        'code'    => '123456',
     ]));
     $invalidCode = onboard_controller()->verifyEmail(onboard_request([
         'session' => base64_encode('11111111-1111-4111-8111-111111111111'),
-        'code' => '000000',
+        'code'    => '000000',
     ]));
     $missingUser = onboard_controller()->verifyEmail(onboard_request([
         'session' => base64_encode('99999999-9999-4999-8999-999999999999'),
-        'code' => '123456',
+        'code'    => '123456',
     ]));
 
     expect($missingSession->getStatusCode())->toBe(400)
@@ -300,7 +298,7 @@ test('onboard controller verifies email creates token updates login and complete
 
     $response = onboard_controller()->verifyEmail(onboard_request([
         'session' => base64_encode('11111111-1111-4111-8111-111111111111'),
-        'code' => '123456',
+        'code'    => '123456',
     ]));
 
     $payload = $response->getData(true);
@@ -325,18 +323,18 @@ test('onboard controller verifies phone codes without overwriting completed onbo
     Carbon::setTestNow(Carbon::parse('2026-07-18 10:30:00', 'UTC'));
     onboard_controller_seed_user(
         $capsule,
-        ['email_verified_at' => '2026-07-17 08:00:00'],
+        ['email_verified_at'       => '2026-07-17 08:00:00'],
         ['onboarding_completed_at' => '2026-07-17 08:00:00', 'onboarding_completed_by_uuid' => '22222222-2222-4222-8222-222222222222']
     );
     onboard_controller_seed_code($capsule, [
         'uuid' => 'verification-code-2',
         'code' => '654321',
-        'for' => 'phone_verification',
+        'for'  => 'phone_verification',
     ]);
 
     $response = onboard_controller()->verifyEmail(onboard_request([
         'session' => '11111111-1111-4111-8111-111111111111',
-        'code' => '654321',
+        'code'    => '654321',
     ]));
 
     $user    = $capsule->getConnection('mysql')->table('users')->where('uuid', '11111111-1111-4111-8111-111111111111')->first();

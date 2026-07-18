@@ -2,7 +2,6 @@
 
 namespace Fleetbase\Types;
 
-use AllowDynamicProperties;
 use Fleetbase\Exceptions\CountryException;
 use Fleetbase\Support\Utils;
 use Illuminate\Support\Arr;
@@ -10,7 +9,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use PragmaRX\Countries\Package\Countries;
 
-#[AllowDynamicProperties]
+#[\AllowDynamicProperties]
 class Country implements \JsonSerializable
 {
     /**

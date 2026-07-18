@@ -36,17 +36,17 @@ class CompanyScopeSessionFake
 class CompanyScopeRecord extends Model
 {
     protected $connection = 'mysql';
-    protected $table = 'company_scope_records';
-    protected $guarded = [];
-    public $timestamps = false;
+    protected $table      = 'company_scope_records';
+    protected $guarded    = [];
+    public $timestamps    = false;
 }
 
 class CompanyScopePlainRecord extends Model
 {
     protected $connection = 'mysql';
-    protected $table = 'company_scope_plain_records';
-    protected $guarded = [];
-    public $timestamps = false;
+    protected $table      = 'company_scope_plain_records';
+    protected $guarded    = [];
+    public $timestamps    = false;
 }
 
 function company_scope_database(bool $console = false, ?string $company = 'company-1'): Capsule
@@ -56,18 +56,18 @@ function company_scope_database(bool $console = false, ?string $company = 'compa
 
     Container::setInstance(new CompanyScopeTestContainer($console));
     $container = bind_test_container([
-        'database.default' => 'mysql',
+        'database.default'           => 'mysql',
         'database.connections.mysql' => [
-            'driver' => 'sqlite',
+            'driver'   => 'sqlite',
             'database' => ':memory:',
-            'prefix' => '',
+            'prefix'   => '',
         ],
         'fleetbase.connection.db' => 'mysql',
     ]);
     Facade::setFacadeApplication($container);
 
     $connection = $container->make('config')->get('database.connections.mysql');
-    $capsule = new Capsule($container);
+    $capsule    = new Capsule($container);
     $capsule->addConnection($connection, 'mysql');
     $capsule->setEventDispatcher(new Dispatcher($container));
     $capsule->setAsGlobal();
@@ -113,7 +113,7 @@ test('company scope constrains models with company uuid only during request cont
     company_scope_database();
 
     $builder = CompanyScopeRecord::query();
-    $scope = new CompanyScope();
+    $scope   = new CompanyScope();
     $scope->apply($builder, new CompanyScopeRecord());
 
     $plainBuilder = CompanyScopePlainRecord::query();
@@ -127,7 +127,7 @@ test('company scope skips console and missing session contexts and exposes remov
     company_scope_database(console: true);
 
     $consoleBuilder = CompanyScopeRecord::query();
-    $scope = new CompanyScope();
+    $scope          = new CompanyScope();
     $scope->apply($consoleBuilder, new CompanyScopeRecord());
 
     expect($consoleBuilder->orderBy('uuid')->pluck('uuid')->all())->toBe(['record-1', 'record-2']);
@@ -141,7 +141,7 @@ test('company scope skips console and missing session contexts and exposes remov
     company_scope_database();
     CompanyScopeRecord::addGlobalScope(new CompanyScope());
 
-    $scoped = CompanyScopeRecord::query()->orderBy('uuid')->pluck('uuid')->all();
+    $scoped   = CompanyScopeRecord::query()->orderBy('uuid')->pluck('uuid')->all();
     $unscoped = CompanyScopeRecord::query()->withoutCompanyScope()->orderBy('uuid')->pluck('uuid')->all();
 
     expect($scoped)->toBe(['record-1'])

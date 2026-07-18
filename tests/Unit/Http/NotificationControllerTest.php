@@ -2,7 +2,6 @@
 
 use Fleetbase\Http\Controllers\Internal\v1\NotificationController;
 use Fleetbase\Models\Notification;
-use Fleetbase\Models\Setting;
 use Fleetbase\Support\NotificationRegistry;
 use Illuminate\Container\Container;
 use Illuminate\Database\Capsule\Manager as Capsule;
@@ -13,9 +12,9 @@ use Illuminate\Support\Facades\Facade;
 
 class NotificationControllerCoreNotice
 {
-    public static string $name = 'Core Alert';
+    public static string $name        = 'Core Alert';
     public static string $description = 'Core package alert.';
-    public static string $package = 'core';
+    public static string $package     = 'core';
 
     public function __construct(public string $subjectUuid)
     {
@@ -124,7 +123,7 @@ function notification_controller_reflect(NotificationController $controller, str
 afterEach(function () {
     session()->flush();
     NotificationRegistry::$notifications = [];
-    NotificationRegistry::$notifiables = [
+    NotificationRegistry::$notifiables   = [
         Fleetbase\Models\User::class,
         Fleetbase\Models\Group::class,
         Fleetbase\Models\Role::class,

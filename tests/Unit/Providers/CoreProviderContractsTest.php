@@ -108,12 +108,12 @@ namespace {
     use Fleetbase\Providers\SocketClusterServiceProvider;
     use Fleetbase\Services\FileResolverService;
     use Fleetbase\Services\TemplateRenderService;
-    use Fleetbase\Support\SocketCluster\SocketClusterBroadcaster;
     use Fleetbase\Support\Reporting\ReportSchemaRegistry;
-    use Fleetbase\Webhook\WebhookServerServiceProvider;
+    use Fleetbase\Support\SocketCluster\SocketClusterBroadcaster;
     use Fleetbase\Webhook\Events\FinalWebhookCallFailedEvent;
     use Fleetbase\Webhook\Events\WebhookCallFailedEvent;
     use Fleetbase\Webhook\Events\WebhookCallSucceededEvent;
+    use Fleetbase\Webhook\WebhookServerServiceProvider;
     use Illuminate\Contracts\Http\Kernel;
     use Illuminate\Notifications\Events\BroadcastNotificationCreated;
     use Illuminate\Support\Facades\Broadcast;

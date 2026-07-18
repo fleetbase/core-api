@@ -460,9 +460,9 @@ test('legacy iam metric endpoint counts tenant users groups roles and policies',
     $payload = (new MetricController())->iam()->getData(true);
 
     expect($payload)->toBe([
-        'users_count' => 4,
+        'users_count'  => 4,
         'groups_count' => 2,
-        'roles_count' => 2,
+        'roles_count'  => 2,
         'policy_count' => 1,
     ]);
 });

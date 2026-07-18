@@ -12,12 +12,12 @@ class CastsTestModel extends Model
 }
 
 test('json cast decodes valid json and leaves non json values unchanged', function () {
-    $cast = new Json();
+    $cast  = new Json();
     $model = new CastsTestModel();
 
     expect($cast->get($model, 'meta', '{"enabled":true,"count":2}', []))->toBe([
         'enabled' => true,
-        'count' => 2,
+        'count'   => 2,
     ])
         ->and($cast->get($model, 'meta', 'not-json', []))->toBe('not-json')
         ->and($cast->get($model, 'meta', ['already' => 'array'], []))->toBe(['already' => 'array'])
@@ -26,7 +26,7 @@ test('json cast decodes valid json and leaves non json values unchanged', functi
 });
 
 test('money cast stores values as integer minor-unit-like digits', function () {
-    $cast = new Money();
+    $cast  = new Money();
     $model = new CastsTestModel();
 
     expect($cast->get($model, 'amount', 1299, []))->toBe(1299)
@@ -41,7 +41,7 @@ test('money cast stores values as integer minor-unit-like digits', function () {
 test('polymorphic type cast normalizes objects package aliases and class strings', function () {
     bind_test_container();
 
-    $cast = new PolymorphicType();
+    $cast  = new PolymorphicType();
     $model = new CastsTestModel();
 
     expect($cast->get($model, 'subject_type', User::class, []))->toBe(User::class)
@@ -53,7 +53,7 @@ test('polymorphic type cast normalizes objects package aliases and class strings
 });
 
 test('custom value cast serializes structured values and preserves scalar file references', function () {
-    $cast = new CustomValue();
+    $cast  = new CustomValue();
     $model = new CastsTestModel();
 
     expect($cast->get($model, 'value', '{"threshold":10}', ['value_type' => 'object']))->toBe(['threshold' => 10])

@@ -14,10 +14,10 @@ use Fleetbase\Models\ChatParticipant;
 use Fleetbase\Models\ChatReceipt;
 use Fleetbase\Models\User;
 use Illuminate\Container\Container;
+use Illuminate\Contracts\Notifications\Dispatcher as NotificationDispatcher;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Events\Dispatcher;
-use Illuminate\Contracts\Notifications\Dispatcher as NotificationDispatcher;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Facade;
@@ -498,9 +498,9 @@ test('internal chat message controller creates attachments and notifies particip
     $response = chat_message_controller()->createRecord(Request::create('/int/v1/chat-messages', 'POST', [
         'chatMessage' => [
             'chat_channel_uuid' => 'channel-current',
-            'sender_uuid' => 'participant-current',
-            'content' => 'Internal message',
-            'attachment_files' => ['file-1', 'file-2'],
+            'sender_uuid'       => 'participant-current',
+            'content'           => 'Internal message',
+            'attachment_files'  => ['file-1', 'file-2'],
         ],
     ]));
 
@@ -518,35 +518,35 @@ test('internal chat receipt controller returns existing receipts and creates mis
     $now        = '2026-07-18 00:20:00';
 
     $connection->table('chat_messages')->insert([
-        'uuid' => 'message-internal-receipt',
-        'public_id' => 'message_internal_receipt',
-        'company_uuid' => 'company-1',
+        'uuid'              => 'message-internal-receipt',
+        'public_id'         => 'message_internal_receipt',
+        'company_uuid'      => 'company-1',
         'chat_channel_uuid' => 'channel-current',
-        'sender_uuid' => 'participant-active',
-        'content' => 'Internal receipt',
-        'created_at' => $now,
-        'updated_at' => $now,
+        'sender_uuid'       => 'participant-active',
+        'content'           => 'Internal receipt',
+        'created_at'        => $now,
+        'updated_at'        => $now,
     ]);
     $connection->table('chat_receipts')->insert([
-        'uuid' => 'receipt-existing',
-        'company_uuid' => 'company-1',
+        'uuid'              => 'receipt-existing',
+        'company_uuid'      => 'company-1',
         'chat_message_uuid' => 'message-internal-receipt',
-        'participant_uuid' => 'participant-current',
-        'read_at' => $now,
-        'created_at' => $now,
-        'updated_at' => $now,
+        'participant_uuid'  => 'participant-current',
+        'read_at'           => $now,
+        'created_at'        => $now,
+        'updated_at'        => $now,
     ]);
 
     $existing = chat_receipt_controller()->createRecord(Request::create('/int/v1/chat-receipts', 'POST', [
         'chatReceipt' => [
             'chat_message_uuid' => 'message-internal-receipt',
-            'participant_uuid' => 'participant-current',
+            'participant_uuid'  => 'participant-current',
         ],
     ]));
     $created = chat_receipt_controller()->createRecord(Request::create('/int/v1/chat-receipts', 'POST', [
         'chatReceipt' => [
             'chat_message_uuid' => 'message-internal-receipt',
-            'participant_uuid' => 'participant-active',
+            'participant_uuid'  => 'participant-active',
         ],
     ]));
 
@@ -560,7 +560,7 @@ test('public chat channel creates channel with creator and valid participants on
     $capsule = chat_channel_controller_database();
 
     $response = public_chat_channel_controller()->create(public_chat_channel_create_request([
-        'name' => 'Public Dispatch',
+        'name'         => 'Public Dispatch',
         'participants' => [
             'user_active',
             'user_other',
@@ -613,7 +613,7 @@ test('public chat channel participant endpoints add remove and reject missing re
     $missingUser = public_chat_channel_controller()->addParticipant('chat_current', Request::create('/v1/chat-channels/chat_current/participants', 'POST', [
         'user' => 'missing_user',
     ]));
-    $removed = public_chat_channel_controller()->removeParticipant($added->resource->public_id);
+    $removed            = public_chat_channel_controller()->removeParticipant($added->resource->public_id);
     $missingParticipant = public_chat_channel_controller()->removeParticipant('missing_participant');
 
     expect($added->resource->user_uuid)->toBe('user-extra')
@@ -632,18 +632,18 @@ test('public chat channel messages create records reject missing references and 
     chat_channel_controller_database();
 
     $sent = public_chat_channel_controller()->sendMessage('chat_current', Request::create('/v1/chat-channels/chat_current/messages', 'POST', [
-        'sender' => 'participant_current',
+        'sender'  => 'participant_current',
         'content' => 'Arrived at pickup',
     ]));
     $missingChannel = public_chat_channel_controller()->sendMessage('missing_chat', Request::create('/v1/chat-channels/missing_chat/messages', 'POST', [
-        'sender' => 'participant_current',
+        'sender'  => 'participant_current',
         'content' => 'No channel',
     ]));
     $missingSender = public_chat_channel_controller()->sendMessage('chat_current', Request::create('/v1/chat-channels/chat_current/messages', 'POST', [
-        'sender' => 'missing_participant',
+        'sender'  => 'missing_participant',
         'content' => 'No sender',
     ]));
-    $deleted = public_chat_channel_controller()->deleteMessage($sent->resource->public_id);
+    $deleted       = public_chat_channel_controller()->deleteMessage($sent->resource->public_id);
     $missingDelete = public_chat_channel_controller()->deleteMessage('missing_message');
 
     expect($sent->resource->content)->toBe('Arrived at pickup')
@@ -665,14 +665,14 @@ test('public chat channel read receipts are idempotent and validate references',
     $connection = $capsule->getConnection('mysql');
     $now        = '2026-07-18 00:15:00';
     $connection->table('chat_messages')->insert([
-        'uuid' => 'message-receipt',
-        'public_id' => 'message_receipt',
-        'company_uuid' => 'company-1',
+        'uuid'              => 'message-receipt',
+        'public_id'         => 'message_receipt',
+        'company_uuid'      => 'company-1',
         'chat_channel_uuid' => 'channel-current',
-        'sender_uuid' => 'participant-active',
-        'content' => 'Please acknowledge',
-        'created_at' => $now,
-        'updated_at' => $now,
+        'sender_uuid'       => 'participant-active',
+        'content'           => 'Please acknowledge',
+        'created_at'        => $now,
+        'updated_at'        => $now,
     ]);
 
     $created = public_chat_channel_controller()->createReadReceipt('message_receipt', Request::create('/v1/chat-messages/message_receipt/read-receipts', 'POST', [

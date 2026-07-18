@@ -84,8 +84,8 @@ test('resource transformer registry transforms model data when a matching output
 
     expect(ResourceTransformerRegistry::transform($model, ['existing' => 'value']))->toBe([
         'existing'     => 'value',
-        'transformed' => true,
-        'model'       => ResourceTransformerRegistryModel::class,
+        'transformed'  => true,
+        'model'        => ResourceTransformerRegistryModel::class,
     ]);
 });
 

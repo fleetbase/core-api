@@ -169,48 +169,48 @@ test('developer search returns tenant scoped results across all searchable devel
     ]));
 
     $payload = $response->getData(true);
-    $types = array_column($payload['results'], 'type');
+    $types   = array_column($payload['results'], 'type');
 
     expect($response->getStatusCode())->toBe(200)
         ->and($types)->toContain('API Key', 'Webhook', 'Request Log', 'Event')
         ->and($payload['results'])->toContain([
-            'label' => 'Live Orders',
+            'label'       => 'Live Orders',
             'description' => 'Live API key - flb_live_orders',
-            'icon' => 'key',
-            'type' => 'API Key',
-            'route' => 'console.developers.api-keys.index',
-            'breadcrumb' => 'Developers > API Keys',
+            'icon'        => 'key',
+            'type'        => 'API Key',
+            'route'       => 'console.developers.api-keys.index',
+            'breadcrumb'  => 'Developers > API Keys',
             'queryParams' => [
-                'query' => 'orders',
+                'query'        => 'orders',
                 'view_api_key' => 'credential-live',
             ],
         ])
         ->and($payload['results'])->toContain([
-            'label' => 'https://hooks.example.test/orders',
+            'label'       => 'https://hooks.example.test/orders',
             'description' => 'Order hooks',
-            'icon' => 'globe-asia',
-            'type' => 'Webhook',
-            'route' => 'console.developers.webhooks.view',
-            'models' => ['webhook-live'],
-            'breadcrumb' => 'Developers > Webhooks',
+            'icon'        => 'globe-asia',
+            'type'        => 'Webhook',
+            'route'       => 'console.developers.webhooks.view',
+            'models'      => ['webhook-live'],
+            'breadcrumb'  => 'Developers > Webhooks',
         ])
         ->and($payload['results'])->toContain([
-            'label' => 'req_orders_1',
+            'label'       => 'req_orders_1',
             'description' => 'GET /v1/orders 200 OK',
-            'icon' => 'file-lines',
-            'type' => 'Request Log',
-            'route' => 'console.developers.logs.view',
-            'models' => ['req_orders_1'],
-            'breadcrumb' => 'Developers > Logs',
+            'icon'        => 'file-lines',
+            'type'        => 'Request Log',
+            'route'       => 'console.developers.logs.view',
+            'models'      => ['req_orders_1'],
+            'breadcrumb'  => 'Developers > Logs',
         ])
         ->and($payload['results'])->toContain([
-            'label' => 'order.created',
+            'label'       => 'order.created',
             'description' => 'Order created',
-            'icon' => 'calendar-day',
-            'type' => 'Event',
-            'route' => 'console.developers.events.view',
-            'models' => ['event_orders_1'],
-            'breadcrumb' => 'Developers > Events',
+            'icon'        => 'calendar-day',
+            'type'        => 'Event',
+            'route'       => 'console.developers.events.view',
+            'models'      => ['event_orders_1'],
+            'breadcrumb'  => 'Developers > Events',
         ])
         ->and(collect($payload['results'])->pluck('label')->implode('|'))->not->toContain('Other Orders')
         ->and(collect($payload['results'])->pluck('models')->flatten()->implode('|'))->not->toContain('event_other');
@@ -227,10 +227,10 @@ test('developer search honors requested types fallback labels q aliases and hard
 
     expect($payload['results'])->toHaveCount(1)
         ->and($payload['results'][0])->toMatchArray([
-            'label' => 'req_orders_1',
+            'label'       => 'req_orders_1',
             'description' => 'GET /v1/orders 200 OK',
-            'type' => 'Request Log',
-            'models' => ['req_orders_1'],
+            'type'        => 'Request Log',
+            'models'      => ['req_orders_1'],
         ]);
 
     $webhookResponse = developer_search_controller()->search(Request::create('/developers/search', 'GET', [
@@ -241,13 +241,13 @@ test('developer search honors requested types fallback labels q aliases and hard
 
     expect($webhookResponse->getData(true)['results'])->toBe([
         [
-            'label' => 'https://hooks.example.test/fallback',
+            'label'       => 'https://hooks.example.test/fallback',
             'description' => 'test disabled 2026-02',
-            'icon' => 'globe-asia',
-            'type' => 'Webhook',
-            'route' => 'console.developers.webhooks.view',
-            'models' => ['webhook-test'],
-            'breadcrumb' => 'Developers > Webhooks',
+            'icon'        => 'globe-asia',
+            'type'        => 'Webhook',
+            'route'       => 'console.developers.webhooks.view',
+            'models'      => ['webhook-test'],
+            'breadcrumb'  => 'Developers > Webhooks',
         ],
     ]);
 
@@ -258,13 +258,13 @@ test('developer search honors requested types fallback labels q aliases and hard
 
     expect($eventResponse->getData(true)['results'])->toBe([
         [
-            'label' => 'event_invoice_1',
+            'label'       => 'event_invoice_1',
             'description' => 'webhook GET',
-            'icon' => 'calendar-day',
-            'type' => 'Event',
-            'route' => 'console.developers.events.view',
-            'models' => ['event_invoice_1'],
-            'breadcrumb' => 'Developers > Events',
+            'icon'        => 'calendar-day',
+            'type'        => 'Event',
+            'route'       => 'console.developers.events.view',
+            'models'      => ['event_invoice_1'],
+            'breadcrumb'  => 'Developers > Events',
         ],
     ]);
 });

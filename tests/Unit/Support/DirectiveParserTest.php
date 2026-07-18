@@ -10,12 +10,12 @@ use Illuminate\Support\Facades\Facade;
 
 class DirectiveParserOrder extends Model
 {
-    protected $table = 'orders';
+    protected $table      = 'orders';
     protected $primaryKey = 'uuid';
-    public $incrementing = false;
-    protected $keyType = 'string';
-    public $timestamps = false;
-    protected $guarded = [];
+    public $incrementing  = false;
+    protected $keyType    = 'string';
+    public $timestamps    = false;
+    protected $guarded    = [];
 
     public function payloads()
     {
@@ -25,12 +25,12 @@ class DirectiveParserOrder extends Model
 
 class DirectiveParserPayload extends Model
 {
-    protected $table = 'payloads';
+    protected $table      = 'payloads';
     protected $primaryKey = 'uuid';
-    public $incrementing = false;
-    protected $keyType = 'string';
-    public $timestamps = false;
-    protected $guarded = [];
+    public $incrementing  = false;
+    protected $keyType    = 'string';
+    public $timestamps    = false;
+    protected $guarded    = [];
 }
 
 class DirectiveParserSessionFake
@@ -60,7 +60,7 @@ function directive_parser_database(): void
     ];
 
     $container = bind_test_container([
-        'database.default' => 'testing',
+        'database.default'             => 'testing',
         'database.connections.testing' => $connectionConfig,
     ]);
 

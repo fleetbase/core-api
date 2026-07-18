@@ -31,7 +31,7 @@ class OperationalAlertSpy extends Alert
 
 class OperationalNotificationSpy extends Notification
 {
-    public int $saves = 0;
+    public int $saves   = 0;
     public int $deletes = 0;
 
     public function save(array $options = []): bool
@@ -53,19 +53,19 @@ class OperationalNotificationSpy extends Notification
 function operational_models_database(): Capsule
 {
     $connection = [
-        'driver' => 'sqlite',
+        'driver'   => 'sqlite',
         'database' => ':memory:',
-        'prefix' => '',
+        'prefix'   => '',
     ];
 
     $container = bind_test_container([
-        'database.default' => 'mysql',
-        'database.connections.mysql' => $connection,
-        'fleetbase.connection.db' => 'mysql',
-        'activitylog.enabled' => true,
-        'activitylog.default_log_name' => 'default',
+        'database.default'                => 'mysql',
+        'database.connections.mysql'      => $connection,
+        'fleetbase.connection.db'         => 'mysql',
+        'activitylog.enabled'             => true,
+        'activitylog.default_log_name'    => 'default',
         'activitylog.default_auth_driver' => null,
-        'activitylog.activity_model' => Activity::class,
+        'activitylog.activity_model'      => Activity::class,
     ]);
     $container->instance('cache', new class {
         private array $values = [];
@@ -203,7 +203,7 @@ it('humanizes activity subject and causer model types for API display', function
     $activity = new Activity();
     $activity->setRawAttributes([
         'subject_type' => 'Fleetbase\\FleetOps\\Models\\ServiceQuote',
-        'causer_type' => User::class,
+        'causer_type'  => User::class,
     ], true);
 
     expect($activity->humanized_subject_type)->toBe('Service Quote')
@@ -214,7 +214,7 @@ it('derives alert names timestamps state and priority values', function () {
     operational_models_database();
     Carbon::setTestNow(Carbon::parse('2026-07-17 12:00:00', 'UTC'));
 
-    $subject = (object) ['display_name' => 'Trailer Sensor'];
+    $subject        = (object) ['display_name' => 'Trailer Sensor'];
     $acknowledgedBy = new User();
     $acknowledgedBy->setRawAttributes(['uuid' => 'user-ack', 'name' => 'Ada'], true);
     $resolvedBy = new User();
@@ -222,13 +222,13 @@ it('derives alert names timestamps state and priority values', function () {
 
     $alert = new Alert();
     $alert->setRawAttributes([
-        'uuid' => 'alert-1',
-        'severity' => 'high',
-        'status' => 'resolved',
-        'triggered_at' => Carbon::parse('2026-07-17 10:00:00', 'UTC'),
-        'created_at' => Carbon::parse('2026-07-17 09:30:00', 'UTC'),
+        'uuid'            => 'alert-1',
+        'severity'        => 'high',
+        'status'          => 'resolved',
+        'triggered_at'    => Carbon::parse('2026-07-17 10:00:00', 'UTC'),
+        'created_at'      => Carbon::parse('2026-07-17 09:30:00', 'UTC'),
         'acknowledged_at' => Carbon::parse('2026-07-17 10:15:00', 'UTC'),
-        'resolved_at' => Carbon::parse('2026-07-17 11:30:00', 'UTC'),
+        'resolved_at'     => Carbon::parse('2026-07-17 11:30:00', 'UTC'),
     ], true);
     $alert->setRelation('subject', $subject);
     $alert->setRelation('acknowledgedBy', $acknowledgedBy);
@@ -257,12 +257,12 @@ it('updates alerts through acknowledge resolve escalate snooze and rule helpers'
 
     $alert = new OperationalAlertSpy();
     $alert->setRawAttributes([
-        'uuid' => 'alert-1',
-        'severity' => 'medium',
-        'status' => 'open',
+        'uuid'         => 'alert-1',
+        'severity'     => 'medium',
+        'status'       => 'open',
         'triggered_at' => Carbon::parse('2026-07-17 11:00:00', 'UTC'),
-        'meta' => ['existing' => true],
-        'rule' => ['metric' => 'temperature', 'operator' => '>', 'threshold' => 5],
+        'meta'         => ['existing' => true],
+        'rule'         => ['metric' => 'temperature', 'operator' => '>', 'threshold' => 5],
     ], true);
 
     expect($alert->acknowledge($user))->toBeTrue()
@@ -279,10 +279,10 @@ it('updates alerts through acknowledge resolve escalate snooze and rule helpers'
 
     $escalatingAlert = new OperationalAlertSpy();
     $escalatingAlert->setRawAttributes([
-        'uuid' => 'alert-2',
-        'severity' => 'low',
-        'status' => 'open',
-        'meta' => [],
+        'uuid'         => 'alert-2',
+        'severity'     => 'low',
+        'status'       => 'open',
+        'meta'         => [],
         'triggered_at' => Carbon::parse('2026-07-17 11:45:00', 'UTC'),
     ], true);
 
@@ -304,34 +304,34 @@ it('filters alerts through type severity status acknowledgement and priority sco
 
     $capsule->getConnection('mysql')->table('alerts')->insert([
         [
-            'uuid' => 'alert-1',
-            'type' => 'temperature',
-            'severity' => 'critical',
-            'status' => 'open',
+            'uuid'            => 'alert-1',
+            'type'            => 'temperature',
+            'severity'        => 'critical',
+            'status'          => 'open',
             'acknowledged_at' => null,
-            'triggered_at' => '2026-07-17 10:00:00',
-            'created_at' => '2026-07-17 10:00:00',
-            'updated_at' => '2026-07-17 10:00:00',
+            'triggered_at'    => '2026-07-17 10:00:00',
+            'created_at'      => '2026-07-17 10:00:00',
+            'updated_at'      => '2026-07-17 10:00:00',
         ],
         [
-            'uuid' => 'alert-2',
-            'type' => 'temperature',
-            'severity' => 'medium',
-            'status' => 'resolved',
+            'uuid'            => 'alert-2',
+            'type'            => 'temperature',
+            'severity'        => 'medium',
+            'status'          => 'resolved',
             'acknowledged_at' => '2026-07-17 10:30:00',
-            'triggered_at' => '2026-07-17 09:00:00',
-            'created_at' => '2026-07-17 09:00:00',
-            'updated_at' => '2026-07-17 09:00:00',
+            'triggered_at'    => '2026-07-17 09:00:00',
+            'created_at'      => '2026-07-17 09:00:00',
+            'updated_at'      => '2026-07-17 09:00:00',
         ],
         [
-            'uuid' => 'alert-3',
-            'type' => 'battery',
-            'severity' => 'high',
-            'status' => 'open',
+            'uuid'            => 'alert-3',
+            'type'            => 'battery',
+            'severity'        => 'high',
+            'status'          => 'open',
             'acknowledged_at' => null,
-            'triggered_at' => '2026-07-17 08:00:00',
-            'created_at' => '2026-07-17 08:00:00',
-            'updated_at' => '2026-07-17 08:00:00',
+            'triggered_at'    => '2026-07-17 08:00:00',
+            'created_at'      => '2026-07-17 08:00:00',
+            'updated_at'      => '2026-07-17 08:00:00',
         ],
     ]);
 
@@ -368,17 +368,17 @@ it('publishes comments with session defaults sanitized payloads and timestamps',
     operational_models_database();
     Carbon::setTestNow(Carbon::parse('2026-07-17 12:00:00', 'UTC'));
     session([
-        'user' => 'user-1',
+        'user'    => 'user-1',
         'company' => 'company-1',
     ]);
 
     $comment = Comment::publish([
-        'uuid' => 'comment-1',
-        'content' => 'Driver reached pickup.',
+        'uuid'         => 'comment-1',
+        'content'      => 'Driver reached pickup.',
         'subject_uuid' => 'order-1',
         'subject_type' => User::class,
-        'replies' => ['should' => 'drop'],
-        'parent' => ['should' => 'drop'],
+        'replies'      => ['should' => 'drop'],
+        'parent'       => ['should' => 'drop'],
     ]);
 
     expect($comment)->toBeInstanceOf(Comment::class)

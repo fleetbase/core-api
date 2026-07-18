@@ -14,7 +14,6 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Facade;
-use Illuminate\Support\Facades\Schema;
 
 class TemplateControllerRenderServiceFake extends TemplateRenderService
 {

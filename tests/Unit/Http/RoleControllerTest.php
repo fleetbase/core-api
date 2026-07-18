@@ -54,8 +54,8 @@ class RoleControllerCacheFake
 class RoleControllerPermissionRegistrarFake
 {
     public string $pivotPermission = 'permission_id';
-    public bool $teams = false;
-    public string $teamsKey = 'team_id';
+    public bool $teams             = false;
+    public string $teamsKey        = 'team_id';
 }
 
 function role_controller_container(array $config = []): Container
@@ -196,7 +196,7 @@ test('role controller rejects administrator and admin prefixed role names before
             'errors' => ['Creating a role with name "Administrator" or a role name that starts with "Admin" is prohibited, as the name is system reserved.'],
         ]);
 })->with([
-    'exact administrator' => ['Administrator'],
+    'exact administrator'     => ['Administrator'],
     'admin prefix lower case' => ['admin supervisor'],
     'admin prefix mixed case' => ['AdminOps'],
 ]);

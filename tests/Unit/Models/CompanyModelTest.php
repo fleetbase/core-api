@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Facade;
 
 class CompanyModelSaveSpy extends Company
 {
-    public int $saves = 0;
+    public int $saves         = 0;
     public array $roleChanges = [];
 
     public function save(array $options = []): bool
@@ -32,13 +32,13 @@ function company_model_container(): void
     $container = bind_test_container();
 
     $connection = [
-        'driver' => 'sqlite',
+        'driver'   => 'sqlite',
         'database' => ':memory:',
-        'prefix' => '',
+        'prefix'   => '',
     ];
 
     config([
-        'database.default' => 'mysql',
+        'database.default'           => 'mysql',
         'database.connections.mysql' => $connection,
     ]);
 
@@ -110,15 +110,15 @@ it('exposes stable logo backdrop ownership and notification response values', fu
 
     $company = new Company();
     $company->setRawAttributes([
-        'uuid' => 'company-1',
+        'uuid'       => 'company-1',
         'owner_uuid' => 'owner-1',
-        'phone' => '+15555550100',
+        'phone'      => '+15555550100',
     ], true);
     $company->setRelation('logo', null);
     $company->setRelation('backdrop', null);
 
-    $logo = (object) ['url' => 'https://cdn.example.test/logo.png'];
-    $backdrop = (object) ['url' => 'https://cdn.example.test/backdrop.png'];
+    $logo           = (object) ['url' => 'https://cdn.example.test/logo.png'];
+    $backdrop       = (object) ['url' => 'https://cdn.example.test/backdrop.png'];
     $brandedCompany = new Company();
     $brandedCompany->setRawAttributes(['uuid' => 'company-2'], true);
     $brandedCompany->setRelation('logo', $logo);
@@ -144,9 +144,9 @@ it('resolves the current company from session using the configured connection', 
     });
 
     app('db')->table('companies')->insert([
-        'uuid' => 'company-1',
-        'name' => 'Acme Logistics',
-        'public_id' => 'company_public_1',
+        'uuid'       => 'company-1',
+        'name'       => 'Acme Logistics',
+        'public_id'  => 'company_public_1',
         'deleted_at' => null,
         'created_at' => '2026-07-17 10:00:00',
         'updated_at' => '2026-07-17 10:00:00',

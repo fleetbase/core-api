@@ -46,14 +46,14 @@ namespace Fleetbase\Tests\WebhookFixtures {
 
     class InspectableWebhookJob extends CallWebhookJob
     {
-        public array $createdRequests = [];
-        public array $releasedFor = [];
-        public int $attempt = 1;
-        public ?Response $nextResponse = null;
+        public array $createdRequests     = [];
+        public array $releasedFor         = [];
+        public int $attempt               = 1;
+        public ?Response $nextResponse    = null;
         public ?\Throwable $nextException = null;
-        public bool $removedFromQueue = false;
-        public bool $deleted = false;
-        public ?\Throwable $failedWith = null;
+        public bool $removedFromQueue     = false;
+        public bool $deleted              = false;
+        public ?\Throwable $failedWith    = null;
 
         public function attempts()
         {
@@ -145,23 +145,23 @@ namespace {
     function webhook_test_container(): void
     {
         bind_test_container([
-            'webhook-server.webhook_job' => ConfiguredWebhookJob::class,
-            'webhook-server.queue' => 'webhooks',
-            'webhook-server.connection' => 'redis',
-            'webhook-server.http_verb' => 'put',
-            'webhook-server.tries' => 5,
-            'webhook-server.backoff_strategy' => ConfiguredBackoffStrategy::class,
+            'webhook-server.webhook_job'        => ConfiguredWebhookJob::class,
+            'webhook-server.queue'              => 'webhooks',
+            'webhook-server.connection'         => 'redis',
+            'webhook-server.http_verb'          => 'put',
+            'webhook-server.tries'              => 5,
+            'webhook-server.backoff_strategy'   => ConfiguredBackoffStrategy::class,
             'webhook-server.timeout_in_seconds' => 12,
-            'webhook-server.signer' => ConfiguredSigner::class,
-            'webhook-server.headers' => [
+            'webhook-server.signer'             => ConfiguredSigner::class,
+            'webhook-server.headers'            => [
                 'Content-Type' => 'application/json',
-                'X-App' => 'core-api',
+                'X-App'        => 'core-api',
             ],
-            'webhook-server.tags' => ['core-api', 'tenant-event'],
-            'webhook-server.verify_ssl' => true,
+            'webhook-server.tags'                       => ['core-api', 'tenant-event'],
+            'webhook-server.verify_ssl'                 => true,
             'webhook-server.throw_exception_on_failure' => true,
-            'webhook-server.proxy' => ['https' => 'http://proxy.test:8080'],
-            'webhook-server.signature_header_name' => 'X-Fleetbase-Signature',
+            'webhook-server.proxy'                      => ['https' => 'http://proxy.test:8080'],
+            'webhook-server.signature_header_name'      => 'X-Fleetbase-Signature',
         ]);
     }
 
@@ -217,9 +217,9 @@ namespace {
             ->and($job->meta)->toBe(['company_uuid' => 'company-1'])
             ->and($job->tags())->toBe(['core-api', 'tenant-event'])
             ->and($job->headers)->toBe([
-                'Content-Type' => 'application/json',
-                'X-App' => 'override',
-                'X-Extra' => 'present',
+                'Content-Type'     => 'application/json',
+                'X-App'            => 'override',
+                'X-Extra'          => 'present',
                 'X-Test-Signature' => 'https://example.test/hooks/orders|{"event":"order.created","id":"order-1"}|shared-secret',
             ]);
     });
@@ -236,7 +236,7 @@ namespace {
 
         expect($job->headers)->toBe([
             'Content-Type' => 'application/json',
-            'X-App' => 'core-api',
+            'X-App'        => 'core-api',
         ]);
 
         expect(WebhookCall::create()->dispatchIf(false))->toBeNull()
@@ -265,7 +265,7 @@ namespace {
     test('default webhook signer and exponential backoff keep stable retry contracts', function () {
         webhook_test_container();
 
-        $signer = new DefaultSigner();
+        $signer  = new DefaultSigner();
         $backoff = new ExponentialBackoffStrategy();
 
         expect($signer->signatureHeaderName())->toBe('X-Fleetbase-Signature')
@@ -281,21 +281,21 @@ namespace {
         webhook_test_container();
         WebhookJobEventRecorder::reset();
 
-        $job = new InspectableWebhookJob();
-        $job->httpVerb = 'GET';
-        $job->webhookUrl = 'https://example.test/hooks/orders';
-        $job->payload = ['order' => 'order-1'];
-        $job->headers = ['X-App' => 'core-api'];
-        $job->meta = ['company_uuid' => 'company-1'];
-        $job->tags = ['orders'];
-        $job->uuid = 'webhook-call-1';
-        $job->tries = 3;
-        $job->requestTimeout = 8;
-        $job->verifySsl = true;
+        $job                          = new InspectableWebhookJob();
+        $job->httpVerb                = 'GET';
+        $job->webhookUrl              = 'https://example.test/hooks/orders';
+        $job->payload                 = ['order' => 'order-1'];
+        $job->headers                 = ['X-App' => 'core-api'];
+        $job->meta                    = ['company_uuid' => 'company-1'];
+        $job->tags                    = ['orders'];
+        $job->uuid                    = 'webhook-call-1';
+        $job->tries                   = 3;
+        $job->requestTimeout          = 8;
+        $job->verifySsl               = true;
         $job->throwExceptionOnFailure = false;
-        $job->backoffStrategyClass = ConfiguredBackoffStrategy::class;
-        $job->proxy = ['https' => 'http://proxy.test:8080'];
-        $job->nextResponse = new Response(202, ['X-Request-Id' => 'req-1'], 'queued');
+        $job->backoffStrategyClass    = ConfiguredBackoffStrategy::class;
+        $job->proxy                   = ['https' => 'http://proxy.test:8080'];
+        $job->nextResponse            = new Response(202, ['X-Request-Id' => 'req-1'], 'queued');
 
         $job->handle();
 
@@ -322,21 +322,21 @@ namespace {
         webhook_test_container();
         WebhookJobEventRecorder::reset();
 
-        $job = new InspectableWebhookJob();
-        $job->httpVerb = 'post';
-        $job->webhookUrl = 'https://example.test/hooks/orders';
-        $job->payload = ['event' => 'order.updated'];
-        $job->headers = ['Content-Type' => 'application/json'];
-        $job->meta = ['company_uuid' => 'company-1'];
-        $job->tags = ['orders'];
-        $job->uuid = 'webhook-call-2';
-        $job->tries = 3;
-        $job->attempt = 2;
-        $job->requestTimeout = 8;
-        $job->verifySsl = false;
+        $job                          = new InspectableWebhookJob();
+        $job->httpVerb                = 'post';
+        $job->webhookUrl              = 'https://example.test/hooks/orders';
+        $job->payload                 = ['event' => 'order.updated'];
+        $job->headers                 = ['Content-Type' => 'application/json'];
+        $job->meta                    = ['company_uuid' => 'company-1'];
+        $job->tags                    = ['orders'];
+        $job->uuid                    = 'webhook-call-2';
+        $job->tries                   = 3;
+        $job->attempt                 = 2;
+        $job->requestTimeout          = 8;
+        $job->verifySsl               = false;
         $job->throwExceptionOnFailure = false;
-        $job->backoffStrategyClass = ConfiguredBackoffStrategy::class;
-        $job->nextResponse = new Response(500, [], 'server error');
+        $job->backoffStrategyClass    = ConfiguredBackoffStrategy::class;
+        $job->nextResponse            = new Response(500, [], 'server error');
 
         $job->handle();
 
@@ -355,21 +355,21 @@ namespace {
         webhook_test_container();
         WebhookJobEventRecorder::reset();
 
-        $job = new InspectableWebhookJob();
-        $job->httpVerb = 'POST';
-        $job->webhookUrl = 'https://example.test/hooks/orders';
-        $job->payload = ['event' => 'order.failed'];
-        $job->headers = [];
-        $job->meta = [];
-        $job->tags = [];
-        $job->uuid = 'webhook-call-3';
-        $job->tries = 2;
-        $job->attempt = 2;
-        $job->requestTimeout = 8;
-        $job->verifySsl = true;
+        $job                          = new InspectableWebhookJob();
+        $job->httpVerb                = 'POST';
+        $job->webhookUrl              = 'https://example.test/hooks/orders';
+        $job->payload                 = ['event' => 'order.failed'];
+        $job->headers                 = [];
+        $job->meta                    = [];
+        $job->tags                    = [];
+        $job->uuid                    = 'webhook-call-3';
+        $job->tries                   = 2;
+        $job->attempt                 = 2;
+        $job->requestTimeout          = 8;
+        $job->verifySsl               = true;
         $job->throwExceptionOnFailure = false;
-        $job->backoffStrategyClass = ConfiguredBackoffStrategy::class;
-        $job->nextException = new ConnectException('connection refused', new Request('POST', 'https://example.test/hooks/orders'));
+        $job->backoffStrategyClass    = ConfiguredBackoffStrategy::class;
+        $job->nextException           = new ConnectException('connection refused', new Request('POST', 'https://example.test/hooks/orders'));
 
         $job->handle();
 

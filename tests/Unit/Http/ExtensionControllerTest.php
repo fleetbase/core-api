@@ -29,7 +29,7 @@ class ExtensionControllerModelFake extends Model
         }
 
         return [
-            'path' => $request->path(),
+            'path'   => $request->path(),
             'wheres' => $this->query->wheres,
         ];
     }
@@ -40,15 +40,15 @@ test('extension controller scopes authored extensions to the current company', f
     session()->flush();
     session(['company' => 'company-123']);
 
-    $model = new ExtensionControllerModelFake();
-    $controller = (new ReflectionClass(ExtensionController::class))->newInstanceWithoutConstructor();
+    $model             = new ExtensionControllerModelFake();
+    $controller        = (new ReflectionClass(ExtensionController::class))->newInstanceWithoutConstructor();
     $controller->model = $model;
-    $request = Request::create('/int/v1/extensions/authored', 'GET');
+    $request           = Request::create('/int/v1/extensions/authored', 'GET');
 
     $result = $controller->getAuthored($request);
 
     expect($result)->toBe([
-        'path' => 'int/v1/extensions/authored',
+        'path'   => 'int/v1/extensions/authored',
         'wheres' => [
             ['author_uuid', 'company-123'],
         ],

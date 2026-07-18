@@ -25,14 +25,14 @@ if (!function_exists('cache')) {
 
 class TwoFactorAuthRedisFake
 {
-    public array $values = [];
-    public array $sets = [];
+    public array $values  = [];
+    public array $sets    = [];
     public array $deleted = [];
 
     public function set(string $key, mixed $value, mixed ...$options): bool
     {
         $this->values[$key] = $value;
-        $this->sets[] = compact('key', 'value', 'options');
+        $this->sets[]       = compact('key', 'value', 'options');
 
         return true;
     }
@@ -63,7 +63,7 @@ class TwoFactorAuthRedisFake
 
 class TwoFactorAuthCacheFake
 {
-    public array $values = [];
+    public array $values    = [];
     public array $forgotten = [];
 
     public function get(string $key, mixed $default = null): mixed
@@ -123,7 +123,7 @@ class TwoFactorAuthCacheFake
 function two_factor_auth_fixtures(): array
 {
     $container = bind_test_container([
-        'app.name' => 'Fleetbase',
+        'app.name'                => 'Fleetbase',
         'fleetbase.connection.db' => 'mysql',
     ]);
 
@@ -144,12 +144,12 @@ function two_factor_auth_fixtures(): array
     $company->setAttribute($company->getKeyName(), $company->uuid);
 
     $user = new User([
-        'uuid' => '11111111-1111-4111-8111-111111111111',
+        'uuid'         => '11111111-1111-4111-8111-111111111111',
         'company_uuid' => $company->uuid,
-        'email' => 'user@example.com',
-        'phone' => '+15555550100',
-        'username' => 'test-user',
-        'name' => 'Test User',
+        'email'        => 'user@example.com',
+        'phone'        => '+15555550100',
+        'username'     => 'test-user',
+        'name'         => 'Test User',
     ]);
     $user->exists = true;
     $user->setRelation('company', $company);
@@ -160,15 +160,15 @@ function two_factor_auth_fixtures(): array
         'name' => $company->name,
     ]);
     app('db')->table('users')->insert([
-        'uuid' => $user->uuid,
+        'uuid'         => $user->uuid,
         'company_uuid' => $company->uuid,
-        'email' => $user->email,
-        'phone' => $user->phone,
-        'username' => $user->username,
-        'name' => $user->name,
-        'deleted_at' => null,
-        'created_at' => '2026-07-17 10:00:00',
-        'updated_at' => '2026-07-17 10:00:00',
+        'email'        => $user->email,
+        'phone'        => $user->phone,
+        'username'     => $user->username,
+        'name'         => $user->name,
+        'deleted_at'   => null,
+        'created_at'   => '2026-07-17 10:00:00',
+        'updated_at'   => '2026-07-17 10:00:00',
     ]);
 
     return [$user, $company, $redis];
@@ -177,14 +177,14 @@ function two_factor_auth_fixtures(): array
 function two_factor_auth_database(): void
 {
     $connectionConfig = [
-        'driver' => 'sqlite',
+        'driver'   => 'sqlite',
         'database' => ':memory:',
-        'prefix' => '',
+        'prefix'   => '',
     ];
 
     $container = app();
     config([
-        'database.default' => 'mysql',
+        'database.default'           => 'mysql',
         'database.connections.mysql' => $connectionConfig,
     ]);
 
@@ -239,26 +239,26 @@ function two_factor_auth_database(): void
 function two_factor_auth_verification_code(User $user, Carbon $expiresAt): VerificationCode
 {
     app('db')->table('verification_codes')->insert([
-        'uuid' => '33333333-3333-4333-8333-333333333333',
+        'uuid'         => '33333333-3333-4333-8333-333333333333',
         'subject_uuid' => $user->uuid,
         'subject_type' => User::class,
-        'code' => '123456',
-        'for' => '2fa',
-        'expires_at' => $expiresAt->toDateTimeString(),
-        'meta' => json_encode([]),
-        'status' => 'active',
+        'code'         => '123456',
+        'for'          => '2fa',
+        'expires_at'   => $expiresAt->toDateTimeString(),
+        'meta'         => json_encode([]),
+        'status'       => 'active',
     ]);
 
-    $verificationCode = new VerificationCode();
-    $verificationCode->uuid = '33333333-3333-4333-8333-333333333333';
+    $verificationCode               = new VerificationCode();
+    $verificationCode->uuid         = '33333333-3333-4333-8333-333333333333';
     $verificationCode->subject_uuid = $user->uuid;
     $verificationCode->subject_type = User::class;
-    $verificationCode->code = '123456';
-    $verificationCode->for = '2fa';
-    $verificationCode->expires_at = $expiresAt;
-    $verificationCode->meta = [];
-    $verificationCode->status = 'active';
-    $verificationCode->exists = true;
+    $verificationCode->code         = '123456';
+    $verificationCode->for          = '2fa';
+    $verificationCode->expires_at   = $expiresAt;
+    $verificationCode->meta         = [];
+    $verificationCode->status       = 'active';
+    $verificationCode->exists       = true;
 
     return $verificationCode;
 }
@@ -270,8 +270,8 @@ afterEach(function () {
 test('two factor auth creates default system and subject settings when none exist', function () {
     [$user, $company] = two_factor_auth_fixtures();
 
-    $system = TwoFactorAuth::getTwoFaConfiguration();
-    $userSettings = TwoFactorAuth::getTwoFaSettingsForUser($user);
+    $system          = TwoFactorAuth::getTwoFaConfiguration();
+    $userSettings    = TwoFactorAuth::getTwoFaSettingsForUser($user);
     $companySettings = TwoFactorAuth::getTwoFaSettingsForCompany($company);
 
     expect($system)->toBeInstanceOf(Setting::class)
@@ -327,9 +327,9 @@ test('two factor auth rejects disabled sessions and validates client verificatio
     expect(TwoFactorAuth::validateSessionToken($token, $user->email))->toBeFalse();
 
     TwoFactorAuth::saveTwoFaSettingsForUser($user, ['enabled' => true, 'method' => 'email']);
-    $enabledToken = TwoFactorAuth::start($user->email, 10);
+    $enabledToken     = TwoFactorAuth::start($user->email, 10);
     $verificationCode = two_factor_auth_verification_code($user, Carbon::now()->addMinutes(5));
-    $clientToken = TwoFactorAuth::createClientSessionToken($verificationCode);
+    $clientToken      = TwoFactorAuth::createClientSessionToken($verificationCode);
 
     expect(TwoFactorAuth::validateSessionToken($enabledToken, $user->email, $clientToken))->toBeTrue()
         ->and(TwoFactorAuth::validateSessionToken($enabledToken, $user->email, base64_encode('invalid|missing-code|token')))->toBeFalse()
@@ -340,9 +340,9 @@ test('two factor auth clears redis sessions when client verification code is exp
     [$user, , $redis] = two_factor_auth_fixtures();
     TwoFactorAuth::saveTwoFaSettingsForUser($user, ['enabled' => true, 'method' => 'email']);
 
-    $token = TwoFactorAuth::start($user->phone, 10);
+    $token            = TwoFactorAuth::start($user->phone, 10);
     $verificationCode = two_factor_auth_verification_code($user, Carbon::now()->subMinute());
-    $clientToken = TwoFactorAuth::createClientSessionToken($verificationCode);
+    $clientToken      = TwoFactorAuth::createClientSessionToken($verificationCode);
 
     expect(TwoFactorAuth::validateSessionToken($token, $user->phone, $clientToken))->toBeFalse()
         ->and($redis->deleted)->toBe([$redis->sets[0]['key']]);

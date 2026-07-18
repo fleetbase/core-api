@@ -129,10 +129,10 @@ function admin_maintenance_database(): Capsule
     });
 
     $capsule->getConnection('mysql')->table('roles')->insert([
-        'id' => 'role-admin',
-        'name' => 'Administrator',
+        'id'         => 'role-admin',
+        'name'       => 'Administrator',
         'guard_name' => 'sanctum',
-        'service' => 'iam',
+        'service'    => 'iam',
         'created_at' => '2026-07-18 00:00:00',
         'updated_at' => '2026-07-18 00:00:00',
     ]);
@@ -151,29 +151,29 @@ it('assigns administrator role to company owners with existing company user pivo
     $db      = $capsule->getConnection('mysql');
 
     $db->table('users')->insert([
-        'uuid' => 'user-owner',
-        'name' => 'Owner User',
-        'email' => 'owner@example.test',
-        'type' => 'admin',
-        'status' => 'active',
+        'uuid'       => 'user-owner',
+        'name'       => 'Owner User',
+        'email'      => 'owner@example.test',
+        'type'       => 'admin',
+        'status'     => 'active',
         'created_at' => '2026-07-18 00:00:00',
         'updated_at' => '2026-07-18 00:00:00',
     ]);
     $db->table('companies')->insert([
-        'uuid' => 'company-1',
-        'owner_id' => 'user-owner',
+        'uuid'       => 'company-1',
+        'owner_id'   => 'user-owner',
         'owner_uuid' => 'user-owner',
-        'name' => 'Acme Logistics',
+        'name'       => 'Acme Logistics',
         'created_at' => '2026-07-18 00:00:00',
         'updated_at' => '2026-07-18 00:00:00',
     ]);
     $db->table('company_users')->insert([
-        'uuid' => 'company-user-1',
+        'uuid'         => 'company-user-1',
         'company_uuid' => 'company-1',
-        'user_uuid' => 'user-owner',
-        'status' => 'active',
-        'created_at' => '2026-07-18 00:00:00',
-        'updated_at' => '2026-07-18 00:00:00',
+        'user_uuid'    => 'user-owner',
+        'status'       => 'active',
+        'created_at'   => '2026-07-18 00:00:00',
+        'updated_at'   => '2026-07-18 00:00:00',
     ]);
 
     $command = new AssignAdminRoles();
@@ -183,7 +183,7 @@ it('assigns administrator role to company owners with existing company user pivo
     expect($tester->execute([]))->toBe(0)
         ->and($tester->getDisplay())->toContain('Acme Logistics - Owner: owner@example.test has been made Administrator.')
         ->and($db->table('model_has_roles')->where([
-            'role_id' => 'role-admin',
+            'role_id'    => 'role-admin',
             'model_type' => Fleetbase\Models\CompanyUser::class,
             'model_uuid' => 'company-user-1',
         ])->exists())->toBeTrue();
@@ -194,20 +194,20 @@ it('fixes users with a company uuid but no company user membership', function ()
     $db      = $capsule->getConnection('mysql');
 
     $db->table('users')->insert([
-        'uuid' => 'user-missing-company',
+        'uuid'         => 'user-missing-company',
         'company_uuid' => 'company-1',
-        'name' => 'Missing Member',
-        'email' => 'missing@example.test',
-        'type' => 'admin',
-        'status' => 'active',
-        'created_at' => '2026-07-18 00:00:00',
-        'updated_at' => '2026-07-18 00:00:00',
+        'name'         => 'Missing Member',
+        'email'        => 'missing@example.test',
+        'type'         => 'admin',
+        'status'       => 'active',
+        'created_at'   => '2026-07-18 00:00:00',
+        'updated_at'   => '2026-07-18 00:00:00',
     ]);
     $db->table('companies')->insert([
-        'uuid' => 'company-1',
-        'owner_id' => 'user-missing-company',
+        'uuid'       => 'company-1',
+        'owner_id'   => 'user-missing-company',
         'owner_uuid' => 'user-missing-company',
-        'name' => 'Acme Logistics',
+        'name'       => 'Acme Logistics',
         'created_at' => '2026-07-18 00:00:00',
         'updated_at' => '2026-07-18 00:00:00',
     ]);
@@ -221,7 +221,7 @@ it('fixes users with a company uuid but no company user membership', function ()
         ->and($tester->getDisplay())->toContain('User missing@example.test was assigned to company: Acme Logistics')
         ->and($db->table('company_users')->where([
             'company_uuid' => 'company-1',
-            'user_uuid' => 'user-missing-company',
+            'user_uuid'    => 'user-missing-company',
         ])->exists())->toBeTrue()
         ->and($db->table('model_has_roles')->where('role_id', 'role-admin')->exists())->toBeTrue();
 });

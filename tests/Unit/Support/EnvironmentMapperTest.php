@@ -21,7 +21,7 @@ if (!function_exists('cache')) {
 
 class EnvironmentMapperCacheFake
 {
-    public array $values = [];
+    public array $values    = [];
     public array $forgotten = [];
 
     public function get(string $key, mixed $default = null): mixed
@@ -75,38 +75,38 @@ class EnvironmentMapperRedisFake
 function environment_mapper_fixtures(bool $createSettingsTable = true): void
 {
     $container = bind_test_container([
-        'app.timezone' => 'UTC',
-        'filesystems.default' => 'local',
+        'app.timezone'         => 'UTC',
+        'filesystems.default'  => 'local',
         'filesystems.disks.s3' => [
             'driver' => 's3',
-            'key' => 'existing-key',
+            'key'    => 'existing-key',
             'region' => 'us-east-1',
             'bucket' => 'existing-bucket',
         ],
-        'mail.default' => 'log',
+        'mail.default'      => 'log',
         'mail.from.address' => null,
-        'mail.from.name' => 'Fleetbase',
+        'mail.from.name'    => 'Fleetbase',
         'mail.mailers.smtp' => [
             'transport' => 'smtp',
-            'host' => 'localhost',
-            'port' => 1025,
+            'host'      => 'localhost',
+            'port'      => 1025,
         ],
-        'queue.default' => 'sync',
+        'queue.default'         => 'sync',
         'queue.connections.sqs' => [
             'driver' => 'sqs',
-            'key' => 'existing-queue-key',
+            'key'    => 'existing-queue-key',
             'secret' => 'existing-queue-secret',
             'region' => 'us-east-1',
         ],
         'services.aws' => [
-            'key' => 'existing-service-key',
+            'key'    => 'existing-service-key',
             'secret' => 'existing-service-secret',
             'region' => 'us-east-1',
         ],
         'services.sms.providers.vonage' => [
-            'api_key' => 'existing-vonage-key',
+            'api_key'    => 'existing-vonage-key',
             'api_secret' => 'existing-vonage-secret',
-            'from' => 'Fleetbase',
+            'from'       => 'Fleetbase',
         ],
         'sms.default_provider' => 'twilio',
     ]);
@@ -117,15 +117,15 @@ function environment_mapper_fixtures(bool $createSettingsTable = true): void
     Facade::clearResolvedInstance('redis');
 
     $connectionConfig = [
-        'driver' => 'sqlite',
+        'driver'   => 'sqlite',
         'database' => ':memory:',
-        'prefix' => '',
+        'prefix'   => '',
     ];
 
     config([
-        'database.default' => 'mysql',
+        'database.default'           => 'mysql',
         'database.connections.mysql' => $connectionConfig,
-        'fleetbase.connection.db' => 'mysql',
+        'fleetbase.connection.db'    => 'mysql',
     ]);
 
     $capsule = new Capsule($container);
@@ -156,7 +156,7 @@ function environment_mapper_insert_settings(array $settings): void
 {
     foreach ($settings as $key => $value) {
         app('db')->table('settings')->insert([
-            'key' => $key,
+            'key'   => $key,
             'value' => is_array($value) ? json_encode($value) : $value,
         ]);
     }
@@ -182,7 +182,7 @@ test('environment mapper skips config mutation when settings table is unavailabl
 
     config([
         'filesystems.default' => 'local',
-        'mail.from.address' => null,
+        'mail.from.address'   => null,
     ]);
 
     EnvironmentMapper::mergeConfigFromSettingsOptimized();
@@ -195,26 +195,26 @@ test('environment mapper merges database settings into config and preserves exis
     environment_mapper_fixtures();
     environment_mapper_insert_settings([
         'system.filesystem.driver' => 's3',
-        'system.filesystem.s3' => [
-            'key' => 'setting-s3-key',
-            'bucket' => 'setting-bucket',
+        'system.filesystem.s3'     => [
+            'key'        => 'setting-s3-key',
+            'bucket'     => 'setting-bucket',
             'visibility' => 'private',
-            'secret' => '',
+            'secret'     => '',
         ],
         'system.mail.mailers.smtp' => [
             'host' => 'smtp.example.com',
             'port' => 2525,
         ],
         'system.services.aws' => [
-            'key' => 'setting-aws-key',
+            'key'    => 'setting-aws-key',
             'secret' => 'setting-aws-secret',
             'region' => 'ap-southeast-1',
         ],
-        'system.sms.default_provider' => 'vonage',
+        'system.sms.default_provider'   => 'vonage',
         'system.services.sms.providers' => [
             'vonage' => [
                 'api_key' => 'vonage-key',
-                'from' => 'Fleetbase',
+                'from'    => 'Fleetbase',
             ],
         ],
         'system.services.sms.providers.vonage.api_key' => 'vonage-key',
@@ -224,21 +224,21 @@ test('environment mapper merges database settings into config and preserves exis
 
     expect(config('filesystems.default'))->toBe('s3')
         ->and(config('filesystems.disks.s3'))->toMatchArray([
-            'driver' => 's3',
-            'key' => 'setting-aws-key',
-            'region' => 'ap-southeast-1',
-            'bucket' => 'setting-bucket',
+            'driver'     => 's3',
+            'key'        => 'setting-aws-key',
+            'region'     => 'ap-southeast-1',
+            'bucket'     => 'setting-bucket',
             'visibility' => 'private',
         ])
         ->and(config('filesystems.disks.s3.secret'))->toBe('setting-aws-secret')
         ->and(config('mail.mailers.smtp'))->toMatchArray([
             'transport' => 'smtp',
-            'host' => 'smtp.example.com',
-            'port' => 2525,
+            'host'      => 'smtp.example.com',
+            'port'      => 2525,
         ])
         ->and(config('queue.connections.sqs'))->toMatchArray([
             'driver' => 'sqs',
-            'key' => 'setting-aws-key',
+            'key'    => 'setting-aws-key',
             'secret' => 'setting-aws-secret',
             'region' => 'ap-southeast-1',
         ])
@@ -252,7 +252,7 @@ test('environment mapper sets missing environment variables from nested settings
     putenv('AWS_SECRET_ACCESS_KEY=already-set');
     environment_mapper_insert_settings([
         'system.services.aws' => [
-            'key' => 'env-aws-key',
+            'key'    => 'env-aws-key',
             'secret' => 'env-aws-secret',
             'region' => 'eu-west-1',
         ],

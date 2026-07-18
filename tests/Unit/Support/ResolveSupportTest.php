@@ -6,12 +6,12 @@ namespace Fleetbase\Tests\ResolveFixtures\Models {
     class ResolveWidget extends Model
     {
         protected $connection = 'mysql';
-        protected $table = 'resolve_widgets';
+        protected $table      = 'resolve_widgets';
         protected $primaryKey = 'uuid';
-        protected $keyType = 'string';
-        public $incrementing = false;
-        public $timestamps = false;
-        protected $guarded = [];
+        protected $keyType    = 'string';
+        public $incrementing  = false;
+        public $timestamps    = false;
+        protected $guarded    = [];
     }
 
     class ResolveMissingContract extends Model
@@ -75,15 +75,15 @@ namespace {
     function resolve_support_fixtures(): void
     {
         $connectionConfig = [
-            'driver' => 'sqlite',
+            'driver'   => 'sqlite',
             'database' => ':memory:',
-            'prefix' => '',
+            'prefix'   => '',
         ];
 
         $container = bind_test_container([
-            'database.default' => 'mysql',
+            'database.default'           => 'mysql',
             'database.connections.mysql' => $connectionConfig,
-            'fleetbase.connection.db' => 'mysql',
+            'fleetbase.connection.db'    => 'mysql',
         ]);
 
         $capsule = new Capsule($container);
@@ -132,8 +132,8 @@ namespace {
         $model = new ResolveWidget(['uuid' => 'widget-1', 'name' => 'Resolved Widget']);
 
         $resource = Resolve::httpResourceForModel($model, '\Fleetbase\Tests\ResolveFixtures');
-        $request = Resolve::httpRequestForModel(ResolveWidget::class, '\Fleetbase\Tests\ResolveFixtures');
-        $filter = Resolve::httpFilterForModel($model, Request::create('/v1/resolve-widgets', 'GET', ['name' => 'Resolved Widget']));
+        $request  = Resolve::httpRequestForModel(ResolveWidget::class, '\Fleetbase\Tests\ResolveFixtures');
+        $filter   = Resolve::httpFilterForModel($model, Request::create('/v1/resolve-widgets', 'GET', ['name' => 'Resolved Widget']));
 
         expect($resource)->toBeInstanceOf(ResolveWidgetResource::class)
             ->and($resource->resource)->toBe($model)

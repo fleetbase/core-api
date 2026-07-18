@@ -10,31 +10,31 @@ use Illuminate\Support\Facades\Facade;
 class TemplateQueryTenantFixture extends Model
 {
     protected $connection = 'mysql';
-    protected $table = 'template_query_tenant_fixtures';
-    protected $guarded = [];
-    public $timestamps = false;
+    protected $table      = 'template_query_tenant_fixtures';
+    protected $guarded    = [];
+    public $timestamps    = false;
 }
 
 class TemplateQueryGlobalFixture extends Model
 {
     protected $connection = 'mysql';
-    protected $table = 'template_query_global_fixtures';
-    protected $guarded = [];
-    public $timestamps = false;
+    protected $table      = 'template_query_global_fixtures';
+    protected $guarded    = [];
+    public $timestamps    = false;
 }
 
 function template_models_database(): Capsule
 {
     $connection = [
-        'driver' => 'sqlite',
+        'driver'   => 'sqlite',
         'database' => ':memory:',
-        'prefix' => '',
+        'prefix'   => '',
     ];
 
     $container = bind_test_container([
-        'database.default' => 'mysql',
-        'database.connections.mysql' => $connection,
-        'fleetbase.connection.db' => 'mysql',
+        'database.default'                => 'mysql',
+        'database.connections.mysql'      => $connection,
+        'fleetbase.connection.db'         => 'mysql',
         'fleetbase.template_query_models' => [
             TemplateQueryTenantFixture::class,
             TemplateQueryGlobalFixture::class,
@@ -126,8 +126,8 @@ it('executes tenant scoped template queries with conditions sorting and limits',
 
     $query = new TemplateQuery([
         'company_uuid' => 'company-1',
-        'model_type' => TemplateQueryTenantFixture::class,
-        'conditions' => [
+        'model_type'   => TemplateQueryTenantFixture::class,
+        'conditions'   => [
             ['field' => 'status', 'operator' => 'in', 'value' => ['active', 'queued']],
             ['field' => 'name', 'operator' => 'not like', 'value' => 'Beta'],
             ['field' => 'score', 'operator' => '>=', 'value' => 90],
@@ -166,11 +166,11 @@ it('returns empty results for disallowed missing or unscoped tenant query models
 
     $disallowed = new TemplateQuery([
         'company_uuid' => 'company-1',
-        'model_type' => Template::class,
+        'model_type'   => Template::class,
     ]);
     $missingClass = new TemplateQuery([
         'company_uuid' => 'company-1',
-        'model_type' => 'Fleetbase\\Missing\\TemplateModel',
+        'model_type'   => 'Fleetbase\\Missing\\TemplateModel',
     ]);
     $missingTenant = new TemplateQuery([
         'model_type' => TemplateQueryTenantFixture::class,

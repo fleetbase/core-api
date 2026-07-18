@@ -1,6 +1,5 @@
 <?php
 
-use Fleetbase\Models\Company;
 use Fleetbase\Traits\HasInternalId;
 use Fleetbase\Traits\HasSessionAttributes;
 use Fleetbase\Traits\Insertable;
@@ -18,9 +17,9 @@ class InternalIdTraitRecord extends Model
     use SoftDeletes;
 
     protected $connection = 'mysql';
-    protected $table = 'internal_id_trait_records';
-    protected $guarded = [];
-    public $timestamps = false;
+    protected $table      = 'internal_id_trait_records';
+    protected $guarded    = [];
+    public $timestamps    = false;
 }
 
 class InsertableTraitRecord extends Model
@@ -29,13 +28,13 @@ class InsertableTraitRecord extends Model
     use Insertable;
     use SoftDeletes;
 
-    protected $connection = 'mysql';
-    protected $table = 'insertable_trait_records';
-    protected $fillable = ['uuid', 'public_id', 'internal_id', 'company_uuid', 'name', 'created_at'];
-    public $timestamps = false;
-    public static int $flushes = 0;
-    public static int $uuidCounter = 0;
-    public static int $publicIdCounter = 0;
+    protected $connection                = 'mysql';
+    protected $table                     = 'insertable_trait_records';
+    protected $fillable                  = ['uuid', 'public_id', 'internal_id', 'company_uuid', 'name', 'created_at'];
+    public $timestamps                   = false;
+    public static int $flushes           = 0;
+    public static int $uuidCounter       = 0;
+    public static int $publicIdCounter   = 0;
     public static int $internalIdCounter = 0;
 
     public static function generateUuid($column = 'uuid'): string
@@ -71,15 +70,15 @@ function insertable_internal_id_database(): Capsule
     EloquentModel::clearBootedModels();
 
     $connectionConfig = [
-        'driver' => 'sqlite',
+        'driver'   => 'sqlite',
         'database' => ':memory:',
-        'prefix' => '',
+        'prefix'   => '',
     ];
 
     $container = bind_test_container([
-        'database.default' => 'mysql',
+        'database.default'           => 'mysql',
         'database.connections.mysql' => $connectionConfig,
-        'fleetbase.connection.db' => 'mysql',
+        'fleetbase.connection.db'    => 'mysql',
     ]);
 
     $capsule = new Capsule($container);
@@ -113,9 +112,9 @@ function insertable_internal_id_database(): Capsule
     });
 
     session()->flush();
-    InsertableTraitRecord::$flushes = 0;
-    InsertableTraitRecord::$uuidCounter = 0;
-    InsertableTraitRecord::$publicIdCounter = 0;
+    InsertableTraitRecord::$flushes           = 0;
+    InsertableTraitRecord::$uuidCounter       = 0;
+    InsertableTraitRecord::$publicIdCounter   = 0;
     InsertableTraitRecord::$internalIdCounter = 0;
 
     return $capsule;
@@ -135,8 +134,8 @@ test('has internal id generates ids from explicit prefixes and session company n
     ]);
     session(['company' => 'company-1']);
 
-    $arrayId = InternalIdTraitRecord::generateInternalId(['prepend' => 'PRE-', 'append' => '-A']);
-    $companyId = InternalIdTraitRecord::generateInternalId();
+    $arrayId    = InternalIdTraitRecord::generateInternalId(['prepend' => 'PRE-', 'append' => '-A']);
+    $companyId  = InternalIdTraitRecord::generateInternalId();
     $explicitId = InternalIdTraitRecord::generateInternalId('INV-', '-B');
 
     expect($arrayId)->toStartWith('PRE-')->toEndWith('-A')
@@ -157,7 +156,7 @@ test('insertable bulk insert enriches rows removes unsafe attributes applies hoo
 
     $result = InsertableTraitRecord::bulkInsert([
         [
-            'name' => 'alpha',
+            'name'          => 'alpha',
             'unsafe_column' => 'drop-me',
         ],
     ]);

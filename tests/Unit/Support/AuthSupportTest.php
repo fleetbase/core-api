@@ -1,7 +1,6 @@
 <?php
 
 use Fleetbase\Models\ApiCredential;
-use Fleetbase\Models\Company;
 use Fleetbase\Models\User;
 use Fleetbase\Support\Auth;
 use Illuminate\Database\Capsule\Manager as Capsule;
@@ -93,7 +92,7 @@ class AuthSupportApiCredential extends ApiCredential
 
         return app('db')->table($this->getTable())->where('uuid', $this->uuid)->update([
             'last_used_at' => $this->last_used_at->toDateTimeString(),
-            'updated_at' => $this->last_used_at->toDateTimeString(),
+            'updated_at'   => $this->last_used_at->toDateTimeString(),
         ]);
     }
 }
@@ -101,18 +100,18 @@ class AuthSupportApiCredential extends ApiCredential
 function auth_support_fixtures(): array
 {
     $connectionConfig = [
-        'driver' => 'sqlite',
+        'driver'   => 'sqlite',
         'database' => ':memory:',
-        'prefix' => '',
+        'prefix'   => '',
     ];
 
     $container = bind_test_container([
-        'app.timezone' => 'UTC',
-        'database.default' => 'mysql',
+        'app.timezone'               => 'UTC',
+        'database.default'           => 'mysql',
         'database.connections.mysql' => $connectionConfig,
-        'fleetbase.connection.db' => 'mysql',
+        'fleetbase.connection.db'    => 'mysql',
     ]);
-    $container->instance(\Illuminate\Contracts\Config\Repository::class, $container->make('config'));
+    $container->instance(Illuminate\Contracts\Config\Repository::class, $container->make('config'));
     $container->instance('cache', new AuthSupportCacheFake());
     $container->instance('hash', new AuthSupportHashFake());
     $container->instance('responsecache', new AuthSupportResponseCacheFake());
@@ -186,69 +185,69 @@ function auth_support_fixtures(): array
     $now = '2026-07-17 10:00:00';
     app('db')->table('companies')->insert([
         [
-            'uuid' => '22222222-2222-4222-8222-222222222222',
-            'public_id' => 'company_live',
-            'name' => 'Primary Company',
-            'timezone' => 'Asia/Ulaanbaatar',
+            'uuid'       => '22222222-2222-4222-8222-222222222222',
+            'public_id'  => 'company_live',
+            'name'       => 'Primary Company',
+            'timezone'   => 'Asia/Ulaanbaatar',
             'created_at' => $now,
             'updated_at' => $now,
         ],
         [
-            'uuid' => '33333333-3333-4333-8333-333333333333',
-            'public_id' => 'company_fallback',
-            'name' => 'Fallback Company',
-            'timezone' => 'Europe/Berlin',
+            'uuid'       => '33333333-3333-4333-8333-333333333333',
+            'public_id'  => 'company_fallback',
+            'name'       => 'Fallback Company',
+            'timezone'   => 'Europe/Berlin',
             'created_at' => $now,
             'updated_at' => $now,
         ],
     ]);
     app('db')->table('users')->insert([
         [
-            'uuid' => '11111111-1111-4111-8111-111111111111',
+            'uuid'         => '11111111-1111-4111-8111-111111111111',
             'company_uuid' => '22222222-2222-4222-8222-222222222222',
-            'email' => 'admin@example.com',
-            'phone' => '+15555550100',
-            'username' => 'admin-user',
-            'name' => 'Admin User',
-            'type' => 'admin',
-            'timezone' => 'Pacific/Auckland',
-            'created_at' => $now,
-            'updated_at' => $now,
+            'email'        => 'admin@example.com',
+            'phone'        => '+15555550100',
+            'username'     => 'admin-user',
+            'name'         => 'Admin User',
+            'type'         => 'admin',
+            'timezone'     => 'Pacific/Auckland',
+            'created_at'   => $now,
+            'updated_at'   => $now,
         ],
         [
-            'uuid' => '44444444-4444-4444-8444-444444444444',
+            'uuid'         => '44444444-4444-4444-8444-444444444444',
             'company_uuid' => null,
-            'email' => 'driver@example.com',
-            'phone' => '+15555550101',
-            'username' => 'driver-user',
-            'name' => 'Driver User',
-            'type' => 'driver',
-            'timezone' => null,
-            'created_at' => $now,
-            'updated_at' => $now,
+            'email'        => 'driver@example.com',
+            'phone'        => '+15555550101',
+            'username'     => 'driver-user',
+            'name'         => 'Driver User',
+            'type'         => 'driver',
+            'timezone'     => null,
+            'created_at'   => $now,
+            'updated_at'   => $now,
         ],
     ]);
     app('db')->table('company_users')->insert([
-        'uuid' => '55555555-5555-4555-8555-555555555555',
+        'uuid'         => '55555555-5555-4555-8555-555555555555',
         'company_uuid' => '33333333-3333-4333-8333-333333333333',
-        'user_uuid' => '44444444-4444-4444-8444-444444444444',
-        'created_at' => $now,
-        'updated_at' => $now,
+        'user_uuid'    => '44444444-4444-4444-8444-444444444444',
+        'created_at'   => $now,
+        'updated_at'   => $now,
     ]);
     app('db')->table('api_credentials')->insert([
-        'uuid' => '66666666-6666-4666-8666-666666666666',
-        '_key' => 'api-key-row',
-        'user_uuid' => '11111111-1111-4111-8111-111111111111',
-        'company_uuid' => '22222222-2222-4222-8222-222222222222',
-        'name' => 'Test API Key',
-        'key' => 'flb_test_key',
-        'secret' => 'hashed-secret',
-        'test_mode' => true,
-        'api' => 'console',
+        'uuid'            => '66666666-6666-4666-8666-666666666666',
+        '_key'            => 'api-key-row',
+        'user_uuid'       => '11111111-1111-4111-8111-111111111111',
+        'company_uuid'    => '22222222-2222-4222-8222-222222222222',
+        'name'            => 'Test API Key',
+        'key'             => 'flb_test_key',
+        'secret'          => 'hashed-secret',
+        'test_mode'       => true,
+        'api'             => 'console',
         'browser_origins' => json_encode([]),
-        'expires_at' => Carbon::now()->addHour()->toDateTimeString(),
-        'created_at' => $now,
-        'updated_at' => $now,
+        'expires_at'      => Carbon::now()->addHour()->toDateTimeString(),
+        'created_at'      => $now,
+        'updated_at'      => $now,
     ]);
 
     return [
@@ -304,7 +303,7 @@ test('auth support applies sandbox session from headers or api credential fallba
     [, , $credential] = auth_support_fixtures();
 
     $headerRequest = Request::create('/v1/orders', 'GET', [], [], [], [
-        'HTTP_ACCESS_CONSOLE_SANDBOX' => '1',
+        'HTTP_ACCESS_CONSOLE_SANDBOX'     => '1',
         'HTTP_ACCESS_CONSOLE_SANDBOX_KEY' => 'header-key',
     ]);
 
@@ -347,8 +346,8 @@ test('auth support resolves user timezone before company and app fallbacks', fun
     expect(Auth::getUserTimezone($requestWithoutUserTimezone))->toBe('Europe/Berlin');
 
     $missingCompany = new User([
-        'uuid' => '77777777-7777-4777-8777-777777777777',
-        'timezone' => null,
+        'uuid'         => '77777777-7777-4777-8777-777777777777',
+        'timezone'     => null,
         'company_uuid' => null,
     ]);
     $fallbackRequest = Request::create('/test');

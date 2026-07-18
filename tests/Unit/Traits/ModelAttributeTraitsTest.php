@@ -14,14 +14,14 @@ class ModelAttributeTraitsRecord extends Model
     use HasOptionsAttributes;
     use HasSessionAttributes;
 
-    protected $table = 'trait_records';
+    protected $table      = 'trait_records';
     protected $primaryKey = 'uuid';
-    public $incrementing = false;
-    protected $keyType = 'string';
-    public $timestamps = false;
-    protected $guarded = [];
-    protected $casts = [
-        'meta' => 'array',
+    public $incrementing  = false;
+    protected $keyType    = 'string';
+    public $timestamps    = false;
+    protected $guarded    = [];
+    protected $casts      = [
+        'meta'    => 'array',
         'options' => 'array',
     ];
 }
@@ -35,7 +35,7 @@ function model_attribute_traits_database(): Capsule
     ];
 
     $container = bind_test_container([
-        'database.default' => 'testing',
+        'database.default'             => 'testing',
         'database.connections.testing' => $connectionConfig,
     ]);
 
@@ -82,7 +82,7 @@ test('has meta attributes manages nested values booleans defaults and selected s
         ->and($record->hasMeta(['customer.id', 'missing']))->toBeFalse()
         ->and($record->getMetaAttributes(['customer.id', 'flags.billable']))->toBe([
             'customer' => ['id' => 1846473],
-            'flags' => ['billable' => true],
+            'flags'    => ['billable' => true],
         ]);
 });
 
@@ -90,8 +90,8 @@ test('has meta attributes updates database meta properties without discarding ex
     model_attribute_traits_database();
 
     $record = new ModelAttributeTraitsRecord([
-        'uuid' => 'record-1',
-        'meta' => ['existing' => 'yes', 'count' => 1],
+        'uuid'    => 'record-1',
+        'meta'    => ['existing' => 'yes', 'count' => 1],
         'options' => [],
     ]);
     $record->save();
@@ -105,8 +105,8 @@ test('has meta attributes updates database meta properties without discarding ex
 
     expect(json_decode($rawMeta, true))->toBe([
         'existing' => 'yes',
-        'count' => 2,
-        'new' => 'value',
+        'count'    => 2,
+        'new'      => 'value',
     ]);
 });
 
@@ -121,15 +121,15 @@ test('has options attributes manages nested options and boolean checks', functio
     $record->setOption('enabled', true)
         ->setOption('customer.name', 'Acme')
         ->setOption([
-            'dispatch.window' => 'morning',
+            'dispatch.window'   => 'morning',
             'dispatch.priority' => 'high',
         ], null);
 
     expect($record->getOption())->toBe([
-        'enabled' => true,
+        'enabled'  => true,
         'customer' => ['name' => 'Acme'],
         'dispatch' => [
-            'window' => 'morning',
+            'window'   => 'morning',
             'priority' => 'high',
         ],
     ])

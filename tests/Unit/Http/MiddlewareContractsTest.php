@@ -32,17 +32,17 @@ namespace {
     use Fleetbase\Http\Middleware\AdminGuard;
     use Fleetbase\Http\Middleware\AttachCacheHeaders;
     use Fleetbase\Http\Middleware\AuthenticateOnceWithBasicAuth;
-    use Fleetbase\Http\Middleware\ConvertStringBooleans;
-    use Fleetbase\Http\Middleware\EnsureFleetbaseConfigured;
     use Fleetbase\Http\Middleware\AuthorizationGuard;
     use Fleetbase\Http\Middleware\ClearCacheAfterDelete;
+    use Fleetbase\Http\Middleware\ConvertStringBooleans;
+    use Fleetbase\Http\Middleware\EnsureFleetbaseConfigured;
     use Fleetbase\Http\Middleware\LogApiRequests;
     use Fleetbase\Http\Middleware\MergeConfigFromSettings;
     use Fleetbase\Http\Middleware\PerformanceMonitoring;
     use Fleetbase\Http\Middleware\RequestTimer;
     use Fleetbase\Http\Middleware\ResetJsonResourceWrap;
-    use Fleetbase\Http\Middleware\SetSandboxSession;
     use Fleetbase\Http\Middleware\SetGlobalHeaders;
+    use Fleetbase\Http\Middleware\SetSandboxSession;
     use Fleetbase\Http\Middleware\SetupFleetbaseSession;
     use Fleetbase\Http\Middleware\ThrottleRequests;
     use Fleetbase\Http\Middleware\ValidateETag;
@@ -59,7 +59,6 @@ namespace {
     use Illuminate\Http\JsonResponse;
     use Illuminate\Http\Request;
     use Illuminate\Http\Resources\Json\JsonResource;
-    use Illuminate\Support\Facades\Bus;
     use Illuminate\Support\Facades\Facade;
     use Laravel\Sanctum\PersonalAccessToken;
 
@@ -132,7 +131,7 @@ namespace {
 
     class MiddlewareContractsBusFake
     {
-        public array $jobs = [];
+        public array $jobs        = [];
         public ?Throwable $throws = null;
 
         public function dispatch(mixed $job): mixed
@@ -494,7 +493,7 @@ namespace {
         foreach ([$missingDatabase, $missingTable, $dbException] as $response) {
             expect($response->getStatusCode())->toBe(503)
                 ->and($response->getData(true))->toMatchArray([
-                    'error' => 'fleetbase_not_configured',
+                    'error'  => 'fleetbase_not_configured',
                     'errors' => ['fleetbase_not_configured'],
                 ]);
         }
@@ -525,8 +524,8 @@ namespace {
 
     test('merge config from settings middleware delegates settings merge and returns next response', function () {
         middleware_contracts_fixture([
-            'mail.from.address' => null,
-            'database.default' => null,
+            'mail.from.address'       => null,
+            'database.default'        => null,
             'fleetbase.connection.db' => null,
         ]);
 
@@ -541,13 +540,13 @@ namespace {
 
     test('set sandbox session middleware applies sandbox connection state from request headers', function () {
         middleware_contracts_fixture([
-            'database.default' => 'mysql',
+            'database.default'        => 'mysql',
             'fleetbase.connection.db' => 'mysql',
         ]);
 
         $response = (new SetSandboxSession())->handle(
             middleware_contracts_request('/v1/orders', 'v1/orders', [
-                'Access-Console-Sandbox' => '1',
+                'Access-Console-Sandbox'     => '1',
                 'Access-Console-Sandbox-Key' => 'credential-1',
             ]),
             fn () => new JsonResponse(['sandbox' => true])
@@ -596,10 +595,10 @@ namespace {
     test('log api requests dispatches public mutation request logs with payload and session', function () {
         middleware_contracts_fixture(['api.version' => 'v1']);
         session([
-            'api_key' => 'flb_live_key',
-            'company' => 'company-1',
+            'api_key'        => 'flb_live_key',
+            'company'        => 'company-1',
             'api_credential' => 'internal-console',
-            'is_sandbox' => true,
+            'is_sandbox'     => true,
         ]);
         $bus = new MiddlewareContractsBusFake();
         app()->instance('bus', $bus);
@@ -617,42 +616,42 @@ namespace {
             ->and($bus->jobs[0])->toBeInstanceOf(Fleetbase\Jobs\LogApiRequest::class)
             ->and($bus->jobs[0]->dbConnection)->toBe('sandbox')
             ->and($bus->jobs[0]->payload)->toMatchArray([
-                '_key' => 'flb_live_key',
-                'company_uuid' => 'company-1',
-                'method' => 'POST',
-                'path' => 'v1/orders',
-                'status_code' => 201,
-                'reason_phrase' => 'Created',
-                'version' => 'v1',
-                'source' => 'Fleetbase SDK',
-                'content_type' => 'application/json',
-                'related' => ['order_1'],
-                'query_params' => ['status' => 'created'],
-                'request_body' => ['name' => 'Order 1', 'status' => 'created'],
+                '_key'             => 'flb_live_key',
+                'company_uuid'     => 'company-1',
+                'method'           => 'POST',
+                'path'             => 'v1/orders',
+                'status_code'      => 201,
+                'reason_phrase'    => 'Created',
+                'version'          => 'v1',
+                'source'           => 'Fleetbase SDK',
+                'content_type'     => 'application/json',
+                'related'          => ['order_1'],
+                'query_params'     => ['status' => 'created'],
+                'request_body'     => ['name' => 'Order 1', 'status' => 'created'],
                 'request_raw_body' => '{"name":"Order 1"}',
             ]);
     });
 
     test('log api requests swallows dispatch errors and keeps original response', function () {
         middleware_contracts_fixture(['api.version' => 'v1']);
-        $bus = new MiddlewareContractsBusFake();
+        $bus         = new MiddlewareContractsBusFake();
         $bus->throws = new RuntimeException('queue unavailable');
         app()->instance('bus', $bus);
         app()->instance(BusDispatcher::class, $bus);
         app()->instance('log', new class {
-            public array $entries = [];
-            public array $errors = [];
+            public array $entries  = [];
+            public array $errors   = [];
             public array $warnings = [];
 
             public function error(string $message, array $context = []): void
             {
                 $this->entries[] = ['error', $message, $context];
-                $this->errors[] = [$message, $context];
+                $this->errors[]  = [$message, $context];
             }
 
             public function warning(string $message, array $context = []): void
             {
-                $this->entries[] = ['warning', $message, $context];
+                $this->entries[]  = ['warning', $message, $context];
                 $this->warnings[] = [$message, $context];
             }
         });
@@ -937,7 +936,7 @@ namespace {
             'HTTP_AUTHORIZATION' => 'Bearer flb_live_auth',
         ]);
         $continued = false;
-        $response = (new AuthenticateOnceWithBasicAuth())->handle(
+        $response  = (new AuthenticateOnceWithBasicAuth())->handle(
             $request,
             function () use (&$continued) {
                 $continued = true;
@@ -976,7 +975,7 @@ namespace {
             'HTTP_AUTHORIZATION' => 'Bearer flb_live_expired',
         ]);
         $expiredContinued = false;
-        $expiredResponse = (new AuthenticateOnceWithBasicAuth())->handle(
+        $expiredResponse  = (new AuthenticateOnceWithBasicAuth())->handle(
             $expiredRequest,
             function () use (&$expiredContinued) {
                 $expiredContinued = true;
@@ -1044,13 +1043,13 @@ namespace {
             }
         };
         $token->setRawAttributes([
-            'id' => 987,
-            'token' => 'plain-sanctum-token',
+            'id'         => 987,
+            'token'      => 'plain-sanctum-token',
             'created_at' => '2026-07-18 12:00:00',
         ], true);
 
         $user = new class($token) {
-            public string $uuid = 'user-1';
+            public string $uuid         = 'user-1';
             public string $company_uuid = 'company-1';
 
             public function __construct(private PersonalAccessToken $token)
@@ -1074,7 +1073,7 @@ namespace {
         };
 
         $request = Request::create('/int/v1/orders', 'GET', [], [], [], [
-            'HTTP_ACCESS_CONSOLE_SANDBOX' => '1',
+            'HTTP_ACCESS_CONSOLE_SANDBOX'     => '1',
             'HTTP_ACCESS_CONSOLE_SANDBOX_KEY' => 'sandbox-credential-1',
         ]);
         $request->setUserResolver(fn () => $user);
@@ -1103,7 +1102,7 @@ namespace {
         session()->flush();
 
         $guestContinued = false;
-        $guestResponse = (new AdminGuard())->handle(
+        $guestResponse  = (new AdminGuard())->handle(
             Request::create('/int/v1/admin', 'GET'),
             function () use (&$guestContinued) {
                 $guestContinued = true;
@@ -1116,7 +1115,7 @@ namespace {
         $adminRequest = Request::create('/int/v1/admin', 'GET');
         $adminRequest->setUserResolver(fn () => new MiddlewareContractsUser(true));
         $adminContinued = false;
-        $adminResponse = (new AdminGuard())->handle(
+        $adminResponse  = (new AdminGuard())->handle(
             $adminRequest,
             function () use (&$adminContinued) {
                 $adminContinued = true;
@@ -1129,7 +1128,7 @@ namespace {
         $standardRequest = Request::create('/int/v1/admin', 'GET');
         $standardRequest->setUserResolver(fn () => new MiddlewareContractsUser(false));
         $standardContinued = false;
-        $standardResponse = (new AdminGuard())->handle(
+        $standardResponse  = (new AdminGuard())->handle(
             $standardRequest,
             function () use (&$standardContinued) {
                 $standardContinued = true;
@@ -1176,7 +1175,7 @@ namespace {
         };
 
         $adminContinued = false;
-        $adminResponse = $guard->handle(
+        $adminResponse  = $guard->handle(
             $requestFactory(new MiddlewareContractsUser(true, true)),
             function () use (&$adminContinued) {
                 $adminContinued = true;
@@ -1186,7 +1185,7 @@ namespace {
         );
 
         $deniedContinued = false;
-        $deniedResponse = $guard->handle(
+        $deniedResponse  = $guard->handle(
             $requestFactory(new MiddlewareContractsUser(false, true)),
             function () use (&$deniedContinued) {
                 $deniedContinued = true;
@@ -1196,7 +1195,7 @@ namespace {
         );
 
         $allowedContinued = false;
-        $allowedResponse = $guard->handle(
+        $allowedResponse  = $guard->handle(
             $requestFactory(new MiddlewareContractsUser(false, false)),
             function () use (&$allowedContinued) {
                 $allowedContinued = true;

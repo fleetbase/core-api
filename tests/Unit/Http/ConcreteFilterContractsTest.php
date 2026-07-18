@@ -51,9 +51,9 @@ use Illuminate\Support\Facades\Facade;
 class ConcreteFilterActivityRecord extends EloquentModel
 {
     protected $connection = 'mysql';
-    protected $table = 'activity_log';
-    protected $guarded = [];
-    public $timestamps = false;
+    protected $table      = 'activity_log';
+    protected $guarded    = [];
+    public $timestamps    = false;
 }
 
 class ConcreteFilterRoute
@@ -740,7 +740,7 @@ test('chat message and log filters expose only tenant channels with current user
 });
 
 test('category filter applies tenant core parent and list filters', function () {
-    $capsule = concrete_filter_database();
+    $capsule    = concrete_filter_database();
     $parentUuid = '11111111-1111-4111-8111-111111111111';
     $capsule->getConnection('mysql')->table('categories')->insert([
         ['uuid' => $parentUuid, 'public_id' => 'category_parent', 'company_uuid' => 'company-1', 'parent_uuid' => null, 'name' => 'Parent', 'for' => 'order', 'core_category' => false],
@@ -769,7 +769,7 @@ test('schedule item filter resolves schedule identifiers and date ranges within 
     ]);
 
     $rangeBuilder = ScheduleItem::query();
-    $rangeFilter = concrete_filter_with_builder(
+    $rangeFilter  = concrete_filter_with_builder(
         new ScheduleItemFilter(concrete_filter_request([], 'int/v1/schedule-items')),
         $rangeBuilder
     );

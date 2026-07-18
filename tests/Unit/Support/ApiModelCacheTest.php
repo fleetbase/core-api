@@ -10,21 +10,21 @@ use Illuminate\Support\Facades\Facade;
 
 class ApiModelCacheTestModel extends Model
 {
-    protected $table = 'orders';
+    protected $table      = 'orders';
     protected $primaryKey = 'uuid';
-    public $incrementing = false;
-    protected $keyType = 'string';
+    public $incrementing  = false;
+    protected $keyType    = 'string';
 }
 
 class ApiModelCacheTraitTestModel extends Model
 {
     use HasApiModelCache;
 
-    protected $table = 'orders';
+    protected $table      = 'orders';
     protected $primaryKey = 'uuid';
-    public $incrementing = false;
-    protected $keyType = 'string';
-    protected $guarded = [];
+    public $incrementing  = false;
+    protected $keyType    = 'string';
+    protected $guarded    = [];
 
     public static array $mutatedRequestQueries = [];
 
@@ -117,11 +117,11 @@ class ApiModelCacheTestTaggedStore
 
 class ApiModelCacheTestStore
 {
-    public array $values = [];
+    public array $values       = [];
     public array $taggedValues = [];
-    public array $flushedTags = [];
-    public array $forgotten = [];
-    public bool $throwOnTags = false;
+    public array $flushedTags  = [];
+    public array $forgotten    = [];
+    public bool $throwOnTags   = false;
 
     public function get(string $key, mixed $default = null): mixed
     {
@@ -192,11 +192,11 @@ function api_model_cache_fixture(array $config = []): ApiModelCacheTestStore
     $store = new ApiModelCacheTestStore();
 
     bind_test_container(array_replace([
-        'api.cache.enabled' => true,
-        'api.cache.ttl.query' => 111,
-        'api.cache.ttl.model' => 222,
+        'api.cache.enabled'          => true,
+        'api.cache.ttl.query'        => 111,
+        'api.cache.ttl.model'        => 222,
         'api.cache.ttl.relationship' => 333,
-        'cache.default' => 'array',
+        'cache.default'              => 'array',
     ], $config));
 
     app()->instance('cache', $store);
@@ -325,16 +325,16 @@ test('api model cache generates tenant scoped stable query model and relationshi
 
     $first = ApiModelCache::generateQueryCacheKey($model, api_model_cache_request([
         'status' => 'active',
-        'limit' => '50',
-        '_' => 'cache-bust',
-        'empty' => null,
+        'limit'  => '50',
+        '_'      => 'cache-bust',
+        'empty'  => null,
     ]), ['callback' => true]);
 
     $second = ApiModelCache::generateQueryCacheKey($model, api_model_cache_request([
-        'limit' => '50',
+        'limit'     => '50',
         'timestamp' => 'ignore-me',
-        'status' => 'active',
-        'nocache' => 1,
+        'status'    => 'active',
+        'nocache'   => 1,
     ]), ['callback' => true]);
 
     expect($first)->toBe($second)
@@ -349,8 +349,8 @@ test('api model cache generates tenant scoped stable query model and relationshi
 
 test('api model cache stores query results with miss hit status and disabled bypass behavior', function () {
     api_model_cache_fixture();
-    $calls = 0;
-    $model = api_model_cache_model();
+    $calls   = 0;
+    $model   = api_model_cache_model();
     $request = api_model_cache_request(['status' => 'active']);
 
     $first = ApiModelCache::cacheQueryResult($model, $request, function () use (&$calls) {
@@ -382,7 +382,7 @@ test('api model cache stores query results with miss hit status and disabled byp
 
 test('api model cache stores model and relationship lookups with status tracking', function () {
     api_model_cache_fixture();
-    $model = api_model_cache_model();
+    $model      = api_model_cache_model();
     $modelCalls = 0;
 
     $firstModel = ApiModelCache::cacheModel($model, 'order-1', function () use (&$modelCalls) {
@@ -405,7 +405,7 @@ test('api model cache stores model and relationship lookups with status tracking
 
     ApiModelCache::resetCacheStatus();
     $relationshipCalls = 0;
-    $firstRelation = ApiModelCache::cacheRelationship($model, 'payload', function () use (&$relationshipCalls) {
+    $firstRelation     = ApiModelCache::cacheRelationship($model, 'payload', function () use (&$relationshipCalls) {
         $relationshipCalls++;
 
         return ['uuid' => 'payload-1'];
@@ -424,8 +424,8 @@ test('api model cache stores model and relationship lookups with status tracking
 });
 
 test('api model cache invalidates scoped query and model caches and advances query versions', function () {
-    $store = api_model_cache_fixture();
-    $model = api_model_cache_model();
+    $store   = api_model_cache_fixture();
+    $model   = api_model_cache_model();
     $request = api_model_cache_request(['status' => 'active']);
 
     ApiModelCache::cacheQueryResult($model, $request, fn () => collect(['cached']));
@@ -450,9 +450,9 @@ test('api model cache invalidates scoped query and model caches and advances que
 });
 
 test('api model cache falls back to callbacks when tagged cache operations fail', function () {
-    $store = api_model_cache_fixture();
+    $store              = api_model_cache_fixture();
     $store->throwOnTags = true;
-    $model = api_model_cache_model();
+    $model              = api_model_cache_model();
 
     $queryResult = ApiModelCache::cacheQueryResult(
         $model,
@@ -472,7 +472,7 @@ test('api model cache falls back to callbacks when tagged cache operations fail'
 
 test('has api model cache caches request queries with callback markers page offsets and mutation hooks', function () {
     api_model_cache_trait_database();
-    $model = new ApiModelCacheTraitTestModel();
+    $model   = new ApiModelCacheTraitTestModel();
     $request = api_model_cache_request([
         'status' => 'active',
         'limit'  => 1,
@@ -504,7 +504,7 @@ test('has api model cache caches request queries with callback markers page offs
 
 test('has api model cache wraps id public id relationship invalidation and stats helpers', function () {
     $capsule = api_model_cache_trait_database();
-    $store = app('cache');
+    $store   = app('cache');
 
     $byId = ApiModelCacheTraitTestModel::findCached('order-1');
     $capsule->getConnection('mysql')->table('orders')->where('uuid', 'order-1')->delete();

@@ -59,9 +59,9 @@ class IdentityAccessCacheFake
 class IdentityAccessOrderFixture extends EloquentModel
 {
     protected $connection = 'mysql';
-    protected $table = 'identity_access_orders';
-    protected $guarded = [];
-    public $timestamps = false;
+    protected $table      = 'identity_access_orders';
+    protected $guarded    = [];
+    public $timestamps    = false;
 }
 
 class IdentityAccessSessionFake
@@ -87,22 +87,22 @@ function identity_access_models_database(): Capsule
     EloquentModel::clearBootedModels();
 
     $connection = [
-        'driver' => 'sqlite',
+        'driver'   => 'sqlite',
         'database' => ':memory:',
-        'prefix' => '',
+        'prefix'   => '',
     ];
 
     $container = bind_test_container([
-        'api.cache.enabled' => false,
-        'auth.defaults.guard' => 'sanctum',
-        'auth.guards.sanctum.driver' => 'session',
+        'api.cache.enabled'            => false,
+        'auth.defaults.guard'          => 'sanctum',
+        'auth.guards.sanctum.driver'   => 'session',
         'auth.guards.sanctum.provider' => 'users',
-        'auth.providers.users.driver' => 'eloquent',
-        'auth.providers.users.model' => User::class,
-        'database.default' => 'mysql',
-        'database.connections.mysql' => $connection,
-        'fleetbase.connection.db' => 'mysql',
-        'permission.defaults.guard' => 'sanctum',
+        'auth.providers.users.driver'  => 'eloquent',
+        'auth.providers.users.model'   => User::class,
+        'database.default'             => 'mysql',
+        'database.connections.mysql'   => $connection,
+        'fleetbase.connection.db'      => 'mysql',
+        'permission.defaults.guard'    => 'sanctum',
     ]);
     $container->instance('cache', new IdentityAccessCacheFake());
     $container->instance('session', new IdentityAccessSessionFake());
@@ -161,11 +161,11 @@ it('routes group notifications to loaded users and preserves group relation meta
     $userB->setRawAttributes(['uuid' => 'user-2', 'email' => 'grace@example.com'], true);
 
     $group = new Group([
-        '_key' => 'console',
-        'public_id' => 'group_dispatch',
+        '_key'         => 'console',
+        'public_id'    => 'group_dispatch',
         'company_uuid' => 'company-1',
-        'name' => 'Dispatchers',
-        'description' => 'Dispatch desk operators',
+        'name'         => 'Dispatchers',
+        'description'  => 'Dispatch desk operators',
     ]);
     $group->setRelation('users', collect([$userA, $userB]));
 
@@ -189,8 +189,8 @@ it('keeps group user membership relationships and credential tracking boundaries
 
     $membership = GroupUser::query()->create([
         'company_uuid' => 'company-explicit',
-        'user_uuid' => 'user-1',
-        'group_uuid' => 'group-1',
+        'user_uuid'    => 'user-1',
+        'group_uuid'   => 'group-1',
     ]);
 
     expect($membership->uuid)->toBeString()
@@ -209,8 +209,8 @@ it('tracks login attempts while hiding sensitive identity and password fields', 
 
     $attempt = LoginAttempt::track([
         'session_uuid' => 'session-1',
-        'identity' => 'ada@example.com',
-        'password' => 'plaintext-secret',
+        'identity'     => 'ada@example.com',
+        'password'     => 'plaintext-secret',
     ]);
 
     expect($attempt)->toBeInstanceOf(LoginAttempt::class)
@@ -229,13 +229,13 @@ it('casts applies encodes and relates authorization directives', function () {
     session(['company' => 'company-1']);
 
     $directive = new Directive([
-        'uuid' => 'directive-1',
-        'company_uuid' => 'company-1',
+        'uuid'            => 'directive-1',
+        'company_uuid'    => 'company-1',
         'permission_uuid' => 'permission-1',
-        'subject_type' => Policy::class,
-        'subject_uuid' => 'policy-1',
-        'key' => Directive::createKey(['where', 'company_uuid', '=', 'session.company']),
-        'rules' => ['where', 'company_uuid', '=', 'session.company'],
+        'subject_type'    => Policy::class,
+        'subject_uuid'    => 'policy-1',
+        'key'             => Directive::createKey(['where', 'company_uuid', '=', 'session.company']),
+        'rules'           => ['where', 'company_uuid', '=', 'session.company'],
     ]);
 
     $query = IdentityAccessOrderFixture::query();

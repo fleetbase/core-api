@@ -73,13 +73,13 @@ function user_model_container(): void
     Facade::clearResolvedInstance('hash');
 
     $connection = [
-        'driver' => 'sqlite',
+        'driver'   => 'sqlite',
         'database' => ':memory:',
-        'prefix' => '',
+        'prefix'   => '',
     ];
 
     config([
-        'database.default' => 'mysql',
+        'database.default'           => 'mysql',
         'database.connections.mysql' => $connection,
     ]);
 
@@ -100,21 +100,21 @@ it('exposes identity type status timezone and company-derived attributes', funct
 
     $company = new Company();
     $company->setRawAttributes([
-        'uuid' => 'company-1',
-        'owner_uuid' => 'user-1',
-        'name' => 'Acme Logistics',
+        'uuid'                    => 'company-1',
+        'owner_uuid'              => 'user-1',
+        'name'                    => 'Acme Logistics',
         'onboarding_completed_at' => '2026-07-17 10:00:00',
     ], true);
 
     $user = new UserModelSaveSpy();
     $user->setRawAttributes([
-        'uuid' => 'user-1',
-        'email' => 'ada@example.com',
-        'phone' => '+15555550100',
+        'uuid'     => 'user-1',
+        'email'    => 'ada@example.com',
+        'phone'    => '+15555550100',
         'username' => 'ada',
-        'type' => 'admin',
+        'type'     => 'admin',
         'timezone' => null,
-        'status' => null,
+        'status'   => null,
     ], true);
     $user->setRelation('company', $company);
 
@@ -145,7 +145,7 @@ it('routes notification tokens by channel and exposes broadcast and sms identiti
 
     $user = new User();
     $user->setRawAttributes([
-        'uuid' => 'user-1',
+        'uuid'  => 'user-1',
         'phone' => '+15555550100',
     ], true);
     $user->setRelation('devices', new Collection([
@@ -163,7 +163,7 @@ it('routes notification tokens by channel and exposes broadcast and sms identiti
 it('hashes and verifies passwords while save-backed password helpers preserve fluent behavior', function () {
     user_model_container();
 
-    $user = new UserModelSaveSpy();
+    $user           = new UserModelSaveSpy();
     $user->password = 'old-secret';
 
     expect($user->password)->not->toBe('old-secret')
@@ -194,7 +194,7 @@ it('activates and deactivates the user and loaded company-user session state tog
 
     $companyUser = new class {
         public string $status = 'active';
-        public int $saves = 0;
+        public int $saves     = 0;
 
         public function save(): bool
         {
@@ -225,7 +225,7 @@ it('verifies users from verification code instances and rejects unsupported veri
     user_model_container();
     Carbon::setTestNow(Carbon::parse('2026-07-17 15:00:00', 'UTC'));
 
-    $user = new UserModelSaveSpy();
+    $user      = new UserModelSaveSpy();
     $emailCode = new VerificationCode();
     $emailCode->setRawAttributes(['for' => 'email_verification'], true);
     $phoneCode = new VerificationCode();
@@ -267,7 +267,7 @@ it('reports verification and searchability boundaries for account state checks',
 it('syncs fillable identity properties in either direction only when the target is missing', function () {
     user_model_container();
 
-    $user = new UserModelSaveSpy(['email' => 'ada@example.com']);
+    $user   = new UserModelSaveSpy(['email' => 'ada@example.com']);
     $target = new UserModelSyncTarget();
 
     expect($user->syncProperty('email', $target))->toBeTrue()
@@ -275,7 +275,7 @@ it('syncs fillable identity properties in either direction only when the target 
         ->and($target->quietUpdates)->toBe([['email' => 'ada@example.com']]);
 
     $emptyUser = new UserModelSaveSpy();
-    $source = new UserModelSyncTarget(['phone' => '+15555550100']);
+    $source    = new UserModelSyncTarget(['phone' => '+15555550100']);
 
     expect($emptyUser->syncProperty('phone', $source))->toBeTrue()
         ->and($emptyUser->phone)->toBe('+15555550100')

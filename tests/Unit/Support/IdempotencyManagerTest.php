@@ -5,8 +5,8 @@ use Illuminate\Support\Facades\Cache;
 
 class IdempotencyManagerCacheFake
 {
-    public array $values = [];
-    public array $ttl = [];
+    public array $values    = [];
+    public array $ttl       = [];
     public array $forgotten = [];
 
     public function has(string $key): bool

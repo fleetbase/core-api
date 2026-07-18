@@ -149,21 +149,21 @@ namespace {
         ]);
         $capsule->getConnection('mysql')->table('companies')->insert([
             [
-                'id' => 11, 'uuid' => 'company-visible', 'public_id' => 'org_visible', 'user_id' => 'user-owner', 'owner_uuid' => 'user-owner',
-                'name' => 'Visible Logistics', 'description' => 'Primary organization', 'phone' => '+1 555 0100',
-                'type' => 'business', 'timezone' => 'UTC', 'country' => 'US', 'currency' => 'USD', 'plan' => 'starter',
-                'status' => 'active', 'slug' => 'visible-logistics', 'options' => '{"dispatch":true}', 'meta' => null,
+                'id'            => 11, 'uuid' => 'company-visible', 'public_id' => 'org_visible', 'user_id' => 'user-owner', 'owner_uuid' => 'user-owner',
+                'name'          => 'Visible Logistics', 'description' => 'Primary organization', 'phone' => '+1 555 0100',
+                'type'          => 'business', 'timezone' => 'UTC', 'country' => 'US', 'currency' => 'USD', 'plan' => 'starter',
+                'status'        => 'active', 'slug' => 'visible-logistics', 'options' => '{"dispatch":true}', 'meta' => null,
                 'trial_ends_at' => null, 'onboarding_completed_at' => '2026-07-01 00:00:00', 'created_at' => $now, 'updated_at' => $now,
             ],
             [
-                'id' => 12, 'uuid' => 'company-other', 'public_id' => 'org_other', 'user_id' => null, 'owner_uuid' => null,
-                'name' => 'Other Freight', 'description' => null, 'phone' => null, 'type' => null, 'timezone' => 'UTC',
+                'id'      => 12, 'uuid' => 'company-other', 'public_id' => 'org_other', 'user_id' => null, 'owner_uuid' => null,
+                'name'    => 'Other Freight', 'description' => null, 'phone' => null, 'type' => null, 'timezone' => 'UTC',
                 'country' => 'US', 'currency' => 'USD', 'plan' => null, 'status' => 'active', 'slug' => 'other-freight',
                 'options' => null, 'meta' => null, 'trial_ends_at' => null, 'onboarding_completed_at' => null, 'created_at' => $now, 'updated_at' => $now,
             ],
             [
-                'id' => 13, 'uuid' => 'company-hidden', 'public_id' => 'org_hidden', 'user_id' => null, 'owner_uuid' => null,
-                'name' => 'Hidden Empty Org', 'description' => null, 'phone' => null, 'type' => null, 'timezone' => 'UTC',
+                'id'      => 13, 'uuid' => 'company-hidden', 'public_id' => 'org_hidden', 'user_id' => null, 'owner_uuid' => null,
+                'name'    => 'Hidden Empty Org', 'description' => null, 'phone' => null, 'type' => null, 'timezone' => 'UTC',
                 'country' => 'US', 'currency' => 'USD', 'plan' => null, 'status' => 'active', 'slug' => 'hidden-empty-org',
                 'options' => null, 'meta' => null, 'trial_ends_at' => null, 'onboarding_completed_at' => null, 'created_at' => $now, 'updated_at' => $now,
             ],

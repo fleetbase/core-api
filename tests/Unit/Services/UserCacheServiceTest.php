@@ -3,14 +3,14 @@
 use Fleetbase\Models\User;
 use Fleetbase\Services\UserCacheService;
 use Illuminate\Database\Capsule\Manager as Capsule;
-use Illuminate\Support\Carbon;
 use Illuminate\Events\Dispatcher;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Facade;
 
 class UserCacheServiceCacheFake
 {
-    public array $values = [];
-    public array $putCalls = [];
+    public array $values    = [];
+    public array $putCalls  = [];
     public array $forgotten = [];
     public array $redisKeys = [];
     public bool $throwOnGet = false;
@@ -32,7 +32,7 @@ class UserCacheServiceCacheFake
         }
 
         $this->values[$key] = $value;
-        $this->putCalls[] = compact('key', 'value', 'ttl');
+        $this->putCalls[]   = compact('key', 'value', 'ttl');
 
         return true;
     }
@@ -89,11 +89,11 @@ function user_cache_service_fixtures(array $config = []): array
 {
     $container = bind_test_container(array_merge([
         'database.redis.options.prefix' => 'fleetbase_cache:',
-        'fleetbase.user_cache.enabled' => true,
+        'fleetbase.user_cache.enabled'  => true,
     ], $config));
 
     $cache = new UserCacheServiceCacheFake();
-    $log = new UserCacheServiceLogFake();
+    $log   = new UserCacheServiceLogFake();
     $container->instance('cache', $cache);
     $container->instance('log', $log);
     Facade::clearResolvedInstance('cache');
@@ -104,11 +104,11 @@ function user_cache_service_fixtures(array $config = []): array
     user_cache_service_database();
 
     $user = new UserCacheServiceUser([
-        'uuid' => 'user-1',
-        'meta' => ['theme' => 'dark'],
+        'uuid'    => 'user-1',
+        'meta'    => ['theme' => 'dark'],
         'options' => ['dense' => true],
     ]);
-    $user->id = 99;
+    $user->id         = 99;
     $user->updated_at = Carbon::parse('2026-07-17 10:00:00');
 
     return [$user, $cache, $log];
@@ -124,7 +124,7 @@ function user_cache_service_database(): void
 
     $container = app();
     config([
-        'database.default' => 'mysql',
+        'database.default'           => 'mysql',
         'database.connections.mysql' => $connectionConfig,
     ]);
 
@@ -164,8 +164,8 @@ function user_cache_service_database(): void
 test('user cache service builds keys etags and ttl configuration from user state', function () {
     [$user] = user_cache_service_fixtures([
         'fleetbase.user_cache.browser_ttl' => 123,
-        'fleetbase.user_cache.server_ttl' => 456,
-        'fleetbase.user_cache.enabled' => false,
+        'fleetbase.user_cache.server_ttl'  => 456,
+        'fleetbase.user_cache.enabled'     => false,
     ]);
 
     expect(UserCacheService::getCacheKey($user, 'company-1'))->toBe('user:current:user-1:company-1:1784282400')
@@ -185,9 +185,9 @@ test('user cache service stores retrieves invalidates and logs current user payl
     $cacheKey = UserCacheService::getCacheKey($user, 'company-1');
 
     expect($cache->putCalls[0])->toBe([
-        'key' => $cacheKey,
+        'key'   => $cacheKey,
         'value' => $payload,
-        'ttl' => 60,
+        'ttl'   => 60,
     ])
         ->and(UserCacheService::get($user, 'company-1'))->toBe($payload);
 
@@ -195,10 +195,10 @@ test('user cache service stores retrieves invalidates and logs current user payl
 
     expect($cache->forgotten)->toContain($cacheKey)
         ->and($log->entries)->toContain(['debug', 'User cache stored', [
-            'user_id' => 'user-1',
+            'user_id'    => 'user-1',
             'company_id' => 'company-1',
-            'cache_key' => $cacheKey,
-            'ttl' => 60,
+            'cache_key'  => $cacheKey,
+            'ttl'        => 60,
         ]]);
 });
 
@@ -225,7 +225,7 @@ test('user cache service handles user invalidation failures and clears redis pre
 
     expect(collect($log->entries)->contains(fn ($entry) => $entry[0] === 'error' && $entry[1] === 'Failed to invalidate user cache'))->toBeTrue();
 
-    $cache->forgotten = [];
+    $cache->forgotten                             = [];
     $cache->redisKeys['user:current:*:company-1'] = [
         'fleetbase_cache:user:current:user-1:company-1:1784282400',
         'fleetbase_cache:user:current:user-2:company-1:1784282400',
@@ -238,7 +238,7 @@ test('user cache service handles user invalidation failures and clears redis pre
         'user:current:user-2:company-1:1784282400',
     ]);
 
-    $cache->forgotten = [];
+    $cache->forgotten                   = [];
     $cache->redisKeys['user:current:*'] = [
         'fleetbase_cache:user:current:user-1:company-1:1784282400',
     ];

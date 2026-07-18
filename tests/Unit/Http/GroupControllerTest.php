@@ -4,7 +4,6 @@ use Fleetbase\Http\Controllers\Internal\v1\GroupController;
 use Fleetbase\Http\Resources\FleetbaseResource;
 use Fleetbase\Models\Group;
 use Fleetbase\Models\GroupUser;
-use Fleetbase\Models\User;
 use Illuminate\Container\Container;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
@@ -70,8 +69,8 @@ class GroupControllerCacheFake
 class GroupControllerPermissionRegistrarFake
 {
     public string $pivotPermission = 'permission_id';
-    public bool $teams = false;
-    public string $teamsKey = 'team_id';
+    public bool $teams             = false;
+    public string $teamsKey        = 'team_id';
 
     public function forgetWildcardPermissionIndex(mixed $record = null): void
     {

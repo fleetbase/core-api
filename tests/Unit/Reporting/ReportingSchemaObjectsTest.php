@@ -19,9 +19,9 @@ it('builds reporting columns with computed aggregate transformer and copy contra
         ->setMeta(['precision' => 2]);
 
     $copy = $column->copyWith([
-        'name' => 'delivery_total_usd',
-        'label' => 'Delivery Total USD',
-        'type' => 'string',
+        'name'        => 'delivery_total_usd',
+        'label'       => 'Delivery Total USD',
+        'type'        => 'string',
         'description' => null,
     ]);
 
@@ -57,14 +57,14 @@ it('builds reporting columns with computed aggregate transformer and copy contra
         ->and(Column::min('first_date', 'created_at')->getComputation())->toBe('MIN(created_at)')
         ->and(Column::computed('safe_total', 'COALESCE(total, 0)', 'decimal', [
             'aggregatable' => true,
-            'sortable' => true,
-            'searchable' => false,
+            'sortable'     => true,
+            'searchable'   => false,
         ])->toArray())->toMatchArray([
-            'computed' => true,
-            'computation' => 'COALESCE(total, 0)',
+            'computed'     => true,
+            'computation'  => 'COALESCE(total, 0)',
             'aggregatable' => true,
-            'sortable' => true,
-            'searchable' => false,
+            'sortable'     => true,
+            'searchable'   => false,
         ]);
 });
 
@@ -73,7 +73,7 @@ it('rejects unsupported reporting column copy overrides', function () {
 })->throws(InvalidArgumentException::class, 'Cannot set property: hidden');
 
 it('builds reporting relationships with nested auto join metadata and prefixed columns', function () {
-    $city = Column::make('city')->label('City');
+    $city    = Column::make('city')->label('City');
     $address = Relationship::hasAutoJoin('address', 'addresses')
         ->columns([$city])
         ->meta('scope', 'tenant');
@@ -91,7 +91,7 @@ it('builds reporting relationships with nested auto join metadata and prefixed c
         ])
         ->with([$address]);
 
-    $columns = $customer->getAllAvailableColumns();
+    $columns               = $customer->getAllAvailableColumns();
     $prefixedAddressColumn = $columns[2];
 
     expect($customer->getName())->toBe('customer')
@@ -112,21 +112,21 @@ it('builds reporting relationships with nested auto join metadata and prefixed c
         ->and($prefixedAddressColumn->getLabel())->toBe('Customer - City')
         ->and($address->getMeta('scope'))->toBe('tenant')
         ->and($customer->toArray())->toMatchArray([
-            'name' => 'customer',
-            'table' => 'customers',
-            'type' => 'inner',
-            'local_key' => 'customer_uuid',
+            'name'        => 'customer',
+            'table'       => 'customers',
+            'type'        => 'inner',
+            'local_key'   => 'customer_uuid',
             'foreign_key' => 'uuid',
-            'enabled' => true,
-            'auto_join' => false,
+            'enabled'     => true,
+            'auto_join'   => false,
         ]);
 });
 
 it('builds reporting tables with visible columns joins lookup helpers and serialization', function () {
-    $status = Column::make('status')->label('Status');
+    $status      = Column::make('status')->label('Status');
     $companyUuid = Column::make('company_uuid')->label('Company UUID');
     $hiddenToken = Column::make('internal_token')->hidden();
-    $computed = Column::computed('orders_count', 'COUNT(*)', 'integer', ['aggregatable' => true]);
+    $computed    = Column::computed('orders_count', 'COUNT(*)', 'integer', ['aggregatable' => true]);
 
     $customer = Relationship::hasAutoJoin('customer', 'customers')
         ->columns([Column::make('name')->label('Customer Name')]);
@@ -149,7 +149,7 @@ it('builds reporting tables with visible columns joins lookup helpers and serial
         ->meta('owner', 'core-api');
 
     $availableColumns = $table->getAllAvailableColumns();
-    $serialized = $table->toArray();
+    $serialized       = $table->toArray();
 
     expect($table->getName())->toBe('orders')
         ->and($table->getLabel())->toBe('Orders')
@@ -180,16 +180,16 @@ it('builds reporting tables with visible columns joins lookup helpers and serial
         ->and(array_map(fn (Column $column) => $column->getName(), array_values($availableColumns)))->toBe(['status', 'orders_count', 'name'])
         ->and(array_values($availableColumns)[2]->getMeta('auto_join_path'))->toBe('customer')
         ->and($serialized)->toMatchArray([
-            'name' => 'orders',
-            'label' => 'Orders',
-            'category' => 'operations',
-            'extension' => 'fleetops',
+            'name'                => 'orders',
+            'label'               => 'Orders',
+            'category'            => 'operations',
+            'extension'           => 'fleetops',
             'supports_aggregates' => false,
-            'max_rows' => 500,
-            'cacheable' => false,
-            'cache_ttl' => 120,
-            'permissions' => ['reports.view'],
-            'meta' => ['owner' => 'core-api'],
+            'max_rows'            => 500,
+            'cacheable'           => false,
+            'cache_ttl'           => 120,
+            'permissions'         => ['reports.view'],
+            'meta'                => ['owner' => 'core-api'],
         ])
         ->and($serialized['columns'])->toHaveCount(2)
         ->and($serialized['computed_columns'])->toHaveCount(1)

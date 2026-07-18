@@ -70,8 +70,8 @@ class PolicyControllerCacheFake
 class PolicyControllerPermissionRegistrarFake
 {
     public string $pivotPermission = 'permission_id';
-    public bool $teams = false;
-    public string $teamsKey = 'team_id';
+    public bool $teams             = false;
+    public string $teamsKey        = 'team_id';
 
     public function forgetWildcardPermissionIndex(mixed $record = null): void
     {

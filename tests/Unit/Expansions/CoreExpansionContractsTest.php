@@ -113,21 +113,21 @@ test('string carbon and blade expansions preserve formatting contracts', functio
 test('array expansion helpers preserve key order and search semantics', function () {
     $expansion = new ArrExpansion();
 
-    $every = $expansion->every();
+    $every          = $expansion->every();
     $insertAfterKey = $expansion->insertAfterKey();
-    $search = $expansion->search();
-    $map = $expansion->map();
+    $search         = $expansion->search();
+    $map            = $expansion->map();
 
-    expect($expansion::target())->toBe(\Illuminate\Support\Arr::class)
+    expect($expansion::target())->toBe(Illuminate\Support\Arr::class)
         ->and($every([2, 4, 6], fn (int $number) => $number % 2 === 0))->toBeTrue()
         ->and($every([2, 3, 6], fn (int $number) => $number % 2 === 0))->toBeFalse()
         ->and($insertAfterKey(['first' => 1, 'second' => 2], ['middle' => 9], 'first'))->toBe([
-            'first' => 1,
+            'first'  => 1,
             'middle' => 9,
             'second' => 2,
         ])
         ->and($insertAfterKey(['first' => 1], ['fallback' => 2], 'missing'))->toBe([
-            'first' => 1,
+            'first'    => 1,
             'fallback' => 2,
         ])
         ->and($search(['alpha' => 10, 'beta' => 20], 20))->toBe('beta')

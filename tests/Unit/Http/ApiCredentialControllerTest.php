@@ -10,15 +10,13 @@ use Illuminate\Events\Dispatcher;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Facade;
-use Illuminate\Support\Facades\Hash;
 
 class ApiCredentialControllerSpy extends ApiCredentialController
 {
     public array $syncedModels = [];
 
-    protected function upsertModelToSandbox(\Illuminate\Database\Eloquent\Model $model): void
+    protected function upsertModelToSandbox(EloquentModel $model): void
     {
         $this->syncedModels[] = [
             'class' => $model::class,

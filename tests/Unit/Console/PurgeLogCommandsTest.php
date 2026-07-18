@@ -141,7 +141,7 @@ class ForcesCommandsTestCommand extends Command
 {
     use ForcesCommands;
 
-    public array $warnings = [];
+    public array $warnings      = [];
     public array $confirmations = [];
 
     public function __construct(private array $options = [], private bool $confirmationResult = false)
@@ -174,26 +174,26 @@ class ForcesCommandsTestCommand extends Command
 
 class PurgeCommandRecord extends Model
 {
-    protected $table = 'purge_command_records';
+    protected $table   = 'purge_command_records';
     protected $guarded = [];
     public $timestamps = false;
 }
 
 class PurgeCommandNoKeyRecord extends Model
 {
-    protected $table = 'purge_command_no_key_records';
+    protected $table   = 'purge_command_no_key_records';
     protected $guarded = [];
-    protected $primaryKey = null;
+    protected $primaryKey;
     public $incrementing = false;
-    public $timestamps = false;
+    public $timestamps   = false;
 }
 
 class PurgeCommandTestCommand extends Command
 {
     use PurgeCommand;
 
-    public array $infos = [];
-    public array $warnings = [];
+    public array $infos         = [];
+    public array $warnings      = [];
     public array $confirmations = [];
 
     public function __construct(private array $options = [], private bool $confirmationResult = true)
@@ -443,7 +443,7 @@ it('runs purge flow with backup upload deletion and empty set handling', functio
 
     $diskFiles = Storage::disk('local')->allFiles('purge-backups');
     expect($diskFiles)->toHaveCount(1)
-        ->and(Storage::disk('local')->get($diskFiles[0]))->toContain("INSERT INTO `purge_command_records`")
+        ->and(Storage::disk('local')->get($diskFiles[0]))->toContain('INSERT INTO `purge_command_records`')
         ->and(Storage::disk('local')->get($diskFiles[0]))->toContain("'O''Hare'");
 
     $empty = new PurgeCommandTestCommand();

@@ -132,11 +132,8 @@ namespace Illuminate\Validation {
 
 namespace {
     use Fleetbase\Http\Requests\AdminRequest;
-    use Fleetbase\Http\Requests\Internal\BulkActionRequest;
-    use Fleetbase\Http\Requests\Internal\BulkDeleteRequest;
     use Fleetbase\Http\Requests\ChangePasswordRequest;
     use Fleetbase\Http\Requests\CreateChatChannelRequest;
-    use Fleetbase\Http\Requests\Internal\CreateCategoryRequest;
     use Fleetbase\Http\Requests\CreateCommentRequest;
     use Fleetbase\Http\Requests\CreateReportRequest;
     use Fleetbase\Http\Requests\CreateUserRequest;
@@ -145,20 +142,23 @@ namespace {
     use Fleetbase\Http\Requests\ExportRequest;
     use Fleetbase\Http\Requests\FleetbaseRequest;
     use Fleetbase\Http\Requests\ImportRequest;
-    use Fleetbase\Http\Requests\Internal\ConfirmCurrentPassword;
+    use Fleetbase\Http\Requests\Internal\BulkActionRequest;
+    use Fleetbase\Http\Requests\Internal\BulkDeleteRequest;
     use Fleetbase\Http\Requests\Internal\ChangeCurrentUserEmailRequest;
     use Fleetbase\Http\Requests\Internal\ChangeUserEmailRequest;
-    use Fleetbase\Http\Requests\Internal\CreateTemplateRequest;
+    use Fleetbase\Http\Requests\Internal\ConfirmCurrentPassword;
+    use Fleetbase\Http\Requests\Internal\CreateCategoryRequest;
     use Fleetbase\Http\Requests\Internal\CreateCustomFieldRequest;
+    use Fleetbase\Http\Requests\Internal\CreateTemplateRequest;
     use Fleetbase\Http\Requests\Internal\DownloadFileRequest;
     use Fleetbase\Http\Requests\Internal\InviteUserRequest;
-    use Fleetbase\Http\Requests\Internal\ResetPasswordRequest;
     use Fleetbase\Http\Requests\Internal\ResendUserInvite;
+    use Fleetbase\Http\Requests\Internal\ResetPasswordRequest;
     use Fleetbase\Http\Requests\Internal\UpdatePasswordRequest;
     use Fleetbase\Http\Requests\Internal\UploadBase64FileRequest;
     use Fleetbase\Http\Requests\Internal\UploadFileRequest;
-    use Fleetbase\Http\Requests\JoinOrganizationRequest;
     use Fleetbase\Http\Requests\Internal\ValidatePasswordRequest;
+    use Fleetbase\Http\Requests\JoinOrganizationRequest;
     use Fleetbase\Http\Requests\OnboardRequest;
     use Fleetbase\Http\Requests\SignUpRequest;
     use Fleetbase\Http\Requests\SwitchOrganizationRequest;
@@ -166,15 +166,15 @@ namespace {
     use Fleetbase\Http\Requests\UpdateReportRequest;
     use Fleetbase\Http\Requests\UpdateUserRequest;
     use Fleetbase\Http\Requests\ValidateReportQueryRequest;
-    use Illuminate\Contracts\Validation\Validator as ValidatorContract;
     use Illuminate\Container\Container;
+    use Illuminate\Contracts\Validation\Validator as ValidatorContract;
     use Illuminate\Database\Capsule\Manager as Capsule;
     use Illuminate\Database\Eloquent\Model as EloquentModel;
     use Illuminate\Events\Dispatcher;
-    use Illuminate\Support\Facades\Facade;
-    use Illuminate\Support\MessageBag;
     use Illuminate\Session\ArraySessionHandler;
     use Illuminate\Session\Store;
+    use Illuminate\Support\Facades\Facade;
+    use Illuminate\Support\MessageBag;
     use Illuminate\Validation\ValidationException;
 
     if (!function_exists('base_path')) {
@@ -264,15 +264,15 @@ namespace {
         EloquentModel::clearBootedModels();
 
         $connection = [
-            'driver' => 'sqlite',
+            'driver'   => 'sqlite',
             'database' => ':memory:',
-            'prefix' => '',
+            'prefix'   => '',
         ];
 
         $container = bind_test_container([
-            'database.default' => 'mysql',
+            'database.default'           => 'mysql',
             'database.connections.mysql' => $connection,
-            'fleetbase.connection.db' => 'mysql',
+            'fleetbase.connection.db'    => 'mysql',
         ]);
 
         $capsule = new Capsule($container);
@@ -460,10 +460,10 @@ namespace {
     });
 
     it('keeps organization join and resend invitation request contracts session scoped', function () {
-        $anonymousJoin = request_with_session(JoinOrganizationRequest::class, 'POST');
-        $authorizedJoin = request_with_session(JoinOrganizationRequest::class, 'POST', [], ['user' => 'user-1']);
+        $anonymousJoin      = request_with_session(JoinOrganizationRequest::class, 'POST');
+        $authorizedJoin     = request_with_session(JoinOrganizationRequest::class, 'POST', [], ['user' => 'user-1']);
         $unauthorizedResend = request_with_session(ResendUserInvite::class, 'POST');
-        $authorizedResend = request_with_session(ResendUserInvite::class, 'POST', [], ['company' => 'company-1']);
+        $authorizedResend   = request_with_session(ResendUserInvite::class, 'POST', [], ['company' => 'company-1']);
 
         expect(bind_active_request($anonymousJoin)->authorize())->toBeFalse()
             ->and(bind_active_request($authorizedJoin)->authorize())->toBeTrue()
@@ -570,7 +570,7 @@ namespace {
 
     it('keeps current user credential change request contracts strict', function () {
         $user = new class {
-            public string $uuid = 'user-1';
+            public string $uuid   = 'user-1';
             public array $checked = [];
 
             public function checkPassword(string $password): bool
@@ -589,7 +589,7 @@ namespace {
 
         $validator = new class {
             public array $callbacks = [];
-            public array $errors = [];
+            public array $errors    = [];
 
             public function after(callable $callback): void
             {
@@ -638,16 +638,16 @@ namespace {
     it('keeps administrative user email and invite request contracts stable', function () {
         session()->flush();
 
-        $unauthorizedEmailChange = new ChangeUserEmailRequest();
+        $unauthorizedEmailChange       = new ChangeUserEmailRequest();
         $unauthorizedEmailChangeResult = $unauthorizedEmailChange->authorize();
-        $authorizedEmailChange = new ChangeUserEmailRequest();
+        $authorizedEmailChange         = new ChangeUserEmailRequest();
         session(['company' => 'company-1']);
 
         $inviteUnauthorized = request_with_session(InviteUserRequest::class, 'POST');
-        $inviteAuthorized = request_with_session(InviteUserRequest::class, 'POST', [], ['company' => 'company-1']);
-        $emailRules = $authorizedEmailChange->rules();
-        $emailRuleText = implode('|', request_rule_strings($emailRules['email']));
-        $inviteRules = $inviteAuthorized->rules();
+        $inviteAuthorized   = request_with_session(InviteUserRequest::class, 'POST', [], ['company' => 'company-1']);
+        $emailRules         = $authorizedEmailChange->rules();
+        $emailRuleText      = implode('|', request_rule_strings($emailRules['email']));
+        $inviteRules        = $inviteAuthorized->rules();
 
         expect($unauthorizedEmailChangeResult)->toBeNull()
             ->and($authorizedEmailChange->authorize())->toBe('company-1')
@@ -663,17 +663,17 @@ namespace {
             ->and($inviteRules['user.name'])->toBe('required')
             ->and($inviteAuthorized->attributes())->toBe([
                 'user.email' => 'email address',
-                'user.name' => 'name',
+                'user.name'  => 'name',
             ]);
     });
 
     it('keeps bulk action delete and category request contracts stable', function () {
-        $bulkUnauthorized = request_with_session(BulkActionRequest::class, 'POST');
-        $bulkAuthorized = request_with_session(BulkActionRequest::class, 'POST', [], ['user' => 'user-1']);
-        $deleteUnauthorized = request_with_session(BulkDeleteRequest::class, 'DELETE');
-        $deleteAuthorized = request_with_session(BulkDeleteRequest::class, 'DELETE', [], ['user' => 'user-1']);
+        $bulkUnauthorized     = request_with_session(BulkActionRequest::class, 'POST');
+        $bulkAuthorized       = request_with_session(BulkActionRequest::class, 'POST', [], ['user' => 'user-1']);
+        $deleteUnauthorized   = request_with_session(BulkDeleteRequest::class, 'DELETE');
+        $deleteAuthorized     = request_with_session(BulkDeleteRequest::class, 'DELETE', [], ['user' => 'user-1']);
         $categoryUnauthorized = request_with_session(CreateCategoryRequest::class, 'POST');
-        $categoryAuthorized = request_with_session(CreateCategoryRequest::class, 'POST', [], ['company' => 'company-1']);
+        $categoryAuthorized   = request_with_session(CreateCategoryRequest::class, 'POST', [], ['company' => 'company-1']);
 
         expect(bind_active_request($bulkUnauthorized)->authorize())->toBeFalse()
             ->and(bind_active_request($bulkAuthorized)->authorize())->toBeTrue()
@@ -722,10 +722,10 @@ namespace {
         ]);
 
         $unauthorizedImport = request_with_session(ImportRequest::class, 'POST');
-        $authorizedImport = request_with_session(ImportRequest::class, 'POST', [], ['user' => 'user-1']);
-        $importRules = $authorizedImport->rules();
-        $fileRule = $importRules['files'][3];
-        $errors = [];
+        $authorizedImport   = request_with_session(ImportRequest::class, 'POST', [], ['user' => 'user-1']);
+        $importRules        = $authorizedImport->rules();
+        $fileRule           = $importRules['files'][3];
+        $errors             = [];
 
         $fileRule('files', ['missing-file'], function (string $message) use (&$errors) {
             $errors[] = $message;
@@ -737,10 +737,10 @@ namespace {
             $errors[] = $message;
         });
 
-        $templateAuthorized = request_with_session(CreateTemplateRequest::class, 'POST', [], ['company' => 'company-1']);
+        $templateAuthorized   = request_with_session(CreateTemplateRequest::class, 'POST', [], ['company' => 'company-1']);
         $templateUnauthorized = request_with_session(CreateTemplateRequest::class, 'POST');
-        $templateRules = $templateAuthorized->rules();
-        $templateMessages = $templateAuthorized->messages();
+        $templateRules        = $templateAuthorized->rules();
+        $templateMessages     = $templateAuthorized->messages();
 
         expect(bind_active_request($unauthorizedImport)->authorize())->toBeFalse()
             ->and(bind_active_request($authorizedImport)->authorize())->toBeTrue()
@@ -777,7 +777,7 @@ namespace {
 
         try {
             $internal->triggerValidationResponse(new RequestContractsValidatorFake([
-                'name' => ['Name is required.'],
+                'name'  => ['Name is required.'],
                 'email' => ['Email is invalid.'],
             ]));
         } catch (ValidationException $exception) {
@@ -797,7 +797,7 @@ namespace {
 
         try {
             $public->triggerValidationResponse(new RequestContractsValidatorFake([
-                'name' => ['Name is required.'],
+                'name'  => ['Name is required.'],
                 'email' => ['Email is invalid.'],
             ]));
         } catch (ValidationException $exception) {
@@ -810,7 +810,7 @@ namespace {
             ])
             ->and($publicResponse->getStatusCode())->toBe(422)
             ->and($publicResponse->getData(true))->toBe([
-                'error' => 'Name is required.',
+                'error'  => 'Name is required.',
                 'errors' => ['Name is required.', 'Email is invalid.'],
             ]);
     });

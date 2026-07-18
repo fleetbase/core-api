@@ -1,7 +1,7 @@
 <?php
 
-use Fleetbase\Models\Report;
 use Carbon\Carbon;
+use Fleetbase\Models\Report;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Support\Facades\Cache;
@@ -9,8 +9,8 @@ use Illuminate\Support\Facades\Facade;
 
 class ReportModelCacheFake
 {
-    public array $values = [];
-    public array $puts = [];
+    public array $values    = [];
+    public array $puts      = [];
     public array $forgotten = [];
 
     public function get(string $key, mixed $default = null): mixed
@@ -21,7 +21,7 @@ class ReportModelCacheFake
     public function put(string $key, mixed $value, mixed $ttl = null): bool
     {
         $this->values[$key] = $value;
-        $this->puts[] = compact('key', 'value', 'ttl');
+        $this->puts[]       = compact('key', 'value', 'ttl');
 
         return true;
     }
@@ -37,7 +37,7 @@ class ReportModelCacheFake
 
 class ReportModelSpy extends Report
 {
-    public int $saves = 0;
+    public int $saves     = 0;
     public array $updates = [];
 
     public function save(array $options = []): bool
@@ -80,13 +80,13 @@ function report_model_container(): ReportModelCacheFake
     ]);
 
     $connection = [
-        'driver' => 'sqlite',
+        'driver'   => 'sqlite',
         'database' => ':memory:',
-        'prefix' => '',
+        'prefix'   => '',
     ];
 
     config([
-        'database.default' => 'mysql',
+        'database.default'           => 'mysql',
         'database.connections.mysql' => $connection,
     ]);
 
@@ -112,7 +112,7 @@ function report_model_query_config(array $overrides = []): array
 {
     return array_replace_recursive([
         'table' => [
-            'name' => 'orders',
+            'name'  => 'orders',
             'label' => 'Orders',
         ],
         'columns' => [
@@ -145,7 +145,7 @@ it('validates report query config shape and exposes simple source metadata', fun
     expect(fn () => $report->assertValidQueryConfig())
         ->toThrow(InvalidArgumentException::class, 'At least one column must be selected');
 
-    $validConfig = report_model_query_config();
+    $validConfig          = report_model_query_config();
     $report->query_config = $validConfig;
     $report->assertValidQueryConfig();
 
@@ -163,7 +163,7 @@ it('validates report query config shape and exposes simple source metadata', fun
 it('classifies query complexity and summarizes filters joins and auto joins', function () {
     report_model_container();
 
-    $report = new ReportModelSpy();
+    $report               = new ReportModelSpy();
     $report->query_config = report_model_query_config([
         'columns' => [
             ['name' => 'public_id', 'label' => 'Order ID'],
@@ -172,26 +172,26 @@ it('classifies query complexity and summarizes filters joins and auto joins', fu
         ],
         'conditions' => [
             [
-                'field' => ['name' => 'status', 'label' => 'Status'],
+                'field'    => ['name' => 'status', 'label' => 'Status'],
                 'operator' => ['value' => '=', 'label' => 'equals'],
-                'value' => 'dispatched',
+                'value'    => 'dispatched',
             ],
             [
-                'field' => ['name' => 'created_at'],
+                'field'    => ['name' => 'created_at'],
                 'operator' => ['value' => '>='],
-                'value' => '2026-07-01',
+                'value'    => '2026-07-01',
             ],
         ],
         'joins' => [
             [
-                'table' => 'payloads',
-                'label' => 'Payloads',
-                'type' => 'left',
+                'table'           => 'payloads',
+                'label'           => 'Payloads',
+                'type'            => 'left',
                 'selectedColumns' => ['public_id', 'tracking_number'],
             ],
         ],
         'groupBy' => ['status'],
-        'sortBy' => [['field' => 'created_at', 'direction' => 'desc']],
+        'sortBy'  => [['field' => 'created_at', 'direction' => 'desc']],
     ]);
 
     expect($report->getQueryComplexity())->toBe('complex')
@@ -210,7 +210,7 @@ it('classifies query complexity and summarizes filters joins and auto joins', fu
         ->and($report->hasAutoJoins())->toBeTrue()
         ->and($report->getAutoJoinColumns())->toHaveCount(2);
 
-    $wideReport = new Report();
+    $wideReport               = new Report();
     $wideReport->query_config = report_model_query_config([
         'columns' => array_map(fn ($index) => ['name' => "column_{$index}"], range(1, 11)),
     ]);
@@ -231,10 +231,10 @@ it('caches and clears report result payloads with stable report cache keys', fun
         ->and($cache->puts[0]['key'])->toBe('report_results_report-1')
         ->and($cache->puts[0]['ttl'])->toBe(900)
         ->and($report->getCachedResults())->toBe([
-            'results' => [['status' => 'created']],
-            'columns' => ['status'],
+            'results'        => [['status' => 'created']],
+            'columns'        => ['status'],
             'execution_time' => 42.5,
-            'cached_at' => '2026-07-17T10:00:00.000000Z',
+            'cached_at'      => '2026-07-17T10:00:00.000000Z',
         ]);
 
     $report->clearCache();
@@ -251,13 +251,13 @@ it('clones reports with reset execution metrics and schedules future runs', func
 
     $report = new ReportModelSpy();
     $report->setRawAttributes([
-        'uuid' => 'report-1',
-        'title' => 'Daily Orders',
-        'query_config' => report_model_query_config(),
-        'execution_count' => 8,
+        'uuid'                   => 'report-1',
+        'title'                  => 'Daily Orders',
+        'query_config'           => report_model_query_config(),
+        'execution_count'        => 8,
         'average_execution_time' => 25.5,
-        'last_result_count' => 200,
-        'last_executed_at' => Carbon::parse('2026-07-16 12:00:00', 'UTC'),
+        'last_result_count'      => 200,
+        'last_executed_at'       => Carbon::parse('2026-07-16 12:00:00', 'UTC'),
     ], true);
 
     $clone = $report->cloneWithConfig(report_model_query_config(['table' => ['name' => 'payloads']]));
@@ -290,42 +290,42 @@ it('clones reports with reset execution metrics and schedules future runs', func
 it('reports performance metrics from current execution state', function () {
     report_model_container();
 
-    $report = new ReportModelSpy();
+    $report               = new ReportModelSpy();
     $report->query_config = report_model_query_config([
         'conditions' => [
             [
-                'field' => ['name' => 'status'],
+                'field'    => ['name' => 'status'],
                 'operator' => ['value' => '='],
-                'value' => 'created',
+                'value'    => 'created',
             ],
         ],
         'joins' => [
             [
-                'table' => 'payloads',
-                'label' => 'Payloads',
-                'type' => 'left',
+                'table'           => 'payloads',
+                'label'           => 'Payloads',
+                'type'            => 'left',
                 'selectedColumns' => ['public_id'],
             ],
         ],
         'sortBy' => [['field' => 'created_at']],
     ]);
     $report->setRawAttributes(array_merge($report->getAttributes(), [
-        'execution_count' => 3,
+        'execution_count'        => 3,
         'average_execution_time' => 12.75,
-        'last_result_count' => 44,
-        'last_executed_at' => Carbon::parse('2026-07-17 11:00:00', 'UTC'),
+        'last_result_count'      => 44,
+        'last_executed_at'       => Carbon::parse('2026-07-17 11:00:00', 'UTC'),
     ]), true);
 
     expect($report->getPerformanceMetrics())->toBe([
-        'execution_count' => 3,
+        'execution_count'        => 3,
         'average_execution_time' => 12.75,
-        'last_result_count' => 44,
-        'last_executed_at' => '2026-07-17T11:00:00.000000Z',
-        'complexity' => 'complex',
+        'last_result_count'      => 44,
+        'last_executed_at'       => '2026-07-17T11:00:00.000000Z',
+        'complexity'             => 'complex',
         'selected_columns_count' => 3,
-        'has_joins' => true,
-        'has_filters' => true,
-        'has_grouping' => false,
-        'has_sorting' => true,
+        'has_joins'              => true,
+        'has_filters'            => true,
+        'has_grouping'           => false,
+        'has_sorting'            => true,
     ]);
 });

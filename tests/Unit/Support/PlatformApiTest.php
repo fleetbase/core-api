@@ -24,9 +24,9 @@ if (!function_exists('cache')) {
 
 class PlatformApiCacheStore
 {
-    public array $values = [];
+    public array $values    = [];
     public array $forgotten = [];
-    public string $prefix = 'fleetbase_cache:';
+    public string $prefix   = 'fleetbase_cache:';
 
     public function rememberForever(string $key, Closure $callback): mixed
     {
@@ -131,7 +131,7 @@ function platform_api_fixture(): PlatformApiCacheStore
     ];
 
     $container = bind_test_container([
-        'database.default' => 'mysql',
+        'database.default'           => 'mysql',
         'database.connections.mysql' => $connectionConfig,
     ]);
 
@@ -216,7 +216,7 @@ test('platform api rotates validates reports and revokes platform tokens', funct
 test('platform api middleware rejects missing invalid tokens and marks valid tokens as used', function () {
     platform_api_fixture();
     Carbon::setTestNow(Carbon::parse('2026-07-17 11:00:00'));
-    $token = PlatformApi::rotateToken();
+    $token      = PlatformApi::rotateToken();
     $middleware = new AuthenticatePlatformApiToken();
 
     $missing = $middleware->handle(Request::create('/platform/orders'), fn () => new JsonResponse(['ok' => true]));

@@ -53,16 +53,16 @@ class SchedulingModelsResponseCacheFake
 function scheduling_models_database(): Capsule
 {
     $connectionConfig = [
-        'driver' => 'sqlite',
+        'driver'   => 'sqlite',
         'database' => ':memory:',
-        'prefix' => '',
+        'prefix'   => '',
     ];
 
     $container = bind_test_container([
-        'api.cache.enabled' => false,
-        'database.default' => 'testing',
+        'api.cache.enabled'            => false,
+        'database.default'             => 'testing',
         'database.connections.testing' => $connectionConfig,
-        'fleetbase.connection.db' => 'testing',
+        'fleetbase.connection.db'      => 'testing',
     ]);
 
     $capsule = new Capsule($container);
@@ -174,7 +174,7 @@ it('evaluates schedule horizon and timezone helper contracts', function () {
 
     $schedule = new Schedule();
     $schedule->setRawAttributes([
-        'timezone' => null,
+        'timezone'                => null,
         'materialization_horizon' => null,
     ], true);
 
@@ -194,27 +194,27 @@ it('calculates schedule item duration active state and exception flagging', func
     Carbon::setTestNow(Carbon::parse('2026-03-10 12:00:00', 'UTC'));
 
     $item = new ScheduleItem([
-        'uuid' => 'item-1',
-        'start_at' => '2026-03-10 09:00:00',
-        'end_at' => '2026-03-10 17:30:00',
-        'status' => 'scheduled',
+        'uuid'         => 'item-1',
+        'start_at'     => '2026-03-10 09:00:00',
+        'end_at'       => '2026-03-10 17:30:00',
+        'status'       => 'scheduled',
         'is_exception' => false,
     ]);
 
     expect($item->calculateDuration())->toBe(510)
         ->and($item->isActive())->toBeTrue();
 
-    $item->status = 'in_progress';
+    $item->status   = 'in_progress';
     $item->start_at = Carbon::parse('2026-03-11 09:00:00', 'UTC');
-    $item->end_at = Carbon::parse('2026-03-11 17:00:00', 'UTC');
+    $item->end_at   = Carbon::parse('2026-03-11 17:00:00', 'UTC');
 
     expect($item->isActive())->toBeTrue();
 
     $saved = ScheduleItem::create([
-        'uuid' => 'item-2',
-        'start_at' => '2026-03-12 08:00:00',
-        'end_at' => '2026-03-12 12:00:00',
-        'status' => 'scheduled',
+        'uuid'         => 'item-2',
+        'start_at'     => '2026-03-12 08:00:00',
+        'end_at'       => '2026-03-12 12:00:00',
+        'status'       => 'scheduled',
         'is_exception' => false,
     ]);
 
@@ -232,13 +232,13 @@ it('approves rejects and evaluates schedule exceptions', function () {
     Carbon::setTestNow(Carbon::parse('2026-04-10 10:00:00', 'UTC'));
 
     $exception = ScheduleException::create([
-        'uuid' => 'exception-1',
+        'uuid'         => 'exception-1',
         'subject_type' => 'driver',
         'subject_uuid' => 'driver-1',
-        'start_at' => '2026-04-10 00:00:00',
-        'end_at' => '2026-04-11 00:00:00',
-        'type' => 'time_off',
-        'status' => 'pending',
+        'start_at'     => '2026-04-10 00:00:00',
+        'end_at'       => '2026-04-11 00:00:00',
+        'type'         => 'time_off',
+        'status'       => 'pending',
     ]);
 
     expect($exception->type_label)->toBe('Time Off')
@@ -270,13 +270,13 @@ it('reports unavailable schedule template rrule support clearly in this package 
 
     $template = new ScheduleTemplate();
     $template->setRawAttributes([
-        'uuid' => 'template-1',
+        'uuid'       => 'template-1',
         'start_time' => '08:30',
-        'rrule' => 'FREQ=WEEKLY;COUNT=3;BYDAY=MO,WE',
+        'rrule'      => 'FREQ=WEEKLY;COUNT=3;BYDAY=MO,WE',
     ], true);
 
     $from = Carbon::parse('2026-05-04 00:00:00', 'UTC');
-    $to = Carbon::parse('2026-05-12 23:59:59', 'UTC');
+    $to   = Carbon::parse('2026-05-12 23:59:59', 'UTC');
 
     expect($template->hasRrule())->toBeTrue()
         ->and(fn () => $template->getOccurrencesBetween($from, $to, 'UTC'))
@@ -293,45 +293,45 @@ it('scopes schedule constraints by active state type category subject and priori
     scheduling_models_database();
 
     DB::table('schedule_constraints')->insert([
-        'uuid' => 'constraint-low',
-        'company_uuid' => 'company-1',
-        'subject_type' => 'driver',
-        'subject_uuid' => 'driver-1',
-        'name' => 'Daily Hours',
-        'description' => 'Maximum duty window',
-        'type' => 'availability',
-        'category' => 'hours',
-        'constraint_key' => 'max_daily_hours',
+        'uuid'             => 'constraint-low',
+        'company_uuid'     => 'company-1',
+        'subject_type'     => 'driver',
+        'subject_uuid'     => 'driver-1',
+        'name'             => 'Daily Hours',
+        'description'      => 'Maximum duty window',
+        'type'             => 'availability',
+        'category'         => 'hours',
+        'constraint_key'   => 'max_daily_hours',
         'constraint_value' => '8',
-        'jurisdiction' => 'US',
-        'priority' => '5',
-        'is_active' => true,
-        'meta' => '{"source":"policy"}',
+        'jurisdiction'     => 'US',
+        'priority'         => '5',
+        'is_active'        => true,
+        'meta'             => '{"source":"policy"}',
     ]);
     DB::table('schedule_constraints')->insert([
-        'uuid' => 'constraint-high',
-        'company_uuid' => 'company-1',
-        'subject_type' => 'driver',
-        'subject_uuid' => 'driver-1',
-        'name' => 'Fatigue Buffer',
-        'type' => 'availability',
-        'category' => 'hours',
+        'uuid'           => 'constraint-high',
+        'company_uuid'   => 'company-1',
+        'subject_type'   => 'driver',
+        'subject_uuid'   => 'driver-1',
+        'name'           => 'Fatigue Buffer',
+        'type'           => 'availability',
+        'category'       => 'hours',
         'constraint_key' => 'rest_buffer',
-        'jurisdiction' => 'US',
-        'priority' => 50,
-        'is_active' => true,
+        'jurisdiction'   => 'US',
+        'priority'       => 50,
+        'is_active'      => true,
     ]);
     DB::table('schedule_constraints')->insert([
-        'uuid' => 'constraint-inactive',
-        'company_uuid' => 'company-1',
-        'subject_type' => 'vehicle',
-        'subject_uuid' => 'vehicle-1',
-        'name' => 'Inactive',
-        'type' => 'maintenance',
-        'category' => 'asset',
+        'uuid'           => 'constraint-inactive',
+        'company_uuid'   => 'company-1',
+        'subject_type'   => 'vehicle',
+        'subject_uuid'   => 'vehicle-1',
+        'name'           => 'Inactive',
+        'type'           => 'maintenance',
+        'category'       => 'asset',
         'constraint_key' => 'inspection_window',
-        'priority' => 100,
-        'is_active' => false,
+        'priority'       => 100,
+        'is_active'      => false,
     ]);
 
     $constraint = ScheduleConstraint::where('uuid', 'constraint-low')->first();

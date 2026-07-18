@@ -2,7 +2,6 @@
 
 use Fleetbase\Http\Controllers\Internal\v1\TwoFaController;
 use Fleetbase\Http\Requests\TwoFaValidationRequest;
-use Fleetbase\Models\Company;
 use Fleetbase\Models\Setting;
 use Fleetbase\Models\User;
 use Fleetbase\Models\VerificationCode;
@@ -17,7 +16,7 @@ use Illuminate\Support\Facades\Facade;
 
 class TwoFaControllerRedisFake
 {
-    public array $values = [];
+    public array $values  = [];
     public array $deleted = [];
 
     public function set(string $key, mixed $value, mixed ...$options): bool
@@ -235,16 +234,16 @@ function two_fa_controller_verification_code(User $user, Carbon $expiresAt, stri
         'status'       => 'active',
     ]);
 
-    $verificationCode = new VerificationCode();
-    $verificationCode->uuid = $uuid;
+    $verificationCode               = new VerificationCode();
+    $verificationCode->uuid         = $uuid;
     $verificationCode->subject_uuid = $user->uuid;
     $verificationCode->subject_type = User::class;
-    $verificationCode->code = '123456';
-    $verificationCode->for = '2fa';
-    $verificationCode->expires_at = $expiresAt;
-    $verificationCode->meta = [];
-    $verificationCode->status = 'active';
-    $verificationCode->exists = true;
+    $verificationCode->code         = '123456';
+    $verificationCode->for          = '2fa';
+    $verificationCode->expires_at   = $expiresAt;
+    $verificationCode->meta         = [];
+    $verificationCode->status       = 'active';
+    $verificationCode->exists       = true;
 
     return $verificationCode;
 }
@@ -290,7 +289,7 @@ test('two fa controller saves disabled system config with enforcement cleared an
 
 test('two fa controller reports enabled sessions only when user level two factor is enabled', function () {
     two_fa_controller_database();
-    $user = two_fa_controller_user();
+    $user       = two_fa_controller_user();
     $controller = two_fa_controller();
 
     $disabled = $controller->checkTwoFactor(Request::create('/int/v1/two-fa/check', 'POST', [
@@ -313,13 +312,13 @@ test('two fa controller reports enabled sessions only when user level two factor
 
 test('two fa controller validates sessions returning existing client tokens expired states and errors', function () {
     $redis = two_fa_controller_database();
-    $user = two_fa_controller_user();
+    $user  = two_fa_controller_user();
     TwoFactorAuth::saveTwoFaSettingsForUser($user, ['enabled' => true, 'method' => 'email']);
-    $token = TwoFactorAuth::start($user->email, 10);
+    $token            = TwoFactorAuth::start($user->email, 10);
     $verificationCode = two_fa_controller_verification_code($user, Carbon::now()->addMinutes(5));
-    $clientToken = TwoFactorAuth::createClientSessionToken($verificationCode);
-    $expiredCode = two_fa_controller_verification_code($user, Carbon::now()->subMinute(), '44444444-4444-4444-8444-444444444444');
-    $expiredToken = TwoFactorAuth::createClientSessionToken($expiredCode);
+    $clientToken      = TwoFactorAuth::createClientSessionToken($verificationCode);
+    $expiredCode      = two_fa_controller_verification_code($user, Carbon::now()->subMinute(), '44444444-4444-4444-8444-444444444444');
+    $expiredToken     = TwoFactorAuth::createClientSessionToken($expiredCode);
 
     $valid = two_fa_controller()->validateSession(two_fa_controller_validation_request([
         'token'       => $token,
@@ -348,7 +347,7 @@ test('two fa controller validates sessions returning existing client tokens expi
 
 test('two fa controller verify resend and invalidate expose success and failure contracts', function () {
     $redis = two_fa_controller_database();
-    $user = two_fa_controller_user();
+    $user  = two_fa_controller_user();
     TwoFactorAuth::saveTwoFaSettingsForUser($user, ['enabled' => true, 'method' => 'email']);
     $token = TwoFactorAuth::start($user->email, 10);
 

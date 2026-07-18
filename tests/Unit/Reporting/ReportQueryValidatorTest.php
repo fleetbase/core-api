@@ -164,7 +164,7 @@ function valid_report_query_config(array $overrides = []): array
             ['name' => 'status', 'alias' => 'order_status'],
             ['name' => 'tracking_number'],
         ],
-        'joins' => [],
+        'joins'      => [],
         'conditions' => [
             [
                 'field'    => ['name' => 'status'],
@@ -220,7 +220,7 @@ test('report query validator accepts nested report query contracts and summarize
 
 test('report query validator rejects unavailable tables columns joins and malformed aliases', function () {
     $result = report_validator_fixture()->validate(valid_report_query_config([
-        'table' => ['name' => 'orders'],
+        'table'   => ['name' => 'orders'],
         'columns' => [
             ['name' => 'missing_column', 'alias' => '1bad'],
         ],
@@ -324,10 +324,10 @@ test('report query validator emits security and performance warnings for risky b
             ['name' => 'customer_token'],
         ],
         'conditions' => $conditions,
-        'groupBy' => [],
-        'sortBy' => [],
-        'joins' => [],
-        'limit' => 11000,
+        'groupBy'    => [],
+        'sortBy'     => [],
+        'joins'      => [],
+        'limit'      => 11000,
     ]));
 
     expect($result['valid'])->toBeTrue()

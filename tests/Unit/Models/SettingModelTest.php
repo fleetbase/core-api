@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Facade;
 class SettingModelCacheFake
 {
     public array $forgotten = [];
-    private array $values = [];
+    private array $values   = [];
 
     public function get(string $key, mixed $default = null): mixed
     {
@@ -53,16 +53,16 @@ function setting_model_database(): array
     EloquentModel::clearBootedModels();
 
     $connectionConfig = [
-        'driver' => 'sqlite',
+        'driver'   => 'sqlite',
         'database' => ':memory:',
-        'prefix' => '',
+        'prefix'   => '',
     ];
 
     $container = bind_test_container([
-        'api.cache.enabled' => false,
-        'database.default' => 'mysql',
+        'api.cache.enabled'          => false,
+        'database.default'           => 'mysql',
         'database.connections.mysql' => $connectionConfig,
-        'fleetbase.connection.db' => 'mysql',
+        'fleetbase.connection.db'    => 'mysql',
     ]);
 
     $cache = new SettingModelCacheFake();
@@ -95,11 +95,11 @@ it('retrieves system settings with prefixes nested keys defaults and cache reuse
     [, $cache] = setting_model_database();
 
     Setting::query()->create([
-        'key' => 'system.mail.from',
+        'key'   => 'system.mail.from',
         'value' => ['name' => 'Fleetbase', 'address' => 'hello@fleetbase.io'],
     ]);
     Setting::query()->create([
-        'key' => 'system.timezone',
+        'key'   => 'system.timezone',
         'value' => 'UTC',
     ]);
 
@@ -137,11 +137,11 @@ it('configures and looks up company settings from session context', function () 
 it('exposes JSON value helpers and database connection checks', function () {
     setting_model_database();
 
-    $setting = new Setting();
+    $setting        = new Setting();
     $setting->value = [
         'feature' => [
             'enabled' => 'yes',
-            'label' => 'Routing',
+            'label'   => 'Routing',
         ],
     ];
 

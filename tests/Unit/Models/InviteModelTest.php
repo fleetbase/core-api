@@ -50,16 +50,16 @@ function invite_model_database(): Capsule
     EloquentModel::clearBootedModels();
 
     $connection = [
-        'driver' => 'sqlite',
+        'driver'   => 'sqlite',
         'database' => ':memory:',
-        'prefix' => '',
+        'prefix'   => '',
     ];
 
     $container = bind_test_container([
-        'api.cache.enabled' => false,
-        'database.default' => 'mysql',
+        'api.cache.enabled'          => false,
+        'database.default'           => 'mysql',
         'database.connections.mysql' => $connection,
-        'fleetbase.connection.db' => 'sandbox',
+        'fleetbase.connection.db'    => 'sandbox',
     ]);
     $container->instance('responsecache', new InviteModelResponseCacheFake());
     $cache = new InviteModelTaggedCacheFake();
@@ -107,10 +107,10 @@ it('generates invite identifiers codes recipients and pinned production connecti
         'company_uuid' => 'company-1',
         'subject_uuid' => 'company-1',
         'subject_type' => Company::class,
-        'protocol' => 'email',
-        'reason' => 'join_company',
-        'recipients' => ['ada@example.com', 'grace@example.com'],
-        'meta' => ['role' => 'dispatcher'],
+        'protocol'     => 'email',
+        'reason'       => 'join_company',
+        'recipients'   => ['ada@example.com', 'grace@example.com'],
+        'meta'         => ['role' => 'dispatcher'],
     ]);
 
     expect($invite->uuid)->toBeString()
@@ -126,10 +126,10 @@ it('defaults invite expiration to one hour and parses explicit expiration values
     bind_test_container();
     Carbon::setTestNow(Carbon::parse('2026-06-05 14:00:00', 'UTC'));
 
-    $defaultExpiry = new Invite();
+    $defaultExpiry             = new Invite();
     $defaultExpiry->expires_at = null;
 
-    $explicitExpiry = new Invite();
+    $explicitExpiry             = new Invite();
     $explicitExpiry->expires_at = '2026-06-06 09:30:00';
 
     expect($defaultExpiry->getAttributes()['expires_at']->toDateTimeString())->toBe('2026-06-05 15:00:00')
@@ -145,9 +145,9 @@ it('detects duplicate company invites by company subject protocol reason and rec
         'company_uuid' => 'company-1',
         'subject_uuid' => 'company-1',
         'subject_type' => Company::class,
-        'protocol' => 'email',
-        'reason' => 'join_company',
-        'recipients' => ['ada@example.com', 'grace@example.com'],
+        'protocol'     => 'email',
+        'reason'       => 'join_company',
+        'recipients'   => ['ada@example.com', 'grace@example.com'],
     ]);
 
     $company = new Company();

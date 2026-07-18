@@ -1,11 +1,11 @@
 <?php
 
+use Fleetbase\Models\File;
+use Fleetbase\Services\FileResolverService;
 use Fleetbase\Traits\DisablesSoftDeletes;
 use Fleetbase\Traits\Expirable;
 use Fleetbase\Traits\HasAliases;
 use Fleetbase\Traits\HasFileResolution;
-use Fleetbase\Models\File;
-use Fleetbase\Services\FileResolverService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
@@ -16,7 +16,7 @@ class LifecycleTraitsAliasRecord extends Model
 
     protected $guarded = [];
 
-    public bool $saved = false;
+    public bool $saved    = false;
     public array $updates = [];
 
     public function update(array $attributes = [], array $options = [])
@@ -33,17 +33,16 @@ class LifecycleTraitsAliasRecord extends Model
 
         return true;
     }
-
 }
 
 class LifecycleTraitsExpirableRecord extends Model
 {
     use Expirable;
 
-    protected $table = 'verification_codes';
+    protected $table   = 'verification_codes';
     protected $guarded = [];
-    protected $casts = [
-        'expires_at' => 'datetime',
+    protected $casts   = [
+        'expires_at'  => 'datetime',
         'valid_until' => 'datetime',
     ];
     public bool $saved = false;
@@ -70,7 +69,7 @@ class LifecycleTraitsUncastExpirableRecord extends Model
 {
     use Expirable;
 
-    protected $table = 'verification_codes';
+    protected $table   = 'verification_codes';
     protected $guarded = [];
 }
 
@@ -104,7 +103,7 @@ class LifecycleTraitsFileRecord extends Model
 {
     use HasFileResolution;
 
-    protected $table = 'vehicles';
+    protected $table   = 'vehicles';
     protected $guarded = [];
 
     public bool $saved = false;
@@ -120,7 +119,7 @@ class LifecycleTraitsFileRecord extends Model
 class LifecycleTraitsFileResolverFake extends FileResolverService
 {
     public array $calls = [];
-    public ?File $file = null;
+    public ?File $file  = null;
 
     public function resolve($fileInput, ?string $path = null, ?string $disk = null): ?File
     {
@@ -149,7 +148,7 @@ test('has aliases casts stores normalizes and rejects unsafe aliases', function 
 });
 
 test('has aliases cleans duplicates falsy values and whitespace before saving', function () {
-    $record = new LifecycleTraitsAliasRecord();
+    $record          = new LifecycleTraitsAliasRecord();
     $record->aliases = [' Alpha ', 'alpha', '', '  ', ' BETA ', 'beta'];
 
     expect($record->cleanAliases())->toBeTrue()

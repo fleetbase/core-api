@@ -7,7 +7,7 @@ use Illuminate\Http\Request;
 class FileModelSaveSpy extends File
 {
     public array $updates = [];
-    public int $saves = 0;
+    public int $saves     = 0;
 
     public function save(array $options = []): bool
     {
@@ -31,15 +31,15 @@ it('derives file extensions MIME types and hash names from stable metadata', fun
     $archive = new File();
     $archive->setRawAttributes([
         'original_filename' => 'fleetbase-backup.tar.gz',
-        'content_type' => null,
-        'path' => 'archives/2026/fleetbase-backup.tar.gz',
+        'content_type'      => null,
+        'path'              => 'archives/2026/fleetbase-backup.tar.gz',
     ], true);
 
     $pdf = new File();
     $pdf->setRawAttributes([
         'original_filename' => 'invoice.unknown',
-        'content_type' => 'application/pdf',
-        'path' => 'documents/invoice.pdf',
+        'content_type'      => 'application/pdf',
+        'path'              => 'documents/invoice.pdf',
     ], true);
 
     expect(File::parseExtensionFromFilename('fleetbase-backup.tar.gz'))->toBe('tar.gz')

@@ -15,16 +15,16 @@ function transaction_models_database(): Capsule
     EloquentModel::clearBootedModels();
 
     $connection = [
-        'driver' => 'sqlite',
+        'driver'   => 'sqlite',
         'database' => ':memory:',
-        'prefix' => '',
+        'prefix'   => '',
     ];
 
     $container = bind_test_container([
-        'api.cache.enabled' => false,
-        'database.default' => 'mysql',
+        'api.cache.enabled'          => false,
+        'database.default'           => 'mysql',
         'database.connections.mysql' => $connection,
-        'fleetbase.connection.db' => 'mysql',
+        'fleetbase.connection.db'    => 'mysql',
     ]);
     $container->instance('cache', new class {
         private array $values = [];
@@ -171,22 +171,22 @@ it('casts monetary JSON and polymorphic transaction attributes for API serializa
 
     $transaction = new Transaction();
     $transaction->fill([
-        'amount' => '$1,234.56',
-        'fee_amount' => 'USD 12.34',
-        'tax_amount' => null,
-        'net_amount' => '1,222.22',
-        'balance_after' => '9,999.00',
-        'settled_amount' => '500.50',
-        'exchange_rate' => '1.123456789',
+        'amount'           => '$1,234.56',
+        'fee_amount'       => 'USD 12.34',
+        'tax_amount'       => null,
+        'net_amount'       => '1,222.22',
+        'balance_after'    => '9,999.00',
+        'settled_amount'   => '500.50',
+        'exchange_rate'    => '1.123456789',
         'gateway_response' => ['id' => 'gw_1', 'status' => 'captured'],
-        'tags' => ['dispatch', 'wallet'],
-        'meta' => ['source' => 'checkout'],
-        'subject_type' => User::class,
-        'payer_type' => User::class,
-        'payee_type' => Company::class,
-        'initiator_type' => User::class,
-        'context_type' => 'Fleetbase\\FleetOps\\Models\\Order',
-        'customer_type' => Company::class,
+        'tags'             => ['dispatch', 'wallet'],
+        'meta'             => ['source' => 'checkout'],
+        'subject_type'     => User::class,
+        'payer_type'       => User::class,
+        'payee_type'       => Company::class,
+        'initiator_type'   => User::class,
+        'context_type'     => 'Fleetbase\\FleetOps\\Models\\Order',
+        'customer_type'    => Company::class,
     ]);
 
     expect($transaction->amount)->toBe(123456)
@@ -213,28 +213,28 @@ it('evaluates transaction status settlement refund reversal void and expiry help
     Carbon::setTestNow(Carbon::parse('2026-07-17 12:00:00', 'UTC'));
 
     $credit = new Transaction([
-        'direction' => Transaction::DIRECTION_CREDIT,
-        'status' => Transaction::STATUS_SUCCESS,
+        'direction'         => Transaction::DIRECTION_CREDIT,
+        'status'            => Transaction::STATUS_SUCCESS,
         'settlement_status' => Transaction::SETTLEMENT_STATUS_PAID,
     ]);
     $debit = new Transaction([
-        'direction' => Transaction::DIRECTION_DEBIT,
-        'status' => Transaction::STATUS_PENDING,
+        'direction'         => Transaction::DIRECTION_DEBIT,
+        'status'            => Transaction::STATUS_PENDING,
         'settlement_status' => Transaction::SETTLEMENT_STATUS_UNPAID,
     ]);
     $failedRefund = new Transaction([
-        'status' => Transaction::STATUS_FAILED,
-        'settlement_status' => Transaction::SETTLEMENT_STATUS_PARTIALLY_REFUNDED,
+        'status'                  => Transaction::STATUS_FAILED,
+        'settlement_status'       => Transaction::SETTLEMENT_STATUS_PARTIALLY_REFUNDED,
         'parent_transaction_uuid' => 'parent-1',
     ]);
-    $voidedByTimestamp = new Transaction(['status' => Transaction::STATUS_SUCCESS]);
-    $voidedByTimestamp->voided_at = Carbon::parse('2026-07-17 10:00:00', 'UTC');
-    $reversedByTimestamp = new Transaction(['status' => Transaction::STATUS_SUCCESS]);
+    $voidedByTimestamp                = new Transaction(['status' => Transaction::STATUS_SUCCESS]);
+    $voidedByTimestamp->voided_at     = Carbon::parse('2026-07-17 10:00:00', 'UTC');
+    $reversedByTimestamp              = new Transaction(['status' => Transaction::STATUS_SUCCESS]);
     $reversedByTimestamp->reversed_at = Carbon::parse('2026-07-17 10:30:00', 'UTC');
-    $expiredByTimestamp = new Transaction(['status' => Transaction::STATUS_PENDING]);
-    $expiredByTimestamp->expires_at = Carbon::parse('2026-07-17 11:59:00', 'UTC');
-    $futureExpiry = new Transaction(['status' => Transaction::STATUS_PENDING]);
-    $futureExpiry->expires_at = Carbon::parse('2026-07-17 12:30:00', 'UTC');
+    $expiredByTimestamp               = new Transaction(['status' => Transaction::STATUS_PENDING]);
+    $expiredByTimestamp->expires_at   = Carbon::parse('2026-07-17 11:59:00', 'UTC');
+    $futureExpiry                     = new Transaction(['status' => Transaction::STATUS_PENDING]);
+    $futureExpiry->expires_at         = Carbon::parse('2026-07-17 12:30:00', 'UTC');
 
     expect($credit->isCredit())->toBeTrue()
         ->and($credit->isDebit())->toBeFalse()
@@ -263,61 +263,61 @@ it('filters transactions by direction status settlement type period actor contex
 
     $capsule->getConnection('mysql')->table('transactions')->insert([
         [
-            'uuid' => 'transaction-1',
-            'direction' => Transaction::DIRECTION_CREDIT,
-            'status' => Transaction::STATUS_SUCCESS,
-            'settlement_status' => Transaction::SETTLEMENT_STATUS_PAID,
-            'type' => Transaction::TYPE_GATEWAY_CHARGE,
-            'period' => '2026-07',
-            'subject_uuid' => 'company-1',
-            'subject_type' => Company::class,
-            'payer_uuid' => 'user-1',
-            'payer_type' => User::class,
-            'payee_uuid' => 'company-1',
-            'payee_type' => Company::class,
-            'context_uuid' => 'order-1',
-            'context_type' => Company::class,
+            'uuid'                    => 'transaction-1',
+            'direction'               => Transaction::DIRECTION_CREDIT,
+            'status'                  => Transaction::STATUS_SUCCESS,
+            'settlement_status'       => Transaction::SETTLEMENT_STATUS_PAID,
+            'type'                    => Transaction::TYPE_GATEWAY_CHARGE,
+            'period'                  => '2026-07',
+            'subject_uuid'            => 'company-1',
+            'subject_type'            => Company::class,
+            'payer_uuid'              => 'user-1',
+            'payer_type'              => User::class,
+            'payee_uuid'              => 'company-1',
+            'payee_type'              => Company::class,
+            'context_uuid'            => 'order-1',
+            'context_type'            => Company::class,
             'parent_transaction_uuid' => null,
-            'created_at' => '2026-07-17 10:00:00',
-            'updated_at' => '2026-07-17 10:00:00',
+            'created_at'              => '2026-07-17 10:00:00',
+            'updated_at'              => '2026-07-17 10:00:00',
         ],
         [
-            'uuid' => 'transaction-2',
-            'direction' => Transaction::DIRECTION_DEBIT,
-            'status' => Transaction::STATUS_PENDING,
-            'settlement_status' => Transaction::SETTLEMENT_STATUS_UNPAID,
-            'type' => Transaction::TYPE_WALLET_WITHDRAWAL,
-            'period' => '2026-07',
-            'subject_uuid' => 'user-1',
-            'subject_type' => User::class,
-            'payer_uuid' => 'company-1',
-            'payer_type' => Company::class,
-            'payee_uuid' => 'user-1',
-            'payee_type' => User::class,
-            'context_uuid' => 'wallet-1',
-            'context_type' => 'Wallet',
+            'uuid'                    => 'transaction-2',
+            'direction'               => Transaction::DIRECTION_DEBIT,
+            'status'                  => Transaction::STATUS_PENDING,
+            'settlement_status'       => Transaction::SETTLEMENT_STATUS_UNPAID,
+            'type'                    => Transaction::TYPE_WALLET_WITHDRAWAL,
+            'period'                  => '2026-07',
+            'subject_uuid'            => 'user-1',
+            'subject_type'            => User::class,
+            'payer_uuid'              => 'company-1',
+            'payer_type'              => Company::class,
+            'payee_uuid'              => 'user-1',
+            'payee_type'              => User::class,
+            'context_uuid'            => 'wallet-1',
+            'context_type'            => 'Wallet',
             'parent_transaction_uuid' => null,
-            'created_at' => '2026-07-17 10:00:00',
-            'updated_at' => '2026-07-17 10:00:00',
+            'created_at'              => '2026-07-17 10:00:00',
+            'updated_at'              => '2026-07-17 10:00:00',
         ],
         [
-            'uuid' => 'transaction-3',
-            'direction' => Transaction::DIRECTION_DEBIT,
-            'status' => Transaction::STATUS_FAILED,
-            'settlement_status' => Transaction::SETTLEMENT_STATUS_REFUNDED,
-            'type' => Transaction::TYPE_GATEWAY_REFUND,
-            'period' => '2026-06',
-            'subject_uuid' => 'company-1',
-            'subject_type' => Company::class,
-            'payer_uuid' => 'company-1',
-            'payer_type' => Company::class,
-            'payee_uuid' => 'user-1',
-            'payee_type' => User::class,
-            'context_uuid' => 'order-1',
-            'context_type' => Company::class,
+            'uuid'                    => 'transaction-3',
+            'direction'               => Transaction::DIRECTION_DEBIT,
+            'status'                  => Transaction::STATUS_FAILED,
+            'settlement_status'       => Transaction::SETTLEMENT_STATUS_REFUNDED,
+            'type'                    => Transaction::TYPE_GATEWAY_REFUND,
+            'period'                  => '2026-06',
+            'subject_uuid'            => 'company-1',
+            'subject_type'            => Company::class,
+            'payer_uuid'              => 'company-1',
+            'payer_type'              => Company::class,
+            'payee_uuid'              => 'user-1',
+            'payee_type'              => User::class,
+            'context_uuid'            => 'order-1',
+            'context_type'            => Company::class,
             'parent_transaction_uuid' => 'transaction-1',
-            'created_at' => '2026-07-17 10:00:00',
-            'updated_at' => '2026-07-17 10:00:00',
+            'created_at'              => '2026-07-17 10:00:00',
+            'updated_at'              => '2026-07-17 10:00:00',
         ],
     ]);
 
@@ -362,17 +362,17 @@ it('defines transaction relationship key contracts and item monetary calculation
         ->and($transaction->items()->getLocalKeyName())->toBe('uuid');
 
     $computed = new TransactionItem([
-        'quantity' => 3,
+        'quantity'   => 3,
         'unit_price' => '12.50',
-        'amount' => '1.00',
-        'tax_rate' => '8.25',
+        'amount'     => '1.00',
+        'tax_rate'   => '8.25',
         'tax_amount' => '0.10',
     ]);
     $fallback = new TransactionItem([
-        'quantity' => 0,
+        'quantity'   => 0,
         'unit_price' => 0,
-        'amount' => '42.00',
-        'tax_rate' => 0,
+        'amount'     => '42.00',
+        'tax_rate'   => 0,
         'tax_amount' => '5.00',
     ]);
 
@@ -392,10 +392,10 @@ it('generates internal transaction numbers and retries when generated gateway id
     mt_srand(1776);
     $collidingNumber = Transaction::generateInternalNumber(6);
     Transaction::query()->insert([
-        'uuid' => 'transaction-collision',
+        'uuid'                   => 'transaction-collision',
         'gateway_transaction_id' => $collidingNumber,
-        'created_at' => '2026-07-17 10:00:00',
-        'updated_at' => '2026-07-17 10:00:00',
+        'created_at'             => '2026-07-17 10:00:00',
+        'updated_at'             => '2026-07-17 10:00:00',
     ]);
 
     mt_srand(1776);

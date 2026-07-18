@@ -262,13 +262,13 @@ function file_controller_fixtures(): Capsule
     });
 
     $capsule->getConnection('mysql')->table('users')->insert([
-        'uuid' => 'user-1',
-        'public_id' => 'user_1',
+        'uuid'         => 'user-1',
+        'public_id'    => 'user_1',
         'company_uuid' => 'company-1',
-        'name' => 'Uploader User',
-        'email' => 'uploader@example.test',
-        'created_at' => '2026-07-18 00:00:00',
-        'updated_at' => '2026-07-18 00:00:00',
+        'name'         => 'Uploader User',
+        'email'        => 'uploader@example.test',
+        'created_at'   => '2026-07-18 00:00:00',
+        'updated_at'   => '2026-07-18 00:00:00',
     ]);
 
     return $capsule;
@@ -547,8 +547,8 @@ test('public file controller downloads updates finds queries and deletes active 
 
     $download = public_file_controller()->download('file_public_1', public_file_controller_download_request());
     $updated  = public_file_controller()->update('file_public_1', Request::create('/v1/files/file_public_1', 'PUT', [
-        'caption' => 'Updated caption',
-        'meta' => ['reviewed' => true],
+        'caption'  => 'Updated caption',
+        'meta'     => ['reviewed' => true],
         'filename' => 'renamed.csv',
     ]));
     $found   = public_file_controller()->find('file_public_1');

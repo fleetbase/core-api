@@ -21,7 +21,7 @@ class CacheHelperCacheFake
 
 class CacheHelperRedisFake
 {
-    public array $scanCalls = [];
+    public array $scanCalls   = [];
     public array $deletedKeys = [];
 
     public function __construct(private array $scanResults)

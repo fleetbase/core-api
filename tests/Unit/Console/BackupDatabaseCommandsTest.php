@@ -19,12 +19,12 @@ class BackupDatabaseCommandContainer extends FleetbaseTestContainer
 class BackupDatabaseProcessFake
 {
     public ?int $timeout = null;
-    public bool $ran = false;
+    public bool $ran     = false;
 
     public function __construct(
         public string $command,
         private bool $successful = true,
-        private string $errorOutput = ''
+        private string $errorOutput = '',
     ) {
     }
 
@@ -56,7 +56,7 @@ class BackupDatabaseUploaderFake
     public function __construct(
         public object $s3,
         public string $fileName,
-        public array $options
+        public array $options,
     ) {
     }
 
@@ -72,9 +72,9 @@ class BackupDatabaseTrimmerFake extends S3BackupTrimmer
 
     public function __construct(int $days, string $bucket)
     {
-        $this->days = $days;
+        $this->days   = $days;
         $this->bucket = $bucket;
-        $this->when = now()->subDays($this->days)->startOfDay();
+        $this->when   = now()->subDays($this->days)->startOfDay();
     }
 
     public function run(): void
@@ -85,12 +85,12 @@ class BackupDatabaseTrimmerFake extends S3BackupTrimmer
 
 class BackupDatabaseTestCommand extends MysqlS3Backup
 {
-    public array $processes = [];
-    public array $s3Configs = [];
-    public array $uploaders = [];
-    public array $deletedFiles = [];
-    public array $trimmers = [];
-    public bool $processSuccessful = true;
+    public array $processes           = [];
+    public array $s3Configs           = [];
+    public array $uploaders           = [];
+    public array $deletedFiles        = [];
+    public array $trimmers            = [];
+    public bool $processSuccessful    = true;
     public string $processErrorOutput = '';
 
     protected function makeProcess(string $command)
@@ -117,7 +117,7 @@ class BackupDatabaseTestCommand extends MysqlS3Backup
 
     protected function makeBackupTrimmer($days, $bucket): S3BackupTrimmer
     {
-        $trimmer = new BackupDatabaseTrimmerFake((int) $days, $bucket);
+        $trimmer          = new BackupDatabaseTrimmerFake((int) $days, $bucket);
         $this->trimmers[] = $trimmer;
 
         return $trimmer;
@@ -161,23 +161,23 @@ function backup_database_container(array $overrides = []): void
     Container::setInstance(new BackupDatabaseCommandContainer());
 
     bind_test_container(array_replace_recursive([
-        'database.connections.mysql.host' => 'db.example.test',
-        'database.connections.mysql.port' => 3307,
-        'database.connections.mysql.username' => 'fleetbase',
-        'database.connections.mysql.password' => 'secret value',
-        'database.connections.mysql.database' => 'fleetbase',
-        'database.connections.sandbox.database' => 'fleetbase_sandbox',
-        'laravel-mysql-s3-backup.backup_dir' => '/tmp/fleetbase-backups',
-        'laravel-mysql-s3-backup.filename' => '%s-%s.sql',
-        'laravel-mysql-s3-backup.gzip' => true,
+        'database.connections.mysql.host'               => 'db.example.test',
+        'database.connections.mysql.port'               => 3307,
+        'database.connections.mysql.username'           => 'fleetbase',
+        'database.connections.mysql.password'           => 'secret value',
+        'database.connections.mysql.database'           => 'fleetbase',
+        'database.connections.sandbox.database'         => 'fleetbase_sandbox',
+        'laravel-mysql-s3-backup.backup_dir'            => '/tmp/fleetbase-backups',
+        'laravel-mysql-s3-backup.filename'              => '%s-%s.sql',
+        'laravel-mysql-s3-backup.gzip'                  => true,
         'laravel-mysql-s3-backup.custom_mysqldump_args' => '--no-tablespaces',
-        'laravel-mysql-s3-backup.sql_timout' => 120,
-        'laravel-mysql-s3-backup.keep_local_copy' => false,
-        'laravel-mysql-s3-backup.rolling_backup_days' => 7,
-        'laravel-mysql-s3-backup.s3' => [
-            'bucket' => 'fleetbase-backups',
-            'folder' => 'daily',
-            'region' => 'ap-southeast-1',
+        'laravel-mysql-s3-backup.sql_timout'            => 120,
+        'laravel-mysql-s3-backup.keep_local_copy'       => false,
+        'laravel-mysql-s3-backup.rolling_backup_days'   => 7,
+        'laravel-mysql-s3-backup.s3'                    => [
+            'bucket'  => 'fleetbase-backups',
+            'folder'  => 'daily',
+            'region'  => 'ap-southeast-1',
             'version' => 'latest',
         ],
     ], $overrides));
@@ -208,13 +208,13 @@ it('builds mysql and sandbox dump commands uploads to configured s3 folder and t
         ->and($command->uploaders)->toHaveCount(2)
         ->and($command->uploaders[0]->uploaded)->toBeTrue();
 
-    $firstBackup = $command->uploaders[0]->fileName;
+    $firstBackup  = $command->uploaders[0]->fileName;
     $secondBackup = $command->uploaders[1]->fileName;
 
     expect($command->uploaders[0]->options)->toBe([
-            'bucket' => 'fleetbase-backups',
-            'key' => 'daily/' . basename($firstBackup),
-        ])
+        'bucket' => 'fleetbase-backups',
+        'key'    => 'daily/' . basename($firstBackup),
+    ])
         ->and($command->deletedFiles)->toBe([
             $firstBackup,
             $secondBackup,
@@ -229,13 +229,13 @@ it('builds mysql and sandbox dump commands uploads to configured s3 folder and t
 
 it('stops backup processing when a database dump fails before upload or cleanup', function () {
     backup_database_container([
-        'laravel-mysql-s3-backup.gzip' => false,
+        'laravel-mysql-s3-backup.gzip'                  => false,
         'laravel-mysql-s3-backup.custom_mysqldump_args' => null,
     ]);
     Carbon::setTestNow(Carbon::parse('2026-07-18 10:00:00'));
 
-    $command = new BackupDatabaseTestCommand();
-    $command->processSuccessful = false;
+    $command                     = new BackupDatabaseTestCommand();
+    $command->processSuccessful  = false;
     $command->processErrorOutput = 'mysqldump failed';
     $command->setLaravel(app());
     $tester = new CommandTester($command);

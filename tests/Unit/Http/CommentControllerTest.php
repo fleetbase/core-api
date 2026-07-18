@@ -265,15 +265,15 @@ test('public comment controller creates comments from resolved subject and rejec
 
     $created = comment_controller()->create(comment_controller_create_request([
         'subject' => [
-            'id' => 'user_subject',
+            'id'   => 'user_subject',
             'type' => 'user',
         ],
         'content' => 'Arrived at the dock.',
     ]));
     $invalid = comment_controller()->create(comment_controller_create_request([
-        'subject_id' => 'missing_user',
+        'subject_id'   => 'missing_user',
         'subject_type' => 'user',
-        'content' => 'Cannot attach',
+        'content'      => 'Cannot attach',
     ]));
 
     $record = $capsule->getConnection('mysql')->table('comments')->where('content', 'Arrived at the dock.')->first();
@@ -293,11 +293,11 @@ test('public comment controller replies inherit parent subject and stay in activ
     comment_controller_database();
 
     $reply = comment_controller()->create(comment_controller_create_request([
-        'parent' => 'comment_root',
+        'parent'  => 'comment_root',
         'content' => 'Reply from dispatcher',
     ]));
     $foreignParent = comment_controller()->create(comment_controller_create_request([
-        'parent' => 'comment_foreign',
+        'parent'  => 'comment_foreign',
         'content' => 'Cannot reply cross tenant',
     ]));
 
@@ -340,16 +340,16 @@ test('public comment controller query applies subject parent and active company 
 
     $allActiveCompany = comment_controller()->query(comment_controller_query_request(['limit' => -1]));
     $subjectScoped    = comment_controller()->query(comment_controller_query_request([
-        'limit' => -1,
+        'limit'        => -1,
         'subject_uuid' => 'user-subject',
         'subject_type' => 'user',
     ]));
     $withoutParent = comment_controller()->query(comment_controller_query_request([
-        'limit' => -1,
+        'limit'          => -1,
         'without_parent' => '1',
     ]));
     $parentScoped = comment_controller()->query(comment_controller_query_request([
-        'limit' => -1,
+        'limit'  => -1,
         'parent' => '11111111-1111-4111-8111-111111111111',
     ]));
 

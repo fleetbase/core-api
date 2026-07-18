@@ -8,12 +8,12 @@ use Illuminate\Support\Facades\Facade;
 
 class QueryOptimizerOrder extends Model
 {
-    protected $table = 'orders';
+    protected $table      = 'orders';
     protected $primaryKey = 'uuid';
-    public $incrementing = false;
-    protected $keyType = 'string';
-    public $timestamps = false;
-    protected $guarded = [];
+    public $incrementing  = false;
+    protected $keyType    = 'string';
+    public $timestamps    = false;
+    protected $guarded    = [];
 }
 
 function query_optimizer_database(): void
@@ -25,7 +25,7 @@ function query_optimizer_database(): void
     ];
 
     $container = bind_test_container([
-        'database.default' => 'testing',
+        'database.default'             => 'testing',
         'database.connections.testing' => $connectionConfig,
     ]);
 
@@ -107,7 +107,7 @@ test('query optimizer leaves raw where queries unchanged', function () {
         ->whereRaw('json_extract(meta, "$.priority") = ?', ['high'])
         ->where('company_uuid', 'company-1');
 
-    $beforeWheres = $query->getQuery()->wheres;
+    $beforeWheres   = $query->getQuery()->wheres;
     $beforeBindings = $query->getBindings();
 
     QueryOptimizer::removeDuplicateWheres($query);

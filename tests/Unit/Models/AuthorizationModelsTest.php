@@ -21,9 +21,9 @@ class AuthorizationCompanyUserSpy extends CompanyUser
     {
         parent::__construct($attributes);
 
-        $this->directPermissions = collect();
-        $this->rolePermissions = collect();
-        $this->policyPermissions = collect();
+        $this->directPermissions     = collect();
+        $this->rolePermissions       = collect();
+        $this->policyPermissions     = collect();
         $this->rolePolicyPermissions = collect();
     }
 
@@ -58,14 +58,14 @@ class AuthorizationCompanyUserSpy extends CompanyUser
 function authorization_models_database(): Capsule
 {
     $container = bind_test_container([
-        'database.default' => 'mysql',
+        'database.default'                        => 'mysql',
         'permission.column_names.model_morph_key' => 'model_uuid',
     ]);
 
     $connection = [
-        'driver' => 'sqlite',
+        'driver'   => 'sqlite',
         'database' => ':memory:',
-        'prefix' => '',
+        'prefix'   => '',
     ];
 
     config(['database.connections.mysql' => $connection]);
@@ -113,10 +113,10 @@ it('resets existing role pivots before assigning a single company user role', fu
 it('merges direct role policy and role-policy permissions for company users', function () {
     bind_test_container();
 
-    $companyUser = new AuthorizationCompanyUserSpy();
-    $companyUser->directPermissions = collect(['orders.view', 'orders.create']);
-    $companyUser->rolePermissions = collect(['orders.dispatch']);
-    $companyUser->policyPermissions = collect(['billing.view']);
+    $companyUser                        = new AuthorizationCompanyUserSpy();
+    $companyUser->directPermissions     = collect(['orders.view', 'orders.create']);
+    $companyUser->rolePermissions       = collect(['orders.dispatch']);
+    $companyUser->policyPermissions     = collect(['billing.view']);
     $companyUser->rolePolicyPermissions = collect(['reports.export']);
 
     expect($companyUser->getAllPermissions()->values()->all())->toBe([
@@ -143,8 +143,8 @@ it('exposes role policy and permission mutator and response metadata contracts',
     $companyRole->permissions = ['orders.view'];
     $companyRole->setAttribute('guard_name', 'api');
 
-    $globalPolicy = new Policy(['name' => 'Manage billing']);
-    $companyPolicy = new Policy(['name' => 'View reports', 'company_uuid' => 'company-1']);
+    $globalPolicy               = new Policy(['name' => 'Manage billing']);
+    $companyPolicy              = new Policy(['name' => 'View reports', 'company_uuid' => 'company-1']);
     $companyPolicy->permissions = ['reports.view'];
     $companyPolicy->setAttribute('guard_name', 'api');
 
@@ -165,5 +165,5 @@ it('exposes role policy and permission mutator and response metadata contracts',
         ->and($companyPolicy->is_deletable)->toBeTrue()
         ->and($companyPolicy->getAttributes())->not->toHaveKey('permissions')
         ->and($companyPolicy->getAttribute('guard_name'))->toBe('sanctum')
-        ->and($permission->scopeWithTrashed(Permission::query()))->toBeInstanceOf(\Illuminate\Database\Eloquent\Builder::class);
+        ->and($permission->scopeWithTrashed(Permission::query()))->toBeInstanceOf(Illuminate\Database\Eloquent\Builder::class);
 });

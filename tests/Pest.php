@@ -240,6 +240,13 @@ namespace {
 
             return $current === $environments;
         }
+
+        public function hasDebugModeEnabled(): bool
+        {
+            return (bool) ($this->bound('config')
+                ? $this->make('config')->get('app.debug', false)
+                : false);
+        }
     }
 
     function bind_test_container(array $config = []): Container

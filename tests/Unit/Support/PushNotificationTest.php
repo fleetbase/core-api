@@ -1,6 +1,5 @@
 <?php
 
-use Fleetbase\Models\File;
 use Fleetbase\Support\PushNotification;
 use Illuminate\Contracts\Filesystem\Factory as FilesystemFactory;
 use Illuminate\Database\Capsule\Manager as Capsule;
@@ -70,9 +69,9 @@ afterEach(function () {
 it('configures fcm client options and removes file path credentials from runtime config', function () {
     bind_test_container([
         'firebase.projects.app' => [
-            'project_id'        => 'fleetbase-test',
-            'credentials'       => ['client_email' => 'firebase@test.invalid'],
-            'credentials_file'  => '/tmp/firebase.json',
+            'project_id'          => 'fleetbase-test',
+            'credentials'         => ['client_email' => 'firebase@test.invalid'],
+            'credentials_file'    => '/tmp/firebase.json',
             'credentials_file_id' => 'not-a-file-uuid',
         ],
     ]);
@@ -101,7 +100,7 @@ it('loads fcm credentials from stored file records and normalizes private key ne
         'type'         => 'service_account',
         'project_id'   => 'fleetbase-test',
         'client_email' => 'firebase@test.invalid',
-        'private_key'  => "-----BEGIN PRIVATE KEY-----\\nline-one\\n-----END PRIVATE KEY-----\\n",
+        'private_key'  => '-----BEGIN PRIVATE KEY-----\\nline-one\\n-----END PRIVATE KEY-----\\n',
     ]));
     config([
         'firebase.projects.app' => [

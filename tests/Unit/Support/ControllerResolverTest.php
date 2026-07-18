@@ -50,7 +50,7 @@ function controller_resolver_request(ControllerResolverTestRoute $route): Reques
 test('controller resolver returns the route controller instance', function () {
     bind_test_container();
     $controller = new ControllerResolverTestController();
-    $request = controller_resolver_request(new ControllerResolverTestRoute(
+    $request    = controller_resolver_request(new ControllerResolverTestRoute(
         $controller,
         ControllerResolverTestController::class . '@protectedAction',
         'protectedAction'

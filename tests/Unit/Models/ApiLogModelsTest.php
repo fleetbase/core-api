@@ -52,16 +52,16 @@ function bind_api_log_models_container(): ApiLogModelsCacheFake
     EloquentModel::clearBootedModels();
 
     $connection = [
-        'driver' => 'sqlite',
+        'driver'   => 'sqlite',
         'database' => ':memory:',
-        'prefix' => '',
+        'prefix'   => '',
     ];
 
     $container = bind_test_container([
-        'api.cache.enabled' => false,
-        'database.default' => 'mysql',
+        'api.cache.enabled'          => false,
+        'database.default'           => 'mysql',
         'database.connections.mysql' => $connection,
-        'fleetbase.connection.db' => 'mysql',
+        'fleetbase.connection.db'    => 'mysql',
     ]);
 
     $cache = new ApiLogModelsCacheFake();
@@ -88,16 +88,16 @@ it('casts api event and request log payloads while preserving response visibilit
 
     $event = new ApiEvent();
     $event->fill([
-        '_key' => 'event-key',
-        'company_uuid' => 'company-1',
+        '_key'                => 'event-key',
+        'company_uuid'        => 'company-1',
         'api_credential_uuid' => 'credential-1',
-        'access_token_id' => 'token-1',
-        'event' => 'order.created',
-        'source' => 'api',
-        'method' => 'POST',
-        'description' => 'Order created through API',
-        'data' => [
-            'order' => ['public_id' => 'order_123'],
+        'access_token_id'     => 'token-1',
+        'event'               => 'order.created',
+        'source'              => 'api',
+        'method'              => 'POST',
+        'description'         => 'Order created through API',
+        'data'                => [
+            'order'   => ['public_id' => 'order_123'],
             'attempt' => 1,
         ],
     ]);
@@ -106,41 +106,41 @@ it('casts api event and request log payloads while preserving response visibilit
     $credential->setRawAttributes([
         'uuid' => 'credential-1',
         'name' => 'Dispatch Integration',
-        'key' => 'flb_live_dispatch',
+        'key'  => 'flb_live_dispatch',
     ], true);
 
     $requestLog = new ApiRequestLog();
     $requestLog->fill([
-        '_key' => 'request-key',
-        'company_uuid' => 'company-1',
+        '_key'                => 'request-key',
+        'company_uuid'        => 'company-1',
         'api_credential_uuid' => 'credential-1',
-        'access_token_id' => 'token-1',
-        'public_id' => 'req_123',
-        'method' => 'POST',
-        'path' => '/v1/orders',
-        'full_url' => 'https://api.fleetbase.test/v1/orders?expand=customer',
-        'status_code' => 201,
-        'reason_phrase' => 'Created',
-        'duration' => 42,
-        'ip_address' => '203.0.113.10',
-        'version' => 'v1',
-        'source' => 'public-api',
-        'content_type' => 'application/json',
-        'related' => ['order' => 'order-1'],
-        'query_params' => ['expand' => 'customer'],
-        'request_headers' => ['authorization' => ['Bearer redacted']],
-        'request_body' => ['payload' => ['customer_uuid' => 'customer-1']],
-        'request_raw_body' => '{"payload":{"customer_uuid":"customer-1"}}',
-        'response_headers' => ['content-type' => ['application/json']],
-        'response_body' => ['id' => 'order_123'],
-        'response_raw_body' => '{"id":"order_123"}',
+        'access_token_id'     => 'token-1',
+        'public_id'           => 'req_123',
+        'method'              => 'POST',
+        'path'                => '/v1/orders',
+        'full_url'            => 'https://api.fleetbase.test/v1/orders?expand=customer',
+        'status_code'         => 201,
+        'reason_phrase'       => 'Created',
+        'duration'            => 42,
+        'ip_address'          => '203.0.113.10',
+        'version'             => 'v1',
+        'source'              => 'public-api',
+        'content_type'        => 'application/json',
+        'related'             => ['order' => 'order-1'],
+        'query_params'        => ['expand' => 'customer'],
+        'request_headers'     => ['authorization' => ['Bearer redacted']],
+        'request_body'        => ['payload' => ['customer_uuid' => 'customer-1']],
+        'request_raw_body'    => '{"payload":{"customer_uuid":"customer-1"}}',
+        'response_headers'    => ['content-type' => ['application/json']],
+        'response_body'       => ['id' => 'order_123'],
+        'response_raw_body'   => '{"id":"order_123"}',
     ]);
     $requestLog->setRelation('apiCredential', $credential);
 
     $array = $requestLog->toArray();
 
     expect($event->data)->toBe([
-        'order' => ['public_id' => 'order_123'],
+        'order'   => ['public_id' => 'order_123'],
         'attempt' => 1,
     ])
         ->and($event->searcheableFields())->toBe(['event', 'description', 'method'])
@@ -164,12 +164,12 @@ it('falls back to api credential keys and reuses cached request log accessor val
     $credential = new ApiCredential();
     $credential->setRawAttributes([
         'uuid' => 'credential-2',
-        'key' => 'flb_test_key_only',
+        'key'  => 'flb_test_key_only',
     ], true);
 
     $requestLog = new ApiRequestLog();
     $requestLog->setRawAttributes([
-        'uuid' => 'request-log-1',
+        'uuid'                => 'request-log-1',
         'api_credential_uuid' => 'credential-2',
     ], true);
     $requestLog->setRelation('apiCredential', $credential);
@@ -179,7 +179,7 @@ it('falls back to api credential keys and reuses cached request log accessor val
 
     $credential->setRawAttributes([
         'uuid' => 'credential-2',
-        'key' => 'flb_test_changed',
+        'key'  => 'flb_test_changed',
     ], true);
 
     expect($requestLog->api_credential_name)->toBe('flb_test_key_only');
@@ -190,24 +190,24 @@ it('normalizes webhook request log methods and casts outbound delivery metadata'
 
     $log = new WebhookRequestLog();
     $log->fill([
-        '_key' => 'webhook-log-key',
-        'public_id' => 'webhook_req_123',
-        'company_uuid' => 'company-1',
-        'webhook_uuid' => 'webhook-1',
+        '_key'                => 'webhook-log-key',
+        'public_id'           => 'webhook_req_123',
+        'company_uuid'        => 'company-1',
+        'webhook_uuid'        => 'webhook-1',
         'api_credential_uuid' => 'credential-1',
-        'access_token_id' => 'token-1',
-        'api_event_uuid' => 'event-1',
-        'method' => 'post',
-        'status_code' => 202,
-        'reason_phrase' => 'Accepted',
-        'duration' => 150,
-        'url' => 'https://example.com/webhooks/fleetbase',
-        'attempt' => 2,
-        'response' => ['ok' => true],
-        'status' => 'success',
-        'headers' => ['x-fleetbase-signature' => ['sha256=abc']],
-        'meta' => ['retry' => false],
-        'sent_at' => '2026-07-17 12:00:00',
+        'access_token_id'     => 'token-1',
+        'api_event_uuid'      => 'event-1',
+        'method'              => 'post',
+        'status_code'         => 202,
+        'reason_phrase'       => 'Accepted',
+        'duration'            => 150,
+        'url'                 => 'https://example.com/webhooks/fleetbase',
+        'attempt'             => 2,
+        'response'            => ['ok' => true],
+        'status'              => 'success',
+        'headers'             => ['x-fleetbase-signature' => ['sha256=abc']],
+        'meta'                => ['retry' => false],
+        'sent_at'             => '2026-07-17 12:00:00',
     ]);
 
     expect($log->method)->toBe('POST')
@@ -220,7 +220,7 @@ it('normalizes webhook request log methods and casts outbound delivery metadata'
 it('keeps api log relationship foreign and owner keys aligned with uuid columns', function () {
     bind_api_log_models_container();
 
-    $event = new ApiEvent();
+    $event      = new ApiEvent();
     $requestLog = new ApiRequestLog();
     $webhookLog = new WebhookRequestLog();
 

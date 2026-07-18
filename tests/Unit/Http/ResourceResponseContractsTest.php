@@ -1,5 +1,6 @@
 <?php
 
+use Fleetbase\Facades\FileResolver as FileResolverFacade;
 use Fleetbase\Http\Resources\Author as AuthorResource;
 use Fleetbase\Http\Resources\Category as CategoryResource;
 use Fleetbase\Http\Resources\ChatAttachment as ChatAttachmentResource;
@@ -10,7 +11,6 @@ use Fleetbase\Http\Resources\Policy as PolicyResource;
 use Fleetbase\Http\Resources\Role as RoleResource;
 use Fleetbase\Http\Resources\ScheduleTemplate as ScheduleTemplateResource;
 use Fleetbase\Http\Resources\Template as TemplateResource;
-use Fleetbase\Facades\FileResolver as FileResolverFacade;
 use Fleetbase\Models\Category;
 use Fleetbase\Models\Permission;
 use Fleetbase\Models\Policy;
@@ -54,7 +54,7 @@ function resource_contract_container(): void
     bind_test_container([
         'auth.defaults.guard' => 'sanctum',
         'auth.guards.sanctum' => [
-            'driver' => 'session',
+            'driver'   => 'session',
             'provider' => 'users',
         ],
     ]);
@@ -68,23 +68,23 @@ function category_resource_model(array $attributes): Category
 {
     $category = new Category();
     $category->setRawAttributes(array_merge([
-        'id' => 1,
-        'uuid' => 'category-1',
-        'public_id' => 'cat_1',
+        'id'           => 1,
+        'uuid'         => 'category-1',
+        'public_id'    => 'cat_1',
         'company_uuid' => 'company-1',
-        'owner_uuid' => 'owner-1',
-        'owner_type' => 'company',
-        'icon' => 'box',
-        'name' => 'Operations',
-        'description' => 'Operational categories',
-        'tags' => '["ops","dispatch"]',
+        'owner_uuid'   => 'owner-1',
+        'owner_type'   => 'company',
+        'icon'         => 'box',
+        'name'         => 'Operations',
+        'description'  => 'Operational categories',
+        'tags'         => '["ops","dispatch"]',
         'translations' => '{"es":{"name":"Operaciones"}}',
-        'meta' => '{"priority":"high"}',
-        'for' => 'orders',
-        'order' => 5,
-        'slug' => 'operations',
-        'updated_at' => Carbon::parse('2026-07-18 00:00:00'),
-        'created_at' => Carbon::parse('2026-07-17 00:00:00'),
+        'meta'         => '{"priority":"high"}',
+        'for'          => 'orders',
+        'order'        => 5,
+        'slug'         => 'operations',
+        'updated_at'   => Carbon::parse('2026-07-18 00:00:00'),
+        'created_at'   => Carbon::parse('2026-07-17 00:00:00'),
     ], $attributes), true);
     $category->setRelation('iconFile', null);
     $category->setRelation('parentCategory', null);
@@ -97,13 +97,13 @@ function permission_resource_model(array $attributes): Permission
 {
     $permission = new Permission();
     $permission->setRawAttributes(array_merge([
-        'id' => 'permission-1',
-        'name' => 'iam view role',
-        'guard_name' => 'sanctum',
+        'id'          => 'permission-1',
+        'name'        => 'iam view role',
+        'guard_name'  => 'sanctum',
         'description' => 'Can view role',
-        'service' => 'iam',
-        'updated_at' => Carbon::parse('2026-07-18 00:00:00'),
-        'created_at' => Carbon::parse('2026-07-17 00:00:00'),
+        'service'     => 'iam',
+        'updated_at'  => Carbon::parse('2026-07-18 00:00:00'),
+        'created_at'  => Carbon::parse('2026-07-17 00:00:00'),
     ], $attributes), true);
     $permission->setRelation('pivot', (object) ['permission_id' => $permission->id]);
 
@@ -114,18 +114,18 @@ function policy_resource_model(array $attributes = []): Policy
 {
     $policy = new Policy();
     $policy->setRawAttributes(array_merge([
-        'id' => 'policy-1',
+        'id'           => 'policy-1',
         'company_uuid' => 'company-1',
-        'name' => 'DispatchPolicy',
-        'guard_name' => 'sanctum',
-        'description' => 'Dispatch policy',
-        'service' => 'iam',
-        'updated_at' => Carbon::parse('2026-07-18 00:00:00'),
-        'created_at' => Carbon::parse('2026-07-17 00:00:00'),
+        'name'         => 'DispatchPolicy',
+        'guard_name'   => 'sanctum',
+        'description'  => 'Dispatch policy',
+        'service'      => 'iam',
+        'updated_at'   => Carbon::parse('2026-07-18 00:00:00'),
+        'created_at'   => Carbon::parse('2026-07-17 00:00:00'),
     ], $attributes), true);
     $policy->setRelation('permissions', collect([
         permission_resource_model([
-            'id' => 'permission-policy',
+            'id'   => 'permission-policy',
             'name' => 'iam policy permission',
         ]),
     ]));
@@ -137,20 +137,20 @@ function role_resource_model(array $attributes = []): Role
 {
     $role = new Role();
     $role->setRawAttributes(array_merge([
-        'id' => 'role-1',
+        'id'           => 'role-1',
         'company_uuid' => 'company-1',
-        'name' => 'Dispatcher',
-        'guard_name' => 'sanctum',
-        'description' => 'Dispatch role',
-        'service' => 'iam',
-        'updated_at' => Carbon::parse('2026-07-18 00:00:00'),
-        'created_at' => Carbon::parse('2026-07-17 00:00:00'),
+        'name'         => 'Dispatcher',
+        'guard_name'   => 'sanctum',
+        'description'  => 'Dispatch role',
+        'service'      => 'iam',
+        'updated_at'   => Carbon::parse('2026-07-18 00:00:00'),
+        'created_at'   => Carbon::parse('2026-07-17 00:00:00'),
     ], $attributes), true);
     $role->setRelation('permissions', collect([
         permission_resource_model([]),
         permission_resource_model([
-            'id' => 'permission-2',
-            'name' => 'iam edit role',
+            'id'          => 'permission-2',
+            'name'        => 'iam edit role',
             'description' => 'Can edit role',
         ]),
     ]));
@@ -165,29 +165,29 @@ function template_resource_model(array $attributes = []): TemplateModel
 {
     $template = new TemplateModel();
     $template->setRawAttributes(array_merge([
-        'id' => 77,
-        'uuid' => 'template-uuid',
-        'public_id' => 'template_public',
-        'company_uuid' => 'company-1',
-        'created_by_uuid' => 'user-1',
-        'updated_by_uuid' => 'user-2',
+        'id'                    => 77,
+        'uuid'                  => 'template-uuid',
+        'public_id'             => 'template_public',
+        'company_uuid'          => 'company-1',
+        'created_by_uuid'       => 'user-1',
+        'updated_by_uuid'       => 'user-2',
         'background_image_uuid' => 'file-1',
-        'name' => 'Invoice Template',
-        'description' => 'Printable invoice template',
-        'context_type' => 'invoice',
-        'unit' => 'px',
-        'width' => 800,
-        'height' => 600,
-        'orientation' => 'portrait',
-        'margins' => '{"top":12,"right":16,"bottom":12,"left":16}',
-        'background_color' => '#ffffff',
-        'content' => '[{"type":"text","value":"Invoice"}]',
-        'element_schemas' => '[{"key":"customer.name","type":"string"}]',
-        'is_default' => true,
-        'is_system' => false,
-        'is_public' => true,
-        'updated_at' => Carbon::parse('2026-07-18 00:00:00'),
-        'created_at' => Carbon::parse('2026-07-17 00:00:00'),
+        'name'                  => 'Invoice Template',
+        'description'           => 'Printable invoice template',
+        'context_type'          => 'invoice',
+        'unit'                  => 'px',
+        'width'                 => 800,
+        'height'                => 600,
+        'orientation'           => 'portrait',
+        'margins'               => '{"top":12,"right":16,"bottom":12,"left":16}',
+        'background_color'      => '#ffffff',
+        'content'               => '[{"type":"text","value":"Invoice"}]',
+        'element_schemas'       => '[{"key":"customer.name","type":"string"}]',
+        'is_default'            => true,
+        'is_system'             => false,
+        'is_public'             => true,
+        'updated_at'            => Carbon::parse('2026-07-18 00:00:00'),
+        'created_at'            => Carbon::parse('2026-07-17 00:00:00'),
     ], $attributes), true);
     $template->id = 77;
     $template->setRelation('queries', collect());
@@ -199,23 +199,23 @@ function schedule_template_resource_model(array $attributes = []): ScheduleTempl
 {
     $template = new ScheduleTemplateModel();
     $template->setRawAttributes(array_merge([
-        'uuid' => 'schedule-template-uuid',
-        'public_id' => 'schedule_template_public',
-        'company_uuid' => 'company-1',
-        'schedule_uuid' => 'schedule-1',
-        'subject_uuid' => 'driver-1',
-        'subject_type' => 'driver',
-        'name' => 'Weekday Route',
-        'description' => 'Morning route pattern',
-        'start_time' => '08:00',
-        'end_time' => '16:00',
-        'duration' => 480,
+        'uuid'           => 'schedule-template-uuid',
+        'public_id'      => 'schedule_template_public',
+        'company_uuid'   => 'company-1',
+        'schedule_uuid'  => 'schedule-1',
+        'subject_uuid'   => 'driver-1',
+        'subject_type'   => 'driver',
+        'name'           => 'Weekday Route',
+        'description'    => 'Morning route pattern',
+        'start_time'     => '08:00',
+        'end_time'       => '16:00',
+        'duration'       => 480,
         'break_duration' => 30,
-        'rrule' => 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
-        'color' => '#2563eb',
-        'meta' => '{"priority":"standard"}',
-        'updated_at' => Carbon::parse('2026-07-18 00:00:00'),
-        'created_at' => Carbon::parse('2026-07-17 00:00:00'),
+        'rrule'          => 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
+        'color'          => '#2563eb',
+        'meta'           => '{"priority":"standard"}',
+        'updated_at'     => Carbon::parse('2026-07-18 00:00:00'),
+        'created_at'     => Carbon::parse('2026-07-17 00:00:00'),
     ], $attributes), true);
 
     return $template;
@@ -231,29 +231,29 @@ test('category resource exposes public response shape with nested parent and sub
     resource_contract_container();
 
     $parent = category_resource_model([
-        'id' => 10,
-        'uuid' => 'category-parent',
-        'public_id' => 'cat_parent',
-        'name' => 'Parent Category',
-        'tags' => '[]',
+        'id'           => 10,
+        'uuid'         => 'category-parent',
+        'public_id'    => 'cat_parent',
+        'name'         => 'Parent Category',
+        'tags'         => '[]',
         'translations' => '[]',
-        'meta' => null,
+        'meta'         => null,
     ]);
     $child = category_resource_model([
-        'id' => 11,
-        'uuid' => 'category-child',
-        'public_id' => 'cat_child',
-        'name' => 'Child Category',
-        'tags' => '[]',
+        'id'           => 11,
+        'uuid'         => 'category-child',
+        'public_id'    => 'cat_child',
+        'name'         => 'Child Category',
+        'tags'         => '[]',
         'translations' => '[]',
-        'meta' => null,
+        'meta'         => null,
     ]);
     $category = category_resource_model([]);
     $category->setRelation('parentCategory', $parent);
     $category->setRelation('subCategories', collect([$child]));
 
     $payload = (new CategoryResource($category))->resolve(resource_contract_request('/v1/categories/cat_1', [
-        'with_parent' => true,
+        'with_parent'        => true,
         'with_subcategories' => true,
     ]));
 
@@ -272,26 +272,26 @@ test('category resource exposes internal identifiers and can suppress nested rel
     resource_contract_container();
 
     $parent = category_resource_model([
-        'id' => 10,
-        'uuid' => 'category-parent',
+        'id'        => 10,
+        'uuid'      => 'category-parent',
         'public_id' => 'cat_parent',
-        'name' => 'Parent Category',
+        'name'      => 'Parent Category',
     ]);
     $child = category_resource_model([
-        'id' => 11,
-        'uuid' => 'category-child',
+        'id'        => 11,
+        'uuid'      => 'category-child',
         'public_id' => 'cat_child',
-        'name' => 'Child Category',
+        'name'      => 'Child Category',
     ]);
     $category = category_resource_model([]);
     $category->setRelation('parentCategory', $parent);
     $category->setRelation('subCategories', collect([$child]));
 
     $payload = (new CategoryResource($category, [
-        'without_parent' => true,
+        'without_parent'        => true,
         'without_subcategories' => true,
     ]))->resolve(resource_contract_request('/int/v1/categories/category-1', [
-        'with_parent' => true,
+        'with_parent'        => true,
         'with_subcategories' => true,
     ]));
 
@@ -318,11 +318,11 @@ test('role resource serializes policies permissions and organization managed met
         ->and($payload['is_deletable'])->toBeTrue()
         ->and($payload['permissions'])->toHaveCount(2)
         ->and($payload['permissions'][0])->toMatchArray([
-            'id' => 'permission-1',
-            'name' => 'iam view role',
-            'guard_name' => 'sanctum',
+            'id'          => 'permission-1',
+            'name'        => 'iam view role',
+            'guard_name'  => 'sanctum',
             'description' => 'Can view role',
-            'service' => 'iam',
+            'service'     => 'iam',
         ])
         ->and($payload['policies'][0]['id'])->toBe('policy-1')
         ->and($payload['policies'][0]['permissions'][0]['id'])->toBe('permission-policy');
@@ -332,9 +332,9 @@ test('role resource identifies fleetbase managed roles as immutable and non dele
     resource_contract_container();
 
     $payload = (new RoleResource(role_resource_model([
-        'id' => 'role-managed',
+        'id'           => 'role-managed',
         'company_uuid' => null,
-        'name' => 'Administrator',
+        'name'         => 'Administrator',
     ])))->resolve(resource_contract_request('/int/v1/roles/role-managed'));
 
     expect($payload['id'])->toBe('role-managed')
@@ -348,7 +348,7 @@ test('policy resource serializes permissions and mutability metadata directly', 
     resource_contract_container();
 
     $payload = (new PolicyResource(policy_resource_model([
-        'id' => 'policy-direct',
+        'id'           => 'policy-direct',
         'company_uuid' => null,
     ])))->resolve(resource_contract_request('/int/v1/policies/policy-direct'));
 
@@ -361,11 +361,11 @@ test('policy resource serializes permissions and mutability metadata directly', 
         ->and($payload['is_deletable'])->toBeFalse()
         ->and($payload['permissions'])->toHaveCount(1)
         ->and($payload['permissions'][0])->toMatchArray([
-            'id' => 'permission-policy',
-            'name' => 'iam policy permission',
-            'guard_name' => 'sanctum',
+            'id'          => 'permission-policy',
+            'name'        => 'iam policy permission',
+            'guard_name'  => 'sanctum',
             'description' => 'Can view role',
-            'service' => 'iam',
+            'service'     => 'iam',
         ]);
 });
 
@@ -404,17 +404,17 @@ test('schedule template resource delegates to fleetbase resource serialization',
         ->resolve(resource_contract_request('/int/v1/schedule-templates/schedule_template_public'));
 
     expect($payload)->toMatchArray([
-        'uuid' => 'schedule-template-uuid',
-        'public_id' => 'schedule_template_public',
-        'company_uuid' => 'company-1',
-        'schedule_uuid' => 'schedule-1',
-        'subject_uuid' => 'driver-1',
-        'subject_type' => 'driver',
-        'name' => 'Weekday Route',
-        'duration' => 480,
+        'uuid'           => 'schedule-template-uuid',
+        'public_id'      => 'schedule_template_public',
+        'company_uuid'   => 'company-1',
+        'schedule_uuid'  => 'schedule-1',
+        'subject_uuid'   => 'driver-1',
+        'subject_type'   => 'driver',
+        'name'           => 'Weekday Route',
+        'duration'       => 480,
         'break_duration' => 30,
-        'rrule' => 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
-        'meta' => ['priority' => 'standard'],
+        'rrule'          => 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
+        'meta'           => ['priority' => 'standard'],
     ]);
 });
 
@@ -453,18 +453,18 @@ test('paginated resource response keeps fleetbase pagination metadata compact wi
                 public function toArray(): array
                 {
                     return [
-                        'current_page' => 2,
-                        'data' => [['id' => 'one']],
+                        'current_page'   => 2,
+                        'data'           => [['id' => 'one']],
                         'first_page_url' => 'https://fleetbase.test/resources?page=1',
-                        'from' => 11,
-                        'last_page' => 4,
-                        'last_page_url' => 'https://fleetbase.test/resources?page=4',
-                        'next_page_url' => 'https://fleetbase.test/resources?page=3',
-                        'path' => 'https://fleetbase.test/resources',
-                        'per_page' => 10,
-                        'prev_page_url' => 'https://fleetbase.test/resources?page=1',
-                        'to' => 20,
-                        'total' => 35,
+                        'from'           => 11,
+                        'last_page'      => 4,
+                        'last_page_url'  => 'https://fleetbase.test/resources?page=4',
+                        'next_page_url'  => 'https://fleetbase.test/resources?page=3',
+                        'path'           => 'https://fleetbase.test/resources',
+                        'per_page'       => 10,
+                        'prev_page_url'  => 'https://fleetbase.test/resources?page=1',
+                        'to'             => 20,
+                        'total'          => 35,
                     ];
                 }
             };
@@ -495,26 +495,26 @@ test('author resource hides internal identifiers from public responses', functio
         protected $guarded = [];
     };
     $author->setRawAttributes([
-        'id' => 12,
-        'uuid' => 'author-uuid',
-        'public_id' => 'author_public',
+        'id'           => 12,
+        'uuid'         => 'author-uuid',
+        'public_id'    => 'author_public',
         'company_uuid' => 'company-1',
-        'avatar_uuid' => 'file-1',
-        'name' => 'Ada Author',
-        'email' => 'ada@example.test',
-        'phone' => '+15555550123',
-        'country' => 'SG',
-        'avatar_url' => 'https://cdn.test/avatar.png',
+        'avatar_uuid'  => 'file-1',
+        'name'         => 'Ada Author',
+        'email'        => 'ada@example.test',
+        'phone'        => '+15555550123',
+        'country'      => 'SG',
+        'avatar_url'   => 'https://cdn.test/avatar.png',
         'company_name' => 'Acme Logistics',
-        'is_admin' => false,
-        'timezone' => 'Asia/Singapore',
-        'updated_at' => Carbon::parse('2026-07-18 00:00:00'),
-        'created_at' => Carbon::parse('2026-07-17 00:00:00'),
+        'is_admin'     => false,
+        'timezone'     => 'Asia/Singapore',
+        'updated_at'   => Carbon::parse('2026-07-18 00:00:00'),
+        'created_at'   => Carbon::parse('2026-07-17 00:00:00'),
     ], true);
     $author->id = 12;
 
     $internal = (new AuthorResource($author))->resolve(resource_contract_request('/int/v1/users/author_public'));
-    $public = (new AuthorResource($author))->resolve(resource_contract_request('/v1/users/author_public'));
+    $public   = (new AuthorResource($author))->resolve(resource_contract_request('/v1/users/author_public'));
 
     expect($internal['id'])->toBe(12)
         ->and($internal['uuid'])->toBe('author-uuid')
@@ -537,28 +537,28 @@ test('chat attachment resource maps internal ids and public related ids correctl
         protected $guarded = [];
     };
     $attachment->setRawAttributes([
-        'id' => 91,
-        'uuid' => 'attachment-uuid',
-        'public_id' => 'attachment_public',
+        'id'                => 91,
+        'uuid'              => 'attachment-uuid',
+        'public_id'         => 'attachment_public',
         'chat_channel_uuid' => 'channel-uuid',
         'chat_message_uuid' => 'message-uuid',
-        'file_uuid' => 'file-uuid',
-        'updated_at' => Carbon::parse('2026-07-18 00:00:00'),
-        'created_at' => Carbon::parse('2026-07-17 00:00:00'),
-        'deleted_at' => null,
+        'file_uuid'         => 'file-uuid',
+        'updated_at'        => Carbon::parse('2026-07-18 00:00:00'),
+        'created_at'        => Carbon::parse('2026-07-17 00:00:00'),
+        'deleted_at'        => null,
     ], true);
     $attachment->id = 91;
     $attachment->setRelation('chatChannel', (object) ['public_id' => 'channel_public']);
     $attachment->setRelation('message', (object) ['public_id' => 'message_public']);
     $attachment->setRelation('file', (object) [
-        'public_id' => 'file_public',
-        'url' => 'https://cdn.test/file.pdf',
+        'public_id'         => 'file_public',
+        'url'               => 'https://cdn.test/file.pdf',
         'original_filename' => 'file.pdf',
-        'content_type' => 'application/pdf',
+        'content_type'      => 'application/pdf',
     ]);
 
     $internal = (new ChatAttachmentResource($attachment))->resolve(resource_contract_request('/int/v1/chat-attachments/attachment_public'));
-    $public = (new ChatAttachmentResource($attachment))->resolve(resource_contract_request('/v1/chat-attachments/attachment_public'));
+    $public   = (new ChatAttachmentResource($attachment))->resolve(resource_contract_request('/v1/chat-attachments/attachment_public'));
 
     expect($internal['id'])->toBe(91)
         ->and($internal['uuid'])->toBe('attachment-uuid')
@@ -579,17 +579,17 @@ test('deleted resource keeps internal deletion shape and compact webhook payload
 
     $deleted = new Category();
     $deleted->setRawAttributes([
-        'id' => 44,
-        'uuid' => 'category-uuid',
-        'public_id' => 'category_public',
+        'id'         => 44,
+        'uuid'       => 'category-uuid',
+        'public_id'  => 'category_public',
         'deleted_at' => Carbon::parse('2026-07-18 08:30:00'),
     ], true);
     $deleted->id = 44;
 
     $internalResource = new DeletedResource($deleted);
-    $internal = $internalResource->resolve(resource_contract_request('/int/v1/categories/category_public'));
-    $public = (new DeletedResource($deleted))->resolve(resource_contract_request('/v1/categories/category_public'));
-    $webhook = $internalResource->toWebhookPayload();
+    $internal         = $internalResource->resolve(resource_contract_request('/int/v1/categories/category_public'));
+    $public           = (new DeletedResource($deleted))->resolve(resource_contract_request('/v1/categories/category_public'));
+    $webhook          = $internalResource->toWebhookPayload();
 
     expect($internal['id'])->toBe(44)
         ->and($internal['uuid'])->toBe('category-uuid')
@@ -599,8 +599,8 @@ test('deleted resource keeps internal deletion shape and compact webhook payload
         ->and($public['id'])->toBe('category_public')
         ->and($public)->not->toHaveKeys(['uuid', 'public_id'])
         ->and($webhook)->toMatchArray([
-            'id' => 'category_public',
-            'object' => 'category',
+            'id'      => 'category_public',
+            'object'  => 'category',
             'deleted' => true,
         ]);
 });

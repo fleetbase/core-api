@@ -4,7 +4,6 @@ use Fleetbase\Models\Category;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\CustomField;
 use Fleetbase\Models\CustomFieldValue;
-use Fleetbase\Models\File;
 use Fleetbase\Models\Report;
 use Fleetbase\Models\ReportAuditLog;
 use Fleetbase\Models\ReportExecution;
@@ -64,16 +63,16 @@ function record_models_database(): Capsule
     EloquentModel::clearBootedModels();
 
     $connection = [
-        'driver' => 'sqlite',
+        'driver'   => 'sqlite',
         'database' => ':memory:',
-        'prefix' => '',
+        'prefix'   => '',
     ];
 
     $container = bind_test_container([
-        'api.cache.enabled' => false,
-        'database.default' => 'mysql',
+        'api.cache.enabled'          => false,
+        'database.default'           => 'mysql',
         'database.connections.mysql' => $connection,
-        'fleetbase.connection.db' => 'mysql',
+        'fleetbase.connection.db'    => 'mysql',
     ]);
     $container->instance('cache', new RecordModelsCacheFake());
     $container->instance('responsecache', new class {
@@ -145,47 +144,47 @@ it('casts report audit logs and filters execution and export actions', function 
     $capsule = record_models_database();
 
     $audit = new ReportAuditLog([
-        'report_uuid' => 'report-1',
-        'user_uuid' => 'user-1',
-        'action' => 'execute',
+        'report_uuid'    => 'report-1',
+        'user_uuid'      => 'user-1',
+        'action'         => 'execute',
         'execution_time' => '12.75',
-        'result_count' => '42',
-        'query_config' => ['table' => ['name' => 'orders']],
-        'metadata' => ['ip_source' => 'proxy'],
-        'ip_address' => '203.0.113.5',
-        'user_agent' => 'Fleetbase Console',
+        'result_count'   => '42',
+        'query_config'   => ['table' => ['name' => 'orders']],
+        'metadata'       => ['ip_source' => 'proxy'],
+        'ip_address'     => '203.0.113.5',
+        'user_agent'     => 'Fleetbase Console',
     ]);
 
     $capsule->getConnection('mysql')->table('report_audit_logs')->insert([
         [
-            'uuid' => 'audit-1',
-            'action' => 'execute',
+            'uuid'           => 'audit-1',
+            'action'         => 'execute',
             'execution_time' => 10.5,
-            'result_count' => 3,
-            'query_config' => json_encode(['table' => 'orders']),
-            'metadata' => json_encode(['format' => 'json']),
-            'created_at' => '2026-07-17 10:00:00',
-            'updated_at' => '2026-07-17 10:00:00',
+            'result_count'   => 3,
+            'query_config'   => json_encode(['table' => 'orders']),
+            'metadata'       => json_encode(['format' => 'json']),
+            'created_at'     => '2026-07-17 10:00:00',
+            'updated_at'     => '2026-07-17 10:00:00',
         ],
         [
-            'uuid' => 'audit-2',
-            'action' => 'export',
+            'uuid'           => 'audit-2',
+            'action'         => 'export',
             'execution_time' => 20.25,
-            'result_count' => 8,
-            'query_config' => json_encode(['table' => 'reports']),
-            'metadata' => json_encode(['format' => 'csv']),
-            'created_at' => '2026-07-17 10:00:00',
-            'updated_at' => '2026-07-17 10:00:00',
+            'result_count'   => 8,
+            'query_config'   => json_encode(['table' => 'reports']),
+            'metadata'       => json_encode(['format' => 'csv']),
+            'created_at'     => '2026-07-17 10:00:00',
+            'updated_at'     => '2026-07-17 10:00:00',
         ],
         [
-            'uuid' => 'audit-3',
-            'action' => 'view',
+            'uuid'           => 'audit-3',
+            'action'         => 'view',
             'execution_time' => 1.5,
-            'result_count' => 1,
-            'query_config' => json_encode(['table' => 'templates']),
-            'metadata' => json_encode(['format' => 'html']),
-            'created_at' => '2026-07-17 10:00:00',
-            'updated_at' => '2026-07-17 10:00:00',
+            'result_count'   => 1,
+            'query_config'   => json_encode(['table' => 'templates']),
+            'metadata'       => json_encode(['format' => 'html']),
+            'created_at'     => '2026-07-17 10:00:00',
+            'updated_at'     => '2026-07-17 10:00:00',
         ],
     ]);
 
@@ -203,14 +202,14 @@ it('casts report execution timings result metadata and relationship keys', funct
     Carbon::setTestNow(Carbon::parse('2026-07-17 12:00:00', 'UTC'));
 
     $execution = new ReportExecution([
-        'report_uuid' => 'report-1',
-        'user_uuid' => 'user-1',
+        'report_uuid'    => 'report-1',
+        'user_uuid'      => 'user-1',
         'execution_time' => '33.25',
-        'result_count' => '900',
-        'query_config' => ['filters' => [['field' => 'status', 'value' => 'active']]],
-        'status' => 'completed',
-        'started_at' => '2026-07-17 11:59:00',
-        'completed_at' => '2026-07-17 12:00:00',
+        'result_count'   => '900',
+        'query_config'   => ['filters' => [['field' => 'status', 'value' => 'active']]],
+        'status'         => 'completed',
+        'started_at'     => '2026-07-17 11:59:00',
+        'completed_at'   => '2026-07-17 12:00:00',
     ]);
 
     expect($execution->execution_time)->toBe(33.25)
@@ -231,11 +230,11 @@ it('generates user device public ids and preserves response-visible token metada
     record_models_database();
 
     $device = UserDevice::query()->create([
-        'uuid' => 'device-1',
+        'uuid'      => 'device-1',
         'user_uuid' => 'user-1',
-        'platform' => 'ios',
-        'token' => 'apns-token',
-        'status' => 'active',
+        'platform'  => 'ios',
+        'token'     => 'apns-token',
+        'status'    => 'active',
     ]);
 
     expect($device->public_id)->toStartWith('user_device_')
@@ -244,9 +243,9 @@ it('generates user device public ids and preserves response-visible token metada
         ->and($device->uuid)->not->toBe('device-1')
         ->and($device->toArray())->toMatchArray([
             'user_uuid' => 'user-1',
-            'platform' => 'ios',
-            'token' => 'apns-token',
-            'status' => 'active',
+            'platform'  => 'ios',
+            'token'     => 'apns-token',
+            'status'    => 'active',
         ]);
 });
 
@@ -254,18 +253,18 @@ it('casts custom field configuration values and keeps relationship keys stable',
     record_models_database();
 
     $field = new CustomField([
-        'company_uuid' => 'company-1',
-        'category_uuid' => 'category-1',
-        'subject_uuid' => 'user-1',
-        'subject_type' => User::class,
-        'name' => 'delivery-window',
-        'label' => 'Delivery Window',
-        'type' => 'select',
-        'options' => ['morning', 'afternoon'],
-        'required' => 1,
-        'editable' => 0,
+        'company_uuid'     => 'company-1',
+        'category_uuid'    => 'category-1',
+        'subject_uuid'     => 'user-1',
+        'subject_type'     => User::class,
+        'name'             => 'delivery-window',
+        'label'            => 'Delivery Window',
+        'type'             => 'select',
+        'options'          => ['morning', 'afternoon'],
+        'required'         => 1,
+        'editable'         => 0,
         'validation_rules' => ['required', 'string'],
-        'meta' => ['ui' => ['width' => 'half']],
+        'meta'             => ['ui' => ['width' => 'half']],
     ]);
 
     expect($field->options)->toBe(['morning', 'afternoon'])
@@ -287,23 +286,23 @@ it('casts custom field values by type and exposes loaded custom field labels', f
 
     $field = new CustomField();
     $field->setRawAttributes([
-        'uuid' => 'field-1',
+        'uuid'  => 'field-1',
         'label' => 'Delivery Metadata',
     ], true);
 
     $objectValue = new CustomFieldValue([
-        'company_uuid' => 'company-1',
+        'company_uuid'      => 'company-1',
         'custom_field_uuid' => 'field-1',
-        'subject_uuid' => 'user-1',
-        'subject_type' => User::class,
-        'value_type' => 'object',
-        'value' => ['window' => 'morning', 'priority' => true],
+        'subject_uuid'      => 'user-1',
+        'subject_type'      => User::class,
+        'value_type'        => 'object',
+        'value'             => ['window' => 'morning', 'priority' => true],
     ]);
     $objectValue->setRelation('customField', $field);
 
     $textValue = new CustomFieldValue([
         'value_type' => 'text',
-        'value' => 'plain text',
+        'value'      => 'plain text',
     ]);
 
     expect($objectValue->getAttributes()['value'])->toBe(json_encode(['window' => 'morning', 'priority' => true]))

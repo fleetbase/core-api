@@ -74,11 +74,11 @@ namespace {
     use Fleetbase\Http\Requests\FleetbaseRequest;
     use Fleetbase\Support\Find;
     use Fleetbase\Tests\Fixtures\Http\Filter\FilterResolutionRecordFilter;
+    use Fleetbase\Tests\Fixtures\Http\Requests\CreateAssetValidationRecordRequest;
+    use Fleetbase\Tests\Fixtures\Http\Requests\UpdateAssetValidationRecordRequest;
     use Fleetbase\Tests\Fixtures\Http\Resources\ExplicitResource;
     use Fleetbase\Tests\Fixtures\Http\Resources\Internal\v1\InternalResourceResolutionRecord as InternalResourceResolutionRecordResource;
     use Fleetbase\Tests\Fixtures\Http\Resources\v1\ResourceResolutionRecord as ResourceResolutionRecordResource;
-    use Fleetbase\Tests\Fixtures\Http\Requests\CreateAssetValidationRecordRequest;
-    use Fleetbase\Tests\Fixtures\Http\Requests\UpdateAssetValidationRecordRequest;
     use Fleetbase\Tests\Fixtures\Models\AssetValidationRecord;
     use Fleetbase\Tests\Fixtures\Models\ExplicitResourceResolutionRecord;
     use Fleetbase\Tests\Fixtures\Models\FilterResolutionRecord;
@@ -166,7 +166,7 @@ namespace {
             ->toBe('\\' . FilterResolutionRecordFilter::class)
             ->and(Find::httpFilterForModel(new MissingRequestRecord()))
             ->toBeNull()
-            ->and(Find::getModelPackage(new \Fleetbase\Storefront\Models\PackageResolutionRecord()))
+            ->and(Find::getModelPackage(new Fleetbase\Storefront\Models\PackageResolutionRecord()))
             ->toBe('Storefront');
     });
 }
