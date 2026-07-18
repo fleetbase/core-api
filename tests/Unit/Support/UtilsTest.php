@@ -97,6 +97,7 @@ test('utils formats urls headers strings and dates', function () {
         ->and(Utils::consolePath('dist/assets'))->toBe('/srv/fleetbase/console/dist/assets')
         ->and(Utils::getDomainFromUrl('https://api.fleetbase.test:8443/v1/orders', true))->toBe('api.fleetbase.test:8443')
         ->and(Utils::getDomainFromUrl('api.fleetbase.test:8000', true))->toBe('api.fleetbase.test:8000')
+        ->and(Utils::getDomainFromUrl('//api.fleetbase.test'))->toBe('api.fleetbase.test')
         ->and(Utils::fromS3('avatars/user.png'))->toBe('https://fleetbase-media.s3-ap-southeast-1.amazonaws.com/avatars/user.png')
         ->and(Utils::assetFromFleetbase('icons/logo.png'))->toBe('https://flb-assets.s3-ap-southeast-1.amazonaws.com/icons/logo.png')
         ->and(Utils::keyHeaders(['Content-Type: application/json']))->toBe(['Content-Type' => ' application/json'])
@@ -104,6 +105,7 @@ test('utils formats urls headers strings and dates', function () {
         ->and(Utils::stringMatches('order_123', '/^order_/'))->toBeTrue()
         ->and(Utils::stringExtract('Order #123', '/\d+/'))->toBe('123')
         ->and(Utils::toMySqlDatetime('July 17, 2026 12:34:56 (UTC)'))->toBe('2026-07-17 12:34:56')
+        ->and(Utils::isDate(null))->toBeFalse()
         ->and(Utils::isDate('2026-07-17'))->toBeTrue()
         ->and(Utils::isDate('not-a-date'))->toBeFalse();
 
@@ -117,19 +119,31 @@ test('utils handles boolean json inflection and sql helpers', function () {
         ->and(Utils::castBoolean('truthy'))->toBeTrue()
         ->and(Utils::castBoolean('off'))->toBeFalse()
         ->and(Utils::castBoolean(null))->toBeFalse()
+        ->and(Utils::castBoolean('definitely'))->toBeNull()
         ->and(Utils::isBooleanValue('true'))->toBeTrue()
+        ->and(Utils::isBooleanValue(true))->toBeTrue()
         ->and(Utils::isBooleanValue('yes'))->toBeFalse()
+        ->and(Utils::isBooleanValue(1))->toBeFalse()
         ->and(Utils::isTrue('1'))->toBeTrue()
+        ->and(Utils::isTrue('definitely'))->toBeFalse()
+        ->and(Utils::isTrue('definitely', true))->toBeNull()
         ->and(Utils::isFalse('0'))->toBeTrue()
         ->and(Utils::isJson('{"ok":true}'))->toBeTrue()
         ->and(Utils::isJson(['not' => 'json']))->toBeFalse()
         ->and(Utils::sqlExceptionString('SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry (Connection: mysql)'))->toBe('Integrity constraint violation: 1062 Duplicate entry')
+        ->and(Utils::sqlExceptionString(new RuntimeException('plain database failure')))->toBe('plain database failure')
         ->and(Utils::pluralize('company'))->toBe('companies')
+        ->and(Utils::pluralize(null))->toBe('')
         ->and(Utils::singularize('companies'))->toBe('company')
+        ->and(Utils::singularize(null))->toBe('')
         ->and(Utils::tableize('CompanyUser'))->toBe('company_user')
         ->and(Utils::lowercase('FleetBase'))->toBe('fleetbase')
         ->and(Utils::humanize('api_uuid'))->toBe('API UUID')
-        ->and(Utils::interpolateQuery('select * from users where id = ? and email = ?', [1, 'ron@example.com']))->toBe('select * from users where id = 1 and email = ron@example.com');
+        ->and(Utils::interpolateQuery('select * from users where id = ? and email = ?', [1, 'ron@example.com']))->toBe('select * from users where id = 1 and email = ron@example.com')
+        ->and(Utils::interpolateQuery('select * from users where id = :id and role = :role', [
+            'id'   => 7,
+            'role' => 'admin',
+        ]))->toBe('select * from users where id = 7 and role = admin');
 });
 
 test('utils validates identifiers base64 and numeric strings across edge cases', function () {
@@ -275,7 +289,9 @@ test('utils resolves country metadata cache fallback and locale helpers', functi
         ->and($redis->sets[0]['key'])->toBe('countryData:MN')
         ->and(Utils::getCurrenyFromCountryCode(null))->toBeNull()
         ->and(Utils::getCurrenyFromCountryCode('US'))->toBe('USD')
+        ->and(Utils::getDialCodeFromCountryCode(null))->toBeNull()
         ->and(Utils::getDialCodeFromCountryCode('US'))->toBe('1')
+        ->and(Utils::getCapitalCityFromCountryCode(null))->toBeNull()
         ->and(Utils::getCapitalCityFromCountryCode('US'))->toBe('Washington D.C.')
         ->and(Utils::smartHumanize('api_id_and_sku'))->toBe('API ID And SKU');
 });

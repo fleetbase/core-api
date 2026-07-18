@@ -417,7 +417,7 @@ class Utils
     /**
      * Casts value to boolean.
      */
-    public static function castBoolean($val): bool
+    public static function castBoolean($val): ?bool
     {
         if (is_null($val)) {
             return false;
