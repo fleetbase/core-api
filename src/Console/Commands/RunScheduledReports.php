@@ -128,13 +128,18 @@ class RunScheduledReports extends Command
             // Execute the report
             $results = $report->execute();
 
+            if (($results['success'] ?? true) === false) {
+                throw new \Exception($results['error'] ?? 'Report execution failed.');
+            }
+
             $executionTime = round((microtime(true) - $startTime) * 1000, 2);
+            $resultCount   = $results['meta']['total_rows'] ?? count($results['results'] ?? []);
 
             // Update execution record
             $execution->update([
                 'status'         => 'completed',
                 'execution_time' => $executionTime,
-                'result_count'   => count($results['results']),
+                'result_count'   => $resultCount,
                 'completed_at'   => now(),
             ]);
 
@@ -142,14 +147,14 @@ class RunScheduledReports extends Command
             $report->next_scheduled_run = $report->calculateNextRun();
             $report->save();
 
-            $this->info("✓ Report executed successfully in {$executionTime}ms ({$results['total']} rows)");
+            $this->info("✓ Report executed successfully in {$executionTime}ms ({$resultCount} rows)");
 
             // Log success
             Log::info('Scheduled report executed successfully', [
                 'report_uuid'    => $report->uuid,
                 'report_title'   => $report->title,
                 'execution_time' => $executionTime,
-                'result_count'   => $results['total'],
+                'result_count'   => $resultCount,
             ]);
 
             return true;
