@@ -72,6 +72,16 @@ class EventsAndExceptionsNotifiable
     }
 }
 
+class EventsAndExceptionsLogger
+{
+    public array $errors = [];
+
+    public function error(string $message, array $context = []): void
+    {
+        $this->errors[] = compact('message', 'context');
+    }
+}
+
 class EventsAndExceptionsRoute
 {
     public function __construct(private string $uri)
@@ -522,6 +532,182 @@ test('resource lifecycle events build company model api relationship and chat ch
         ->and($channels)->toContain('user.session-user')
         ->and($channels)->toContain('chat.chat_1234567')
         ->and($channels)->toContain('chat.11111111-1111-4111-8111-111111111111');
+});
+
+test('resource lifecycle events log and return empty contracts when the model cannot be resolved', function () {
+    if (!function_exists('Fleetbase\\Events\\logger')) {
+        eval('namespace Fleetbase\\Events; function logger() { return \\app("log"); }');
+    }
+
+    bind_test_container(['api.version' => 'v1']);
+
+    $logger = new EventsAndExceptionsLogger();
+    app()->instance('log', $logger);
+
+    $event = EventsAndExceptionsLifecycleEvent::fake([
+        'modelName'           => 'order',
+        'modelClassNamespace' => FleetbaseModel::class,
+        'modelClassName'      => 'Order',
+        'modelHumanName'      => 'order',
+        'modelRecordName'     => 'Order 1001',
+        'modelUuid'           => 'missing-record',
+        'namespace'           => '\\Fleetbase',
+        'version'             => 1,
+        'eventName'           => 'updated',
+        'sentAt'              => '2026-07-17 12:45:00',
+        'eventId'             => 'event_missing',
+        'apiVersion'          => 'v1',
+        'requestMethod'       => 'PATCH',
+        'apiCredential'       => 'credential-uuid',
+        'apiSecret'           => 'secret',
+        'apiKey'              => 'key',
+        'apiEnvironment'      => 'sandbox',
+        'isSandbox'           => true,
+        'data'                => ['before' => 'state'],
+        'userSession'         => 'user-uuid',
+        'companySession'      => 'company-uuid',
+    ]);
+
+    expect($event->broadcastOn())->toBe([])
+        ->and($event->broadcastWith())->toBe([])
+        ->and($logger->errors)->toHaveCount(2)
+        ->and($logger->errors[0]['message'])->toBe('Unable to resolve a model to broadcast for')
+        ->and($logger->errors[0]['context']['modelUuid'])->toBe('missing-record')
+        ->and($logger->errors[0]['context']['apiEnvironment'])->toBe('sandbox')
+        ->and($logger->errors[0]['context']['data'])->toBe(['before' => 'state'])
+        ->and($logger->errors[1]['message'])->toBe('Unable to resolve a model to get event data for')
+        ->and($logger->errors[1]['context']['modelUuid'])->toBe('missing-record')
+        ->and($logger->errors[1]['context']['eventName'])->toBe('updated')
+        ->and($logger->errors[1]['context']['isSandbox'])->toBeTrue();
+});
+
+test('resource lifecycle events broadcast relationship storefront and direct chat channel routes', function () {
+    bind_test_container();
+    session()->flush();
+    session(['company' => 'session-company', 'user' => 'session-user']);
+
+    $company = new Company();
+    $company->setRawAttributes(['public_id' => 'company_7654321'], true);
+
+    $customer = new User();
+    $customer->setRawAttributes(['public_id' => 'user_1234567'], true);
+
+    $driver = new User();
+    $driver->setRawAttributes(['public_id' => 'user_7654321'], true);
+
+    $channel = new ChatChannel();
+    $channel->setRawAttributes([
+        'uuid'            => '33333333-3333-4333-8333-333333333333',
+        'public_id'       => 'chat_7654321',
+        'company_uuid'    => 'model-company',
+        'created_by_uuid' => 'creator-user',
+        'meta'            => ['storefront_id' => 'storefront_1234567'],
+    ], true);
+    $channel->setRelation('company', $company);
+    $channel->setRelation('customer', $customer);
+    $channel->setRelation('driverAssigned', $driver);
+    $channel->setAttribute('customer_uuid', 'customer-uuid');
+    $channel->setAttribute('driver_assigned_uuid', 'driver-assigned-uuid');
+    $channel->setAttribute('driverAssigned_uuid', 'driver-assigned-uuid');
+
+    $event = EventsAndExceptionsLifecycleEvent::fake([
+        'modelName'           => 'chat_channel',
+        'modelClassNamespace' => ChatChannel::class,
+        'modelClassName'      => 'ChatChannel',
+        'modelHumanName'      => 'chat channel',
+        'modelRecordName'     => null,
+        'modelUuid'           => '33333333-3333-4333-8333-333333333333',
+        'namespace'           => '\\Fleetbase',
+        'version'             => 1,
+        'eventName'           => 'created',
+        'sentAt'              => '2026-07-17 13:30:00',
+        'eventId'             => 'event_chat_channel',
+        'apiVersion'          => 'v1',
+        'requestMethod'       => 'POST',
+        'apiCredential'       => 'console',
+        'apiSecret'           => 'internal',
+        'apiKey'              => null,
+        'apiEnvironment'      => 'live',
+        'isSandbox'           => false,
+        'data'                => [],
+        'userSession'         => 'session-user',
+        'companySession'      => 'session-company',
+    ], $channel);
+
+    $channels = array_map(fn ($channel) => (string) $channel, $event->broadcastOn());
+
+    expect($channels)->toContain('company.session-company')
+        ->and($channels)->toContain('company.company_7654321')
+        ->and($channels)->toContain('chat_channel.chat_7654321')
+        ->and($channels)->toContain('chat_channel.33333333-3333-4333-8333-333333333333')
+        ->and($channels)->toContain('driverAssigned.driver-assigned-uuid')
+        ->and($channels)->toContain('driverAssigned.user_7654321')
+        ->and($channels)->toContain('customer.customer-uuid')
+        ->and($channels)->toContain('customer.user_1234567')
+        ->and($channels)->toContain('storefront.storefront_1234567')
+        ->and($channels)->toContain('user.session-user')
+        ->and($channels)->toContain('chat.chat_7654321')
+        ->and($channels)->toContain('chat.33333333-3333-4333-8333-333333333333');
+});
+
+test('resource lifecycle events prefer webhook payloads when resources provide them', function () {
+    bind_test_container(['api.version' => 'v1']);
+
+    $record = new FleetbaseModel();
+    $record->setRawAttributes([
+        'uuid'         => 'record-uuid',
+        'company_uuid' => 'company-uuid',
+    ], true);
+
+    $resource = new class($record) extends JsonResource {
+        public function toWebhookPayload(): array
+        {
+            return [
+                'id'     => 'custom-payload-id',
+                'status' => 'ready',
+            ];
+        }
+
+        public function toArray($request): array
+        {
+            return ['id' => 'array-payload-id'];
+        }
+    };
+
+    $event = EventsAndExceptionsLifecycleEvent::fake([
+        'modelName'           => 'order',
+        'modelClassNamespace' => FleetbaseModel::class,
+        'modelClassName'      => 'Order',
+        'modelHumanName'      => 'order',
+        'modelRecordName'     => null,
+        'modelUuid'           => 'record-uuid',
+        'namespace'           => '\\Fleetbase',
+        'version'             => 1,
+        'eventName'           => 'ready',
+        'sentAt'              => '2026-07-17 14:00:00',
+        'eventId'             => 'event_payload',
+        'apiVersion'          => 'v1',
+        'requestMethod'       => 'PATCH',
+        'apiCredential'       => 'console',
+        'apiSecret'           => 'internal',
+        'apiKey'              => null,
+        'apiEnvironment'      => 'live',
+        'isSandbox'           => false,
+        'data'                => [],
+        'userSession'         => null,
+        'companySession'      => 'company-uuid',
+    ], $record, $resource);
+
+    expect($event->broadcastWith())->toBe([
+        'id'          => 'event_payload',
+        'api_version' => 'v1',
+        'event'       => 'order.ready',
+        'created_at'  => '2026-07-17 14:00:00',
+        'data'        => [
+            'id'     => 'custom-payload-id',
+            'status' => 'ready',
+        ],
+    ]);
 });
 
 test('resource lifecycle webhook listener restores event session defaults and describes api changes', function () {
