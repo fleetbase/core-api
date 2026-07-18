@@ -78,7 +78,8 @@ $methods           = (int) ($metrics['methods'] ?? 0);
 $coveredMethods    = (int) ($metrics['coveredmethods'] ?? 0);
 $classes           = (int) ($metrics['classes'] ?? 0);
 $coveredClasses    = (int) ($metrics['coveredclasses'] ?? 0);
-$classCoverageNote = '';
+$classCoverageLabel = 'Class coverage';
+$classCoverageNote  = '';
 $touchedClasses    = null;
 
 if (!hasMetric($project, 'coveredclasses')) {
@@ -86,7 +87,8 @@ if (!hasMetric($project, 'coveredclasses')) {
     $classes             = $classes ?: $derivedClasses['classes'];
     $coveredClasses      = $derivedClasses['covered'];
     $touchedClasses      = $derivedClasses['touched'];
-    $classCoverageNote   = ' derived from fully covered class statement metrics';
+    $classCoverageLabel  = 'Fully covered class coverage';
+    $classCoverageNote   = ' derived from class statement metrics because Clover omits coveredclasses';
 }
 
 $files       = [];
@@ -149,7 +151,7 @@ usort($directoryRows, function (array $a, array $b): int {
 
 printf("Line coverage: %.2f%% (%d/%d statements)\n", coveragePercent($coveredStatements, $statements), $coveredStatements, $statements);
 printf("Method coverage: %.2f%% (%d/%d methods)\n", coveragePercent($coveredMethods, $methods), $coveredMethods, $methods);
-printf("Class coverage: %.2f%% (%d/%d classes%s)\n", coveragePercent($coveredClasses, $classes), $coveredClasses, $classes, $classCoverageNote);
+printf("%s: %.2f%% (%d/%d classes%s)\n", $classCoverageLabel, coveragePercent($coveredClasses, $classes), $coveredClasses, $classes, $classCoverageNote);
 if ($touchedClasses !== null) {
     printf("Touched class coverage: %.2f%% (%d/%d classes executed at least once)\n", coveragePercent($touchedClasses, $classes), $touchedClasses, $classes);
 }

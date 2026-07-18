@@ -946,11 +946,23 @@ test('schedule filter scopes tenant schedules and applies subject and status fil
         ['uuid' => 'schedule-alias', 'public_id' => 'schedule_alias', 'company_uuid' => 'company-1', 'subject_uuid' => 'vehicle-1', 'subject_type' => 'Fleetbase\\FleetOps\\Models\\Vehicle', 'status' => 'active'],
     ]);
 
+    $emptyBuilder = Fleetbase\Models\Schedule::query();
+    $emptyFilter  = concrete_filter_with_builder(
+        new ScheduleFilter(concrete_filter_request([], 'int/v1/schedules')),
+        $emptyBuilder
+    );
+    $emptyFilter->subjectType(null);
+    $emptyFilter->subjectUuid(null);
+    $emptyFilter->status(null);
+
     expect(concrete_filter_uuids(ScheduleFilter::class, Fleetbase\Models\Schedule::class, [], 'int/v1/schedules'))->toBe(['schedule-active', 'schedule-alias', 'schedule-paused'])
+        ->and(concrete_filter_uuids(ScheduleFilter::class, Fleetbase\Models\Schedule::class, [], 'v1/schedules'))->toBe(['schedule-active', 'schedule-alias', 'schedule-paused'])
         ->and(concrete_filter_uuids(ScheduleFilter::class, Fleetbase\Models\Schedule::class, ['subject_type' => 'Fleetbase\\FleetOps\\Models\\Driver'], 'int/v1/schedules'))->toBe(['schedule-active', 'schedule-paused'])
         ->and(concrete_filter_uuids(ScheduleFilter::class, Fleetbase\Models\Schedule::class, ['subject_uuid' => 'driver-1'], 'int/v1/schedules'))->toBe(['schedule-active'])
         ->and(concrete_filter_uuids(ScheduleFilter::class, Fleetbase\Models\Schedule::class, ['status' => 'paused'], 'int/v1/schedules'))->toBe(['schedule-paused'])
-        ->and(concrete_filter_uuids(ScheduleFilter::class, Fleetbase\Models\Schedule::class, ['subject_type' => 'fleet-ops:vehicle'], 'int/v1/schedules'))->toBe(['schedule-alias']);
+        ->and(concrete_filter_uuids(ScheduleFilter::class, Fleetbase\Models\Schedule::class, ['subject_type' => 'fleet-ops:vehicle'], 'int/v1/schedules'))->toBe(['schedule-alias'])
+        ->and(concrete_filter_uuids(ScheduleFilter::class, Fleetbase\Models\Schedule::class, ['subject_type' => 'unknown:subject'], 'int/v1/schedules'))->toBe([])
+        ->and($emptyBuilder->orderBy('uuid')->pluck('uuid')->all())->toBe(['schedule-active', 'schedule-alias', 'schedule-hidden', 'schedule-paused']);
 });
 
 test('schedule exception and template filters scope tenants and resolve subjects and schedules', function () {
