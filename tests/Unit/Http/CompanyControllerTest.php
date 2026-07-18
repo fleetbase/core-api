@@ -2,6 +2,7 @@
 
 use Fleetbase\Http\Controllers\Internal\v1\CompanyController;
 use Fleetbase\Http\Requests\AdminRequest;
+use Fleetbase\Models\Extension;
 use Fleetbase\Models\User;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Builder;
@@ -371,6 +372,50 @@ function company_controller_fixtures(): Capsule
         $table->string('key')->nullable()->index();
         $table->text('value')->nullable();
     });
+    $schema->create('extensions', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('public_id')->nullable();
+        $table->string('extension_id')->nullable();
+        $table->string('author_uuid')->nullable();
+        $table->string('category_uuid')->nullable();
+        $table->string('type_uuid')->nullable();
+        $table->string('icon_uuid')->nullable();
+        $table->string('name')->nullable();
+        $table->string('display_name')->nullable();
+        $table->string('key')->nullable();
+        $table->text('description')->nullable();
+        $table->text('tags')->nullable();
+        $table->string('namespace')->nullable();
+        $table->string('internal_route')->nullable();
+        $table->string('fa_icon')->nullable();
+        $table->string('version')->nullable();
+        $table->string('website_url')->nullable();
+        $table->string('privacy_policy_url')->nullable();
+        $table->string('tos_url')->nullable();
+        $table->string('contact_email')->nullable();
+        $table->text('domains')->nullable();
+        $table->boolean('core_service')->default(false);
+        $table->text('meta')->nullable();
+        $table->string('meta_type')->nullable();
+        $table->text('config')->nullable();
+        $table->string('secret')->nullable();
+        $table->string('client_token')->nullable();
+        $table->string('status')->nullable();
+        $table->string('slug')->nullable();
+        $table->timestamp('deleted_at')->nullable();
+        $table->timestamps();
+    });
+    $schema->create('extension_installs', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('extension_id')->nullable()->index();
+        $table->string('extension_uuid')->nullable()->index();
+        $table->string('company_uuid')->index();
+        $table->text('meta')->nullable();
+        $table->text('config')->nullable();
+        $table->text('overwrite')->nullable();
+        $table->timestamp('deleted_at')->nullable();
+        $table->timestamps();
+    });
     $schema->create('roles', function ($table) {
         $table->string('id')->primary();
         $table->string('company_uuid')->nullable();
@@ -612,6 +657,150 @@ test('company controller user listing respects session company scope unless the 
     sort($adminIds);
 
     expect($adminIds)->toBe(['foreign-1']);
+});
+
+test('company controller reads and saves current organization two factor settings', function () {
+    $capsule = company_controller_fixtures();
+
+    $defaults = company_controller()->getTwoFactorSettings();
+
+    expect($defaults->getStatusCode())->toBe(200)
+        ->and($defaults->getData(true))->toBe([
+            'enabled' => false,
+            'method'  => 'email',
+        ]);
+
+    $saved = company_controller()->saveTwoFactorSettings(company_controller_request('POST', [
+        'twoFaSettings' => [
+            'enabled'  => true,
+            'method'   => 'sms',
+            'enforced' => true,
+        ],
+    ]));
+
+    expect($saved->getStatusCode())->toBe(200)
+        ->and($saved->getData(true))->toBe(['message' => 'Two-Factor Authentication saved successfully'])
+        ->and(json_decode($capsule->getConnection('mysql')->table('settings')->where('key', 'company.company-1.2fa')->value('value'), true))->toMatchArray([
+            'enabled'  => true,
+            'method'   => 'sms',
+            'enforced' => true,
+        ]);
+
+    $disabled = company_controller()->saveTwoFactorSettings(company_controller_request('POST', [
+        'twoFaSettings' => [
+            'enabled'  => false,
+            'method'   => 'email',
+            'enforced' => true,
+        ],
+    ]));
+
+    expect($disabled->getStatusCode())->toBe(200)
+        ->and(json_decode($capsule->getConnection('mysql')->table('settings')->where('key', 'company.company-1.2fa')->value('value'), true))->toMatchArray([
+            'enabled'  => false,
+            'method'   => 'email',
+            'enforced' => false,
+        ]);
+});
+
+test('company controller two factor settings require an active organization session', function () {
+    company_controller_fixtures();
+    session()->flush();
+
+    $read = company_controller()->getTwoFactorSettings();
+    $save = company_controller()->saveTwoFactorSettings(company_controller_request('POST', [
+        'twoFaSettings' => ['enabled' => true, 'method' => 'email'],
+    ]));
+
+    expect($read->getStatusCode())->toBe(401)
+        ->and($read->getData(true))->toBe(['errors' => ['No company session found']])
+        ->and($save->getStatusCode())->toBe(401)
+        ->and($save->getData(true))->toBe(['errors' => ['No company session found']]);
+});
+
+test('company controller admin extensions endpoint scopes installs and skips missing extension records', function () {
+    $capsule = company_controller_fixtures();
+    $admin   = company_controller_user('admin-1');
+    $now     = '2026-07-18 12:00:00';
+
+    $capsule->getConnection('mysql')->table('extensions')->insert([
+        [
+            'uuid'         => 'extension-1',
+            'public_id'    => 'ext_public_1',
+            'extension_id' => 'DISPATCHBOARD',
+            'author_uuid'  => 'company-1',
+            'name'         => 'Dispatch Board',
+            'display_name' => 'Dispatch Board Pro',
+            'key'          => 'dispatch-board',
+            'description'  => 'Dispatch operations board',
+            'tags'         => json_encode(['dispatch']),
+            'namespace'    => Extension::createNamespace('Fleetbase', 'Dispatch Board'),
+            'fa_icon'      => 'route',
+            'version'      => '1.2.3',
+            'core_service' => false,
+            'meta'         => json_encode([]),
+            'config'       => json_encode([]),
+            'status'       => 'published',
+            'slug'         => 'dispatch-board',
+            'created_at'   => $now,
+            'updated_at'   => $now,
+        ],
+        [
+            'uuid'         => 'extension-2',
+            'public_id'    => 'ext_public_2',
+            'extension_id' => 'NODISPLAY',
+            'author_uuid'  => 'company-1',
+            'name'         => 'Fallback Extension',
+            'display_name' => null,
+            'key'          => 'fallback-extension',
+            'description'  => 'Fallback extension description',
+            'tags'         => json_encode([]),
+            'namespace'    => Extension::createNamespace('Fleetbase', 'Fallback Extension'),
+            'fa_icon'      => null,
+            'version'      => '2.0.0',
+            'core_service' => false,
+            'meta'         => json_encode([]),
+            'config'       => json_encode([]),
+            'status'       => null,
+            'slug'         => 'fallback-extension',
+            'created_at'   => $now,
+            'updated_at'   => $now,
+        ],
+    ]);
+
+    $capsule->getConnection('mysql')->table('extension_installs')->insert([
+        ['uuid' => 'install-1', 'extension_id' => 'extension-1', 'extension_uuid' => 'extension-1', 'company_uuid' => 'company-1', 'meta' => json_encode([]), 'config' => json_encode([]), 'overwrite' => json_encode([]), 'created_at' => '2026-07-18 12:00:00', 'updated_at' => $now],
+        ['uuid' => 'install-2', 'extension_id' => 'extension-2', 'extension_uuid' => 'extension-2', 'company_uuid' => 'company-1', 'meta' => json_encode([]), 'config' => json_encode([]), 'overwrite' => json_encode([]), 'created_at' => '2026-07-18 13:00:00', 'updated_at' => $now],
+        ['uuid' => 'install-missing-extension', 'extension_id' => 'missing-extension', 'extension_uuid' => 'missing-extension', 'company_uuid' => 'company-1', 'meta' => json_encode([]), 'config' => json_encode([]), 'overwrite' => json_encode([]), 'created_at' => '2026-07-18 14:00:00', 'updated_at' => $now],
+        ['uuid' => 'install-foreign', 'extension_id' => 'extension-1', 'extension_uuid' => 'extension-1', 'company_uuid' => 'company-2', 'meta' => json_encode([]), 'config' => json_encode([]), 'overwrite' => json_encode([]), 'created_at' => '2026-07-18 15:00:00', 'updated_at' => $now],
+    ]);
+
+    $missing = company_controller()->extensions('missing-company', company_controller_admin_request('GET', [], $admin));
+    expect($missing->getStatusCode())->toBe(404)
+        ->and($missing->getData(true))->toBe(['error' => 'Organization not found.']);
+
+    $response = company_controller()->extensions('company_public_1', company_controller_admin_request('GET', [], $admin));
+    $payload  = $response->getData(true);
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and(array_column($payload['extensions'], 'uuid'))->toBe(['install-2', 'install-1'])
+        ->and($payload['extensions'][0])->toMatchArray([
+            'id'           => 'install-2',
+            'extension_id' => 'NODISPLAY',
+            'name'         => 'Fallback Extension',
+            'description'  => 'Fallback extension description',
+            'icon'         => 'puzzle-piece',
+            'slug'         => 'fallback-extension',
+            'key'          => 'fallback-extension',
+            'version'      => '2.0.0',
+            'status'       => 'installed',
+        ])
+        ->and($payload['extensions'][1])->toMatchArray([
+            'id'           => 'install-1',
+            'extension_id' => 'DISPATCHBOARD',
+            'name'         => 'Dispatch Board Pro',
+            'icon'         => 'route',
+            'status'       => 'published',
+        ]);
 });
 
 test('company controller admin status updates validate status persist active state and log activity', function () {
