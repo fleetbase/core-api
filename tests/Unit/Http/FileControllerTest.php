@@ -81,6 +81,92 @@ class FileControllerResponseCacheFake
     }
 }
 
+class FileControllerEncodedImageFake
+{
+    public function __construct(private string $contents)
+    {
+    }
+
+    public function toString(): string
+    {
+        return $this->contents;
+    }
+}
+
+class FileControllerImageFake
+{
+    public array $operations = [];
+
+    public function scale(int|string|null $width, int|string|null $height): self
+    {
+        $this->operations[] = ['scale', $width, $height];
+
+        return $this;
+    }
+
+    public function scaleDown(int|string|null $width, int|string|null $height): self
+    {
+        $this->operations[] = ['scaleDown', $width, $height];
+
+        return $this;
+    }
+
+    public function cover(int|string|null $width, int|string|null $height): self
+    {
+        $this->operations[] = ['cover', $width, $height];
+
+        return $this;
+    }
+
+    public function coverDown(int|string|null $width, int|string|null $height): self
+    {
+        $this->operations[] = ['coverDown', $width, $height];
+
+        return $this;
+    }
+
+    public function toFormat(string $format, int $quality): FileControllerEncodedImageFake
+    {
+        $this->operations[] = ['toFormat', $format, $quality];
+
+        return new FileControllerEncodedImageFake("formatted-{$format}-{$quality}");
+    }
+
+    public function encode(int $quality = 85): FileControllerEncodedImageFake
+    {
+        $this->operations[] = ['encode', $quality];
+
+        return new FileControllerEncodedImageFake("encoded-{$quality}");
+    }
+}
+
+class FileControllerBase64ImageServiceFake extends ImageService
+{
+    public array $readPaths = [];
+
+    public FileControllerImageFake $image;
+
+    public function __construct()
+    {
+        $this->image = new FileControllerImageFake();
+    }
+
+    public function read(string $path): mixed
+    {
+        $this->readPaths[] = $path;
+
+        return $this->image;
+    }
+
+    public function getPreset(string $preset): ?array
+    {
+        return match ($preset) {
+            'thumb' => ['width' => 150, 'height' => 150],
+            default => ['width' => 320, 'height' => 240],
+        };
+    }
+}
+
 class PublicFileControllerRoute
 {
     public object $controller;
@@ -436,6 +522,19 @@ test('file controller upload reports storage failures before creating records', 
         ->and($capsule->getConnection('mysql')->table('files')->count())->toBe(0);
 });
 
+test('file controller upload reports record creation failures after multipart storage succeeds', function () {
+    $capsule = file_controller_fixtures();
+    $capsule->getConnection('mysql')->getSchemaBuilder()->drop('files');
+
+    $response = file_controller()->upload(file_controller_upload_request([
+        'path' => 'uploads/documents',
+        'type' => 'document',
+    ], 'uploaded body'));
+
+    expect($response->getStatusCode())->toBe(400)
+        ->and($response->getData(true)['errors'][0])->toContain('no such table: files');
+});
+
 test('file controller uploads resized multipart files with preset metadata', function () {
     $capsule = file_controller_fixtures();
     $service = new class extends ImageService {
@@ -603,6 +702,149 @@ test('file controller upload base64 reports missing data and storage failures co
 
     expect($failure->getStatusCode())->toBe(400)
         ->and($failure->getData(true)['errors'][0])->toContain('Disk [missing-disk] does not have a configured driver');
+});
+
+test('file controller upload base64 resizes preset images and normalizes uploads disk paths', function () {
+    $capsule = file_controller_fixtures();
+    $service = new FileControllerBase64ImageServiceFake();
+
+    $response = file_controller_with_image_service($service)->uploadBase64(file_controller_upload_base64_request([
+        'data'             => base64_encode('raw image body'),
+        'disk'             => 'uploads',
+        'path'             => 'uploads/avatars',
+        'file_name'        => 'avatar.png',
+        'file_type'        => 'avatar',
+        'content_type'     => 'image/png',
+        'resize'           => 'thumb',
+        'resize_quality'   => 64,
+        'resize_format'    => 'webp',
+        'resize_upscale'   => 'true',
+        'subject_uuid'     => 'user-subject',
+        'subject_type'     => User::class,
+    ]));
+
+    $payload = $response->getData(true);
+    $record  = $capsule->getConnection('mysql')->table('files')->first();
+    $meta    = json_decode($record->meta, true);
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($service->readPaths)->toHaveCount(1)
+        ->and(file_exists($service->readPaths[0]))->toBeFalse()
+        ->and($service->image->operations)->toBe([
+            ['scale', 150, 150],
+            ['toFormat', 'webp', 64],
+        ])
+        ->and($payload['file']['path'])->toBe('avatars/avatar.webp')
+        ->and($payload['file']['disk'])->toBe('uploads')
+        ->and($payload['file']['file_size'])->toBe(strlen('formatted-webp-64'))
+        ->and($record->subject_uuid)->toBe('user-subject')
+        ->and($record->subject_type)->toBe(User::class)
+        ->and($meta['resized'])->toBeTrue()
+        ->and($meta['resize_params'])->toMatchArray([
+            'preset'  => 'thumb',
+            'mode'    => 'fit',
+            'quality' => 64,
+            'format'  => 'webp',
+            'upscale' => true,
+        ])
+        ->and(Storage::disk('uploads')->get('avatars/avatar.webp'))->toBe('formatted-webp-64');
+});
+
+test('file controller upload base64 resizes explicit crop images without upscaling', function () {
+    $capsule = file_controller_fixtures();
+    $service = new FileControllerBase64ImageServiceFake();
+
+    $response = file_controller_with_image_service($service)->uploadBase64(file_controller_upload_base64_request([
+        'data'           => base64_encode('raw image body'),
+        'path'           => 'uploads/images',
+        'file_name'      => 'cover.png',
+        'content_type'   => 'image/png',
+        'resize_width'   => 320,
+        'resize_height'  => 180,
+        'resize_mode'    => 'crop',
+        'resize_upscale' => 'false',
+    ]));
+
+    $payload = $response->getData(true);
+    $record  = $capsule->getConnection('mysql')->table('files')->first();
+    $meta    = json_decode($record->meta, true);
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($service->image->operations)->toBe([
+            ['coverDown', 320, 180],
+            ['encode', 85],
+        ])
+        ->and($payload['file']['path'])->toBe('uploads/images/cover.png')
+        ->and($payload['file']['file_size'])->toBe(strlen('encoded-85'))
+        ->and($meta['resize_params'])->toMatchArray([
+            'preset'  => null,
+            'width'   => 320,
+            'height'  => 180,
+            'mode'    => 'crop',
+            'quality' => null,
+            'format'  => null,
+            'upscale' => false,
+        ])
+        ->and(Storage::disk('testing')->get('uploads/images/cover.png'))->toBe('encoded-85')
+        ->and($record->original_filename)->toBe('cover.png');
+});
+
+test('file controller upload base64 resizes explicit fit images without upscaling', function () {
+    file_controller_fixtures();
+    $service = new FileControllerBase64ImageServiceFake();
+
+    $response = file_controller_with_image_service($service)->uploadBase64(file_controller_upload_base64_request([
+        'data'          => base64_encode('raw image body'),
+        'path'          => 'uploads/images',
+        'file_name'     => 'fit.png',
+        'content_type'  => 'image/png',
+        'resize_width'  => 240,
+        'resize_height' => 160,
+    ]));
+
+    $payload = $response->getData(true);
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($service->image->operations)->toBe([
+            ['scaleDown', 240, 160],
+            ['encode', 85],
+        ])
+        ->and($payload['file']['path'])->toBe('uploads/images/fit.png')
+        ->and(Storage::disk('testing')->get('uploads/images/fit.png'))->toBe('encoded-85');
+});
+
+test('file controller upload base64 reports resize and record creation failures', function () {
+    $capsule = file_controller_fixtures();
+    $service = new class extends FileControllerBase64ImageServiceFake {
+        public function read(string $path): mixed
+        {
+            throw new RuntimeException('base64 resize unavailable');
+        }
+    };
+
+    $resizeFailure = file_controller_with_image_service($service)->uploadBase64(file_controller_upload_base64_request([
+        'data'          => base64_encode('raw image body'),
+        'path'          => 'uploads/images',
+        'file_name'     => 'avatar.png',
+        'content_type'  => 'image/png',
+        'resize_width'  => 100,
+        'resize_height' => 100,
+    ]));
+
+    expect($resizeFailure->getStatusCode())->toBe(400)
+        ->and($resizeFailure->getData(true))->toBe(['errors' => ['Image resize failed: base64 resize unavailable']])
+        ->and($capsule->getConnection('mysql')->table('files')->count())->toBe(0);
+
+    $capsule->getConnection('mysql')->getSchemaBuilder()->drop('files');
+
+    $recordFailure = file_controller()->uploadBase64(file_controller_upload_base64_request([
+        'data'      => base64_encode('body'),
+        'path'      => 'uploads/documents',
+        'file_name' => 'failed.txt',
+    ]));
+
+    expect($recordFailure->getStatusCode())->toBe(400)
+        ->and($recordFailure->getData(true)['errors'][0])->toContain('no such table: files');
 });
 
 test('file controller download resolves query and route ids inside active company using stored disk', function () {

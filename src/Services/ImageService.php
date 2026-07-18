@@ -56,7 +56,7 @@ class ImageService
     public function getDimensions(UploadedFile $file): array
     {
         try {
-            $image = $this->manager->read($file->getRealPath());
+            $image = $this->read($file->getRealPath());
 
             return [
                 'width'  => $image->width(),
@@ -70,6 +70,11 @@ class ImageService
 
             return ['width' => 0, 'height' => 0];
         }
+    }
+
+    public function read(string $path): mixed
+    {
+        return $this->manager->read($path);
     }
 
     /**
@@ -89,7 +94,7 @@ class ImageService
         $originalExtension = $file->getClientOriginalExtension();
 
         try {
-            $image = $this->manager->read($file->getRealPath());
+            $image = $this->read($file->getRealPath());
 
             // Get original dimensions
             $originalWidth  = $image->width();

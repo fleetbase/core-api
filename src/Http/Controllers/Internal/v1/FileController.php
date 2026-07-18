@@ -205,7 +205,7 @@ class FileController extends FleetbaseController
                 file_put_contents($tempPath, $decoded);
 
                 // Read and resize
-                $image = $this->imageService->manager->read($tempPath);
+                $image = $this->imageService->read($tempPath);
 
                 if ($resize) {
                     $preset = $this->imageService->getPreset($resize);
