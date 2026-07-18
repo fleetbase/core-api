@@ -127,6 +127,13 @@ namespace {
     use Fleetbase\Http\Requests\ExecuteReportQueryRequest;
     use Fleetbase\Http\Requests\ExportReportRequest;
     use Fleetbase\Http\Requests\ExportRequest;
+    use Fleetbase\Http\Requests\Internal\ConfirmCurrentPassword;
+    use Fleetbase\Http\Requests\Internal\CreateCustomFieldRequest;
+    use Fleetbase\Http\Requests\Internal\DownloadFileRequest;
+    use Fleetbase\Http\Requests\Internal\ResetPasswordRequest;
+    use Fleetbase\Http\Requests\Internal\UploadBase64FileRequest;
+    use Fleetbase\Http\Requests\Internal\UploadFileRequest;
+    use Fleetbase\Http\Requests\Internal\ValidatePasswordRequest;
     use Fleetbase\Http\Requests\OnboardRequest;
     use Fleetbase\Http\Requests\SignUpRequest;
     use Fleetbase\Http\Requests\SwitchOrganizationRequest;
@@ -352,5 +359,93 @@ namespace {
             ->and($executeRules['offset'])->toBe('nullable|integer|min:0')
             ->and($exportRules['format'])->toBe('required|string|in:json,csv,xlsx')
             ->and((new ExportReportRequest())->messages()['format.in'])->toBe('Export format must be one of: json, csv, xlsx');
+    });
+
+    it('keeps internal file upload and download request contracts stable', function () {
+        $unauthorizedUpload = request_with_session(UploadFileRequest::class, 'POST');
+        $authorizedUpload   = request_with_session(UploadFileRequest::class, 'POST', [], ['user' => 'user-1']);
+        $base64Upload       = request_with_session(UploadBase64FileRequest::class, 'POST', [], ['user' => 'user-1']);
+        $download           = request_with_session(DownloadFileRequest::class, 'GET', [], ['user' => 'user-1']);
+
+        $uploadRules   = $authorizedUpload->rules();
+        $base64Rules   = $base64Upload->rules();
+        $downloadRules = $download->rules();
+
+        expect(bind_active_request($unauthorizedUpload)->authorize())->toBeFalse()
+            ->and(bind_active_request($authorizedUpload)->authorize())->toBeTrue()
+            ->and(request_rule_strings($uploadRules['file']))->toContain('required', 'file', 'max:104857600')
+            ->and(request_rule_strings($uploadRules['file'])[3])->toContain('image/jpeg')
+            ->and(request_rule_strings($uploadRules['file'])[3])->toContain('application/pdf')
+            ->and($uploadRules['resize'])->toBe('nullable|string|in:thumb,sm,md,lg,xl,2xl')
+            ->and($uploadRules['resize_width'])->toBe('nullable|integer|min:1|max:10000')
+            ->and($uploadRules['resize_upscale'])->toBe('nullable|boolean')
+            ->and($authorizedUpload->messages()['file.required'])->toBe('Please select a file to upload.')
+            ->and($authorizedUpload->messages()['resize_mode.in'])->toContain('fit, crop, stretch, contain')
+            ->and(bind_active_request($base64Upload)->authorize())->toBeTrue()
+            ->and($base64Rules['data'])->toBe(['required'])
+            ->and($base64Rules['file_name'])->toBe(['required'])
+            ->and($base64Rules['subject_uuid'])->toBe(['nullable', 'string'])
+            ->and($base64Rules['resize_format'])->toBe('nullable|string|in:jpg,jpeg,png,webp,gif,bmp,avif')
+            ->and($base64Upload->messages()['data.required'])->toBe('Please provide a base64 encoded file.')
+            ->and(bind_active_request($download)->authorize())->toBeTrue()
+            ->and($downloadRules['file'])->toBe(['required_without:id', 'uuid', 'exists:files,uuid'])
+            ->and($downloadRules['id'])->toBe(['required_without:file', 'uuid', 'exists:files,uuid'])
+            ->and($downloadRules['disk'])->toBe(['sometimes', 'string'])
+            ->and($download->messages()['file.exists'])->toBe('The requested file does not exist.');
+    });
+
+    it('keeps internal password validation and reset request contracts stable', function () {
+        $user = new class {
+            public array $checked = [];
+
+            public function checkPassword(string $password): bool
+            {
+                $this->checked[] = $password;
+
+                return $password === 'CurrentPass1!';
+            }
+        };
+        $validate = ValidatePasswordRequest::create('/int/v1/auth/validate-password', 'POST');
+        $validate->setUserResolver(fn () => $user);
+
+        $validateRules = $validate->rules();
+        $resetRules    = (new ResetPasswordRequest())->rules();
+        $confirmRule   = new ConfirmCurrentPassword($user);
+
+        expect((new ValidatePasswordRequest())->authorize())->toBeTrue()
+            ->and(request_rule_strings($validateRules['password']))->toContain('required', 'string', 'confirmed')
+            ->and($validateRules['password'][4])->toBeInstanceOf(ConfirmCurrentPassword::class)
+            ->and($validateRules['password_confirmation'])->toBe(['required', 'string'])
+            ->and($confirmRule->passes('password', 'CurrentPass1!'))->toBeTrue()
+            ->and($confirmRule->passes('password', 'wrong'))->toBeFalse()
+            ->and((new ConfirmCurrentPassword(null))->passes('password', 'CurrentPass1!'))->toBeFalse()
+            ->and($confirmRule->message())->toBe('The current password provided is invalid.')
+            ->and($validate->messages()['password.uncompromised'])->toContain('data breach')
+            ->and((new ResetPasswordRequest())->authorize())->toBeTrue()
+            ->and($resetRules['code'])->toBe(['required', 'exists:verification_codes,code'])
+            ->and($resetRules['link'])->toBe(['required', 'exists:verification_codes,uuid'])
+            ->and(request_rule_strings($resetRules['password']))->toContain('required', 'confirmed', 'string')
+            ->and($resetRules['password_confirmation'])->toBe(['required', 'string'])
+            ->and((new ResetPasswordRequest())->messages()['code'])->toBe('Invalid password reset request!')
+            ->and((new ResetPasswordRequest())->messages()['password.required'])->toBe('You must enter a password.');
+    });
+
+    it('keeps internal custom field request authorization and rules explicit', function () {
+        $unauthorized = request_with_session(CreateCustomFieldRequest::class, 'POST');
+        $authorized   = request_with_session(CreateCustomFieldRequest::class, 'POST', [], ['company' => 'company-1']);
+        $rules        = $authorized->rules();
+
+        expect(bind_active_request($unauthorized)->authorize())->toBeFalse()
+            ->and(bind_active_request($authorized)->authorize())->toBeTrue()
+            ->and($rules['company_uuid'])->toBe(['nullable', 'uuid', 'exists:companies,uuid'])
+            ->and($rules['category_uuid'])->toBe(['nullable', 'uuid', 'exists:categories,uuid'])
+            ->and($rules['label'])->toBe(['required', 'string', 'max:255'])
+            ->and($rules['type'])->toBe(['required', 'string', 'max:50'])
+            ->and($rules['options'])->toBe(['nullable', 'array'])
+            ->and($rules['required'])->toBe(['sometimes', 'boolean'])
+            ->and($rules['validation_rules'])->toBe(['nullable', 'array'])
+            ->and($rules['order'])->toBe(['nullable', 'integer'])
+            ->and($authorized->messages()['type.required'])->toBe('A custom field type is required (e.g., text, number, date, etc.).')
+            ->and($authorized->messages()['type.string'])->toBe('The custom field type must be a valid string.');
     });
 }
