@@ -608,6 +608,53 @@ test('user controller rejects email change requests without an authorized actor 
         ->and($missingTarget->getData(true))->toBe(['errors' => ['User not found to change email for.']]);
 });
 
+test('user controller creates fresh email change verification records for current and managed users', function () {
+    $capsule = user_controller_database();
+    $db      = $capsule->getConnection('mysql');
+    EloquentModel::setEventDispatcher(new Dispatcher(app()));
+
+    $db->table('verification_codes')->insert([
+        'uuid'         => 'old-email-change-code',
+        'subject_uuid' => 'owner-1',
+        'subject_type' => Fleetbase\Support\Utils::getModelClassName(user_controller_user('owner-1')),
+        'code'         => 'OLD123',
+        'for'          => 'email_change',
+        'expires_at'   => now()->addMinutes(15),
+        'meta'         => json_encode(['new_email' => 'stale@example.test']),
+        'status'       => 'active',
+        'created_at'   => now(),
+        'updated_at'   => now(),
+    ]);
+
+    $currentChange = user_controller()->changeCurrentUserEmail(user_controller_request('POST', [
+        'email' => 'owner-new@example.test',
+    ], user_controller_user('owner-1'), 'changeCurrentUserEmail', ChangeCurrentUserEmailRequest::class));
+    $managedChange = user_controller()->changeEmail(user_controller_request('POST', [
+        'email' => 'member-new@example.test',
+    ], user_controller_user('admin-1'), 'changeEmail', ChangeUserEmailRequest::class), 'member-1');
+
+    $ownerCode  = $db->table('verification_codes')->where('subject_uuid', 'owner-1')->where('status', 'active')->whereNull('deleted_at')->first();
+    $memberCode = $db->table('verification_codes')->where('subject_uuid', 'member-1')->where('status', 'active')->whereNull('deleted_at')->first();
+
+    expect($currentChange->getStatusCode())->toBe(200)
+        ->and($currentChange->getData(true))->toBe(['status' => 'pending'])
+        ->and($managedChange->getStatusCode())->toBe(200)
+        ->and($managedChange->getData(true))->toBe(['status' => 'pending'])
+        ->and($db->table('verification_codes')->where('uuid', 'old-email-change-code')->whereNotNull('deleted_at')->exists())->toBeTrue()
+        ->and($ownerCode)->not->toBeNull()
+        ->and(json_decode($ownerCode->meta, true))->toMatchArray([
+            'old_email'         => 'owner@example.test',
+            'new_email'         => 'owner-new@example.test',
+            'requested_by_uuid' => 'owner-1',
+        ])
+        ->and($memberCode)->not->toBeNull()
+        ->and(json_decode($memberCode->meta, true))->toMatchArray([
+            'old_email'         => 'member@example.test',
+            'new_email'         => 'member-new@example.test',
+            'requested_by_uuid' => 'admin-1',
+        ]);
+});
+
 test('user controller current endpoint stores and reuses cached user response payloads', function () {
     user_controller_database();
     $user = user_controller_user('owner-1');
@@ -625,6 +672,21 @@ test('user controller current endpoint stores and reuses cached user response pa
         ->and($freshResponse->getEtag())->toBe($cachedResponse->getEtag())
         ->and($cachedResponse->headers->get('X-Cache-Hit'))->toBe('true')
         ->and($cachedPayload)->toBe($freshPayload);
+});
+
+test('user controller current endpoint bypasses server cache when user cache is disabled', function () {
+    user_controller_database();
+    config(['fleetbase.user_cache.enabled' => false]);
+
+    $response = user_controller()->current(user_controller_request('GET', [], user_controller_user('owner-1'), 'current'));
+    $payload  = $response->getData(true);
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($response->headers->has('X-Cache-Hit'))->toBeFalse()
+        ->and($response->getEtag())->toBeNull()
+        ->and($payload['user']['uuid'])->toBe('owner-1')
+        ->and($payload['user']['email'])->toBe('owner@example.test')
+        ->and($payload['user']['session_status'])->toBe('active');
 });
 
 test('user controller reads writes and returns current user two factor settings', function () {
@@ -711,6 +773,24 @@ test('user controller rejects resending invitations outside the active company c
         ->and($missingTarget->getData(true))->toBe(['errors' => ['Unable to resend invitation.']])
         ->and($notInvitable->getStatusCode())->toBe(404)
         ->and($notInvitable->getData(true))->toBe(['errors' => ['Unable to resend invitation.']]);
+});
+
+test('user controller resends invitations only for users related to the active company', function () {
+    $capsule = user_controller_database();
+    EloquentModel::setEventDispatcher(new Dispatcher(app()));
+
+    $resent = user_controller()->resendInvitation(user_controller_request('POST', [
+        'user' => 'member-1',
+    ], user_controller_user('owner-1'), 'resendInvitation', ResendUserInvite::class));
+
+    $invite = $capsule->getConnection('mysql')->table('invites')->where('reason', 'join_company')->first();
+
+    expect($resent->getStatusCode())->toBe(200)
+        ->and($resent->getData(true))->toBe(['status' => 'ok'])
+        ->and($invite)->not->toBeNull()
+        ->and($invite->company_uuid)->toBe('company-1')
+        ->and($invite->created_by_uuid)->toBe('owner-1')
+        ->and(json_decode($invite->recipients, true))->toBe(['member@example.test']);
 });
 
 test('user controller reports invite errors for missing company and unavailable roles', function () {
