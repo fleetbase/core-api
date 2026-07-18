@@ -6,9 +6,12 @@ use Fleetbase\Traits\DisablesSoftDeletes;
 use Fleetbase\Traits\Expirable;
 use Fleetbase\Traits\HasAliases;
 use Fleetbase\Traits\HasFileResolution;
+use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Events\Dispatcher;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Facade;
 
 class LifecycleTraitsAliasRecord extends Model
 {
@@ -73,6 +76,19 @@ class LifecycleTraitsUncastExpirableRecord extends Model
     protected $guarded = [];
 }
 
+class LifecycleTraitsExpirableQueryRecord extends Model
+{
+    use Expirable;
+
+    protected $connection = 'mysql';
+    protected $table      = 'expiry_scope_records';
+    protected $guarded    = [];
+    protected $casts      = [
+        'expires_at' => 'datetime',
+    ];
+    public $timestamps = false;
+}
+
 class LifecycleTraitsHardDeleteRecord extends Model
 {
     use SoftDeletes;
@@ -127,6 +143,52 @@ class LifecycleTraitsFileResolverFake extends FileResolverService
 
         return $this->file;
     }
+}
+
+function lifecycle_traits_expirable_database(): Capsule
+{
+    Model::clearBootedModels();
+
+    $container = bind_test_container([
+        'database.default'           => 'mysql',
+        'database.connections.mysql' => [
+            'driver'   => 'sqlite',
+            'database' => ':memory:',
+            'prefix'   => '',
+        ],
+    ]);
+    Facade::setFacadeApplication($container);
+
+    $capsule = new Capsule($container);
+    $capsule->addConnection($container->make('config')->get('database.connections.mysql'), 'mysql');
+    $capsule->setEventDispatcher(new Dispatcher($container));
+    $capsule->setAsGlobal();
+    $capsule->bootEloquent();
+    $capsule->getDatabaseManager()->setDefaultConnection('mysql');
+    $container->instance('db', $capsule->getDatabaseManager());
+    Facade::clearResolvedInstance('db');
+
+    $schema = $capsule->getConnection('mysql')->getSchemaBuilder();
+    $schema->create('expiry_scope_records', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('name');
+        $table->timestamp('expires_at')->nullable();
+    });
+    $schema->create('expiry_scope_related_records', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('expiry_scope_record_uuid');
+    });
+
+    $capsule->getConnection('mysql')->table('expiry_scope_records')->insert([
+        ['uuid' => 'active', 'name' => 'Active', 'expires_at' => '2026-07-18 13:00:00'],
+        ['uuid' => 'permanent', 'name' => 'Permanent', 'expires_at' => null],
+        ['uuid' => 'expired', 'name' => 'Expired', 'expires_at' => '2026-07-18 11:00:00'],
+    ]);
+    $capsule->getConnection('mysql')->table('expiry_scope_related_records')->insert([
+        ['uuid' => 'related-active', 'expiry_scope_record_uuid' => 'active'],
+    ]);
+
+    return $capsule;
 }
 
 test('has aliases casts stores normalizes and rejects unsafe aliases', function () {
@@ -207,6 +269,36 @@ test('expirable revives expired records using default custom and named expiry co
         ->and($namedColumn->valid_until->timestamp)->toBe(Carbon::now()->addSeconds(120)->timestamp);
 
     Carbon::setTestNow();
+});
+
+test('expirable scope filters active records and exposes expiry query macros', function () {
+    lifecycle_traits_expirable_database();
+    Carbon::setTestNow(Carbon::parse('2026-07-18 12:00:00'));
+
+    $default = LifecycleTraitsExpirableQueryRecord::query()->orderBy('uuid')->pluck('uuid')->all();
+    $with    = LifecycleTraitsExpirableQueryRecord::query()->withHasExpiry()->orderBy('uuid')->pluck('uuid')->all();
+    $without = LifecycleTraitsExpirableQueryRecord::query()->withoutHasExpiry()->orderBy('uuid')->pluck('uuid')->all();
+    $only    = LifecycleTraitsExpirableQueryRecord::query()->onlyHasExpiry()->orderBy('uuid')->pluck('uuid')->all();
+
+    expect($default)->toBe(['active', 'permanent'])
+        ->and($with)->toBe(['active', 'expired', 'permanent'])
+        ->and($without)->toBe(['permanent'])
+        ->and($only)->toBe(['active', 'expired']);
+
+    Carbon::setTestNow();
+});
+
+test('expiry scope resolves qualified expiry columns for joined builders', function () {
+    lifecycle_traits_expirable_database();
+
+    $scope       = new Fleetbase\Scopes\ExpiryScope();
+    $plain       = LifecycleTraitsExpirableQueryRecord::query();
+    $joined      = LifecycleTraitsExpirableQueryRecord::query()->join('expiry_scope_related_records', 'expiry_scope_records.uuid', '=', 'expiry_scope_related_records.expiry_scope_record_uuid');
+    $column      = new ReflectionMethod($scope, 'getExpiredAtColumn');
+    $column->setAccessible(true);
+
+    expect($column->invoke($scope, $plain))->toBe('expires_at')
+        ->and($column->invoke($scope, $joined))->toBe('expiry_scope_records.expires_at');
 });
 
 test('disables soft deletes forces hard deletes and makes restore a no op', function () {

@@ -397,6 +397,7 @@ namespace {
 
         $createRules = (new CreateUserRequest())->rules();
         $updateRules = request_with_route_parameter(UpdateUserRequest::class, 'user', 'user-1')->rules();
+        $messages    = (new CreateUserRequest())->messages();
 
         expect((new CreateUserRequest())->authorize())->toBe('company-1')
             ->and((new UpdateUserRequest())->authorize())->toBe('company-1')
@@ -407,6 +408,15 @@ namespace {
             ->and(request_rule_strings($updateRules['name']))->toBe(['sometimes', 'required', 'string', 'min:2', 'max:100'])
             ->and(request_rule_strings($updateRules['phone']))->toContain('sometimes', 'nullable')
             ->and(request_rule_strings($updateRules['phone']))->toContain('unique:users,phone,user-1,uuid,deleted_at,"NULL"')
+            ->and($messages['*.required'])->toBe('Your :attribute is required')
+            ->and($messages['email'])->toBe('You must enter a valid :attribute')
+            ->and($messages['phone.unique'])->toBe('An account with this phone number already exists')
+            ->and($messages['password.required'])->toBe('You must enter a password.')
+            ->and($messages['password.mixed'])->toBe('Password must contain both uppercase and lowercase letters.')
+            ->and($messages['password.letters'])->toBe('Password must contain at least 1 letter.')
+            ->and($messages['password.numbers'])->toBe('Password must contain at least 1 number.')
+            ->and($messages['password.symbols'])->toBe('Password must contain at least 1 symbol.')
+            ->and($messages['password.uncompromised'])->toBe('The password you entered has appeared in a data breach. Please choose a different one.')
             ->and((new UpdateUserRequest())->messages()['phone.unique'])->toBe('An account with this phone number already exists.');
     });
 
