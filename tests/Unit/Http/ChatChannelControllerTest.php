@@ -1,14 +1,20 @@
 <?php
 
 use Fleetbase\Expansions\Str as StrExpansion;
+use Fleetbase\Http\Controllers\Api\v1\ChatChannelController as PublicChatChannelController;
 use Fleetbase\Http\Controllers\Internal\v1\ChatChannelController;
+use Fleetbase\Http\Requests\CreateChatChannelRequest;
+use Fleetbase\Http\Requests\UpdateChatChannelRequest;
 use Fleetbase\Models\ChatChannel;
+use Fleetbase\Models\ChatMessage;
 use Fleetbase\Models\ChatParticipant;
+use Fleetbase\Models\ChatReceipt;
 use Fleetbase\Models\User;
 use Illuminate\Container\Container;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Events\Dispatcher;
+use Illuminate\Contracts\Notifications\Dispatcher as NotificationDispatcher;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Facade;
@@ -62,6 +68,51 @@ class ChatChannelControllerResponseCacheFake
     }
 }
 
+class PublicChatChannelControllerRoute
+{
+    public object $controller;
+
+    public function __construct(private string $method = 'query')
+    {
+        $this->controller = new class {
+        };
+    }
+
+    public function getAction(?string $key = null): mixed
+    {
+        $action = [
+            'controller' => PublicChatChannelController::class . '@' . $this->method,
+        ];
+
+        return $key ? $action[$key] ?? null : $action;
+    }
+
+    public function getActionMethod(): string
+    {
+        return $this->method;
+    }
+
+    public function uri(): string
+    {
+        return 'v1/chat-channels';
+    }
+}
+
+class ChatChannelControllerNotificationDispatcherFake implements NotificationDispatcher
+{
+    public array $sent = [];
+
+    public function send($notifiables, $notification): void
+    {
+        $this->sent[] = [$notifiables, $notification];
+    }
+
+    public function sendNow($notifiables, $notification, ?array $channels = null): void
+    {
+        $this->send($notifiables, $notification);
+    }
+}
+
 if (!function_exists('event')) {
     function event(mixed $event = null): mixed
     {
@@ -95,6 +146,20 @@ function chat_channel_controller_database(): Capsule
             return is_array($value) ? $value : $default;
         });
     }
+    if (!Request::hasMacro('or')) {
+        Request::macro('or', function (array $params = [], mixed $default = null): mixed {
+            foreach ($params as $param) {
+                if ($this->has($param)) {
+                    return $this->input($param);
+                }
+            }
+
+            return $default;
+        });
+    }
+    Request::macro('getController', function () {
+        return $this->route()?->controller;
+    });
 
     $connection = [
         'driver'   => 'sqlite',
@@ -118,6 +183,7 @@ function chat_channel_controller_database(): Capsule
     $databaseManager = $capsule->getDatabaseManager();
     $databaseManager->setDefaultConnection('mysql');
     $container->instance('db', $databaseManager);
+    $container->instance(NotificationDispatcher::class, new ChatChannelControllerNotificationDispatcherFake());
     $container->instance('responsecache', new ChatChannelControllerResponseCacheFake());
     Cache::swap(new ChatChannelControllerTaggedCacheFake());
     Facade::clearResolvedInstance('db');
@@ -130,6 +196,8 @@ function chat_channel_controller_database(): Capsule
     ]);
 
     $schema = $capsule->getConnection('mysql')->getSchemaBuilder();
+    $container->instance('db.schema', $schema);
+    Facade::clearResolvedInstance('db.schema');
     $schema->create('users', function ($table) {
         $table->string('uuid')->primary();
         $table->string('public_id')->nullable()->index();
@@ -223,6 +291,17 @@ function chat_channel_controller_database(): Capsule
         $table->timestamps();
         $table->softDeletes();
     });
+    $schema->create('directives', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('permission_uuid')->nullable()->index();
+        $table->string('subject_uuid')->nullable();
+        $table->string('subject_type')->nullable();
+        $table->string('key')->nullable();
+        $table->string('operator')->nullable();
+        $table->string('value')->nullable();
+        $table->timestamps();
+        $table->softDeletes();
+    });
 
     $now = '2026-07-18 00:00:00';
     $capsule->getConnection('mysql')->table('users')->insert([
@@ -255,9 +334,37 @@ function chat_channel_controller(): ChatChannelController
     return new ChatChannelController();
 }
 
+function public_chat_channel_controller(): PublicChatChannelController
+{
+    return new PublicChatChannelController();
+}
+
 function chat_channel_controller_payload($resource): array
 {
     return $resource->resolve(Request::create('/int/v1/chat-channels', 'GET'));
+}
+
+function public_chat_channel_controller_payload($resource): array
+{
+    return $resource->resolve(Request::create('/v1/chat-channels', 'GET'));
+}
+
+function public_chat_channel_create_request(array $input): CreateChatChannelRequest
+{
+    return CreateChatChannelRequest::create('/v1/chat-channels', 'POST', $input);
+}
+
+function public_chat_channel_update_request(array $input): UpdateChatChannelRequest
+{
+    return UpdateChatChannelRequest::create('/v1/chat-channels/chat_current', 'PUT', $input);
+}
+
+function public_chat_channel_query_request(array $query = []): Request
+{
+    $request = Request::create('/v1/chat-channels', 'GET', $query);
+    $request->setRouteResolver(fn () => new PublicChatChannelControllerRoute());
+
+    return $request;
 }
 
 function chat_channel_controller_reflect(string $method, string $id): mixed
@@ -370,4 +477,141 @@ test('internal chat channel unread count requires active company channel and par
         ->and($success->getData(true))->toBe(['unreadCount' => 1])
         ->and($notParticipant->getStatusCode())->toBe(404)
         ->and($notParticipant->getData(true))->toBe(['error' => 'Chat channel not found.']);
+});
+
+test('public chat channel creates channel with creator and valid participants only', function () {
+    $capsule = chat_channel_controller_database();
+
+    $response = public_chat_channel_controller()->create(public_chat_channel_create_request([
+        'name' => 'Public Dispatch',
+        'participants' => [
+            'user_active',
+            'user_other',
+            'missing_user',
+        ],
+    ]));
+
+    $channel              = ChatChannel::query()->where('name', 'Public Dispatch')->firstOrFail();
+    $participantUserUuids = ChatParticipant::query()
+        ->where('chat_channel_uuid', $channel->uuid)
+        ->orderBy('user_uuid')
+        ->pluck('user_uuid')
+        ->all();
+
+    expect(public_chat_channel_controller_payload($response)['name'])->toBe('Public Dispatch')
+        ->and($channel->company_uuid)->toBe('company-1')
+        ->and($channel->created_by_uuid)->toBe('user-current')
+        ->and($participantUserUuids)->toBe(['user-active', 'user-current', 'user-other-company'])
+        ->and($capsule->getConnection('mysql')->table('chat_channels')->where('public_id', 'chat_other')->value('company_uuid'))->toBe('company-2');
+});
+
+test('public chat channel updates finds queries and deletes records with not found contracts', function () {
+    chat_channel_controller_database();
+
+    $updated = public_chat_channel_controller()->update('chat_current', public_chat_channel_update_request([
+        'name' => 'Renamed Channel',
+    ]));
+    $found   = public_chat_channel_controller()->find('chat_current');
+    $queried = public_chat_channel_controller()->query(public_chat_channel_query_request());
+    $deleted = public_chat_channel_controller()->delete('chat_current');
+    $missing = public_chat_channel_controller()->find('chat_current');
+
+    expect(public_chat_channel_controller_payload($updated)['name'])->toBe('Renamed Channel')
+        ->and(public_chat_channel_controller_payload($found)['id'])->toBe('chat_current')
+        ->and($queried->collection->pluck('public_id')->all())->toContain('chat_current')
+        ->and($deleted->resource->public_id)->toBe('chat_current')
+        ->and($missing->getStatusCode())->toBe(404)
+        ->and($missing->getData(true))->toBe(['error' => 'Chat channel resource not found.']);
+});
+
+test('public chat channel participant endpoints add remove and reject missing references', function () {
+    chat_channel_controller_database();
+
+    $added = public_chat_channel_controller()->addParticipant('chat_current', Request::create('/v1/chat-channels/chat_current/participants', 'POST', [
+        'user' => 'user_extra',
+    ]));
+    $missingChannel = public_chat_channel_controller()->addParticipant('missing_chat', Request::create('/v1/chat-channels/missing_chat/participants', 'POST', [
+        'user' => 'user_extra',
+    ]));
+    $missingUser = public_chat_channel_controller()->addParticipant('chat_current', Request::create('/v1/chat-channels/chat_current/participants', 'POST', [
+        'user' => 'missing_user',
+    ]));
+    $removed = public_chat_channel_controller()->removeParticipant($added->resource->public_id);
+    $missingParticipant = public_chat_channel_controller()->removeParticipant('missing_participant');
+
+    expect($added->resource->user_uuid)->toBe('user-extra')
+        ->and($added->resource->chat_channel_uuid)->toBe('channel-current')
+        ->and($missingChannel->getStatusCode())->toBe(404)
+        ->and($missingChannel->getData(true))->toBe(['error' => 'Chat channel resource not found.'])
+        ->and($missingUser->getStatusCode())->toBe(422)
+        ->and($missingUser->getData(true))->toBe(['error' => 'User to add as participant not found.'])
+        ->and($removed->resource->public_id)->toBe($added->resource->public_id)
+        ->and(ChatParticipant::withTrashed()->whereKey($added->resource->uuid)->first()->trashed())->toBeTrue()
+        ->and($missingParticipant->getStatusCode())->toBe(422)
+        ->and($missingParticipant->getData(true))->toBe(['error' => 'Chat participant resource not found.']);
+});
+
+test('public chat channel messages create records reject missing references and delete safely', function () {
+    chat_channel_controller_database();
+
+    $sent = public_chat_channel_controller()->sendMessage('chat_current', Request::create('/v1/chat-channels/chat_current/messages', 'POST', [
+        'sender' => 'participant_current',
+        'content' => 'Arrived at pickup',
+    ]));
+    $missingChannel = public_chat_channel_controller()->sendMessage('missing_chat', Request::create('/v1/chat-channels/missing_chat/messages', 'POST', [
+        'sender' => 'participant_current',
+        'content' => 'No channel',
+    ]));
+    $missingSender = public_chat_channel_controller()->sendMessage('chat_current', Request::create('/v1/chat-channels/chat_current/messages', 'POST', [
+        'sender' => 'missing_participant',
+        'content' => 'No sender',
+    ]));
+    $deleted = public_chat_channel_controller()->deleteMessage($sent->resource->public_id);
+    $missingDelete = public_chat_channel_controller()->deleteMessage('missing_message');
+
+    expect($sent->resource->content)->toBe('Arrived at pickup')
+        ->and($sent->resource->company_uuid)->toBe('company-1')
+        ->and($sent->resource->chat_channel_uuid)->toBe('channel-current')
+        ->and($sent->resource->sender_uuid)->toBe('participant-current')
+        ->and($missingChannel->getStatusCode())->toBe(404)
+        ->and($missingChannel->getData(true))->toBe(['error' => 'Chat channel resource not found.'])
+        ->and($missingSender->getStatusCode())->toBe(422)
+        ->and($missingSender->getData(true))->toBe(['error' => 'Sender of chat message not found.'])
+        ->and($deleted->resource->public_id)->toBe($sent->resource->public_id)
+        ->and(ChatMessage::withTrashed()->whereKey($sent->resource->uuid)->first()->trashed())->toBeTrue()
+        ->and($missingDelete->getStatusCode())->toBe(404)
+        ->and($missingDelete->getData(true))->toBe(['error' => 'Chat message resource not found.']);
+});
+
+test('public chat channel read receipts are idempotent and validate references', function () {
+    $capsule    = chat_channel_controller_database();
+    $connection = $capsule->getConnection('mysql');
+    $now        = '2026-07-18 00:15:00';
+    $connection->table('chat_messages')->insert([
+        'uuid' => 'message-receipt',
+        'public_id' => 'message_receipt',
+        'company_uuid' => 'company-1',
+        'chat_channel_uuid' => 'channel-current',
+        'sender_uuid' => 'participant-active',
+        'content' => 'Please acknowledge',
+        'created_at' => $now,
+        'updated_at' => $now,
+    ]);
+
+    $created = public_chat_channel_controller()->createReadReceipt('message_receipt', Request::create('/v1/chat-messages/message_receipt/read-receipts', 'POST', [
+        'participant' => 'participant_current',
+    ]));
+    $existing = public_chat_channel_controller()->createReadReceipt('message_receipt', Request::create('/v1/chat-messages/message_receipt/read-receipts', 'POST', [
+        'participant' => 'participant_current',
+    ]));
+    $invalid = public_chat_channel_controller()->createReadReceipt('missing_message', Request::create('/v1/chat-messages/missing_message/read-receipts', 'POST', [
+        'participant' => 'participant_current',
+    ]));
+
+    expect($created->resource->chat_message_uuid)->toBe('message-receipt')
+        ->and($created->resource->participant_uuid)->toBe('participant-current')
+        ->and($existing->resource->uuid)->toBe($created->resource->uuid)
+        ->and(ChatReceipt::query()->where('chat_message_uuid', 'message-receipt')->where('participant_uuid', 'participant-current')->count())->toBe(1)
+        ->and($invalid->getStatusCode())->toBe(404)
+        ->and($invalid->getData(true))->toBe(['error' => 'Invalid message or participant reference.']);
 });

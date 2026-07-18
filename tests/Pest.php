@@ -315,6 +315,17 @@ namespace {
             );
         }
 
+        public function apiError($error, int $statusCode = 400, ?array $data = []): JsonResponse
+        {
+            return $this->json(
+                [
+                    'error' => $error,
+                    ...$data,
+                ],
+                $statusCode
+            );
+        }
+
         public function json(mixed $data, int $statusCode = 200): JsonResponse
         {
             return new JsonResponse($data, $statusCode);
