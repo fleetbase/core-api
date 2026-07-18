@@ -48,6 +48,17 @@ namespace Illuminate\Foundation\Auth {
     }
 }
 
+namespace Fleetbase\Support {
+    if (!function_exists(__NAMESPACE__ . '\\env')) {
+        function env(string $key, mixed $default = null): mixed
+        {
+            $value = getenv($key);
+
+            return $value === false ? (is_callable($default) ? $default() : $default) : $value;
+        }
+    }
+}
+
 namespace {
     use Illuminate\Container\Container;
     use Illuminate\Http\JsonResponse;

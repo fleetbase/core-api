@@ -1413,9 +1413,8 @@ class Utils
     public static function getImageSizeFromString(string $data)
     {
         $data = static::isBase64($data) ? base64_decode($data) : $data;
-        $uri  = 'data://application/octet-stream;base64,' . $data;
 
-        return getimagesize($uri);
+        return getimagesizefromstring($data);
     }
 
     public static function isBase64(string $data)

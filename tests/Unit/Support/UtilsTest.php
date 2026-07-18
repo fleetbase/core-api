@@ -1,10 +1,13 @@
 <?php
 
+use Fleetbase\Models\Company;
 use Fleetbase\Models\User;
 use Fleetbase\Support\Utils;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Events\Dispatcher;
+use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Facade;
 
@@ -81,13 +84,16 @@ test('utils formats urls headers strings and dates', function () {
     bind_test_container([
         'filesystems.disks.s3.bucket' => 'fleetbase-media',
         'filesystems.disks.s3.region' => 'ap-southeast-1',
+        'app.env'                     => 'production',
         'fleetbase.console.host'      => 'fleetbase.test',
         'fleetbase.console.subdomain' => 'console',
         'fleetbase.console.secure'    => true,
         'fleetbase.console.path'      => '/srv/fleetbase/console/',
     ]);
 
-    expect(Utils::consoleUrl('settings', ['tab' => 'billing']))->toBe('https://console.fleetbase.test/settings?tab=billing')
+    expect(Utils::apiUrl('/api/user', ['id' => 1], 8080))->toBe('https://fleetbase.test:8080/api/user?id=1')
+        ->and(Utils::apiUrl('health', [], 443))->toBe('https://fleetbase.test/health')
+        ->and(Utils::consoleUrl('settings', ['tab' => 'billing']))->toBe('https://console.fleetbase.test/settings?tab=billing')
         ->and(Utils::consolePath('dist/assets'))->toBe('/srv/fleetbase/console/dist/assets')
         ->and(Utils::getDomainFromUrl('https://api.fleetbase.test:8443/v1/orders', true))->toBe('api.fleetbase.test:8443')
         ->and(Utils::getDomainFromUrl('api.fleetbase.test:8000', true))->toBe('api.fleetbase.test:8000')
@@ -100,6 +106,10 @@ test('utils formats urls headers strings and dates', function () {
         ->and(Utils::toMySqlDatetime('July 17, 2026 12:34:56 (UTC)'))->toBe('2026-07-17 12:34:56')
         ->and(Utils::isDate('2026-07-17'))->toBeTrue()
         ->and(Utils::isDate('not-a-date'))->toBeFalse();
+
+    config(['app.env' => 'local']);
+
+    expect(Utils::apiUrl('api/user', ['id' => 2], 80))->toBe('http://fleetbase.test/api/user?id=2');
 });
 
 test('utils handles boolean json inflection and sql helpers', function () {
@@ -324,4 +334,110 @@ test('utils formats stripe amounts for zero decimal and precision backed currenc
     expect(Utils::formatAmountForStripe(1250, 'JPY'))->toBe(1250)
         ->and(Utils::formatAmountForStripe(1250, 'USD'))->toBe(1250)
         ->and(Utils::formatAmountForStripe(1250, 'MNT'))->toBe(1250);
+});
+
+test('utils serializes resources images queues countries and connectivity edges', function () {
+    bind_test_container([
+        'database.default'           => 'mysql',
+        'database.connections.mysql' => [
+            'driver'   => 'sqlite',
+            'database' => ':memory:',
+            'prefix'   => '',
+        ],
+    ]);
+
+    $previousEnv = [];
+    foreach (['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'SQS_EVENTS_QUEUE', 'QUEUE_URL_EVENTS', 'REDIS_QUEUE'] as $key) {
+        $previousEnv[$key] = getenv($key);
+        putenv($key);
+    }
+
+    try {
+        $record = new Company();
+        $record->setRawAttributes([
+            'uuid' => 'company-1',
+            'name' => 'Fleetbase Test',
+        ], true);
+
+        $child = new class(['status' => 'active']) extends JsonResource {
+            public function toArray($request): array
+            {
+                return [
+                    'status'  => $this->resource['status'],
+                    'seen_at' => Carbon::parse('2026-07-18 09:10:11'),
+                ];
+            }
+        };
+
+        $resource = new class($record, $child) extends JsonResource {
+            public function __construct(Company $resource, private JsonResource $child)
+            {
+                parent::__construct($resource);
+            }
+
+            public function toArray($request): array
+            {
+                return [
+                    'company'    => $this->resource,
+                    'child'      => $this->child,
+                    'created_at' => Carbon::parse('2026-07-18 08:00:00'),
+                ];
+            }
+        };
+
+        $png              = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lvS1WQAAAABJRU5ErkJggg==';
+        $countryCodeModel = new class extends EloquentModel {};
+        $countryCodeModel->setRawAttributes(['country' => 'SG'], true);
+        $countryNameModel = new class extends EloquentModel {};
+        $countryNameModel->setRawAttributes(['country' => 'United States'], true);
+
+        $serialized = Utils::serializeJsonResource($resource);
+
+        expect($serialized['company']['uuid'])->toBe('company-1')
+            ->and($serialized['company']['name'])->toBe('Fleetbase Test')
+            ->and($serialized['child'])->toBe([
+                'status'  => 'active',
+                'seen_at' => '2026-07-18 09:10:11',
+            ])
+            ->and($serialized['created_at'])->toBe('2026-07-18 08:00:00')
+            ->and(Utils::getBase64ImageSize($png))->toBe(70)
+            ->and(Utils::getImageSizeFromString($png)[0])->toBe(1)
+            ->and(Utils::getImageSizeFromString($png)[1])->toBe(1)
+            ->and(Utils::getEventsQueue())->toBe('default')
+            ->and(Utils::chooseQueueConnection())->toBe('redis')
+            ->and(Utils::getModelCountry($countryCodeModel))->toBe('SG')
+            ->and(Utils::getModelCountry($countryNameModel))->toBe('US')
+            ->and(Utils::getModelCountry(new Company(['country' => 'United States'])))->toBe('US')
+            ->and(Utils::getModelCountry(new Company()))->toBeNull()
+            ->and(Utils::hasDatabaseConnection())->toBeTrue();
+
+        putenv('AWS_ACCESS_KEY_ID=test-key');
+        putenv('AWS_SECRET_ACCESS_KEY=test-secret');
+        putenv('SQS_EVENTS_QUEUE=events-primary');
+
+        expect(Utils::getEventsQueue())->toBe('events-primary')
+            ->and(Utils::chooseQueueConnection())->toBe('events-primary');
+
+        putenv('QUEUE_URL_EVENTS=https://sqs.ap-southeast-1.amazonaws.com/123456789/events-from-url');
+
+        expect(Utils::getEventsQueue())->toBe('events-from-url');
+    } finally {
+        foreach ($previousEnv as $key => $value) {
+            $value === false ? putenv($key) : putenv($key . '=' . $value);
+        }
+    }
+});
+
+test('utils recursively deletes directories and ignores missing paths', function () {
+    $root = sys_get_temp_dir() . '/fleetbase-utils-delete-' . uniqid();
+    $leaf = $root . '/nested/deep';
+
+    mkdir($leaf, 0777, true);
+    file_put_contents($root . '/top.txt', 'top');
+    file_put_contents($leaf . '/child.txt', 'child');
+
+    Utils::deleteDirectory($root);
+    Utils::deleteDirectory($root);
+
+    expect(is_dir($root))->toBeFalse();
 });
