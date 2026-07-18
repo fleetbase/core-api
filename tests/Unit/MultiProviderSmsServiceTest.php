@@ -4,6 +4,7 @@ use Aws\MockHandler;
 use Aws\Result;
 use Aws\Sns\SnsClient;
 use Fleetbase\Services\AwsSnsSmsService;
+use Fleetbase\Services\CallProSmsService;
 use Fleetbase\Services\CustomHttpSmsService;
 use Fleetbase\Services\MessageBirdSmsService;
 use Fleetbase\Services\SmppGatewayClient;
@@ -60,6 +61,11 @@ beforeEach(function () {
                         'access_key' => 'messagebird-key',
                         'originator' => 'Fleetbase',
                         'base_url'   => 'https://rest.messagebird.com/messages',
+                    ],
+                    'callpro' => [
+                        'api_key'  => 'callpro-key',
+                        'from'     => '99112233',
+                        'base_url' => 'https://api-text.callpro.mn/v1/sms',
                     ],
                     'aws_sns' => [
                         'key'       => 'aws-key',
@@ -257,6 +263,126 @@ test('messagebird sms service validates configuration recipient text and origina
         ->toThrow(InvalidArgumentException::class, 'MessageBird originator is required');
 
     Http::assertNothingSent();
+});
+
+test('callpro sms service sends configured payload through static convenience method', function () {
+    Http::fake([
+        'https://api-text.callpro.mn/v1/sms/send' => Http::response([
+            'message_id' => 'callpro-message-id',
+        ], 200),
+    ]);
+
+    $result = CallProSmsService::sendSms('97699112233', str_repeat('A', 55), null, [
+        'brand'     => 'Fleetbase',
+        'unique_id' => 'callpro-123',
+    ]);
+
+    expect($result)->toMatchArray([
+        'success'    => true,
+        'message_id' => 'callpro-message-id',
+        'result'     => 'queued',
+        'status'     => 'queued',
+    ]);
+
+    Http::assertSent(function ($request) {
+        return $request->url() === 'https://api-text.callpro.mn/v1/sms/send'
+            && $request->hasHeader('x-api-key', 'callpro-key')
+            && $request['from'] === '99112233'
+            && $request['to'] === '97699112233'
+            && $request['text'] === str_repeat('A', 55)
+            && $request['brand'] === 'Fleetbase'
+            && $request['unique_id'] === 'callpro-123';
+    });
+});
+
+test('callpro sms service returns provider reason before status fallbacks', function () {
+    Http::fake([
+        'https://api-text.callpro.mn/v1/sms/send' => Http::response([
+            'reason' => 'Tenant is suspended',
+        ], 403),
+    ]);
+
+    expect((new CallProSmsService())->send('+97699112233', 'Hello'))->toMatchArray([
+        'success' => false,
+        'error'   => 'Tenant is suspended',
+        'code'    => 403,
+    ]);
+});
+
+test('callpro sms service returns provider issues before status fallbacks', function () {
+    Http::fake([
+        'https://api-text.callpro.mn/v1/sms/send' => Http::response([
+            'issues' => [
+                ['field' => 'to', 'message' => 'Invalid recipient'],
+            ],
+        ], 422),
+    ]);
+
+    expect((new CallProSmsService())->send('99112233', 'Hello'))->toMatchArray([
+        'success' => false,
+        'error'   => json_encode([
+            ['field' => 'to', 'message' => 'Invalid recipient'],
+        ]),
+        'code'    => 422,
+    ]);
+});
+
+test('callpro sms service maps known and unknown status code failures', function (int $statusCode, string $expectedError) {
+    Http::fake([
+        'https://api-text.callpro.mn/v1/sms/send' => Http::response([], $statusCode),
+    ]);
+
+    expect((new CallProSmsService())->send('99112233', 'Hello'))->toMatchArray([
+        'success' => false,
+        'error'   => $expectedError,
+        'code'    => $statusCode,
+    ]);
+})->with([
+    [400, 'Invalid request parameters'],
+    [401, 'Invalid or missing API key'],
+    [402, 'Payment not paid'],
+    [403, 'Blocked number'],
+    [404, 'Tenant or phone number not found'],
+    [422, 'Validation error'],
+    [500, 'CallPro server error'],
+    [503, 'API request failed with status code: 503'],
+]);
+
+test('callpro sms service validates configuration sender recipient and text inputs', function () {
+    Http::fake();
+
+    config()->set('services.sms.providers.callpro.api_key', '');
+
+    expect(fn () => (new CallProSmsService())->send('99112233', 'Hello'))
+        ->toThrow(InvalidArgumentException::class, 'CallPro API key is not configured');
+
+    config()->set('services.sms.providers.callpro.api_key', 'callpro-key');
+
+    expect(fn () => (new CallProSmsService())->send('99112233', 'Hello', 'short'))
+        ->toThrow(InvalidArgumentException::class, 'Sender number (from) must be exactly 8 digits')
+        ->and(fn () => (new CallProSmsService())->send('invalid', 'Hello'))
+        ->toThrow(InvalidArgumentException::class, 'Recipient phone number (to) must be an 8-digit, 976-prefixed, +976-prefixed, or international number')
+        ->and(fn () => (new CallProSmsService())->send('99112233', ''))
+        ->toThrow(InvalidArgumentException::class, 'Message text cannot be empty');
+
+    Http::assertNothingSent();
+});
+
+test('callpro sms service wraps lower level request exceptions', function () {
+    Http::fake(function () {
+        throw new RuntimeException('network timeout');
+    });
+
+    expect(fn () => (new CallProSmsService())->send('99112233', 'Hello'))
+        ->toThrow(Exception::class, 'Failed to send SMS: network timeout');
+});
+
+test('callpro sms service exposes configuration state', function () {
+    $service = new CallProSmsService();
+
+    expect($service->isConfigured())->toBeTrue()
+        ->and($service->getFrom())->toBe('99112233')
+        ->and($service->getBaseUrl())->toBe('https://api-text.callpro.mn/v1/sms');
 });
 
 test('custom http sms service renders configured post templates', function () {
