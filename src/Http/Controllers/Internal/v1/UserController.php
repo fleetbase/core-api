@@ -275,16 +275,19 @@ class UserController extends FleetbaseController
                 }
             }
 
+            $roleToAssign = null;
+            if ($request->filled('user.role')) {
+                $roleToAssign = $this->resolveAssignableRole($request->input('user.role'));
+                if (!$roleToAssign) {
+                    return response()->error('The selected role is not available for this organisation.', 404);
+                }
+            }
+
             $record->update(Arr::except($input, ['uuid', 'public_id', 'deleted_at', 'updated_at', 'created_at']));
 
             // Assign role if set
-            if ($request->filled('user.role')) {
-                $role = $this->resolveAssignableRole($request->input('user.role'));
-                if (!$role) {
-                    return response()->error('The selected role is not available for this organisation.', 404);
-                }
-
-                $record->assignSingleRole($role);
+            if ($roleToAssign) {
+                $record->assignSingleRole($roleToAssign);
             }
 
             // Sync Permissions

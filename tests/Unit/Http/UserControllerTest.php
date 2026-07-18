@@ -107,6 +107,14 @@ class UserControllerPermissionRegistrarFake
     {
         return Fleetbase\Models\Permission::class;
     }
+
+    public function forgetWildcardPermissionIndex(mixed $record = null): void
+    {
+    }
+
+    public function forgetCachedPermissions(): void
+    {
+    }
 }
 
 class UserControllerNotificationDispatcherFake implements Illuminate\Contracts\Notifications\Dispatcher
@@ -151,6 +159,17 @@ class UserControllerRouteStub
     public function getActionMethod(): string
     {
         return $this->method;
+    }
+}
+
+class UserControllerWithoutRequestValidation extends UserController
+{
+    public $createRequest;
+
+    public $updateRequest;
+
+    public function validateRequest(Request $request): void
+    {
     }
 }
 
@@ -205,6 +224,12 @@ function user_controller_database(): Capsule
             }
 
             return is_array($value) ? $value : $default;
+        });
+    }
+
+    if (!Request::hasMacro('isArray')) {
+        Request::macro('isArray', function (string $key): bool {
+            return is_array($this->input($key));
         });
     }
 
@@ -263,6 +288,7 @@ function user_controller_database(): Capsule
         $table->string('email')->nullable();
         $table->string('phone')->nullable();
         $table->string('username')->nullable();
+        $table->string('ip_address')->nullable();
         $table->string('slug')->nullable();
         $table->string('name')->nullable();
         $table->string('password')->nullable();
@@ -419,6 +445,11 @@ function user_controller(): UserController
     return new UserController();
 }
 
+function user_controller_without_request_validation(): UserControllerWithoutRequestValidation
+{
+    return new UserControllerWithoutRequestValidation();
+}
+
 function user_controller_request(string $method = 'GET', array $input = [], ?User $user = null, string $action = 'current', ?string $requestClass = null): Request
 {
     $requestClass ??= Request::class;
@@ -494,6 +525,179 @@ test('user controller blocks generic deletes and identity mutations for organiza
         ->and($identityUpdate->getStatusCode())->toBe(422)
         ->and($identityUpdate->getData(true))->toBe(['errors' => ['Login identity fields cannot be updated from this endpoint.']])
         ->and(User::where('uuid', 'member-1')->value('email'))->toBe('member@example.test');
+});
+
+test('user controller creates users through the generic record endpoint with scoped assignments', function () {
+    $capsule = user_controller_database();
+    EloquentModel::setEventDispatcher(new Dispatcher(app()));
+
+    $db = $capsule->getConnection('mysql');
+    $db->table('roles')->insert([
+        'id'           => 'Dispatcher',
+        'company_uuid' => 'company-1',
+        'name'         => 'Dispatcher',
+        'guard_name'   => 'sanctum',
+        'created_at'   => '2026-07-18 10:00:00',
+        'updated_at'   => '2026-07-18 10:00:00',
+    ]);
+    $db->table('permissions')->insert([
+        'id'          => 'permission-create-user',
+        'name'        => 'iam create user',
+        'guard_name'  => 'sanctum',
+        'description' => 'Create users',
+        'created_at'  => '2026-07-18 10:00:00',
+        'updated_at'  => '2026-07-18 10:00:00',
+    ]);
+    $db->table('policies')->insert([
+        'id'           => 'policy-create-user',
+        'company_uuid' => 'company-1',
+        'name'         => 'Create user policy',
+        'guard_name'   => 'sanctum',
+        'service'      => 'iam',
+        'description'  => 'Create users',
+        'created_at'   => '2026-07-18 10:00:00',
+        'updated_at'   => '2026-07-18 10:00:00',
+    ]);
+
+    $created = user_controller_without_request_validation()->createRecord(user_controller_request('POST', [
+        'user' => [
+            'email'       => 'new-person@fleetbase.io',
+            'name'        => 'New Person',
+            'phone'       => '+15551234567',
+            'role_uuid'   => 'Dispatcher',
+            'permissions' => ['permission-create-user'],
+            'policies'    => ['policy-create-user'],
+            'timezone'    => 'Asia/Ulaanbaatar',
+        ],
+    ], user_controller_user('owner-1'), 'createRecord'));
+
+    $createdUser = User::where('email', 'new-person@fleetbase.io')->first();
+    $companyUser = $db->table('company_users')->where('company_uuid', 'company-1')->where('user_uuid', $createdUser?->uuid)->first();
+
+    expect($created['user']->resource->email)->toBe('new-person@fleetbase.io')
+        ->and($created['user']->resource->company_uuid)->toBe('company-1')
+        ->and($created['user']->resource->timezone)->toBe('Asia/Ulaanbaatar')
+        ->and($created['user']->resource->type)->toBe('user')
+        ->and($companyUser)->not->toBeNull()
+        ->and($db->table('model_has_roles')->where('model_type', Fleetbase\Models\CompanyUser::class)->where('model_uuid', $companyUser->uuid)->where('role_id', 'Dispatcher')->exists())->toBeTrue()
+        ->and($db->table('model_has_permissions')->where('model_type', Fleetbase\Models\CompanyUser::class)->where('model_uuid', $companyUser->uuid)->where('permission_id', 'permission-create-user')->exists())->toBeTrue()
+        ->and($db->table('model_has_policies')->where('model_type', Fleetbase\Models\CompanyUser::class)->where('model_uuid', $companyUser->uuid)->where('policy_id', 'policy-create-user')->exists())->toBeTrue();
+});
+
+test('user controller create record rejects duplicate active-company members and unavailable roles', function () {
+    user_controller_database();
+
+    $duplicateMember = user_controller_without_request_validation()->createRecord(user_controller_request('POST', [
+        'user' => [
+            'email' => 'member@example.test',
+            'name'  => 'Member One',
+        ],
+    ], user_controller_user('owner-1'), 'createRecord'));
+    $invalidRole = user_controller_without_request_validation()->createRecord(user_controller_request('POST', [
+        'user' => [
+            'email'     => 'another-person@fleetbase.io',
+            'name'      => 'Another Person',
+            'role_uuid' => 'role-other-company',
+        ],
+    ], user_controller_user('owner-1'), 'createRecord'));
+
+    expect($duplicateMember->getStatusCode())->toBe(400)
+        ->and($duplicateMember->getData(true))->toBe(['errors' => ['This user is already a member of your organisation.']])
+        ->and($invalidRole->getStatusCode())->toBe(404)
+        ->and($invalidRole->getData(true))->toBe(['errors' => ['The selected role is not available for this organisation.']]);
+});
+
+test('user controller updates mutable user fields while preserving unchanged identity fields', function () {
+    $capsule = user_controller_database();
+    $db      = $capsule->getConnection('mysql');
+    $db->table('users')->where('uuid', 'member-1')->update([
+        'email_verified_at' => '2026-07-18 10:00:00',
+        'remember_token'    => 'existing-token',
+    ]);
+    $db->table('roles')->insert([
+        'id'           => 'Operator',
+        'company_uuid' => 'company-1',
+        'name'         => 'Operator',
+        'guard_name'   => 'sanctum',
+        'created_at'   => '2026-07-18 10:00:00',
+        'updated_at'   => '2026-07-18 10:00:00',
+    ]);
+    $db->table('permissions')->insert([
+        'id'          => 'permission-update-user',
+        'name'        => 'iam update user',
+        'guard_name'  => 'sanctum',
+        'description' => 'Update users',
+        'created_at'  => '2026-07-18 10:00:00',
+        'updated_at'  => '2026-07-18 10:00:00',
+    ]);
+    $db->table('policies')->insert([
+        'id'           => 'policy-update-user',
+        'company_uuid' => 'company-1',
+        'name'         => 'Update user policy',
+        'guard_name'   => 'sanctum',
+        'service'      => 'iam',
+        'description'  => 'Update users',
+        'created_at'   => '2026-07-18 10:00:00',
+        'updated_at'   => '2026-07-18 10:00:00',
+    ]);
+
+    $updated = user_controller_without_request_validation()->updateRecord(user_controller_request('PATCH', [
+        'user' => [
+            'email'             => 'MEMBER@example.test',
+            'email_verified_at' => '2026-07-18T10:00:00+00:00',
+            'remember_token'    => 'existing-token',
+            'name'              => 'Member Updated',
+            'phone'             => '+15557654321',
+            'slug'              => 'should-not-persist',
+            'role'              => 'Operator',
+            'permissions'       => ['permission-update-user'],
+            'policies'          => ['policy-update-user'],
+        ],
+    ], user_controller_user('owner-1'), 'updateRecord'), 'user_member_1');
+
+    $member      = User::where('uuid', 'member-1')->first();
+    $companyUser = $db->table('company_users')->where('company_uuid', 'company-1')->where('user_uuid', 'member-1')->first();
+
+    expect($updated['user']->resource->uuid)->toBe('member-1')
+        ->and($member->name)->toBe('Member Updated')
+        ->and($member->phone)->toBe('+15557654321')
+        ->and($member->email)->toBe('member@example.test')
+        ->and($member->slug)->not->toBe('should-not-persist')
+        ->and($db->table('model_has_roles')->where('model_type', Fleetbase\Models\CompanyUser::class)->where('model_uuid', $companyUser->uuid)->where('role_id', 'Operator')->exists())->toBeTrue()
+        ->and($db->table('model_has_permissions')->where('model_type', Fleetbase\Models\CompanyUser::class)->where('model_uuid', $companyUser->uuid)->where('permission_id', 'permission-update-user')->exists())->toBeTrue()
+        ->and($db->table('model_has_policies')->where('model_type', Fleetbase\Models\CompanyUser::class)->where('model_uuid', $companyUser->uuid)->where('policy_id', 'policy-update-user')->exists())->toBeTrue();
+});
+
+test('user controller rejects update edge cases before mutating scoped users', function () {
+    $capsule = user_controller_database();
+    $db      = $capsule->getConnection('mysql');
+    $db->table('users')->where('uuid', 'member-1')->update([
+        'email_verified_at' => '2026-07-18 10:00:00',
+    ]);
+
+    $missingUser = user_controller_without_request_validation()->updateRecord(user_controller_request('PATCH', [
+        'user' => ['name' => 'Foreign Update'],
+    ], user_controller_user('owner-1'), 'updateRecord'), 'user_foreign_1');
+    $invalidDateIdentity = user_controller_without_request_validation()->updateRecord(user_controller_request('PATCH', [
+        'user' => [
+            'email_verified_at' => 'not-a-date',
+            'name'              => 'Should Not Change',
+        ],
+    ], user_controller_user('owner-1'), 'updateRecord'), 'member-1');
+    $invalidRole = user_controller_without_request_validation()->updateRecord(user_controller_request('PATCH', [
+        'user' => [
+            'name' => 'Should Not Change',
+            'role' => 'missing-role',
+        ],
+    ], user_controller_user('owner-1'), 'updateRecord'), 'member-1');
+
+    expect($missingUser->getStatusCode())->toBe(404)
+        ->and($missingUser->getData(true))->toBe(['errors' => ['User not found.']])
+        ->and($invalidDateIdentity->getStatusCode())->toBe(422)
+        ->and($invalidDateIdentity->getData(true))->toBe(['errors' => ['Login identity fields cannot be updated from this endpoint.']])
+        ->and($invalidRole->getStatusCode())->toBe(404)
+        ->and($invalidRole->getData(true))->toBe(['errors' => ['The selected role is not available for this organisation.']])
+        ->and($db->table('users')->where('uuid', 'member-1')->value('name'))->toBe('Member One');
 });
 
 test('user controller activates deactivates verifies and removes users only through company scoped membership', function () {
