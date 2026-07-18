@@ -130,6 +130,18 @@ class ChatReceiptControllerFailingModel
     }
 }
 
+class ChatMessageControllerFailingModel
+{
+    public function __construct(private Throwable $exception)
+    {
+    }
+
+    public function createRecordFromRequest(Request $request, mixed $before = null, mixed $after = null): never
+    {
+        throw $this->exception;
+    }
+}
+
 if (!function_exists('event')) {
     function event(mixed $event = null): mixed
     {
@@ -525,6 +537,39 @@ test('internal chat message controller creates attachments and notifies particip
         ->and($message->sender_uuid)->toBe('participant-current')
         ->and(ChatAttachment::query()->where('chat_message_uuid', $message->uuid)->orderBy('file_uuid')->pluck('file_uuid')->all())->toBe(['file-1', 'file-2']);
 });
+
+test('internal chat message controller returns stable create error responses', function (Closure $exceptionFactory, array $expectedErrors) {
+    chat_channel_controller_database();
+
+    $controller        = chat_message_controller();
+    $controller->model = new ChatMessageControllerFailingModel($exceptionFactory());
+
+    $response = $controller->createRecord(Request::create('/int/v1/chat-messages', 'POST', [
+        'chatMessage' => [
+            'chat_channel_uuid' => 'missing-channel',
+            'sender_uuid'       => 'participant-current',
+            'content'           => 'Unsent message',
+        ],
+    ]));
+
+    expect($response->getStatusCode())->toBe(400)
+        ->and($response->getData(true))->toBe([
+            'errors' => $expectedErrors,
+        ]);
+})->with([
+    'validation failure' => [
+        fn () => new FleetbaseRequestValidationException(['chat_channel_uuid' => ['The selected chat channel is invalid.']]),
+        ['chat_channel_uuid' => ['The selected chat channel is invalid.']],
+    ],
+    'query failure' => [
+        fn () => new QueryException('mysql', 'insert into chat_messages', [], new RuntimeException('constraint failed')),
+        ['constraint failed (Connection: mysql, SQL: insert into chat_messages)'],
+    ],
+    'generic failure' => [
+        fn () => new RuntimeException('message creation failed'),
+        ['message creation failed'],
+    ],
+]);
 
 test('internal chat receipt controller returns existing receipts and creates missing receipts', function () {
     $capsule    = chat_channel_controller_database();
