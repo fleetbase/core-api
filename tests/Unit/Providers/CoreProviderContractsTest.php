@@ -216,11 +216,45 @@ namespace {
         }
     }
 
+    class CoreProviderContractsMixinTarget
+    {
+        public static array $expanded = [];
+        public static array $mixed    = [];
+
+        public static function expand(object $macro): void
+        {
+            static::$expanded[] = $macro::class;
+
+            throw new RuntimeException('expansion failed');
+        }
+
+        public static function mixin(object $macro): void
+        {
+            static::$mixed[] = $macro::class;
+        }
+    }
+
     class CoreProviderContractsExpansionMacro
     {
         public static function target(): string
         {
             return CoreProviderContractsExpansionTarget::class;
+        }
+    }
+
+    class CoreProviderContractsPackageExpansionMacro
+    {
+        public static function target(): string
+        {
+            return CoreProviderContractsExpansionTarget::class;
+        }
+    }
+
+    class CoreProviderContractsMixinMacro
+    {
+        public static function target(): string
+        {
+            return CoreProviderContractsMixinTarget::class;
         }
     }
 
@@ -365,6 +399,87 @@ namespace {
             CoreProviderContractsExpansionMacro::class,
         ])
             ->and(CoreProviderContractsExpansionTarget::$mixed)->toBe([]);
+    });
+
+    test('core service provider discovers package expansion namespaces and registers multiple paths', function () {
+        CoreProviderContractsExpansionTarget::$expanded = [];
+        CoreProviderContractsExpansionTarget::$mixed    = [];
+
+        $baseOne = sys_get_temp_dir() . '/fleetbase-core-provider-package-expansions-one';
+        $pathOne = $baseOne . '/src/Expansions';
+        $baseTwo = sys_get_temp_dir() . '/fleetbase-core-provider-package-expansions-two';
+        $pathTwo = $baseTwo . '/src/Expansions';
+
+        foreach ([$pathOne, $pathTwo] as $path) {
+            if (!is_dir($path)) {
+                mkdir($path, 0777, true);
+            }
+        }
+
+        file_put_contents($baseOne . '/composer.json', json_encode([
+            'autoload' => [
+                'psr-4' => [
+                    'Fleetbase\\ProviderTest\\' => 'src/',
+                ],
+            ],
+        ]));
+        file_put_contents($baseTwo . '/composer.json', json_encode([
+            'autoload' => [
+                'psr-4' => [
+                    'Fleetbase\\ProviderOtherTest\\' => 'src/',
+                ],
+            ],
+        ]));
+        file_put_contents($pathOne . '/CoreProviderContractsPackageExpansionMacro.php', "<?php\n");
+        file_put_contents($pathTwo . '/CoreProviderContractsMissingExpansion.php', "<?php\n");
+
+        if (!class_exists('Fleetbase\\ProviderTest\\Expansions\\CoreProviderContractsPackageExpansionMacro', false)) {
+            class_alias(CoreProviderContractsPackageExpansionMacro::class, 'Fleetbase\\ProviderTest\\Expansions\\CoreProviderContractsPackageExpansionMacro');
+        }
+
+        $provider = core_provider();
+        $provider->registerExpansionsFrom([$pathOne, $pathTwo]);
+
+        expect(class_exists('Fleetbase\\ProviderTest\\Expansions\\CoreProviderContractsPackageExpansionMacro'))->toBeTrue()
+            ->and(CoreProviderContractsExpansionTarget::$expanded)->toBe([
+                CoreProviderContractsPackageExpansionMacro::class,
+            ])
+            ->and(CoreProviderContractsExpansionTarget::$mixed)->toBe([]);
+    });
+
+    test('core service provider falls back to mixin when target expansion fails', function () {
+        CoreProviderContractsMixinTarget::$expanded = [];
+        CoreProviderContractsMixinTarget::$mixed    = [];
+
+        $base = sys_get_temp_dir() . '/fleetbase-core-provider-mixin-expansions';
+        $path = $base . '/src/Mixins';
+        if (!is_dir($path)) {
+            mkdir($path, 0777, true);
+        }
+
+        file_put_contents($base . '/composer.json', json_encode([
+            'autoload' => [
+                'psr-4' => [
+                    'Fleetbase\\ProviderMixinTest\\' => 'src/',
+                ],
+            ],
+        ]));
+        file_put_contents($path . '/CoreProviderContractsMixinMacro.php', "<?php\n");
+
+        if (!class_exists('Fleetbase\\ProviderMixinTest\\Mixins\\CoreProviderContractsMixinMacro', false)) {
+            class_alias(CoreProviderContractsMixinMacro::class, 'Fleetbase\\ProviderMixinTest\\Mixins\\CoreProviderContractsMixinMacro');
+        }
+
+        $provider = core_provider();
+        $provider->registerExpansionsFrom($path);
+
+        expect(class_exists('Fleetbase\\ProviderMixinTest\\Mixins\\CoreProviderContractsMixinMacro'))->toBeTrue()
+            ->and(CoreProviderContractsMixinTarget::$expanded)->toBe([
+                CoreProviderContractsMixinMacro::class,
+            ])
+            ->and(CoreProviderContractsMixinTarget::$mixed)->toBe([
+                CoreProviderContractsMixinMacro::class,
+            ]);
     });
 
     test('core service provider registers global and grouped middleware with the kernel and router', function () {
