@@ -337,7 +337,7 @@ trait HasApiModelBehavior
 
         // PERFORMANCE OPTIMIZATION: Use load() instead of re-querying the database
         // This avoids an unnecessary second database query
-        $with = $request->or(['with', 'expand'], []);
+        $with = static::normalizeRequestRelations($request->or(['with', 'expand'], []));
         if (!empty($with)) {
             $record->load($with);
         }
@@ -379,7 +379,7 @@ trait HasApiModelBehavior
         // Defence-in-depth: scope update to the caller's company to prevent
         // cross-tenant modification (GHSA-3wj9-hh56-7fw7).
         $companyUuid = session('company');
-        if ($companyUuid && $this->isColumn($this->qualifyColumn('company_uuid'))) {
+        if ($companyUuid && $this->isColumn('company_uuid')) {
             $builder->where($this->qualifyColumn('company_uuid'), $companyUuid);
         }
 
@@ -435,7 +435,7 @@ trait HasApiModelBehavior
 
         // PERFORMANCE OPTIMIZATION: Use load() instead of re-querying the database
         // This avoids an unnecessary second database query
-        $with = $request->or(['with', 'expand'], []);
+        $with = static::normalizeRequestRelations($request->or(['with', 'expand'], []));
         if (!empty($with)) {
             $record->load($with);
         }
@@ -503,7 +503,7 @@ trait HasApiModelBehavior
         // Defence-in-depth: scope bulk delete to the caller's company to prevent
         // cross-tenant deletion (GHSA-3wj9-hh56-7fw7).
         $companyUuid = session('company');
-        if ($companyUuid && $this->isColumn($this->qualifyColumn('company_uuid'))) {
+        if ($companyUuid && $this->isColumn('company_uuid')) {
             $records->where($this->qualifyColumn('company_uuid'), $companyUuid);
         }
 
@@ -534,7 +534,7 @@ trait HasApiModelBehavior
      */
     public static function mutateModelWithRequest(Request $request, $result)
     {
-        $with    = $request->or(['with', 'expand'], []);
+        $with    = static::normalizeRequestRelations($request->or(['with', 'expand'], []));
         $without = $request->array('without');
 
         // handle collection or array of results
@@ -555,6 +555,19 @@ trait HasApiModelBehavior
         }
 
         return $result;
+    }
+
+    protected static function normalizeRequestRelations($relations)
+    {
+        if (empty($relations)) {
+            return [];
+        }
+
+        $relations = is_array($relations) ? $relations : explode(',', $relations);
+
+        return array_map(function ($relation) {
+            return implode('.', array_map(fn ($part) => Str::camel(trim($part)), explode('.', $relation)));
+        }, $relations);
     }
 
     /**
@@ -589,7 +602,7 @@ trait HasApiModelBehavior
                 continue;
             }
 
-            if ($this->isFillable($attr) && !in_array($except, array_keys($attributes))) {
+            if ($this->isFillable($attr) && !in_array($attr, $except)) {
                 $fill[$attr] = session($key);
             }
         }
@@ -771,7 +784,7 @@ trait HasApiModelBehavior
         // The CompanyScope global scope provides the primary protection; this
         // explicit clause ensures the constraint survives withoutGlobalScope().
         $companyUuid = session('company');
-        if ($companyUuid && $this->isColumn($this->qualifyColumn('company_uuid'))) {
+        if ($companyUuid && $this->isColumn('company_uuid')) {
             $builder->where($this->qualifyColumn('company_uuid'), $companyUuid);
         }
 
