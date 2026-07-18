@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Filesystem\FilesystemManager;
 use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\Facades\Storage;
+use NotificationChannels\Apn\ApnMessage;
+use Pushok\Client as PushOkClient;
 
 function push_notification_file_database(): Capsule
 {
@@ -59,6 +61,26 @@ function push_notification_file_database(): Capsule
     });
 
     return $capsule;
+}
+
+function push_notification_apn_private_key(): string
+{
+    $key = openssl_pkey_new([
+        'private_key_type' => OPENSSL_KEYTYPE_EC,
+        'curve_name'       => 'prime256v1',
+    ]);
+
+    openssl_pkey_export($key, $privateKey);
+
+    return trim($privateKey);
+}
+
+function push_notification_reflect_property(object $object, string $property): mixed
+{
+    $reflectionProperty = new ReflectionProperty($object, $property);
+    $reflectionProperty->setAccessible(true);
+
+    return $reflectionProperty->getValue($object);
 }
 
 afterEach(function () {
@@ -118,4 +140,80 @@ it('loads fcm credentials from stored file records and normalizes private key ne
         ->and($config['credentials']['client_email'])->toBe('firebase@test.invalid')
         ->and($config['credentials']['private_key'])->toBe("-----BEGIN PRIVATE KEY-----\nline-one\n-----END PRIVATE KEY-----\n")
         ->and(config('firebase.projects.app'))->toBe($config);
+});
+
+it('loads apn key content from stored files and configures a sandbox client', function () {
+    $capsule = push_notification_file_database();
+
+    $fileId     = '22222222-2222-4222-8222-222222222222';
+    $privateKey = push_notification_apn_private_key();
+    $capsule->getConnection('mysql')->table('files')->insert([
+        'uuid'         => $fileId,
+        'public_id'    => 'file_apn',
+        'company_uuid' => 'company-1',
+        'disk'         => 'testing',
+        'path'         => 'credentials/apn.p8',
+    ]);
+    Storage::disk('testing')->put('credentials/apn.p8', str_replace("\n", '\\n', $privateKey));
+    config([
+        'broadcasting.connections.apn' => [
+            'key_id'              => 'ABC123DEFG',
+            'team_id'             => 'TEAM123456',
+            'app_bundle_id'       => 'com.fleetbase.test',
+            'private_key_path'    => '/tmp/old-apn.p8',
+            'private_key_file'    => 'old-apn.p8',
+            'private_key_file_id' => $fileId,
+            'production'          => 'false',
+        ],
+    ]);
+
+    $client       = PushNotification::getApnClient();
+    $authProvider = push_notification_reflect_property($client, 'authProvider');
+
+    expect($client)->toBeInstanceOf(PushOkClient::class)
+        ->and(push_notification_reflect_property($client, 'isProductionEnv'))->toBeFalse()
+        ->and(push_notification_reflect_property($authProvider, 'keyId'))->toBe('ABC123DEFG')
+        ->and(push_notification_reflect_property($authProvider, 'teamId'))->toBe('TEAM123456')
+        ->and(push_notification_reflect_property($authProvider, 'appBundleId'))->toBe('com.fleetbase.test')
+        ->and(push_notification_reflect_property($authProvider, 'privateKeyPath'))->toBeNull()
+        ->and(push_notification_reflect_property($authProvider, 'privateKeyContent'))->toBe($privateKey)
+        ->and($authProvider->generateApnsTopic('alert'))->toBe('com.fleetbase.test')
+        ->and($authProvider->generateApnsTopic('voip'))->toBe('com.fleetbase.test.voip');
+});
+
+it('creates apn messages with title body custom data action and configured client', function () {
+    bind_test_container([
+        'broadcasting.connections.apn' => [
+            'key_id'              => 'ABC123DEFG',
+            'team_id'             => 'TEAM123456',
+            'app_bundle_id'       => 'com.fleetbase.test',
+            'private_key_content' => push_notification_apn_private_key(),
+            'private_key_path'    => '/tmp/old-apn.p8',
+            'private_key_file'    => 'old-apn.p8',
+            'production'          => true,
+        ],
+    ]);
+
+    $message = PushNotification::createApnMessage('Dispatch assigned', 'Order ABC is ready', [
+        'order_uuid' => 'order-1',
+        'screen'     => 'orders.show',
+    ], 'open_order');
+
+    expect($message)->toBeInstanceOf(ApnMessage::class)
+        ->and($message->title)->toBe('Dispatch assigned')
+        ->and($message->body)->toBe('Order ABC is ready')
+        ->and($message->badge)->toBe(1)
+        ->and($message->custom)->toBe([
+            'order_uuid' => 'order-1',
+            'screen'     => 'orders.show',
+            'action'     => [
+                'action' => 'open_order',
+                'params' => [
+                    'order_uuid' => 'order-1',
+                    'screen'     => 'orders.show',
+                ],
+            ],
+        ])
+        ->and($message->client)->toBeInstanceOf(PushOkClient::class)
+        ->and(push_notification_reflect_property($message->client, 'isProductionEnv'))->toBeTrue();
 });

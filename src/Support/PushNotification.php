@@ -96,7 +96,11 @@ class PushNotification
         // Always unsetset apn `private_key_path` and `private_key_file`
         unset($config['private_key_path'], $config['private_key_file']);
 
-        $isProductionEnv = Utils::castBoolean(data_get($config, 'production', app()->isProduction()));
+        $production = data_get($config, 'production');
+        if ($production === null) {
+            $production = app()->isProduction();
+        }
+        $isProductionEnv = Utils::castBoolean($production);
 
         return new PushOkClient(PuskOkToken::create($config), $isProductionEnv);
     }
