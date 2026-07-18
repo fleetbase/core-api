@@ -26,6 +26,10 @@ if (!function_exists('base_path')) {
     }
 }
 
+if (!function_exists('Fleetbase\Http\Controllers\Internal\v1\event')) {
+    eval('namespace Fleetbase\\Http\\Controllers\\Internal\\v1; function event($event = null) { return $event; }');
+}
+
 class UserControllerHashFake
 {
     public function make(mixed $value, array $options = []): string
@@ -627,6 +631,12 @@ test('user controller reads writes and returns current user two factor settings'
     user_controller_database();
     $user = user_controller_user('owner-1');
 
+    $missingGet = user_controller()->getTwoFactorSettings(user_controller_request('GET', [], null, 'getTwoFactorSettings'));
+    $missingSet = user_controller()->saveTwoFactorSettings(user_controller_request('POST', [
+        'twoFaSettings' => [
+            'enabled' => true,
+        ],
+    ], null, 'saveTwoFactorSettings'));
     $initial = user_controller()->getTwoFactorSettings(user_controller_request('GET', [], $user, 'getTwoFactorSettings'));
     $saved   = user_controller()->saveTwoFactorSettings(user_controller_request('POST', [
         'twoFaSettings' => [
@@ -636,7 +646,11 @@ test('user controller reads writes and returns current user two factor settings'
     ], $user, 'saveTwoFactorSettings'));
     $updated = user_controller()->getTwoFactorSettings(user_controller_request('GET', [], $user, 'getTwoFactorSettings'));
 
-    expect($initial->getStatusCode())->toBe(200)
+    expect($missingGet->getStatusCode())->toBe(401)
+        ->and($missingGet->getData(true))->toBe(['errors' => ['No user session found']])
+        ->and($missingSet->getStatusCode())->toBe(401)
+        ->and($missingSet->getData(true))->toBe(['errors' => ['No user session found']])
+        ->and($initial->getStatusCode())->toBe(200)
         ->and($initial->getData(true))->toBe([
             'enabled' => false,
             'method'  => 'email',
@@ -699,6 +713,40 @@ test('user controller rejects resending invitations outside the active company c
         ->and($notInvitable->getData(true))->toBe(['errors' => ['Unable to resend invitation.']]);
 });
 
+test('user controller reports invite errors for missing company and unavailable roles', function () {
+    user_controller_database();
+
+    session()->flush();
+    $missingCompany = user_controller()->inviteUser(user_controller_request('POST', [
+        'user' => [
+            'email' => 'new-person@example.test',
+            'name'  => 'New Person',
+        ],
+    ], user_controller_user('owner-1'), 'inviteUser', InviteUserRequest::class));
+
+    session(['company' => 'company-1', 'user' => 'owner-1']);
+    $invalidNewRole = user_controller()->inviteUser(user_controller_request('POST', [
+        'user' => [
+            'email'     => 'new-person@example.test',
+            'name'      => 'New Person',
+            'role_uuid' => 'missing-role',
+        ],
+    ], user_controller_user('owner-1'), 'inviteUser', InviteUserRequest::class));
+    $invalidExistingRole = user_controller()->inviteUser(user_controller_request('POST', [
+        'user' => [
+            'email'     => 'foreign@example.test',
+            'role_uuid' => 'missing-role',
+        ],
+    ], user_controller_user('owner-1'), 'inviteUser', InviteUserRequest::class));
+
+    expect($missingCompany->getStatusCode())->toBe(400)
+        ->and($missingCompany->getData(true))->toBe(['errors' => ['Unable to determine the current organisation.']])
+        ->and($invalidNewRole->getStatusCode())->toBe(404)
+        ->and($invalidNewRole->getData(true))->toBe(['errors' => ['The selected role is not available for this organisation.']])
+        ->and($invalidExistingRole->getStatusCode())->toBe(404)
+        ->and($invalidExistingRole->getData(true))->toBe(['errors' => ['The selected role is not available for this organisation.']]);
+});
+
 test('user controller invites a brand new user and prevents duplicate organization invitations', function () {
     $capsule = user_controller_database();
     EloquentModel::setEventDispatcher(new Dispatcher(app()));
@@ -755,6 +803,20 @@ test('user controller invites existing users from another organization without c
         ->and($capsule->getConnection('mysql')->table('invites')->where('company_uuid', 'company-1')->where('reason', 'join_company')->count())->toBe(1)
         ->and($duplicateInvite->getStatusCode())->toBe(400)
         ->and($duplicateInvite->getData(true))->toBe(['errors' => ['This user has already been invited to join your organisation.']]);
+});
+
+test('user controller removes multi organization users from only the active company and preserves the next company id', function () {
+    $capsule = user_controller_database();
+
+    user_controller_request('POST', [], user_controller_user('owner-1'), 'removeFromCompany');
+    $removed = user_controller()->removeFromCompany('member-1');
+
+    expect($removed->getStatusCode())->toBe(200)
+        ->and($removed->getData(true))->toBe(['message' => 'User removed'])
+        ->and($capsule->getConnection('mysql')->table('company_users')->where('uuid', 'pivot-member-1')->whereNotNull('deleted_at')->exists())->toBeTrue()
+        ->and($capsule->getConnection('mysql')->table('company_users')->where('uuid', 'pivot-member-2')->whereNull('deleted_at')->exists())->toBeTrue()
+        ->and($capsule->getConnection('mysql')->table('users')->where('uuid', 'member-1')->value('company_uuid'))->toBe('company-2')
+        ->and($capsule->getConnection('mysql')->table('users')->where('uuid', 'member-1')->whereNull('deleted_at')->exists())->toBeTrue();
 });
 
 test('user controller accepts company invitations and activates pending users with a token', function () {

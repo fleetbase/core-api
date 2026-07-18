@@ -1111,7 +1111,7 @@ class UserController extends FleetbaseController
             })->first();
 
             if ($nextCompany) {
-                $user->update(['company_uuid' => $nextCompany->uuid]);
+                $user->update(['company_uuid' => $nextCompany->company_uuid]);
             } else {
                 $user->delete();
             }
