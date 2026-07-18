@@ -37,9 +37,11 @@ namespace {
     use Fleetbase\Http\Middleware\AuthorizationGuard;
     use Fleetbase\Http\Middleware\ClearCacheAfterDelete;
     use Fleetbase\Http\Middleware\LogApiRequests;
+    use Fleetbase\Http\Middleware\MergeConfigFromSettings;
     use Fleetbase\Http\Middleware\PerformanceMonitoring;
     use Fleetbase\Http\Middleware\RequestTimer;
     use Fleetbase\Http\Middleware\ResetJsonResourceWrap;
+    use Fleetbase\Http\Middleware\SetSandboxSession;
     use Fleetbase\Http\Middleware\SetGlobalHeaders;
     use Fleetbase\Http\Middleware\SetupFleetbaseSession;
     use Fleetbase\Http\Middleware\ThrottleRequests;
@@ -392,6 +394,44 @@ namespace {
             ->and($first->getData(true))->toBe(['ok' => true])
             ->and($second->getStatusCode())->toBe(200)
             ->and($second->getData(true))->toBe(['cached' => true]);
+    });
+
+    test('merge config from settings middleware delegates settings merge and returns next response', function () {
+        middleware_contracts_fixture([
+            'mail.from.address' => null,
+            'database.default' => null,
+            'fleetbase.connection.db' => null,
+        ]);
+
+        $response = (new MergeConfigFromSettings())->handle(
+            middleware_contracts_request('/int/v1/settings', 'int/v1/settings'),
+            fn () => new JsonResponse(['merged' => true])
+        );
+
+        expect($response->getStatusCode())->toBe(200)
+            ->and($response->getData(true))->toBe(['merged' => true]);
+    });
+
+    test('set sandbox session middleware applies sandbox connection state from request headers', function () {
+        middleware_contracts_fixture([
+            'database.default' => 'mysql',
+            'fleetbase.connection.db' => 'mysql',
+        ]);
+
+        $response = (new SetSandboxSession())->handle(
+            middleware_contracts_request('/v1/orders', 'v1/orders', [
+                'Access-Console-Sandbox' => '1',
+                'Access-Console-Sandbox-Key' => 'credential-1',
+            ]),
+            fn () => new JsonResponse(['sandbox' => true])
+        );
+
+        expect($response->getStatusCode())->toBe(200)
+            ->and($response->getData(true))->toBe(['sandbox' => true])
+            ->and(config('database.default'))->toBe('sandbox')
+            ->and(config('fleetbase.connection.db'))->toBe('sandbox')
+            ->and(session('is_sandbox'))->toBeTrue()
+            ->and(session('sandbox_api_credential'))->toBe('credential-1');
     });
 
     test('log api requests skips disabled read internal and excluded requests', function () {

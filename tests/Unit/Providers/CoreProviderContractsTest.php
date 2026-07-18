@@ -105,14 +105,20 @@ namespace {
     use Fleetbase\Observers\UserObserver;
     use Fleetbase\Providers\CoreServiceProvider;
     use Fleetbase\Providers\EventServiceProvider;
+    use Fleetbase\Providers\SocketClusterServiceProvider;
     use Fleetbase\Services\FileResolverService;
     use Fleetbase\Services\TemplateRenderService;
+    use Fleetbase\Support\SocketCluster\SocketClusterBroadcaster;
     use Fleetbase\Support\Reporting\ReportSchemaRegistry;
+    use Fleetbase\Webhook\WebhookServerServiceProvider;
     use Fleetbase\Webhook\Events\FinalWebhookCallFailedEvent;
     use Fleetbase\Webhook\Events\WebhookCallFailedEvent;
     use Fleetbase\Webhook\Events\WebhookCallSucceededEvent;
     use Illuminate\Contracts\Http\Kernel;
     use Illuminate\Notifications\Events\BroadcastNotificationCreated;
+    use Illuminate\Support\Facades\Broadcast;
+    use Illuminate\Support\Facades\Facade;
+    use Spatie\LaravelPackageTools\Package;
     use Symfony\Component\HttpFoundation\Response;
 
     if (!function_exists('base_path')) {
@@ -159,6 +165,16 @@ namespace {
         public function pushMiddlewareToGroup(string $group, string $middleware): void
         {
             $this->groups[$group][] = $middleware;
+        }
+    }
+
+    class CoreProviderContractsBroadcastFake
+    {
+        public array $extensions = [];
+
+        public function extend(string $driver, callable $callback): void
+        {
+            $this->extensions[$driver] = $callback;
         }
     }
 
@@ -251,5 +267,28 @@ namespace {
         });
 
         expect($called)->toBeFalse();
+    });
+
+    test('socket cluster provider registers the socketcluster broadcaster driver', function () {
+        $broadcast = new CoreProviderContractsBroadcastFake();
+        Broadcast::swap($broadcast);
+
+        (new SocketClusterServiceProvider(bind_test_container()))->boot();
+
+        $broadcaster = $broadcast->extensions['socketcluster'](null, []);
+
+        expect($broadcast->extensions)->toHaveKey('socketcluster')
+            ->and($broadcaster)->toBeInstanceOf(SocketClusterBroadcaster::class);
+
+        Facade::clearResolvedInstance('Broadcast');
+    });
+
+    test('webhook server provider configures package name and config file', function () {
+        $package = new Package();
+
+        (new WebhookServerServiceProvider(bind_test_container()))->configurePackage($package);
+
+        expect($package->name)->toBe('laravel-webhook-server')
+            ->and($package->configFileNames)->toBe(['webhook-server']);
     });
 }

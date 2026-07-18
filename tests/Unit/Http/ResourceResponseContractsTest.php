@@ -3,22 +3,41 @@
 use Fleetbase\Http\Resources\Author as AuthorResource;
 use Fleetbase\Http\Resources\Category as CategoryResource;
 use Fleetbase\Http\Resources\ChatAttachment as ChatAttachmentResource;
+use Fleetbase\Http\Resources\CompressedJsonResource;
 use Fleetbase\Http\Resources\DeletedResource;
 use Fleetbase\Http\Resources\Json\FleetbasePaginatedResourceResponse;
 use Fleetbase\Http\Resources\Policy as PolicyResource;
 use Fleetbase\Http\Resources\Role as RoleResource;
+use Fleetbase\Http\Resources\ScheduleTemplate as ScheduleTemplateResource;
 use Fleetbase\Http\Resources\Template as TemplateResource;
+use Fleetbase\Facades\FileResolver as FileResolverFacade;
 use Fleetbase\Models\Category;
 use Fleetbase\Models\Permission;
 use Fleetbase\Models\Policy;
 use Fleetbase\Models\Role;
+use Fleetbase\Models\ScheduleTemplate as ScheduleTemplateModel;
 use Fleetbase\Models\Template as TemplateModel;
+use Fleetbase\Services\FileResolverService;
 use Illuminate\Container\Container;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Facade;
+use Illuminate\Support\Facades\Response;
+
+class ResourceContractCompressedResponseFactory
+{
+    public array $payloads = [];
+
+    public function compressedJson(mixed $data): JsonResponse
+    {
+        $this->payloads[] = $data;
+
+        return new JsonResponse(['compressed' => $data]);
+    }
+}
 
 function resource_contract_request(string $uri, array $query = []): Request
 {
@@ -172,6 +191,32 @@ function template_resource_model(array $attributes = []): TemplateModel
     ], $attributes), true);
     $template->id = 77;
     $template->setRelation('queries', collect());
+
+    return $template;
+}
+
+function schedule_template_resource_model(array $attributes = []): ScheduleTemplateModel
+{
+    $template = new ScheduleTemplateModel();
+    $template->setRawAttributes(array_merge([
+        'uuid' => 'schedule-template-uuid',
+        'public_id' => 'schedule_template_public',
+        'company_uuid' => 'company-1',
+        'schedule_uuid' => 'schedule-1',
+        'subject_uuid' => 'driver-1',
+        'subject_type' => 'driver',
+        'name' => 'Weekday Route',
+        'description' => 'Morning route pattern',
+        'start_time' => '08:00',
+        'end_time' => '16:00',
+        'duration' => 480,
+        'break_duration' => 30,
+        'rrule' => 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
+        'color' => '#2563eb',
+        'meta' => '{"priority":"standard"}',
+        'updated_at' => Carbon::parse('2026-07-18 00:00:00'),
+        'created_at' => Carbon::parse('2026-07-17 00:00:00'),
+    ], $attributes), true);
 
     return $template;
 }
@@ -350,6 +395,47 @@ test('template resource switches internal identifiers for public response shape'
         ->and($public['name'])->toBe('Invoice Template')
         ->and($public['queries'])->toBeInstanceOf(Fleetbase\Http\Resources\FleetbaseResourceCollection::class)
         ->and($public['queries']->collection->isEmpty())->toBeTrue();
+});
+
+test('schedule template resource delegates to fleetbase resource serialization', function () {
+    resource_contract_container();
+
+    $payload = (new ScheduleTemplateResource(schedule_template_resource_model()))
+        ->resolve(resource_contract_request('/int/v1/schedule-templates/schedule_template_public'));
+
+    expect($payload)->toMatchArray([
+        'uuid' => 'schedule-template-uuid',
+        'public_id' => 'schedule_template_public',
+        'company_uuid' => 'company-1',
+        'schedule_uuid' => 'schedule-1',
+        'subject_uuid' => 'driver-1',
+        'subject_type' => 'driver',
+        'name' => 'Weekday Route',
+        'duration' => 480,
+        'break_duration' => 30,
+        'rrule' => 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
+        'meta' => ['priority' => 'standard'],
+    ]);
+});
+
+test('compressed json resource uses response factory compression contract', function () {
+    resource_contract_container();
+
+    $factory = new ResourceContractCompressedResponseFactory();
+    Response::swap($factory);
+
+    $response = (new CompressedJsonResource(['status' => 'ok', 'count' => 2]))
+        ->toResponse(resource_contract_request('/int/v1/compressed'));
+
+    expect($response->getData(true))->toBe(['compressed' => ['status' => 'ok', 'count' => 2]])
+        ->and($factory->payloads)->toBe([['status' => 'ok', 'count' => 2]]);
+});
+
+test('file resolver facade resolves the package file resolver service binding', function () {
+    $accessor = new ReflectionMethod(FileResolverFacade::class, 'getFacadeAccessor');
+    $accessor->setAccessible(true);
+
+    expect($accessor->invoke(null))->toBe(FileResolverService::class);
 });
 
 test('paginated resource response keeps fleetbase pagination metadata compact with timing', function () {

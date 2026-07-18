@@ -13,6 +13,7 @@ use Fleetbase\Http\Filter\CompanyFilter;
 use Fleetbase\Http\Filter\DashboardFilter;
 use Fleetbase\Http\Filter\GroupFilter;
 use Fleetbase\Http\Filter\NotificationFilter;
+use Fleetbase\Http\Filter\PermissionFilter;
 use Fleetbase\Http\Filter\PolicyFilter;
 use Fleetbase\Http\Filter\RoleFilter;
 use Fleetbase\Http\Filter\ScheduleExceptionFilter;
@@ -67,6 +68,18 @@ class ConcreteFilterRoute
     public function uri(): string
     {
         return $this->uri;
+    }
+}
+
+class ConcreteFilterSearchBuilderFake
+{
+    public array $queries = [];
+
+    public function search(?string $query): self
+    {
+        $this->queries[] = $query;
+
+        return $this;
     }
 }
 
@@ -434,6 +447,15 @@ function concrete_filter_with_builder(object $filter, EloquentBuilder $builder):
     return $filter;
 }
 
+function concrete_filter_with_any_builder(object $filter, object $builder): object
+{
+    $property = new ReflectionProperty(Fleetbase\Http\Filter\Filter::class, 'builder');
+    $property->setAccessible(true);
+    $property->setValue($filter, $builder);
+
+    return $filter;
+}
+
 afterEach(function () {
     session()->flush();
     EloquentModel::unsetEventDispatcher();
@@ -522,6 +544,18 @@ test('role and policy filters include organization and fleetbase managed records
         ->and(concrete_filter_uuids(PolicyFilter::class, Policy::class, ['type' => 'flb-managed'], 'int/v1/policies'))->toBe(['policy-flb'])
         ->and(concrete_filter_uuids(PolicyFilter::class, Policy::class, ['type' => 'org-managed'], 'int/v1/policies'))->toBe(['policy-org'])
         ->and(concrete_filter_uuids(PolicyFilter::class, Policy::class, ['query' => 'System'], 'int/v1/policies'))->toBe(['policy-flb']);
+});
+
+test('permission filter delegates free text query to searchable builder contract', function () {
+    concrete_filter_database();
+
+    $filter = concrete_filter_with_any_builder(
+        new PermissionFilter(concrete_filter_request(['query' => 'iam'])),
+        $builder = new ConcreteFilterSearchBuilderFake()
+    );
+
+    expect($filter->query('iam'))->toBeNull()
+        ->and($builder->queries)->toBe(['iam']);
 });
 
 test('user filter includes current company members and pending invite recipients', function () {
