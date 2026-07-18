@@ -924,7 +924,7 @@ namespace {
         expect($continued)->toBeFalse()
             ->and($response->getStatusCode())->toBe(401)
             ->and($response->getData(true))->toBe([
-                'errors' => ['Oops! The API credentials provided were not valid'],
+                'errors' => ['Oops! No api credentials found with this request'],
             ]);
     });
 
@@ -989,8 +989,52 @@ namespace {
             ->and($expiredContinued)->toBeFalse()
             ->and($expiredResponse->getStatusCode())->toBe(401)
             ->and($expiredResponse->getData(true))->toBe([
-                'errors' => ['Oops! The API credentials provided were not valid'],
+                'errors' => ['Oops! These api credentials have expired'],
             ]);
+    });
+
+    test('basic auth middleware validates options credentials before storing api key context', function () {
+        middleware_contracts_basic_auth_database();
+        session()->flush();
+
+        $validOptionsRequest = Request::create('/v1/orders', 'OPTIONS', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer flb_live_auth',
+        ]);
+        $validContinued = false;
+        $validResponse  = (new AuthenticateOnceWithBasicAuth())->handle(
+            $validOptionsRequest,
+            function () use (&$validContinued) {
+                $validContinued = true;
+
+                return new JsonResponse(['preflight' => true]);
+            }
+        );
+
+        expect($validContinued)->toBeTrue()
+            ->and($validResponse->getData(true))->toBe(['preflight' => true])
+            ->and(session('api_credential'))->toBe('credential-live');
+
+        session()->flush();
+
+        $invalidOptionsRequest = Request::create('/v1/orders', 'OPTIONS', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer flb_live_missing',
+        ]);
+        $invalidContinued = false;
+        $invalidResponse  = (new AuthenticateOnceWithBasicAuth())->handle(
+            $invalidOptionsRequest,
+            function () use (&$invalidContinued) {
+                $invalidContinued = true;
+
+                return new JsonResponse(['preflight' => true]);
+            }
+        );
+
+        expect($invalidContinued)->toBeFalse()
+            ->and($invalidResponse->getStatusCode())->toBe(401)
+            ->and($invalidResponse->getData(true))->toBe([
+                'errors' => ['Oops! The api credentials provided were not valid'],
+            ])
+            ->and(session('api_credential'))->toBeNull();
     });
 
     test('performance monitoring adds timing headers and logs debug and slow request context', function () {
