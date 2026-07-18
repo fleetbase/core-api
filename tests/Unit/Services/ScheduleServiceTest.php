@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Facade;
 use Spatie\Activitylog\ActivityLogger;
 use Spatie\Activitylog\Contracts\Activity as ActivityContract;
@@ -74,6 +75,17 @@ if (!class_exists('RRule\\RRule')) {
                     };
                 }
             }
+        }
+    PHP);
+}
+
+if (!function_exists('Fleetbase\\Services\\Scheduling\\event')) {
+    eval(<<<'PHP'
+        namespace Fleetbase\Services\Scheduling;
+
+        function event(mixed $event = null): mixed
+        {
+            return $event;
         }
     PHP);
 }
@@ -367,6 +379,166 @@ function schedule_service_bind_activity(): ScheduleServiceActivityFake
 afterEach(function () {
     Carbon::setTestNow();
     Facade::clearResolvedInstances();
+});
+
+it('creates updates and deletes schedules with scoped audit and lifecycle events', function () {
+    schedule_service_database();
+    $activity = schedule_service_bind_activity();
+    $service  = new ScheduleService();
+    Carbon::setTestNow(Carbon::parse('2026-07-19 09:00:00', 'UTC'));
+
+    $schedule = $service->createSchedule([
+        'uuid'         => 'schedule-lifecycle',
+        'company_uuid' => 'company-1',
+        'subject_type' => 'driver',
+        'subject_uuid' => 'driver-1',
+        'name'         => 'Morning dispatch',
+        'timezone'     => 'UTC',
+        'status'       => 'draft',
+    ]);
+    $updated = $service->updateSchedule($schedule, [
+        'name'   => 'Morning dispatch updated',
+        'status' => 'active',
+    ]);
+
+    DB::table('schedule_items')->insert([
+        'uuid'          => 'item-delete-cascade',
+        'company_uuid'  => 'company-1',
+        'schedule_uuid' => $schedule->uuid,
+        'assignee_type' => 'driver',
+        'assignee_uuid' => 'driver-1',
+        'start_at'      => '2026-07-20 09:00:00',
+        'end_at'        => '2026-07-20 17:00:00',
+        'status'        => 'scheduled',
+        'created_at'    => now(),
+        'updated_at'    => now(),
+    ]);
+    DB::table('schedule_templates')->insert([
+        'uuid'          => 'template-delete-cascade',
+        'company_uuid'  => 'company-1',
+        'schedule_uuid' => $schedule->uuid,
+        'subject_type'  => 'driver',
+        'subject_uuid'  => 'driver-1',
+        'name'          => 'Template to delete',
+        'rrule'         => 'FREQ=DAILY;COUNT=1',
+        'created_at'    => now(),
+        'updated_at'    => now(),
+    ]);
+    DB::table('schedule_exceptions')->insert([
+        'uuid'          => 'exception-delete-cascade',
+        'company_uuid'  => 'company-1',
+        'schedule_uuid' => $schedule->uuid,
+        'subject_type'  => 'driver',
+        'subject_uuid'  => 'driver-1',
+        'start_at'      => '2026-07-21 00:00:00',
+        'end_at'        => '2026-07-21 23:59:59',
+        'type'          => 'time_off',
+        'status'        => 'pending',
+        'created_at'    => now(),
+        'updated_at'    => now(),
+    ]);
+
+    $deleted = $service->deleteSchedule($updated);
+
+    expect($schedule)->toBeInstanceOf(Schedule::class)
+        ->and($updated->name)->toBe('Morning dispatch updated')
+        ->and($updated->status)->toBe('active')
+        ->and($deleted)->toBeTrue()
+        ->and(Schedule::withTrashed()->find($schedule->uuid)->trashed())->toBeTrue()
+        ->and(ScheduleItem::withTrashed()->find('item-delete-cascade')->trashed())->toBeTrue()
+        ->and(ScheduleTemplate::withTrashed()->find('template-delete-cascade')->trashed())->toBeTrue()
+        ->and(ScheduleException::withTrashed()->find('exception-delete-cascade')->trashed())->toBeTrue()
+        ->and($activity->entries)->toHaveCount(3)
+        ->and(array_column($activity->entries, 'event'))->toBe([
+            'schedule.created',
+            'schedule.updated',
+            'schedule.deleted',
+        ])
+        ->and(array_column($activity->entries, 'message'))->toBe([
+            'Schedule created',
+            'Schedule updated',
+            'Schedule deleted',
+        ]);
+});
+
+it('creates updates assigns and deletes schedule items with parent activation and lifecycle audits', function () {
+    $capsule  = schedule_service_database();
+    $activity = schedule_service_bind_activity();
+    $service  = new ScheduleService();
+
+    $capsule->getConnection()->table('schedules')->insert([
+        'uuid'         => 'schedule-draft',
+        'company_uuid' => 'company-1',
+        'subject_type' => 'driver',
+        'subject_uuid' => 'driver-1',
+        'name'         => 'Draft schedule',
+        'status'       => 'draft',
+        'created_at'   => now(),
+        'updated_at'   => now(),
+    ]);
+
+    $item = $service->createScheduleItem([
+        'uuid'          => 'item-lifecycle',
+        'company_uuid'  => 'company-1',
+        'schedule_uuid' => 'schedule-draft',
+        'start_at'      => '2026-07-20 09:00:00',
+        'end_at'        => '2026-07-20 17:00:00',
+        'status'        => 'scheduled',
+    ]);
+    $updated = $service->updateScheduleItem($item, [
+        'status' => 'in_progress',
+    ]);
+    $assigned = $service->assignScheduleItem($updated, 'driver', 'driver-99');
+    $deleted  = $service->deleteScheduleItem($assigned);
+
+    expect($item)->toBeInstanceOf(ScheduleItem::class)
+        ->and(Schedule::find('schedule-draft')->status)->toBe('active')
+        ->and($updated->status)->toBe('in_progress')
+        ->and($assigned->assignee_type)->toBe('\Fleetbase\Models\Driver')
+        ->and($assigned->assignee_uuid)->toBe('driver-99')
+        ->and($deleted)->toBeTrue()
+        ->and(ScheduleItem::withTrashed()->find($item->uuid)->trashed())->toBeTrue()
+        ->and(array_column($activity->entries, 'event'))->toBe([
+            'schedule_item.created',
+            'schedule_item.updated',
+            'schedule_item.assigned',
+            'schedule_item.deleted',
+        ])
+        ->and($activity->entries[2]['properties'])->toBe([
+            'assignee_type' => 'driver',
+            'assignee_uuid' => 'driver-99',
+        ]);
+});
+
+it('creates and rejects schedule exceptions with review audit state', function () {
+    schedule_service_database();
+    $activity = schedule_service_bind_activity();
+    $service  = new ScheduleService();
+    Carbon::setTestNow(Carbon::parse('2026-07-19 10:30:00', 'UTC'));
+
+    $exception = $service->createException([
+        'uuid'         => 'exception-lifecycle',
+        'company_uuid' => 'company-1',
+        'subject_type' => 'driver',
+        'subject_uuid' => 'driver-1',
+        'start_at'     => '2026-07-22 00:00:00',
+        'end_at'       => '2026-07-22 23:59:59',
+        'type'         => 'time_off',
+        'status'       => 'pending',
+        'reason'       => 'Personal appointment',
+    ]);
+    $rejected = $service->rejectException($exception, 'reviewer-1');
+
+    expect($exception)->toBeInstanceOf(ScheduleException::class)
+        ->and($rejected->status)->toBe('rejected')
+        ->and($rejected->reviewed_by_uuid)->toBe('reviewer-1')
+        ->and($rejected->reviewed_at->toDateTimeString())->toBe('2026-07-19 10:30:00')
+        ->and(array_column($activity->entries, 'event'))->toBe([
+            'schedule_exception.created',
+            'schedule_exception.rejected',
+        ])
+        ->and($activity->entries[0]['properties']['reason'])->toBe('Personal appointment')
+        ->and($activity->entries[1]['message'])->toBe('Schedule exception rejected');
 });
 
 it('approves exceptions and cancels only overlapping incomplete schedule items for the same subject', function () {
