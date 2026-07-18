@@ -2,9 +2,11 @@
 
 use Fleetbase\Events\AccountCreated;
 use Fleetbase\Listeners\HandleAccountCreated;
+use Fleetbase\Mail\VerificationMail;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\User;
 use Fleetbase\Models\VerificationCode;
+use Fleetbase\Services\SmsService;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Events\Dispatcher;
@@ -33,6 +35,11 @@ class VerificationCodeModelTaggedCacheFake
     {
         return true;
     }
+
+    public function increment(string $key, mixed $value = 1): int
+    {
+        return (int) $value;
+    }
 }
 
 class VerificationCodeModelResponseCacheFake
@@ -42,9 +49,57 @@ class VerificationCodeModelResponseCacheFake
     }
 }
 
+class VerificationCodeModelMailerFake
+{
+    public array $recipients = [];
+
+    public array $calls = [];
+
+    public array $sent = [];
+
+    public function to(mixed $recipient): self
+    {
+        $this->recipients[] = $recipient;
+
+        return $this;
+    }
+
+    public function cc(mixed $recipient): self
+    {
+        $this->calls[] = ['cc', $recipient];
+
+        return $this;
+    }
+
+    public function bcc(mixed $recipient): self
+    {
+        $this->calls[] = ['bcc', $recipient];
+
+        return $this;
+    }
+
+    public function send(mixed $mail): void
+    {
+        $this->sent[] = $mail;
+    }
+}
+
+class VerificationCodeModelTwilioFake
+{
+    public array $messages = [];
+
+    public function message(string $to, string $message, array $mediaUrls = [], array $params = []): object
+    {
+        $this->messages[] = compact('to', 'message', 'mediaUrls', 'params');
+
+        return (object) ['sid' => 'SM-verification-code'];
+    }
+}
+
 function verification_code_model_database(): Capsule
 {
     EloquentModel::clearBootedModels();
+    session()->flush();
 
     $connection = [
         'driver'   => 'sqlite',
@@ -55,6 +110,7 @@ function verification_code_model_database(): Capsule
     $container = bind_test_container([
         'database.default'             => 'testing',
         'database.connections.testing' => $connection,
+        'database.connections.mysql'   => $connection,
         'fleetbase.connection.db'      => 'testing',
     ]);
 
@@ -62,9 +118,11 @@ function verification_code_model_database(): Capsule
     $container->instance('cache', $cache);
     $container->instance('responsecache', new VerificationCodeModelResponseCacheFake());
     Cache::swap($cache);
+    Facade::clearResolvedInstance('log');
 
     $capsule = new Capsule($container);
     $capsule->addConnection($connection, 'testing');
+    $capsule->addConnection($connection, 'mysql');
     $capsule->setEventDispatcher(new Dispatcher($container));
     $capsule->setAsGlobal();
     $capsule->bootEloquent();
@@ -84,6 +142,16 @@ function verification_code_model_database(): Capsule
         $table->timestamp('expires_at')->nullable();
         $table->text('meta')->nullable();
         $table->string('status')->nullable();
+        $table->timestamp('deleted_at')->nullable();
+        $table->timestamps();
+    });
+
+    $companySchema = $capsule->getConnection('mysql')->getSchemaBuilder();
+    $companySchema->create('companies', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('public_id')->nullable()->index();
+        $table->string('slug')->nullable();
+        $table->text('options')->nullable();
         $table->timestamp('deleted_at')->nullable();
         $table->timestamps();
     });
@@ -112,6 +180,14 @@ function verification_code_company(array $attributes = []): Company
 
     return $company;
 }
+
+afterEach(function () {
+    Carbon::setTestNow();
+    session()->flush();
+    EloquentModel::unsetConnectionResolver();
+    EloquentModel::clearBootedModels();
+    Facade::clearResolvedInstances();
+});
 
 it('generates unsaved verification codes with subject purpose and pending status', function () {
     bind_test_container();
@@ -169,6 +245,137 @@ it('generates email verification records with default and explicit options witho
         ->and($explicit->meta)->toBe(['ip' => '127.0.0.1']);
 
     Carbon::setTestNow();
+});
+
+it('sends email verification with callback content recipient override and supported mailer options', function () {
+    verification_code_model_database();
+    Carbon::setTestNow(Carbon::parse('2026-06-08 08:00:00', 'UTC'));
+
+    $mailer    = new VerificationCodeModelMailerFake();
+    $container = Illuminate\Container\Container::getInstance();
+    $container->instance('mail.manager', $mailer);
+
+    $subject = verification_code_subject([
+        'uuid'  => 'user-mail-1',
+        'email' => 'recipient@example.test',
+    ]);
+
+    $code = VerificationCode::generateEmailVerificationFor($subject, 'account_recovery', [
+        'to'              => 'security@example.test',
+        'subject'         => fn (VerificationCode $verificationCode) => 'Challenge ' . $verificationCode->code,
+        'messageCallback' => fn (VerificationCode $verificationCode) => 'Use ' . $verificationCode->code . ' to recover access.',
+        'cc'              => 'ops@example.test',
+        'bcc'             => 'audit@example.test',
+        'meta'            => ['request_id' => 'req-1'],
+    ]);
+
+    expect($code->exists)->toBeTrue()
+        ->and($code->for)->toBe('account_recovery')
+        ->and($code->status)->toBe('active')
+        ->and($code->expires_at->toDateTimeString())->toBe('2026-06-08 09:00:00')
+        ->and($code->meta)->toBe(['request_id' => 'req-1'])
+        ->and($mailer->recipients)->toBe(['security@example.test'])
+        ->and($mailer->calls)->toBe([
+            ['cc', 'ops@example.test'],
+            ['bcc', 'audit@example.test'],
+        ])
+        ->and($mailer->sent)->toHaveCount(1)
+        ->and($mailer->sent[0])->toBeInstanceOf(VerificationMail::class)
+        ->and($mailer->sent[0]->verificationCode)->toBe($code)
+        ->and($mailer->sent[0]->content)->toBe('Use ' . $code->code . ' to recover access.');
+
+    Carbon::setTestNow();
+});
+
+it('sends sms verification through explicit provider with company twilio sender and callback message', function () {
+    verification_code_model_database();
+    Carbon::setTestNow(Carbon::parse('2026-06-09 12:00:00', 'UTC'));
+    session(['company' => 'company-sms-1']);
+    config([
+        'app.name'             => 'Fleetbase',
+        'sms.default_provider' => SmsService::PROVIDER_TWILIO,
+        'sms.routing_rules'    => [],
+    ]);
+
+    Illuminate\Container\Container::getInstance()->make('db')->connection('mysql')->table('companies')->insert([
+        'uuid'       => 'company-sms-1',
+        'public_id'  => 'company_sms_1',
+        'slug'       => 'company-sms-1',
+        'options'    => json_encode([
+            'alpha_numeric_sender_id_enabled' => true,
+            'alpha_numeric_sender_id'         => 'FLEETBASE',
+        ]),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $twilio    = new VerificationCodeModelTwilioFake();
+    $container = Illuminate\Container\Container::getInstance();
+    $container->instance('twilio', $twilio);
+    Facade::clearResolvedInstance('twilio');
+
+    $subject = verification_code_subject([
+        'uuid'  => 'user-sms-1',
+        'phone' => '+15550002222',
+    ]);
+
+    $code = VerificationCode::generateSmsVerificationFor($subject, 'phone_login', [
+        'provider'        => SmsService::PROVIDER_TWILIO,
+        'expireAfter'     => Carbon::parse('2026-06-09 12:15:00', 'UTC'),
+        'meta'            => ['channel' => 'sms'],
+        'messageCallback' => fn (VerificationCode $verificationCode) => 'Code: ' . $verificationCode->code,
+    ]);
+
+    expect($code->exists)->toBeTrue()
+        ->and($code->for)->toBe('phone_login')
+        ->and($code->expires_at->toDateTimeString())->toBe('2026-06-09 12:15:00')
+        ->and($code->meta)->toBe(['channel' => 'sms'])
+        ->and($twilio->messages)->toHaveCount(1)
+        ->and($twilio->messages[0])->toMatchArray([
+            'to'        => '+15550002222',
+            'message'   => 'Code: ' . $code->code,
+            'mediaUrls' => [],
+            'params'    => ['from' => 'FLEETBASE'],
+        ]);
+
+    Carbon::setTestNow();
+});
+
+it('persists sms verification and rethrows provider failures after logging the phone context', function () {
+    verification_code_model_database();
+    config([
+        'app.name'             => 'Fleetbase',
+        'sms.default_provider' => SmsService::PROVIDER_TWILIO,
+        'sms.routing_rules'    => [],
+    ]);
+
+    Illuminate\Container\Container::getInstance()->instance('twilio', new class {
+        public function message(): never
+        {
+            throw new RuntimeException('Twilio unavailable');
+        }
+    });
+    Facade::clearResolvedInstance('twilio');
+
+    $subject = verification_code_subject([
+        'uuid'  => 'user-sms-error',
+        'phone' => '+15550003333',
+    ]);
+
+    expect(fn () => VerificationCode::generateSmsVerificationFor($subject))
+        ->toThrow(RuntimeException::class, 'Twilio unavailable')
+        ->and(VerificationCode::query()->count())->toBe(1);
+
+    $log                 = Illuminate\Container\Container::getInstance()->make('log');
+    $verificationFailure = collect($log->entries)->first(
+        fn (array $entry) => $entry[0] === 'error' && $entry[1] === 'Failed to send SMS verification'
+    );
+
+    expect($verificationFailure)->not->toBeNull()
+        ->and($verificationFailure[2])->toBe([
+            'phone' => '+15550003333',
+            'error' => 'Twilio unavailable',
+        ]);
 });
 
 it('account created listener creates email verification for non-admin users without requiring mail delivery', function () {

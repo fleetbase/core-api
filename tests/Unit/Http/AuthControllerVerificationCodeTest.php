@@ -8,6 +8,7 @@ use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Facade;
 
@@ -168,7 +169,7 @@ function auth_controller_verification_code_insert(Capsule $capsule, array $attri
         'subject_type' => null,
         'code'         => '123456',
         'for'          => 'password_reset',
-        'expires_at'   => '2026-07-18 12:00:00',
+        'expires_at'   => Carbon::now()->addDay()->toDateTimeString(),
         'meta'         => json_encode([]),
         'status'       => 'active',
         'deleted_at'   => null,
