@@ -3,6 +3,9 @@
 use Fleetbase\Traits\DisablesSoftDeletes;
 use Fleetbase\Traits\Expirable;
 use Fleetbase\Traits\HasAliases;
+use Fleetbase\Traits\HasFileResolution;
+use Fleetbase\Models\File;
+use Fleetbase\Services\FileResolverService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
@@ -97,6 +100,36 @@ class LifecycleTraitsHardDeleteRecord extends Model
     }
 }
 
+class LifecycleTraitsFileRecord extends Model
+{
+    use HasFileResolution;
+
+    protected $table = 'vehicles';
+    protected $guarded = [];
+
+    public bool $saved = false;
+
+    public function save(array $options = [])
+    {
+        $this->saved = true;
+
+        return true;
+    }
+}
+
+class LifecycleTraitsFileResolverFake extends FileResolverService
+{
+    public array $calls = [];
+    public ?File $file = null;
+
+    public function resolve($fileInput, ?string $path = null, ?string $disk = null): ?File
+    {
+        $this->calls[] = compact('fileInput', 'path', 'disk');
+
+        return $this->file;
+    }
+}
+
 test('has aliases casts stores normalizes and rejects unsafe aliases', function () {
     $record = new LifecycleTraitsAliasRecord();
 
@@ -187,4 +220,45 @@ test('disables soft deletes forces hard deletes and makes restore a no op', func
 
     expect($record->forceDeleted)->toBeTrue()
         ->and(LifecycleTraitsHardDeleteRecord::hasGlobalScope('disablesSoftDeletes'))->toBeTrue();
+});
+
+test('has file resolution resolves defaults explicit paths and save boundaries', function () {
+    $container = bind_test_container();
+    session()->flush();
+    session(['company' => 'company-1']);
+
+    $resolver       = new LifecycleTraitsFileResolverFake();
+    $resolver->file = new File();
+    $resolver->file->setRawAttributes(['uuid' => 'file-1']);
+    $container->instance(FileResolverService::class, $resolver);
+
+    $record = new LifecycleTraitsFileRecord();
+
+    expect($record->resolveAndSetFile('photo_uuid', null))->toBeFalse()
+        ->and($resolver->calls)->toBe([])
+        ->and($record->resolveAndSetFile('photo_uuid', 'incoming-file'))->toBeTrue()
+        ->and($record->photo_uuid)->toBe('file-1')
+        ->and($resolver->calls[0])->toBe([
+            'fileInput' => 'incoming-file',
+            'path'      => 'uploads/company-1/vehicles',
+            'disk'      => null,
+        ]);
+
+    $resolver->file = new File();
+    $resolver->file->setRawAttributes(['uuid' => 'file-2']);
+
+    expect($record->resolveSetAndSaveFile('document_uuid', 'document-file', 'custom/path', 'archive'))->toBeTrue()
+        ->and($record->document_uuid)->toBe('file-2')
+        ->and($record->saved)->toBeTrue()
+        ->and($resolver->calls[1])->toBe([
+            'fileInput' => 'document-file',
+            'path'      => 'custom/path',
+            'disk'      => 'archive',
+        ]);
+
+    $resolver->file = null;
+    $unsaved        = new LifecycleTraitsFileRecord();
+
+    expect($unsaved->resolveSetAndSaveFile('photo_uuid', 'missing-file'))->toBeFalse()
+        ->and($unsaved->saved)->toBeFalse();
 });

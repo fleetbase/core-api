@@ -3,8 +3,11 @@
 use Fleetbase\Expansions\Str as StrExpansion;
 use Fleetbase\Http\Controllers\Api\v1\ChatChannelController as PublicChatChannelController;
 use Fleetbase\Http\Controllers\Internal\v1\ChatChannelController;
+use Fleetbase\Http\Controllers\Internal\v1\ChatMessageController;
+use Fleetbase\Http\Controllers\Internal\v1\ChatReceiptController;
 use Fleetbase\Http\Requests\CreateChatChannelRequest;
 use Fleetbase\Http\Requests\UpdateChatChannelRequest;
+use Fleetbase\Models\ChatAttachment;
 use Fleetbase\Models\ChatChannel;
 use Fleetbase\Models\ChatMessage;
 use Fleetbase\Models\ChatParticipant;
@@ -334,6 +337,16 @@ function chat_channel_controller(): ChatChannelController
     return new ChatChannelController();
 }
 
+function chat_message_controller(): ChatMessageController
+{
+    return new ChatMessageController();
+}
+
+function chat_receipt_controller(): ChatReceiptController
+{
+    return new ChatReceiptController();
+}
+
 function public_chat_channel_controller(): PublicChatChannelController
 {
     return new PublicChatChannelController();
@@ -477,6 +490,70 @@ test('internal chat channel unread count requires active company channel and par
         ->and($success->getData(true))->toBe(['unreadCount' => 1])
         ->and($notParticipant->getStatusCode())->toBe(404)
         ->and($notParticipant->getData(true))->toBe(['error' => 'Chat channel not found.']);
+});
+
+test('internal chat message controller creates attachments and notifies participants', function () {
+    chat_channel_controller_database();
+
+    $response = chat_message_controller()->createRecord(Request::create('/int/v1/chat-messages', 'POST', [
+        'chatMessage' => [
+            'chat_channel_uuid' => 'channel-current',
+            'sender_uuid' => 'participant-current',
+            'content' => 'Internal message',
+            'attachment_files' => ['file-1', 'file-2'],
+        ],
+    ]));
+
+    $message = ChatMessage::query()->where('content', 'Internal message')->firstOrFail();
+
+    expect(chat_channel_controller_payload($response['chatMessage'])['content'])->toBe('Internal message')
+        ->and($message->company_uuid)->toBe('company-1')
+        ->and($message->sender_uuid)->toBe('participant-current')
+        ->and(ChatAttachment::query()->where('chat_message_uuid', $message->uuid)->orderBy('file_uuid')->pluck('file_uuid')->all())->toBe(['file-1', 'file-2']);
+});
+
+test('internal chat receipt controller returns existing receipts and creates missing receipts', function () {
+    $capsule    = chat_channel_controller_database();
+    $connection = $capsule->getConnection('mysql');
+    $now        = '2026-07-18 00:20:00';
+
+    $connection->table('chat_messages')->insert([
+        'uuid' => 'message-internal-receipt',
+        'public_id' => 'message_internal_receipt',
+        'company_uuid' => 'company-1',
+        'chat_channel_uuid' => 'channel-current',
+        'sender_uuid' => 'participant-active',
+        'content' => 'Internal receipt',
+        'created_at' => $now,
+        'updated_at' => $now,
+    ]);
+    $connection->table('chat_receipts')->insert([
+        'uuid' => 'receipt-existing',
+        'company_uuid' => 'company-1',
+        'chat_message_uuid' => 'message-internal-receipt',
+        'participant_uuid' => 'participant-current',
+        'read_at' => $now,
+        'created_at' => $now,
+        'updated_at' => $now,
+    ]);
+
+    $existing = chat_receipt_controller()->createRecord(Request::create('/int/v1/chat-receipts', 'POST', [
+        'chatReceipt' => [
+            'chat_message_uuid' => 'message-internal-receipt',
+            'participant_uuid' => 'participant-current',
+        ],
+    ]));
+    $created = chat_receipt_controller()->createRecord(Request::create('/int/v1/chat-receipts', 'POST', [
+        'chatReceipt' => [
+            'chat_message_uuid' => 'message-internal-receipt',
+            'participant_uuid' => 'participant-active',
+        ],
+    ]));
+
+    expect($existing['chatReceipt']->resource->uuid)->toBe('receipt-existing')
+        ->and($created['chatReceipt']->resource->chat_message_uuid)->toBe('message-internal-receipt')
+        ->and($created['chatReceipt']->resource->participant_uuid)->toBe('participant-active')
+        ->and(ChatReceipt::query()->where('chat_message_uuid', 'message-internal-receipt')->count())->toBe(2);
 });
 
 test('public chat channel creates channel with creator and valid participants only', function () {

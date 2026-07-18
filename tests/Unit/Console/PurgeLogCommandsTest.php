@@ -1,7 +1,11 @@
 <?php
 
+use Fleetbase\Console\Commands\PurgeActivityLogs;
 use Fleetbase\Console\Commands\PurgeApiLogs;
+use Fleetbase\Console\Commands\PurgeScheduledTaskLogs;
 use Fleetbase\Console\Commands\PurgeWebhookLogs;
+use Fleetbase\Traits\ForcesCommands;
+use Illuminate\Console\Command;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -69,6 +73,101 @@ class PurgeWebhookLogsTestCommand extends PurgeWebhookLogs
     }
 }
 
+class PurgeActivityLogsTestCommand extends PurgeActivityLogs
+{
+    public array $purges = [];
+
+    public function __construct(private array $options = [])
+    {
+        parent::__construct();
+    }
+
+    public function option($key = null)
+    {
+        return $key === null ? $this->options : ($this->options[$key] ?? null);
+    }
+
+    protected function runPurge(Builder $baseQuery, Model $model, ?string $diskOption = null, string $backupPath = 'backups'): int
+    {
+        $query = $baseQuery->getQuery();
+
+        $this->purges[] = [
+            'table'       => $model->getTable(),
+            'disk'        => $diskOption,
+            'backup_path' => $backupPath,
+            'wheres'      => $query->wheres ?? [],
+            'bindings'    => $query->bindings['where'] ?? [],
+        ];
+
+        return 0;
+    }
+}
+
+class PurgeScheduledTaskLogsTestCommand extends PurgeScheduledTaskLogs
+{
+    public array $purges = [];
+
+    public function __construct(private array $options = [])
+    {
+        parent::__construct();
+    }
+
+    public function option($key = null)
+    {
+        return $key === null ? $this->options : ($this->options[$key] ?? null);
+    }
+
+    protected function runPurge(Builder $baseQuery, Model $model, ?string $diskOption = null, string $backupPath = 'backups'): int
+    {
+        $query = $baseQuery->getQuery();
+
+        $this->purges[] = [
+            'table'       => $model->getTable(),
+            'disk'        => $diskOption,
+            'backup_path' => $backupPath,
+            'wheres'      => $query->wheres ?? [],
+            'bindings'    => $query->bindings['where'] ?? [],
+        ];
+
+        return 0;
+    }
+}
+
+class ForcesCommandsTestCommand extends Command
+{
+    use ForcesCommands;
+
+    public array $warnings = [];
+    public array $confirmations = [];
+
+    public function __construct(private array $options = [], private bool $confirmationResult = false)
+    {
+        parent::__construct();
+    }
+
+    public function option($key = null)
+    {
+        return $key === null ? $this->options : ($this->options[$key] ?? null);
+    }
+
+    public function warn($string, $verbosity = null): void
+    {
+        $this->warnings[] = $string;
+    }
+
+    public function confirm($question, $default = false): bool
+    {
+        $this->confirmations[] = $question;
+
+        return $this->confirmationResult;
+    }
+
+    public function confirmForTest(string $message): bool
+    {
+        return $this->confirmOrForce($message);
+    }
+}
+
 function purge_log_commands_database(bool $withCreatedAt = true): Capsule
 {
     $connection = [
@@ -81,6 +180,7 @@ function purge_log_commands_database(bool $withCreatedAt = true): Capsule
         'database.default'           => 'mysql',
         'database.connections.mysql' => $connection,
         'fleetbase.connection.db'    => 'mysql',
+        'activitylog.table_name'     => 'activity_log',
     ]);
 
     $capsule = new Capsule($container);
@@ -96,7 +196,7 @@ function purge_log_commands_database(bool $withCreatedAt = true): Capsule
     Facade::clearResolvedInstances();
 
     $schema = $capsule->getConnection('mysql')->getSchemaBuilder();
-    foreach (['api_request_logs', 'api_events', 'webhook_request_logs'] as $tableName) {
+    foreach (['api_request_logs', 'api_events', 'webhook_request_logs', 'activity_log', 'monitored_scheduled_task_log_items'] as $tableName) {
         $schema->dropIfExists($tableName);
         $schema->create($tableName, function ($table) use ($withCreatedAt) {
             $table->string('uuid')->primary();
@@ -190,4 +290,41 @@ it('builds webhook log purge query with default retention and webhook backup pat
             'boolean'  => 'and',
         ])
         ->and(purge_log_cutoff($command->purges[0]))->toBe('2026-06-17 12:00:00');
+});
+
+it('builds activity and scheduled task log purge queries with dedicated backup paths', function () {
+    purge_log_commands_database();
+    Carbon::setTestNow(Carbon::parse('2026-07-17 12:00:00'));
+
+    $activity = new PurgeActivityLogsTestCommand([
+        'days' => 14,
+        'disk' => 'audit-archive',
+    ]);
+    $scheduled = new PurgeScheduledTaskLogsTestCommand([
+        'days' => 7,
+        'disk' => 'task-archive',
+    ]);
+
+    expect($activity->handle())->toBe(0)
+        ->and($scheduled->handle())->toBe(0)
+        ->and($activity->purges[0]['table'])->toBe('activity_log')
+        ->and($activity->purges[0]['disk'])->toBe('audit-archive')
+        ->and($activity->purges[0]['backup_path'])->toBe('backups/activity-logs')
+        ->and(purge_log_cutoff($activity->purges[0]))->toBe('2026-07-03 12:00:00')
+        ->and($scheduled->purges[0]['table'])->toBe('monitored_scheduled_task_log_items')
+        ->and($scheduled->purges[0]['disk'])->toBe('task-archive')
+        ->and($scheduled->purges[0]['backup_path'])->toBe('backups/scheduled-task-logs')
+        ->and(purge_log_cutoff($scheduled->purges[0]))->toBe('2026-07-10 12:00:00');
+});
+
+it('forces command confirmation when force is present and otherwise prompts', function () {
+    $forced = new ForcesCommandsTestCommand(['force' => true]);
+    $prompt = new ForcesCommandsTestCommand(['force' => false], true);
+
+    expect($forced->confirmForTest('Delete records?'))->toBeTrue()
+        ->and($forced->warnings)->toBe(['Force flag detected: Skipping confirmation.'])
+        ->and($forced->confirmations)->toBe([])
+        ->and($prompt->confirmForTest('Delete records?'))->toBeTrue()
+        ->and($prompt->warnings)->toBe([])
+        ->and($prompt->confirmations)->toBe(['Delete records?']);
 });
