@@ -29,6 +29,7 @@ namespace Fleetbase\Jobs {
 }
 
 namespace {
+    use Fleetbase\Http\Middleware\AdminGuard;
     use Fleetbase\Http\Middleware\AttachCacheHeaders;
     use Fleetbase\Http\Middleware\AuthenticateOnceWithBasicAuth;
     use Fleetbase\Http\Middleware\ConvertStringBooleans;
@@ -41,6 +42,7 @@ namespace {
     use Fleetbase\Http\Middleware\SetupFleetbaseSession;
     use Fleetbase\Http\Middleware\ThrottleRequests;
     use Fleetbase\Http\Middleware\ValidateETag;
+    use Fleetbase\Models\User as FleetbaseUser;
     use Fleetbase\Support\ApiModelCache;
     use Illuminate\Cache\ArrayStore;
     use Illuminate\Cache\RateLimiter;
@@ -134,6 +136,26 @@ namespace {
             $this->jobs[] = $job;
 
             return $job;
+        }
+    }
+
+    class MiddlewareContractsUser extends FleetbaseUser
+    {
+        private bool $adminForTest;
+
+        public function __construct(bool $admin = false)
+        {
+            parent::__construct();
+            $this->adminForTest = $admin;
+            $this->setRawAttributes([
+                'uuid' => $admin ? 'admin-user' : 'standard-user',
+                'type' => $admin ? 'admin' : 'user',
+            ], true);
+        }
+
+        public function isAdmin(): bool
+        {
+            return $this->adminForTest;
         }
     }
 
@@ -758,5 +780,55 @@ namespace {
             ->and(session('api_key'))->toBe('plain-sanctum-token')
             ->and(session('api_environment'))->toBe('live')
             ->and(session('api_test_mode'))->toBeFalse();
+    });
+
+    test('admin guard only continues for authenticated admin users', function () {
+        middleware_contracts_fixture();
+        session()->flush();
+
+        $guestContinued = false;
+        $guestResponse = (new AdminGuard())->handle(
+            Request::create('/int/v1/admin', 'GET'),
+            function () use (&$guestContinued) {
+                $guestContinued = true;
+
+                return new JsonResponse(['ok' => true]);
+            }
+        );
+
+        session(['user' => 'admin-user']);
+        $adminRequest = Request::create('/int/v1/admin', 'GET');
+        $adminRequest->setUserResolver(fn () => new MiddlewareContractsUser(true));
+        $adminContinued = false;
+        $adminResponse = (new AdminGuard())->handle(
+            $adminRequest,
+            function () use (&$adminContinued) {
+                $adminContinued = true;
+
+                return new JsonResponse(['ok' => true]);
+            }
+        );
+
+        session(['user' => 'standard-user']);
+        $standardRequest = Request::create('/int/v1/admin', 'GET');
+        $standardRequest->setUserResolver(fn () => new MiddlewareContractsUser(false));
+        $standardContinued = false;
+        $standardResponse = (new AdminGuard())->handle(
+            $standardRequest,
+            function () use (&$standardContinued) {
+                $standardContinued = true;
+
+                return new JsonResponse(['ok' => true]);
+            }
+        );
+
+        expect($guestContinued)->toBeFalse()
+            ->and($guestResponse->getStatusCode())->toBe(401)
+            ->and($guestResponse->getData(true))->toBe(['errors' => ['User is not authorized to access this resource.']])
+            ->and($adminContinued)->toBeTrue()
+            ->and($adminResponse->getData(true))->toBe(['ok' => true])
+            ->and($standardContinued)->toBeFalse()
+            ->and($standardResponse->getStatusCode())->toBe(401)
+            ->and($standardResponse->getData(true))->toBe(['errors' => ['User is not authorized to access this resource.']]);
     });
 }

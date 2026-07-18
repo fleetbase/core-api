@@ -13,6 +13,7 @@ use Fleetbase\Events\ScheduleUpdated;
 use Fleetbase\Exceptions\FleetbaseRequestException;
 use Fleetbase\Exceptions\FleetbaseRequestValidationException;
 use Fleetbase\Exceptions\PolicyDoesNotExist;
+use Fleetbase\Exceptions\UnauthorizedRequestException;
 use Fleetbase\Listeners\SendResourceLifecycleWebhook;
 use Fleetbase\Models\ChatChannel;
 use Fleetbase\Models\ChatParticipant;
@@ -63,6 +64,14 @@ class EventsAndExceptionsNotifiable
     public function receivesBroadcastNotificationsOn(Notification $notification): string
     {
         return 'notifiable.direct';
+    }
+}
+
+class EventsAndExceptionsPermissionController
+{
+    public function getResourceSingularName(): string
+    {
+        return 'api_key';
     }
 }
 
@@ -121,6 +130,27 @@ test('request exceptions expose stable error arrays and messages', function () {
 test('policy exceptions include the missing policy identity', function () {
     expect(PolicyDoesNotExist::named('manage users')->getMessage())->toBe('There is no policy named `manage users`.')
         ->and(PolicyDoesNotExist::withId(42)->getMessage())->toBe('There is no policy with id `42`.');
+});
+
+test('unauthorized request exception falls back cleanly and includes resolved permission when available', function () {
+    if (!Illuminate\Http\Request::hasMacro('getController')) {
+        Illuminate\Http\Request::macro('getController', fn () => $this->attributes->get('_controller'));
+    }
+
+    $permissionRequest = Illuminate\Http\Request::create('/int/v1/api-keys', 'POST');
+    $permissionRequest->attributes->set('_controller', new EventsAndExceptionsPermissionController());
+    $permissionRequest->setRouteResolver(fn () => new class {
+        public function getAction(string $key): string
+        {
+            return 'EventsAndExceptionsPermissionController@createRecord';
+        }
+    });
+
+    $withPermission = new UnauthorizedRequestException($permissionRequest, 403, new RuntimeException('previous'));
+
+    expect($withPermission->getMessage())->toBe('User is not authorized to create api-key')
+        ->and($withPermission->getCode())->toBe(403)
+        ->and($withPermission->getPrevious()->getMessage())->toBe('previous');
 });
 
 test('broadcast notification event merges notification and notifiable channels', function () {

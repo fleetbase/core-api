@@ -1,6 +1,7 @@
 <?php
 
 use Fleetbase\Models\Schedule;
+use Fleetbase\Models\ScheduleConstraint;
 use Fleetbase\Models\ScheduleException;
 use Fleetbase\Models\ScheduleItem;
 use Fleetbase\Models\ScheduleTemplate;
@@ -8,6 +9,7 @@ use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Facade;
 
 class SchedulingModelsTaggedCacheFake
@@ -144,6 +146,25 @@ function scheduling_models_database(): Capsule
         $table->timestamps();
         $table->softDeletes();
     });
+    $schema->create('schedule_constraints', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('public_id')->nullable();
+        $table->string('company_uuid')->nullable();
+        $table->string('subject_uuid')->nullable();
+        $table->string('subject_type')->nullable();
+        $table->string('name')->nullable();
+        $table->text('description')->nullable();
+        $table->string('type')->nullable();
+        $table->string('category')->nullable();
+        $table->string('constraint_key')->nullable();
+        $table->string('constraint_value')->nullable();
+        $table->string('jurisdiction')->nullable();
+        $table->integer('priority')->nullable();
+        $table->boolean('is_active')->default(true);
+        $table->text('meta')->nullable();
+        $table->timestamps();
+        $table->softDeletes();
+    });
 
     return $capsule;
 }
@@ -266,4 +287,60 @@ it('reports unavailable schedule template rrule support clearly in this package 
     expect($template->hasRrule())->toBeFalse()
         ->and($template->getRruleInstance($from, 'UTC'))->toBeNull()
         ->and($template->getOccurrencesBetween($from, $to, 'UTC'))->toBe([]);
+});
+
+it('scopes schedule constraints by active state type category subject and priority', function () {
+    scheduling_models_database();
+
+    DB::table('schedule_constraints')->insert([
+        'uuid' => 'constraint-low',
+        'company_uuid' => 'company-1',
+        'subject_type' => 'driver',
+        'subject_uuid' => 'driver-1',
+        'name' => 'Daily Hours',
+        'description' => 'Maximum duty window',
+        'type' => 'availability',
+        'category' => 'hours',
+        'constraint_key' => 'max_daily_hours',
+        'constraint_value' => '8',
+        'jurisdiction' => 'US',
+        'priority' => '5',
+        'is_active' => true,
+        'meta' => '{"source":"policy"}',
+    ]);
+    DB::table('schedule_constraints')->insert([
+        'uuid' => 'constraint-high',
+        'company_uuid' => 'company-1',
+        'subject_type' => 'driver',
+        'subject_uuid' => 'driver-1',
+        'name' => 'Fatigue Buffer',
+        'type' => 'availability',
+        'category' => 'hours',
+        'constraint_key' => 'rest_buffer',
+        'jurisdiction' => 'US',
+        'priority' => 50,
+        'is_active' => true,
+    ]);
+    DB::table('schedule_constraints')->insert([
+        'uuid' => 'constraint-inactive',
+        'company_uuid' => 'company-1',
+        'subject_type' => 'vehicle',
+        'subject_uuid' => 'vehicle-1',
+        'name' => 'Inactive',
+        'type' => 'maintenance',
+        'category' => 'asset',
+        'constraint_key' => 'inspection_window',
+        'priority' => 100,
+        'is_active' => false,
+    ]);
+
+    $constraint = ScheduleConstraint::where('uuid', 'constraint-low')->first();
+
+    expect($constraint->priority)->toBe(5)
+        ->and($constraint->is_active)->toBeTrue()
+        ->and($constraint->meta)->toBe(['source' => 'policy'])
+        ->and(ScheduleConstraint::active()->orderBy('uuid')->pluck('uuid')->all())->toBe(['constraint-high', 'constraint-low'])
+        ->and(ScheduleConstraint::byType('availability')->orderBy('uuid')->pluck('uuid')->all())->toBe(['constraint-high', 'constraint-low'])
+        ->and(ScheduleConstraint::byCategory('asset')->pluck('uuid')->all())->toBe(['constraint-inactive'])
+        ->and(ScheduleConstraint::forSubject('driver', 'driver-1')->orderByPriority()->pluck('uuid')->all())->toBe(['constraint-high', 'constraint-low']);
 });

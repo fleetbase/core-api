@@ -9,10 +9,11 @@ use Fleetbase\Http\Filter\ChatLogFilter;
 use Fleetbase\Http\Filter\ChatMessageFilter;
 use Fleetbase\Http\Filter\ChatReceiptFilter;
 use Fleetbase\Http\Filter\CompanyFilter;
+use Fleetbase\Http\Filter\NotificationFilter;
 use Fleetbase\Http\Filter\PolicyFilter;
 use Fleetbase\Http\Filter\RoleFilter;
-use Fleetbase\Http\Filter\ScheduleFilter;
 use Fleetbase\Http\Filter\ScheduleExceptionFilter;
+use Fleetbase\Http\Filter\ScheduleFilter;
 use Fleetbase\Http\Filter\ScheduleItemFilter;
 use Fleetbase\Http\Filter\ScheduleTemplateFilter;
 use Fleetbase\Http\Filter\UserFilter;
@@ -24,6 +25,7 @@ use Fleetbase\Models\ChatLog;
 use Fleetbase\Models\ChatMessage;
 use Fleetbase\Models\ChatReceipt;
 use Fleetbase\Models\Company;
+use Fleetbase\Models\Notification;
 use Fleetbase\Models\Policy;
 use Fleetbase\Models\Role;
 use Fleetbase\Models\ScheduleException;
@@ -104,6 +106,7 @@ function concrete_filter_database(): Capsule
         'chat_participants',
         'chat_receipts',
         'invites',
+        'notifications',
         'policies',
         'roles',
         'schedule_exceptions',
@@ -330,6 +333,17 @@ function concrete_filter_database(): Capsule
         $table->string('participant_uuid')->nullable();
         $table->timestamp('read_at')->nullable();
         $table->softDeletes();
+    });
+
+    $schema->create('notifications', function ($table) {
+        $table->string('id')->primary();
+        $table->string('uuid')->nullable();
+        $table->string('type')->nullable();
+        $table->string('notifiable_type')->nullable();
+        $table->string('notifiable_id')->nullable();
+        $table->text('data')->nullable();
+        $table->timestamp('read_at')->nullable();
+        $table->timestamps();
     });
 
     session()->flush();
@@ -711,4 +725,25 @@ test('schedule exception and template filters scope tenants and resolve subjects
         ->and(concrete_filter_uuids(ScheduleTemplateFilter::class, ScheduleTemplate::class, ['schedule_uuid' => 'schedule_public_1'], 'int/v1/schedule-templates'))->toBe(['template-1'])
         ->and(concrete_filter_uuids(ScheduleTemplateFilter::class, ScheduleTemplate::class, ['subject_type' => 'Fleetbase\\FleetOps\\Models\\Driver', 'subject_uuid' => 'driver-1'], 'int/v1/schedule-templates'))->toBe(['template-1'])
         ->and(concrete_filter_uuids(ScheduleTemplateFilter::class, ScheduleTemplate::class, ['schedule_uuid' => 'missing_schedule'], 'int/v1/schedule-templates'))->toBe([]);
+});
+
+test('notification filter limits internal results to current user or company and supports unread search', function () {
+    $capsule = concrete_filter_database();
+    $capsule->getConnection('mysql')->getPdo()->sqliteCreateFunction('json_unquote', fn ($value) => $value, 1);
+    $capsule->getConnection('mysql')->table('notifications')->insert([
+        ['id' => 'notification-company-unread', 'uuid' => 'notification-company-unread', 'type' => 'alert', 'notifiable_type' => Company::class, 'notifiable_id' => 'company-1', 'data' => '{"message":"Dispatch exception raised"}', 'read_at' => null],
+        ['id' => 'notification-user-read', 'uuid' => 'notification-user-read', 'type' => 'alert', 'notifiable_type' => User::class, 'notifiable_id' => 'user-1', 'data' => '{"message":"Welcome back"}', 'read_at' => '2026-07-18 08:00:00'],
+        ['id' => 'notification-hidden', 'uuid' => 'notification-hidden', 'type' => 'alert', 'notifiable_type' => Company::class, 'notifiable_id' => 'company-2', 'data' => '{"message":"Dispatch exception raised"}', 'read_at' => null],
+    ]);
+
+    expect(concrete_filter_uuids(NotificationFilter::class, Notification::class, [], 'int/v1/notifications'))->toBe([
+        'notification-company-unread',
+        'notification-user-read',
+    ])
+        ->and(concrete_filter_uuids(NotificationFilter::class, Notification::class, ['unread' => '1'], 'int/v1/notifications'))->toBe([
+            'notification-company-unread',
+        ])
+        ->and(concrete_filter_uuids(NotificationFilter::class, Notification::class, ['query' => 'dispatch'], 'int/v1/notifications'))->toBe([
+            'notification-company-unread',
+        ]);
 });

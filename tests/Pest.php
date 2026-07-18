@@ -217,6 +217,11 @@ namespace {
                 {
                     return session('user');
                 }
+
+                public function check(): bool
+                {
+                    return session()->has('user');
+                }
             };
         }
     }

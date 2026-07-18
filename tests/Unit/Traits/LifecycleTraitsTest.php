@@ -1,8 +1,10 @@
 <?php
 
+use Fleetbase\Traits\DisablesSoftDeletes;
 use Fleetbase\Traits\Expirable;
 use Fleetbase\Traits\HasAliases;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 
 class LifecycleTraitsAliasRecord extends Model
@@ -67,6 +69,32 @@ class LifecycleTraitsUncastExpirableRecord extends Model
 
     protected $table = 'verification_codes';
     protected $guarded = [];
+}
+
+class LifecycleTraitsHardDeleteRecord extends Model
+{
+    use SoftDeletes;
+    use DisablesSoftDeletes {
+        DisablesSoftDeletes::performDeleteOnModel insteadof SoftDeletes;
+        DisablesSoftDeletes::restore insteadof SoftDeletes;
+        DisablesSoftDeletes::trashed insteadof SoftDeletes;
+    }
+
+    protected $guarded = [];
+
+    public bool $forceDeleted = false;
+
+    public function forceDelete()
+    {
+        $this->forceDeleted = true;
+
+        return true;
+    }
+
+    public function performHardDeleteForTest(): void
+    {
+        $this->performDeleteOnModel();
+    }
 }
 
 test('has aliases casts stores normalizes and rejects unsafe aliases', function () {
@@ -147,4 +175,16 @@ test('expirable revives expired records using default custom and named expiry co
         ->and($namedColumn->valid_until->timestamp)->toBe(Carbon::now()->addSeconds(120)->timestamp);
 
     Carbon::setTestNow();
+});
+
+test('disables soft deletes forces hard deletes and makes restore a no op', function () {
+    $record = new LifecycleTraitsHardDeleteRecord();
+
+    expect($record->trashed())->toBeFalse()
+        ->and($record->restore())->toBe($record);
+
+    $record->performHardDeleteForTest();
+
+    expect($record->forceDeleted)->toBeTrue()
+        ->and(LifecycleTraitsHardDeleteRecord::hasGlobalScope('disablesSoftDeletes'))->toBeTrue();
 });
