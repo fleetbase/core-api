@@ -1,6 +1,7 @@
 <?php
 
 use Fleetbase\Models\Company;
+use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\User;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Events\Dispatcher;
@@ -24,6 +25,42 @@ class CompanyModelSaveSpy extends Company
         $this->roleChanges[] = [$user->uuid, $roleName];
 
         return true;
+    }
+}
+
+class CompanyModelCompanyUserSpy extends CompanyUser
+{
+    public array $assignedRoles = [];
+
+    public function __construct(private bool $shouldFail = false)
+    {
+        parent::__construct();
+        $this->setRawAttributes(['uuid' => 'company-user-1'], true);
+    }
+
+    public function assignSingleRole($role): CompanyUser
+    {
+        if ($this->shouldFail) {
+            throw new RuntimeException('role backend unavailable');
+        }
+
+        $this->assignedRoles[] = $role;
+
+        return $this;
+    }
+}
+
+class CompanyModelRoleSpy extends Company
+{
+    public function __construct(private ?CompanyUser $companyUser = null, array $attributes = [])
+    {
+        parent::__construct($attributes);
+        $this->setRawAttributes(['uuid' => 'company-1'], true);
+    }
+
+    public function getCompanyUserPivot(string|User $user): ?CompanyUser
+    {
+        return $this->companyUser;
     }
 }
 
@@ -52,6 +89,17 @@ function company_model_container(): void
     $databaseManager->setDefaultConnection('mysql');
     $container->instance('db', $databaseManager);
     Facade::clearResolvedInstance('db');
+}
+
+function company_model_create_users_table(): void
+{
+    app('db')->connection('mysql')->getSchemaBuilder()->create('users', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('email')->nullable();
+        $table->string('name')->nullable();
+        $table->timestamp('deleted_at')->nullable();
+        $table->timestamps();
+    });
 }
 
 it('sets owner status and role assignment contracts without requiring database writes', function () {
@@ -102,11 +150,61 @@ it('resolves owner relationships from loaded owner or creator relations', functi
         ->and($companyWithCreator->owner)->toBe($creator);
 });
 
+it('resolves company owner from the database only for valid owner uuids', function () {
+    company_model_container();
+    company_model_create_users_table();
+
+    app('db')->table('users')->insert([
+        'uuid'       => '11111111-1111-4111-8111-111111111111',
+        'email'      => 'owner@example.test',
+        'name'       => 'Owner User',
+        'deleted_at' => null,
+        'created_at' => '2026-07-18 00:00:00',
+        'updated_at' => '2026-07-18 00:00:00',
+    ]);
+
+    $company = new Company();
+    $company->setRawAttributes([
+        'uuid'       => 'company-1',
+        'owner_uuid' => '11111111-1111-4111-8111-111111111111',
+    ], true);
+    $company->setRelation('owner', null);
+    $company->setRelation('creator', null);
+
+    $missing = new Company();
+    $missing->setRawAttributes(['uuid' => 'company-2', 'owner_uuid' => 'not-a-uuid'], true);
+    $missing->setRelation('owner', null);
+    $missing->setRelation('creator', null);
+
+    expect($company->loadCompanyOwner())->toBe($company)
+        ->and($company->owner)->toBeInstanceOf(User::class)
+        ->and($company->owner->uuid)->toBe('11111111-1111-4111-8111-111111111111')
+        ->and($missing->loadCompanyOwner())->toBe($missing)
+        ->and($missing->owner)->toBeNull();
+});
+
+it('exposes company relation contracts with stable keys and related models', function () {
+    company_model_container();
+
+    $company = new Company();
+    $company->setRawAttributes(['uuid' => 'company-1'], true);
+
+    expect($company->creator()->getRelated())->toBeInstanceOf(User::class)
+        ->and($company->owner()->getRelated())->toBeInstanceOf(User::class)
+        ->and($company->users()->getRelated())->toBeInstanceOf(User::class)
+        ->and($company->companyUsers()->getRelated())->toBeInstanceOf(User::class)
+        ->and($company->logo()->getRelated())->toBeInstanceOf(Fleetbase\Models\File::class)
+        ->and($company->backdrop()->getRelated())->toBeInstanceOf(Fleetbase\Models\File::class)
+        ->and($company->apiCredentials()->getRelated())->toBeInstanceOf(Fleetbase\Models\ApiCredential::class);
+});
+
 it('exposes stable logo backdrop ownership and notification response values', function () {
     company_model_container();
 
     $owner = new User();
     $owner->setRawAttributes(['uuid' => 'owner-1'], true);
+    $otherUser = new User();
+    $otherUser->setRawAttributes(['uuid' => 'other-user'], true);
 
     $company = new Company();
     $company->setRawAttributes([
@@ -123,13 +221,38 @@ it('exposes stable logo backdrop ownership and notification response values', fu
     $brandedCompany->setRawAttributes(['uuid' => 'company-2'], true);
     $brandedCompany->setRelation('logo', $logo);
     $brandedCompany->setRelation('backdrop', $backdrop);
+    session(['user' => $owner]);
 
     expect($company->isOwner($owner))->toBeTrue()
+        ->and($company->isOwner($otherUser))->toBeFalse()
+        ->and($company->is_owner)->toBeTrue()
         ->and($company->routeNotificationForTwilio())->toBe('+15555550100')
         ->and($company->logo_url)->toBe('https://flb-assets.s3.ap-southeast-1.amazonaws.com/static/image-file-icon.png')
         ->and($company->backdrop_url)->toBe('https://flb-assets.s3.ap-southeast-1.amazonaws.com/static/default-storefront-backdrop.png')
         ->and($brandedCompany->logo_url)->toBe('https://cdn.example.test/logo.png')
         ->and($brandedCompany->backdrop_url)->toBe('https://cdn.example.test/backdrop.png');
+
+    session(['user' => $otherUser]);
+
+    expect($company->is_owner)->toBeFalse();
+});
+
+it('changes company user roles and reports missing or failing pivot assignments', function () {
+    company_model_container();
+
+    $user = new User();
+    $user->setRawAttributes(['uuid' => 'user-1'], true);
+    $companyUser = new CompanyModelCompanyUserSpy();
+    $company     = new CompanyModelRoleSpy($companyUser);
+
+    expect($company->changeUserRole($user, 'Dispatcher'))->toBeTrue()
+        ->and($companyUser->assignedRoles)->toBe(['Dispatcher']);
+
+    expect(fn () => (new CompanyModelRoleSpy(null))->changeUserRole($user, 'Dispatcher'))
+        ->toThrow(InvalidArgumentException::class, 'The specified user is not associated with the company.');
+
+    expect(fn () => (new CompanyModelRoleSpy(new CompanyModelCompanyUserSpy(true)))->changeUserRole($user, 'Dispatcher'))
+        ->toThrow(Exception::class, 'Role assignment failed. Please try again later.');
 });
 
 it('resolves the current company from session using the configured connection', function () {
