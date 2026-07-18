@@ -1,6 +1,7 @@
 <?php
 
 use Fleetbase\Http\Controllers\Internal\v1\RoleController;
+use Fleetbase\Http\Resources\FleetbaseResource;
 use Fleetbase\Models\Policy;
 use Illuminate\Container\Container;
 use Illuminate\Database\Capsule\Manager as Capsule;
@@ -58,8 +59,104 @@ class RoleControllerPermissionRegistrarFake
     public string $teamsKey        = 'team_id';
 }
 
+class RoleControllerRoleFake extends EloquentModel
+{
+    protected $table      = 'roles';
+    protected $primaryKey = 'id';
+    public $incrementing  = false;
+    public $timestamps    = false;
+    protected $guarded    = [];
+
+    public array $syncedPermissions = [];
+    public array $syncedPolicies    = [];
+    public array $calls             = [];
+    public bool $throwOnCreate      = false;
+    public bool $throwOnUpdate      = false;
+
+    public function createRecordFromRequest(Request $request, ?callable $onBefore = null, ?callable $onAfter = null): self
+    {
+        $this->calls[] = ['createRecordFromRequest', $request->input('role.name')];
+
+        if ($this->throwOnCreate) {
+            throw new RuntimeException('role creation failed');
+        }
+
+        $record = new self([
+            'id'         => 'role-created',
+            'name'       => $request->input('role.name'),
+            'guard_name' => 'sanctum',
+        ]);
+
+        if ($onBefore) {
+            $onBefore($request, $record);
+        }
+
+        if ($onAfter) {
+            $onAfter($request, $record);
+        }
+
+        return $record;
+    }
+
+    public function updateRecordFromRequest(Request $request, $id, ?callable $onBefore = null, ?callable $onAfter = null): self
+    {
+        $this->calls[] = ['updateRecordFromRequest', $id, $request->input('role.name')];
+
+        if ($this->throwOnUpdate) {
+            throw new RuntimeException('role update failed');
+        }
+
+        $record = new self([
+            'id'         => $id,
+            'name'       => $request->input('role.name'),
+            'guard_name' => 'sanctum',
+        ]);
+
+        if ($onBefore) {
+            $onBefore($request, $record);
+        }
+
+        if ($onAfter) {
+            $onAfter($request, $record);
+        }
+
+        return $record;
+    }
+
+    public function syncPermissions($permissions): self
+    {
+        $this->syncedPermissions = $permissions->pluck('id')->all();
+
+        return $this;
+    }
+
+    public function syncPolicies($policies): self
+    {
+        $this->syncedPolicies = $policies->pluck('id')->all();
+
+        return $this;
+    }
+}
+
+function role_controller_boot_request_macros(): void
+{
+    if (!Request::hasMacro('array')) {
+        Request::macro('array', function (string $key, array $default = []): array {
+            return (array) $this->input($key, $default);
+        });
+    }
+
+    if (!Request::hasMacro('isArray')) {
+        Request::macro('isArray', function (string $key): bool {
+            return $this->has($key) && is_array($this->input($key));
+        });
+    }
+}
+
 function role_controller_container(array $config = []): Container
 {
+    role_controller_boot_request_macros();
+
     $container = bind_test_container(array_merge([
         'auth.defaults.guard'                           => 'sanctum',
         'permission.models.permission'                  => Fleetbase\Models\Permission::class,
@@ -164,6 +261,17 @@ function role_controller(): RoleController
     return (new ReflectionClass(RoleController::class))->newInstanceWithoutConstructor();
 }
 
+function role_controller_with_model(RoleControllerRoleFake $model): RoleController
+{
+    role_controller_container();
+
+    $controller           = (new ReflectionClass(RoleController::class))->newInstanceWithoutConstructor();
+    $controller->model    = $model;
+    $controller->resource = FleetbaseResource::class;
+
+    return $controller;
+}
+
 function role_controller_reflect(RoleController $controller, string $method, mixed ...$arguments): mixed
 {
     $reflection = new ReflectionMethod($controller, $method);
@@ -215,3 +323,80 @@ test('role controller resolves assignable policies from global and active compan
         ->and($policies->pluck('id')->sort()->values()->all())->toBe(['policy-company', 'policy-global'])
         ->and($policies->every(fn (Policy $policy) => $policy->company_uuid === null || $policy->company_uuid === 'company-1'))->toBeTrue();
 });
+
+test('role controller create syncs requested permissions and assignable policies only', function () {
+    $capsule = role_controller_database();
+    $capsule->getConnection('mysql')->table('permissions')->insert([
+        ['id' => 'permission-view', 'name' => 'iam view roles', 'guard_name' => 'sanctum', 'created_at' => '2026-07-18 00:00:00', 'updated_at' => '2026-07-18 00:00:00'],
+        ['id' => 'permission-list', 'name' => 'iam list roles', 'guard_name' => 'sanctum', 'created_at' => '2026-07-18 00:00:00', 'updated_at' => '2026-07-18 00:00:00'],
+    ]);
+
+    $model      = new RoleControllerRoleFake();
+    $controller = role_controller_with_model($model);
+    $response   = $controller->createRecord(Request::create('/int/v1/roles', 'POST', [
+        'role' => [
+            'name'        => 'Dispatcher',
+            'permissions' => ['permission-view', 'permission-list', 'missing-permission'],
+            'policies'    => ['policy-global', 'policy-company', 'policy-other-company'],
+        ],
+    ]));
+
+    $role = $response['role']->resource;
+
+    expect($model->calls)->toBe([['createRecordFromRequest', 'Dispatcher']])
+        ->and($role)->toBeInstanceOf(RoleControllerRoleFake::class)
+        ->and($role->name)->toBe('Dispatcher')
+        ->and(collect($role->syncedPermissions)->sort()->values()->all())->toBe(['permission-list', 'permission-view'])
+        ->and(collect($role->syncedPolicies)->sort()->values()->all())->toBe(['policy-company', 'policy-global']);
+});
+
+test('role controller update syncs relation arrays and preserves scoped policy boundary', function () {
+    $capsule = role_controller_database();
+    $capsule->getConnection('mysql')->table('permissions')->insert([
+        ['id' => 'permission-update', 'name' => 'iam update roles', 'guard_name' => 'sanctum', 'created_at' => '2026-07-18 00:00:00', 'updated_at' => '2026-07-18 00:00:00'],
+    ]);
+
+    $model      = new RoleControllerRoleFake();
+    $controller = role_controller_with_model($model);
+    $response   = $controller->updateRecord(Request::create('/int/v1/roles/role-1', 'PATCH', [
+        'role' => [
+            'name'        => 'Warehouse Manager',
+            'permissions' => ['permission-update'],
+            'policies'    => ['policy-company', 'policy-other-company'],
+        ],
+    ]), 'role-1');
+
+    $role = $response['role']->resource;
+
+    expect($model->calls)->toBe([['updateRecordFromRequest', 'role-1', 'Warehouse Manager']])
+        ->and($role->id)->toBe('role-1')
+        ->and($role->syncedPermissions)->toBe(['permission-update'])
+        ->and($role->syncedPolicies)->toBe(['policy-company']);
+});
+
+test('role controller create and update return error responses when model persistence fails', function (string $method, array $modelFlags, array $arguments, string $message) {
+    role_controller_database();
+
+    $model = new RoleControllerRoleFake();
+    foreach ($modelFlags as $property => $value) {
+        $model->{$property} = $value;
+    }
+
+    $response = role_controller_with_model($model)->{$method}(...$arguments);
+
+    expect($response->getStatusCode())->toBe(400)
+        ->and($response->getData(true))->toBe(['errors' => [$message]]);
+})->with([
+    'create failure' => [
+        'createRecord',
+        ['throwOnCreate' => true],
+        [Request::create('/int/v1/roles', 'POST', ['role' => ['name' => 'Dispatcher']])],
+        'role creation failed',
+    ],
+    'update failure' => [
+        'updateRecord',
+        ['throwOnUpdate' => true],
+        [Request::create('/int/v1/roles/role-1', 'PATCH', ['role' => ['name' => 'Dispatcher']]), 'role-1'],
+        'role update failed',
+    ],
+]);
