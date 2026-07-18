@@ -5,7 +5,10 @@ use Fleetbase\Support\SocketCluster\SocketClusterHandshake;
 use Fleetbase\Support\SocketCluster\SocketClusterMessage;
 use Fleetbase\Support\SocketCluster\SocketClusterService;
 use Illuminate\Broadcasting\Channel;
+use WebSocket\Client;
+use WebSocket\ConnectionException;
 use WebSocket\Message\Text;
+use WebSocket\TimeoutException;
 
 class SocketClusterServiceProbe extends SocketClusterService
 {
@@ -22,6 +25,54 @@ class SocketClusterServiceProbe extends SocketClusterService
     public function exposeParseOptions($options): string
     {
         return $this->parseOptions($options);
+    }
+}
+
+class SocketClusterClientFake extends Client
+{
+    public array $sent = [];
+    public int $closed = 0;
+
+    public function __construct(private array $receives = [], private ?Throwable $sendException = null, private ?Throwable $receiveException = null)
+    {
+    }
+
+    public function send($payload, string $opcode = 'text', ?bool $masked = null): void
+    {
+        if ($this->sendException) {
+            throw $this->sendException;
+        }
+
+        $this->sent[] = $payload;
+    }
+
+    public function receive()
+    {
+        if ($this->receiveException) {
+            throw $this->receiveException;
+        }
+
+        return array_shift($this->receives) ?? null;
+    }
+
+    public function close(int $status = 1000, string $message = 'ttfn'): void
+    {
+        $this->closed++;
+    }
+}
+
+class SocketClusterServiceHarness extends SocketClusterService
+{
+    public function __construct(Client $client, array $options = [])
+    {
+        $this->client  = $client;
+        $this->options = $options;
+        $this->uri     = 'ws://socket.test/';
+    }
+
+    public function handshakeError(): ?string
+    {
+        return $this->handshakeError;
     }
 }
 
@@ -177,3 +228,35 @@ it('broadcasts payloads to every channel through the socket cluster service', fu
     ])->and($broadcaster->auth(null))->toBeNull()
         ->and($broadcaster->validAuthenticationResponse(null, true))->toBeNull();
 });
+
+it('sends socket cluster handshakes messages and records successful response state', function () {
+    $client  = new SocketClusterClientFake(['handshake-ok', 'publish-ok']);
+    $service = new SocketClusterServiceHarness($client, ['timeout' => ' 5 ']);
+
+    expect($service->getClient())->toBe($client)
+        ->and($service->getUri())->toBe('ws://socket.test/')
+        ->and($service->getOption('timeout'))->toBe('5')
+        ->and($service->send('activity', ['count' => 2]))->toBeTrue()
+        ->and($service->response())->toBe('publish-ok')
+        ->and($service->error())->toBeNull()
+        ->and($client->closed)->toBe(1)
+        ->and($client->sent)->toHaveCount(2)
+        ->and($client->sent[0])->toBeInstanceOf(SocketClusterHandshake::class)
+        ->and($client->sent[1])->toBeInstanceOf(SocketClusterMessage::class);
+});
+
+it('captures socket cluster send and handshake failures without throwing', function (Throwable $exception, string $message) {
+    $sendService = new SocketClusterServiceHarness(new SocketClusterClientFake([], $exception));
+
+    expect($sendService->send('activity'))->toBeFalse()
+        ->and($sendService->error())->toBe($message);
+
+    $handshakeService = new SocketClusterServiceHarness(new SocketClusterClientFake([], null, $exception));
+
+    expect($handshakeService->handshake(10))->toBeFalse()
+        ->and($handshakeService->handshakeError())->toBe($message);
+})->with([
+    'connection exception' => [new ConnectionException('socket unavailable'), 'socket unavailable'],
+    'timeout exception'    => [new TimeoutException('socket timed out'), 'socket timed out'],
+    'generic exception'    => [new RuntimeException('socket failed'), 'socket failed'],
+]);
