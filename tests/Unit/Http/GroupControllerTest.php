@@ -1,6 +1,8 @@
 <?php
 
+use Fleetbase\Exports\GroupExport;
 use Fleetbase\Http\Controllers\Internal\v1\GroupController;
+use Fleetbase\Http\Requests\ExportRequest;
 use Fleetbase\Http\Resources\FleetbaseResource;
 use Fleetbase\Models\Group;
 use Fleetbase\Models\GroupUser;
@@ -12,6 +14,7 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Facades\Facade;
 use Spatie\Permission\PermissionRegistrar;
+use Symfony\Component\HttpFoundation\Response;
 
 class GroupControllerCacheFake
 {
@@ -63,6 +66,38 @@ class GroupControllerCacheFake
         $this->values[$key] = ((int) ($this->values[$key] ?? 0)) + $value;
 
         return $this->values[$key];
+    }
+}
+
+class GroupControllerErrorModel extends Group
+{
+    public function __construct(private string $operation = 'update')
+    {
+        parent::__construct();
+    }
+
+    public function createRecordFromRequest($request, ?callable $onBefore = null, ?callable $onAfter = null, array $options = [])
+    {
+        throw new RuntimeException('Unable to create group.');
+    }
+
+    public function updateRecordFromRequest(Request $request, $id, ?callable $onBefore = null, ?callable $onAfter = null, array $options = [])
+    {
+        throw new RuntimeException("Unable to {$this->operation} group {$id}.");
+    }
+}
+
+class GroupControllerExcelFake
+{
+    public ?object $export   = null;
+    public ?string $filename = null;
+
+    public function download(object $export, string $filename): Response
+    {
+        $this->export   = $export;
+        $this->filename = $filename;
+
+        return new Response('group export');
     }
 }
 
@@ -342,4 +377,50 @@ test('group controller updates only the target group membership', function () {
 
     expect(GroupUser::withTrashed()->where('uuid', 'membership-1')->first()->trashed())->toBeTrue()
         ->and(GroupUser::where('uuid', 'membership-other')->exists())->toBeTrue();
+});
+
+test('group controller returns stable error responses when create or update fails', function () {
+    group_controller_container(['app.debug' => true]);
+
+    $createController        = group_controller();
+    $createController->model = new GroupControllerErrorModel('create');
+    $updateController        = group_controller();
+    $updateController->model = new GroupControllerErrorModel('update');
+
+    $createResponse = $createController->createRecord(group_controller_request('POST', '/int/v1/groups', [
+        'group' => [
+            'name'  => 'Broken Group',
+            'users' => [],
+        ],
+    ]));
+
+    $updateResponse = $updateController->updateRecord(group_controller_request('PATCH', '/int/v1/groups/group-existing', [
+        'group' => [
+            'name'  => 'Broken Group',
+            'users' => [],
+        ],
+    ]), 'group-existing');
+
+    expect($createResponse->getStatusCode())->toBe(400)
+        ->and($createResponse->getData(true))->toBe(['errors' => ['Unable to create group.']])
+        ->and($updateResponse->getStatusCode())->toBe(400)
+        ->and($updateResponse->getData(true))->toBe(['errors' => ['Unable to update group group-existing.']]);
+});
+
+test('group controller export downloads group exports with requested format', function () {
+    group_controller_container();
+
+    $excel = new GroupControllerExcelFake();
+    app()->instance('excel', $excel);
+    Facade::clearResolvedInstance('excel');
+
+    $response = GroupController::export(ExportRequest::create('/int/v1/groups/export', 'GET', [
+        'format' => 'csv',
+    ]));
+
+    expect($response)->toBeInstanceOf(Response::class)
+        ->and($response->getContent())->toBe('group export')
+        ->and($excel->export)->toBeInstanceOf(GroupExport::class)
+        ->and($excel->filename)->toStartWith('groups-')
+        ->and($excel->filename)->toEndWith('.csv');
 });
