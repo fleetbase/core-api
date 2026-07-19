@@ -6,6 +6,7 @@ use Fleetbase\LaravelMysqlSpatial\Eloquent\Builder as SpatialQueryBuilder;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Database\Query\Expression;
+use Illuminate\Database\Query\Grammars\Grammar;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -231,7 +232,7 @@ class QueryOptimizer
                 $signatureData['column']   = $where['column'] ?? '';
                 $signatureData['operator'] = $where['operator'] ?? '=';
                 if ($where['value'] instanceof Expression) {
-                    $signatureData['value'] = (string) $where['value'];
+                    $signatureData['value'] = static::normalizeExpressionValue($where['value']);
                 } else {
                     $signatureData['bindings'] = $bindings;
                 }
@@ -278,6 +279,14 @@ class QueryOptimizer
         }
 
         return json_encode($signatureData);
+    }
+
+    /**
+     * Normalizes raw expression values for deterministic signature creation.
+     */
+    protected static function normalizeExpressionValue(Expression $expression): string|int|float
+    {
+        return $expression->getValue(new Grammar());
     }
 
     /**
