@@ -149,6 +149,19 @@ namespace Fleetbase\Models {
     }
 }
 
+namespace Fleetbase\Observers {
+    if (!function_exists(__NAMESPACE__ . '\\event')) {
+        function event(object|string $event, mixed $payload = [], bool $halt = false): mixed
+        {
+            if (function_exists('\\event')) {
+                return \event($event, $payload, $halt);
+            }
+
+            return null;
+        }
+    }
+}
+
 namespace {
     use Illuminate\Container\Container;
     use Illuminate\Http\JsonResponse;

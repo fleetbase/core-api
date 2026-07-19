@@ -1,17 +1,23 @@
 <?php
 
+use Fleetbase\Expansions\Str as StrExpansion;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\File;
 use Fleetbase\Models\User;
 use Fleetbase\Support\Utils;
+use Illuminate\Contracts\Config\Repository as ConfigRepository;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Events\Dispatcher;
+use Illuminate\Filesystem\FilesystemManager;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str as SupportStr;
 
 class UtilsRedisFake
 {
@@ -34,6 +40,119 @@ class UtilsRedisFake
         $this->sets[]       = compact('key', 'value');
 
         return true;
+    }
+}
+
+class UtilsCacheFake
+{
+    private array $values = [];
+
+    public function tags(array|string $tags): self
+    {
+        return $this;
+    }
+
+    public function has(string $key): bool
+    {
+        return array_key_exists($key, $this->values);
+    }
+
+    public function get(string $key, mixed $default = null): mixed
+    {
+        return $this->values[$key] ?? $default;
+    }
+
+    public function put(string $key, mixed $value, mixed $ttl = null): bool
+    {
+        $this->values[$key] = $value;
+
+        return true;
+    }
+
+    public function rememberForever(string $key, callable $callback): mixed
+    {
+        return $callback();
+    }
+
+    public function forget(string $key): bool
+    {
+        unset($this->values[$key]);
+
+        return true;
+    }
+
+    public function flush(): bool
+    {
+        $this->values = [];
+
+        return true;
+    }
+
+    public function increment(string $key, int $value = 1): int
+    {
+        $this->values[$key] = (int) ($this->values[$key] ?? 0) + $value;
+
+        return $this->values[$key];
+    }
+}
+
+class UtilsResponseCacheFake
+{
+    public int $clears = 0;
+
+    public function clear(array $tags = []): void
+    {
+        $this->clears++;
+    }
+}
+
+class UtilsFailingDatabaseFake
+{
+    public function connection(): object
+    {
+        return new class {
+            public function getPdo(): void
+            {
+                throw new RuntimeException('database unavailable');
+            }
+        };
+    }
+}
+
+class UtilsHttpStreamFake
+{
+    public static array $responses = [];
+    private string $content        = '';
+    private int $position          = 0;
+
+    public function stream_open(string $path, string $mode, int $options, ?string &$openedPath): bool
+    {
+        if (!array_key_exists($path, self::$responses)) {
+            return false;
+        }
+
+        $this->content  = self::$responses[$path];
+        $this->position = 0;
+
+        return true;
+    }
+
+    public function stream_read(int $count): string
+    {
+        $chunk          = substr($this->content, $this->position, $count);
+        $this->position += strlen($chunk);
+
+        return $chunk;
+    }
+
+    public function stream_eof(): bool
+    {
+        return $this->position >= strlen($this->content);
+    }
+
+    public function stream_stat(): array
+    {
+        return [];
     }
 }
 
@@ -62,6 +181,12 @@ function utils_database(): Capsule
     Facade::clearResolvedInstance('db');
 
     $schema = $capsule->getConnection('mysql')->getSchemaBuilder();
+    $schema->create('companies', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('country')->nullable();
+        $table->timestamps();
+        $table->timestamp('deleted_at')->nullable();
+    });
     $schema->create('orders', function ($table) {
         $table->string('uuid')->primary();
         $table->string('public_id')->nullable();
@@ -70,10 +195,22 @@ function utils_database(): Capsule
     $schema->create('files', function ($table) {
         $table->string('uuid')->primary();
         $table->string('public_id')->nullable();
+        $table->string('company_uuid')->nullable();
+        $table->string('uploader_uuid')->nullable();
+        $table->string('subject_uuid')->nullable();
+        $table->string('subject_type')->nullable();
         $table->string('type')->nullable();
         $table->string('original_filename')->nullable();
         $table->string('disk')->nullable();
         $table->string('path')->nullable();
+        $table->string('bucket')->nullable();
+        $table->string('folder')->nullable();
+        $table->string('content_type')->nullable();
+        $table->integer('file_size')->nullable();
+        $table->string('slug')->nullable();
+        $table->text('caption')->nullable();
+        $table->json('meta')->nullable();
+        $table->string('etag')->nullable();
         $table->timestamps();
         $table->timestamp('deleted_at')->nullable();
     });
@@ -124,6 +261,18 @@ test('utils formats urls headers strings and dates', function () {
 });
 
 test('utils handles boolean json inflection and sql helpers', function () {
+    $query = new class {
+        public function toSql(): string
+        {
+            return 'select * from `orders` where `status` = ? and `company_uuid` = ?';
+        }
+
+        public function getBindings(): array
+        {
+            return ['active', 'company-1'];
+        }
+    };
+
     expect(Utils::createObject(['active' => true]))->toEqual((object) ['active' => true])
         ->and(Utils::castBoolean('truthy'))->toBeTrue()
         ->and(Utils::castBoolean('off'))->toBeFalse()
@@ -152,7 +301,15 @@ test('utils handles boolean json inflection and sql helpers', function () {
         ->and(Utils::interpolateQuery('select * from users where id = :id and role = :role', [
             'id'   => 7,
             'role' => 'admin',
-        ]))->toBe('select * from users where id = 7 and role = admin');
+        ]))->toBe('select * from users where id = 7 and role = admin')
+        ->and(Utils::queryBuilderToString($query))->toBe('select * from `orders` where `status` = "active" and `company_uuid` = "company-1"');
+
+    ob_start();
+    Utils::sqlDump($query, false);
+    $formattedSql = ob_get_clean();
+
+    expect($formattedSql)->toContain('active')
+        ->and($formattedSql)->toContain('company-1');
 });
 
 test('utils validates identifiers base64 and numeric strings across edge cases', function () {
@@ -208,6 +365,7 @@ test('utils reads and writes nested data without overwriting protected values', 
     ];
 
     expect(Utils::isset($target, 'contact.phone'))->toBeTrue()
+        ->and(Utils::isset(null))->toBeFalse()
         ->and(Utils::exists($target, 'contact.email'))->toBeFalse()
         ->and(Utils::notSet($target, 'contact.email'))->toBeTrue()
         ->and(Utils::firstValue($target, ['contact.email', 'contact.phone'], 'fallback'))->toBe('+15612767156')
@@ -344,6 +502,7 @@ test('utils handles numeric text url formatting and encoded string edge cases', 
         ->and(Utils::addWwwToUrl('fleetbase.io'))->toBe('www.fleetbase.io')
         ->and(Utils::addWwwToUrl('www.fleetbase.io'))->toBe('www.fleetbase.io')
         ->and(Utils::addWwwToUrl('https://fleetbase.io/docs?tab=api#intro'))->toBe('https://www.fleetbase.io/docs?tab=api#intro')
+        ->and(Utils::getDefaultMailFromAddress('support@example.test'))->toBe('support@example.test')
         ->and(Utils::formatSeconds(90))->toContain('minute')
         ->and(Utils::isEmail('ron@example.test'))->toBeTrue()
         ->and(Utils::isEmail('not-an-email'))->toBeFalse()
@@ -431,6 +590,11 @@ test('utils serializes resources images queues countries and connectivity edges'
         $countryCodeModel->setRawAttributes(['country' => 'SG'], true);
         $countryNameModel = new class extends EloquentModel {};
         $countryNameModel->setRawAttributes(['country' => 'United States'], true);
+        Company::query()->create([
+            'uuid'    => 'company-session-country',
+            'country' => 'Canada',
+        ]);
+        session(['company' => 'company-session-country']);
 
         $serialized = Utils::serializeJsonResource($resource);
 
@@ -450,9 +614,15 @@ test('utils serializes resources images queues countries and connectivity edges'
             ->and(Utils::chooseQueueConnection())->toBe('redis')
             ->and(Utils::getModelCountry($countryCodeModel))->toBe('SG')
             ->and(Utils::getModelCountry($countryNameModel))->toBe('US')
+            ->and(Utils::getModelCountry(new User()))->toBe('CA')
             ->and(Utils::getModelCountry(new Company(['country' => 'United States'])))->toBe('US')
             ->and(Utils::getModelCountry(new Company()))->toBeNull()
             ->and(Utils::hasDatabaseConnection())->toBeTrue();
+
+        app()->instance('db', new UtilsFailingDatabaseFake());
+        DB::clearResolvedInstance('db');
+
+        expect(Utils::hasDatabaseConnection())->toBeFalse();
 
         putenv('AWS_ACCESS_KEY_ID=test-key');
         putenv('AWS_SECRET_ACCESS_KEY=test-secret');
@@ -468,6 +638,79 @@ test('utils serializes resources images queues countries and connectivity edges'
         foreach ($previousEnv as $key => $value) {
             $value === false ? putenv($key) : putenv($key . '=' . $value);
         }
+    }
+});
+
+test('utils converts storefront urls into stored file records with owner metadata', function () {
+    utils_database();
+    $root = sys_get_temp_dir() . '/fleetbase-utils-storefront-files-' . uniqid();
+
+    config([
+        'filesystems.default'          => 'local',
+        'filesystems.disks.local'      => [
+            'driver' => 'local',
+            'root'   => $root . '/local',
+            'url'    => 'https://files.example.test/storage',
+        ],
+        'filesystems.disks.s3'         => [
+            'driver' => 'local',
+            'root'   => $root . '/s3',
+        ],
+        'filesystems.disks.s3.bucket'  => 'storefront-assets',
+        'activitylog.enabled'          => false,
+    ]);
+
+    $filesystem = new FilesystemManager(app());
+    app()->instance('filesystem', $filesystem);
+    app()->instance(ConfigRepository::class, config());
+    app()->instance('cache', new UtilsCacheFake());
+    app()->instance('responsecache', new UtilsResponseCacheFake());
+    Illuminate\Support\Facades\Cache::swap(app('cache'));
+    Facade::clearResolvedInstance('responsecache');
+    Storage::clearResolvedInstances();
+
+    $owner = new Company();
+    $owner->setRawAttributes([
+        'uuid'         => 'user-owner',
+        'company_uuid' => 'company-owner',
+    ], true);
+
+    if (!SupportStr::hasMacro('humanize')) {
+        SupportStr::macro('humanize', (new StrExpansion())->humanize());
+    }
+
+    $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lvS1WQAAAABJRU5ErkJggg==');
+
+    stream_wrapper_unregister('http');
+    stream_wrapper_register('http', UtilsHttpStreamFake::class);
+    UtilsHttpStreamFake::$responses = [
+        'http://images.example.test/catalog/Logo%20Mark' => $png,
+    ];
+
+    try {
+        $file = Utils::urlToStorefrontFile('http://images.example.test/catalog/Logo%20Mark', 'Hero Image', $owner);
+
+        expect(Utils::urlToStorefrontFile(null, 'Hero Image', $owner))->toBeNull()
+            ->and(Utils::urlToStorefrontFile('', 'Hero Image', $owner))->toBeNull()
+            ->and(Utils::urlToStorefrontFile('ftp://images.example.test/logo.png', 'Hero Image', $owner))->toBeNull()
+            ->and(Utils::urlToStorefrontFile('http://images.example.test/missing.png', 'Hero Image', $owner))->toBeNull()
+            ->and($file)->toBeInstanceOf(File::class)
+            ->and($file->company_uuid)->toBe('company-owner')
+            ->and($file->uploader_uuid)->toBe('user-owner')
+            ->and($file->subject_uuid)->toBe('user-owner')
+            ->and($file->subject_type)->toBe(Company::class)
+            ->and($file->bucket)->toBe('storefront-assets')
+            ->and($file->type)->toBe('hero_image')
+            ->and($file->original_filename)->toBe('Logo Mark.jpg')
+            ->and($file->content_type)->toBe('image/jpeg')
+            ->and($file->file_size)->toBe(Utils::getBase64ImageSize($png))
+            ->and($file->path)->toBe('uploads/storefront/user-owner/hero-image/Logo Mark.jpg')
+            ->and(Storage::disk('s3')->exists($file->path))->toBeTrue()
+            ->and(Storage::disk('s3')->get($file->path))->toBe($png);
+    } finally {
+        UtilsHttpStreamFake::$responses = [];
+        stream_wrapper_restore('http');
+        Utils::deleteDirectory($root);
     }
 });
 
