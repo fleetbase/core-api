@@ -30,6 +30,16 @@ class OperationalAlertSpy extends Alert
     }
 }
 
+class OperationalFailingAlertSpy extends OperationalAlertSpy
+{
+    public function update(array $attributes = [], array $options = []): bool
+    {
+        $this->updates[] = $attributes;
+
+        return false;
+    }
+}
+
 class OperationalNotificationSpy extends Notification
 {
     public int $saves   = 0;
@@ -260,6 +270,35 @@ it('derives alert names timestamps state and priority values', function () {
     Carbon::setTestNow();
 });
 
+it('exposes alert relationship contracts and nullable computed fallbacks', function () {
+    operational_models_database();
+    Carbon::setTestNow(Carbon::parse('2026-07-17 12:00:00', 'UTC'));
+
+    $alert = new Alert();
+    $alert->setRawAttributes([
+        'uuid'         => 'alert-nullable',
+        'severity'     => 'unknown',
+        'status'       => 'open',
+        'triggered_at' => null,
+        'created_at'   => Carbon::parse('2026-07-17 11:45:00', 'UTC'),
+    ], true);
+
+    expect($alert->getActivitylogOptions()->logAttributes)->toBe(['*'])
+        ->and($alert->acknowledgedBy()->getForeignKeyName())->toBe('acknowledged_by_uuid')
+        ->and($alert->resolvedBy()->getForeignKeyName())->toBe('resolved_by_uuid')
+        ->and($alert->subject()->getMorphType())->toBe('subject_type')
+        ->and($alert->subject_name)->toBeNull()
+        ->and($alert->duration_minutes)->toBeNull()
+        ->and($alert->age_minutes)->toBe(15)
+        ->and($alert->isSnoozed())->toBeFalse()
+        ->and($alert->getSeverityLevel())->toBe(0)
+        ->and((new Alert(['severity' => 'critical']))->getSeverityLevel())->toBe(4)
+        ->and((new Alert(['severity' => 'medium']))->getSeverityLevel())->toBe(2)
+        ->and((new Alert(['severity' => 'low']))->getSeverityLevel())->toBe(1);
+
+    Carbon::setTestNow();
+});
+
 it('updates alerts through acknowledge resolve escalate snooze and rule helpers', function () {
     operational_models_database();
     Carbon::setTestNow(Carbon::parse('2026-07-17 12:00:00', 'UTC'));
@@ -312,6 +351,27 @@ it('updates alerts through acknowledge resolve escalate snooze and rule helpers'
     Carbon::setTestNow();
 });
 
+it('preserves false update results for alert state mutations', function () {
+    operational_models_database();
+    Carbon::setTestNow(Carbon::parse('2026-07-17 12:00:00', 'UTC'));
+
+    $alert = new OperationalFailingAlertSpy();
+    $alert->setRawAttributes([
+        'uuid'     => 'alert-failing-update',
+        'severity' => 'medium',
+        'status'   => 'open',
+        'meta'     => [],
+    ], true);
+
+    expect($alert->acknowledge())->toBeFalse()
+        ->and($alert->resolve(null, 'Escalated to dispatch'))->toBeFalse()
+        ->and($alert->escalate('critical'))->toBeFalse()
+        ->and($alert->snooze(10))->toBeFalse()
+        ->and($alert->updates)->toHaveCount(4);
+
+    Carbon::setTestNow();
+});
+
 it('filters alerts through type severity status acknowledgement and priority scopes', function () {
     $capsule = operational_models_database();
 
@@ -356,6 +416,75 @@ it('filters alerts through type severity status acknowledgement and priority sco
         ->and(Alert::query()->unacknowledged()->pluck('uuid')->all())->toBe(['alert-1', 'alert-3'])
         ->and(Alert::query()->critical()->pluck('uuid')->all())->toBe(['alert-1'])
         ->and(Alert::query()->highPriority()->pluck('uuid')->all())->toBe(['alert-1', 'alert-3']);
+});
+
+it('loads related alerts by subject type and alert type without returning itself', function () {
+    $capsule = operational_models_database();
+
+    $capsule->getConnection('mysql')->table('alerts')->insert([
+        [
+            'uuid'         => 'alert-current',
+            'type'         => 'temperature',
+            'severity'     => 'medium',
+            'status'       => 'open',
+            'subject_type' => 'vehicle',
+            'subject_uuid' => 'vehicle-1',
+            'triggered_at' => '2026-07-17 10:00:00',
+            'created_at'   => '2026-07-17 10:00:00',
+            'updated_at'   => '2026-07-17 10:00:00',
+        ],
+        [
+            'uuid'         => 'alert-newest',
+            'type'         => 'temperature',
+            'severity'     => 'high',
+            'status'       => 'open',
+            'subject_type' => 'vehicle',
+            'subject_uuid' => 'vehicle-1',
+            'triggered_at' => '2026-07-17 11:00:00',
+            'created_at'   => '2026-07-17 11:00:00',
+            'updated_at'   => '2026-07-17 11:00:00',
+        ],
+        [
+            'uuid'         => 'alert-older',
+            'type'         => 'temperature',
+            'severity'     => 'low',
+            'status'       => 'open',
+            'subject_type' => 'vehicle',
+            'subject_uuid' => 'vehicle-1',
+            'triggered_at' => '2026-07-17 09:00:00',
+            'created_at'   => '2026-07-17 09:00:00',
+            'updated_at'   => '2026-07-17 09:00:00',
+        ],
+        [
+            'uuid'         => 'alert-other-type',
+            'type'         => 'battery',
+            'severity'     => 'critical',
+            'status'       => 'open',
+            'subject_type' => 'vehicle',
+            'subject_uuid' => 'vehicle-1',
+            'triggered_at' => '2026-07-17 12:00:00',
+            'created_at'   => '2026-07-17 12:00:00',
+            'updated_at'   => '2026-07-17 12:00:00',
+        ],
+    ]);
+
+    $alert = Alert::query()->where('uuid', 'alert-current')->first();
+
+    expect($alert->getRelatedAlerts(1)->pluck('uuid')->all())->toBe(['alert-newest']);
+});
+
+it('records alert notification attempts as successful activity events', function () {
+    operational_models_database();
+
+    $alert = new Alert();
+    $alert->setRawAttributes([
+        'uuid'     => 'alert-notification',
+        'severity' => 'critical',
+        'type'     => 'temperature',
+        'status'   => 'open',
+    ], true);
+
+    expect($alert->createNotification(['ops@example.test']))->toBeTrue();
 });
 
 it('report audit log scopes constrain execution and export actions', function () {
