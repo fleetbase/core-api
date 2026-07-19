@@ -1,6 +1,8 @@
 <?php
 
+use Fleetbase\Models\Company;
 use Fleetbase\Models\Setting;
+use Fleetbase\Models\User;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Events\Dispatcher;
@@ -87,6 +89,19 @@ function setting_model_database(): array
         $table->string('key')->unique();
         $table->text('value')->nullable();
     });
+    $schema->create('companies', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('name')->nullable();
+        $table->timestamps();
+        $table->softDeletes();
+    });
+    $schema->create('users', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('name')->nullable();
+        $table->string('email')->nullable();
+        $table->timestamps();
+        $table->softDeletes();
+    });
 
     return [$capsule, $cache];
 }
@@ -150,4 +165,47 @@ it('exposes JSON value helpers and database connection checks', function () {
         ->and($setting->getBoolean('feature.enabled'))->toBeTrue()
         ->and(Setting::hasConnection())->toBeTrue()
         ->and(Setting::doesntHaveConnection())->toBeFalse();
+});
+
+it('clears deleted setting cache entries and resolves owner models from setting keys', function () {
+    [$capsule, $cache] = setting_model_database();
+
+    $companyUuid = '8b5cc964-2d67-4d9f-8b5d-0aa3070a5b5d';
+    $userUuid    = '3fd99df4-c3a5-44e0-8760-6c40e438c0bb';
+    $capsule->getConnection('mysql')->table('companies')->insert([
+        'uuid'       => $companyUuid,
+        'name'       => 'Dispatch Co',
+        'created_at' => '2026-07-19 00:00:00',
+        'updated_at' => '2026-07-19 00:00:00',
+    ]);
+    $capsule->getConnection('mysql')->table('users')->insert([
+        'uuid'       => $userUuid,
+        'name'       => 'Ops User',
+        'email'      => 'ops@example.test',
+        'created_at' => '2026-07-19 00:00:00',
+        'updated_at' => '2026-07-19 00:00:00',
+    ]);
+
+    $companySetting = Setting::query()->create([
+        'key'   => 'company.' . $companyUuid . '.dispatch.enabled',
+        'value' => true,
+    ]);
+    $userSetting = Setting::query()->create([
+        'key'   => 'user.' . $userUuid . '.notifications.email',
+        'value' => true,
+    ]);
+    $globalSetting = Setting::query()->create([
+        'key'   => 'system.dispatch.enabled',
+        'value' => false,
+    ]);
+
+    $globalSetting->delete();
+
+    expect($cache->forgotten)->toContain('system_settings.system.dispatch.enabled')
+        ->and($companySetting->getCompany())->toBeInstanceOf(Company::class)
+        ->and($companySetting->getCompany()->uuid)->toBe($companyUuid)
+        ->and($companySetting->getUser())->toBeNull()
+        ->and($userSetting->getUser())->toBeInstanceOf(User::class)
+        ->and($userSetting->getUser()->uuid)->toBe($userUuid)
+        ->and($userSetting->getCompany())->toBeNull();
 });

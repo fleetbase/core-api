@@ -608,6 +608,7 @@ namespace {
 
     it('keeps report request query limits formats and status transitions stable', function () {
         $createRules      = (new CreateReportRequest())->rules();
+        $createMessages   = (new CreateReportRequest())->messages();
         $updateRules      = (new UpdateReportRequest())->rules();
         $validateRules    = (new ValidateReportQueryRequest())->rules();
         $validateMessages = (new ValidateReportQueryRequest())->messages();
@@ -622,6 +623,16 @@ namespace {
             ->and($createRules['title'])->toBe('required|string|max:255')
             ->and($createRules['query_config.select'])->toBe('required_with:query_config|array|min:1')
             ->and($createRules['query_config.limit'])->toBe('nullable|integer|min:1|max:10000')
+            ->and($createMessages)->toBe([
+                'title.required'                         => 'Report title is required',
+                'type.required'                          => 'Report type is required',
+                'query_config.select.required_with'      => 'At least one column must be selected',
+                'query_config.from.required_with'        => 'Primary table must be specified',
+                'query_config.joins.*.type.in'           => 'Join type must be one of: inner, left, right, full',
+                'query_config.where.*.operator.required' => 'Where condition operator is required',
+                'query_config.orderBy.*.direction.in'    => 'Order direction must be asc or desc',
+                'query_config.limit.max'                 => 'Query limit cannot exceed 10,000 rows',
+            ])
             ->and($updateRules['title'])->toBe('sometimes|required|string|max:255')
             ->and($updateRules['status'])->toBe('sometimes|string|in:pending,generating,complete,failed')
             ->and($validateRules['query_config.limit'])->toBe('nullable|integer|min:1|max:10000')
