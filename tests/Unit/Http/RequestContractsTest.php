@@ -575,13 +575,17 @@ namespace {
             }
         });
 
-        $internalSwitch = route_request(SwitchOrganizationRequest::class, '/int/v1/organizations/switch');
-        $publicSwitch   = route_request(SwitchOrganizationRequest::class, '/v1/organizations/switch');
+        $internalSwitch     = route_request(SwitchOrganizationRequest::class, '/int/v1/organizations/switch');
+        $publicSwitch       = route_request(SwitchOrganizationRequest::class, '/v1/organizations/switch');
+        $anonymousSwitch    = request_with_session(SwitchOrganizationRequest::class, 'POST');
+        $authorizedSwitch   = request_with_session(SwitchOrganizationRequest::class, 'POST', [], ['user' => 'user-1']);
 
         expect((new AdminRequest())->authorize())->toBeFalse()
             ->and($admin->authorize())->toBeTrue()
             ->and($nonAdmin->authorize())->toBeFalse()
             ->and($admin->rules())->toBe([])
+            ->and(bind_active_request($anonymousSwitch)->authorize())->toBeFalse()
+            ->and(bind_active_request($authorizedSwitch)->authorize())->toBeTrue()
             ->and(bind_active_request($internalSwitch)->rules()['next'])->toBe(['required', 'exists:companies,uuid'])
             ->and(bind_active_request($publicSwitch)->rules()['next'])->toBe(['required', 'exists:companies,public_id']);
     });

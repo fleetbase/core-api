@@ -5,10 +5,66 @@ use Fleetbase\Casts\Json;
 use Fleetbase\Casts\Money;
 use Fleetbase\Casts\PolymorphicType;
 use Fleetbase\Models\User;
+use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Events\Dispatcher;
+use Illuminate\Filesystem\FilesystemManager;
+use Illuminate\Support\Facades\Facade;
 
 class CastsTestModel extends Model
 {
+}
+
+function custom_value_cast_file_database(): Capsule
+{
+    $container = bind_test_container([
+        'app.env'                    => 'testing',
+        'database.default'           => 'mysql',
+        'database.connections.mysql' => [
+            'driver'   => 'sqlite',
+            'database' => ':memory:',
+            'prefix'   => '',
+        ],
+        'filesystems.default'       => 'testing',
+        'filesystems.disks.testing' => [
+            'driver' => 'local',
+            'root'   => sys_get_temp_dir() . '/fleetbase-custom-value-cast-files',
+            'url'    => 'https://files.example.test/storage',
+        ],
+    ]);
+
+    $capsule = new Capsule($container);
+    $capsule->addConnection([
+        'driver'   => 'sqlite',
+        'database' => ':memory:',
+        'prefix'   => '',
+    ], 'mysql');
+    $capsule->setEventDispatcher(new Dispatcher($container));
+    $capsule->setAsGlobal();
+    $capsule->bootEloquent();
+
+    $databaseManager = $capsule->getDatabaseManager();
+    $databaseManager->setDefaultConnection('mysql');
+    $container->instance('db', $databaseManager);
+    Facade::clearResolvedInstance('db');
+
+    $container->instance('filesystem', new FilesystemManager($container));
+    Facade::clearResolvedInstance('filesystem');
+
+    $capsule->getConnection('mysql')->getSchemaBuilder()->create('files', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('public_id')->nullable();
+        $table->string('disk')->nullable();
+        $table->string('path')->nullable();
+        $table->string('original_filename')->nullable();
+        $table->string('content_type')->nullable();
+        $table->unsignedBigInteger('file_size')->nullable();
+        $table->text('meta')->nullable();
+        $table->timestamps();
+        $table->timestamp('deleted_at')->nullable();
+    });
+
+    return $capsule;
 }
 
 test('json cast decodes valid json and leaves non json values unchanged', function () {
@@ -63,4 +119,31 @@ test('custom value cast serializes structured values and preserves scalar file r
         ->and($cast->get($model, 'value', 'plain text', ['value_type' => 'text']))->toBe('plain text')
         ->and($cast->set($model, 'value', 'plain text', ['value_type' => 'text']))->toBe('plain text')
         ->and($cast->get($model, 'value', 'file:not-a-uuid', ['value_type' => 'file']))->toBe('file:not-a-uuid');
+});
+
+test('custom value cast resolves existing file references into file json', function () {
+    $capsule = custom_value_cast_file_database();
+    $uuid    = '11111111-1111-4111-8111-111111111111';
+
+    $capsule->getConnection('mysql')->table('files')->insert([
+        'uuid'              => $uuid,
+        'public_id'         => 'file_test',
+        'disk'              => 'testing',
+        'path'              => 'documents/proof.pdf',
+        'original_filename' => 'proof.pdf',
+        'content_type'      => 'application/pdf',
+        'created_at'        => '2026-01-01 00:00:00',
+        'updated_at'        => '2026-01-01 00:00:00',
+    ]);
+
+    $cast   = new CustomValue();
+    $model  = new CastsTestModel();
+    $result = $cast->get($model, 'value', "file:{$uuid}", ['value_type' => 'file']);
+    $file   = json_decode($result, true);
+
+    expect($file['uuid'])->toBe($uuid)
+        ->and($file['public_id'])->toBe('file_test')
+        ->and($file['path'])->toBe('documents/proof.pdf')
+        ->and($file['url'])->toBe('https://files.example.test/storage/documents/proof.pdf')
+        ->and($file['hash_name'])->toBe('proof.pdf');
 });
