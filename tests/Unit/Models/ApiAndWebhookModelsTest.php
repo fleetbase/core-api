@@ -1,8 +1,11 @@
 <?php
 
 use Fleetbase\Models\ApiCredential;
+use Fleetbase\Models\Company;
 use Fleetbase\Models\WebhookEndpoint;
 use Fleetbase\Observers\ApiCredentialObserver;
+use Illuminate\Database\Capsule\Manager as Capsule;
+use Illuminate\Events\Dispatcher;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -116,10 +119,22 @@ it('api credential observer writes generated keys and persists live and test cre
 ]);
 
 it('evaluates webhook endpoint event filters and api credential display labels', function () {
-    bind_test_container([
+    $container = bind_test_container([
+        'database.default'           => 'mysql',
+        'database.connections.mysql' => [
+            'driver'   => 'sqlite',
+            'database' => ':memory:',
+            'prefix'   => '',
+        ],
         'api.events'              => ['order.created', 'order.updated', 'order.deleted'],
-        'fleetbase.connection.db' => 'testing',
+        'fleetbase.connection.db' => 'mysql',
     ]);
+    $capsule = new Capsule($container);
+    $capsule->addConnection(config('database.connections.mysql'), 'mysql');
+    $capsule->setEventDispatcher(new Dispatcher($container));
+    $capsule->setAsGlobal();
+    $capsule->bootEloquent();
+
     Cache::swap(new ApiAndWebhookModelsTaggedCacheFake());
 
     $namedCredential = new ApiCredential();
@@ -135,8 +150,13 @@ it('evaluates webhook endpoint event filters and api credential display labels',
     ], true);
     $namedEndpoint->events = ['order.created'];
     $namedEndpoint->setRelation('apiCredential', $namedCredential);
+    $logOptions = $namedEndpoint->getActivitylogOptions();
 
     expect($namedEndpoint->is_listening_on_all_events)->toBeFalse()
+        ->and($logOptions->logAttributes)->toBe(['*'])
+        ->and($logOptions->logOnlyDirty)->toBeTrue()
+        ->and($namedEndpoint->company()->getRelated())->toBeInstanceOf(Company::class)
+        ->and($namedEndpoint->apiCredential()->getRelated())->toBeInstanceOf(ApiCredential::class)
         ->and($namedEndpoint->canFireEvent('order.created'))->toBeTrue()
         ->and($namedEndpoint->cannotFireEvent('order.deleted'))->toBeTrue()
         ->and($namedEndpoint->api_credential_name)->toBe('Console Key (flb_live_named)');
