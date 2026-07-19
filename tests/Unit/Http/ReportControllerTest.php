@@ -1,6 +1,7 @@
 <?php
 
 use Fleetbase\Http\Controllers\Internal\v1\ReportController;
+use Fleetbase\Support\Reporting\ReportQueryValidator;
 use Fleetbase\Support\Reporting\ReportSchemaRegistry;
 use Fleetbase\Support\Reporting\Schema\Column;
 use Fleetbase\Support\Reporting\Schema\Relationship;
@@ -111,6 +112,14 @@ class ReportControllerThrowingRegistry extends ReportSchemaRegistry
     public function getTableSchema(string $tableName): array
     {
         throw new RuntimeException("Reporting table {$tableName} not found");
+    }
+}
+
+class ReportControllerThrowingQueryValidator extends ReportQueryValidator
+{
+    public function validate(array $queryConfig): array
+    {
+        throw new RuntimeException('validator unavailable');
     }
 }
 
@@ -338,6 +347,13 @@ function report_controller_payload(JsonResponse $response): array
     return $response->getData(true);
 }
 
+function report_controller_use_query_validator(ReportController $controller, ReportQueryValidator $validator): void
+{
+    $property = new ReflectionProperty(ReportController::class, 'queryValidator');
+    $property->setAccessible(true);
+    $property->setValue($controller, $validator);
+}
+
 afterEach(function () {
     session()->flush();
     config([
@@ -421,6 +437,36 @@ test('report controller validates query configuration and reports validation err
         ->and($valid['message'])->toBe('Query configuration is valid')
         ->and($valid['summary']['total_columns'])->toBe(2)
         ->and($valid['summary']['has_limit'])->toBeTrue();
+});
+
+test('report controller wraps validator exceptions for validation and direct query actions', function () {
+    $registry = report_controller_bind();
+
+    $controller = new ReportController();
+    report_controller_use_query_validator($controller, new ReportControllerThrowingQueryValidator($registry));
+
+    $validate = $controller->validateQuery(Request::create('/int/v1/reports/validate-query', 'POST', [
+        'query_config' => report_controller_query_config(),
+    ]));
+    $execute = $controller->executeQuery(Request::create('/int/v1/reports/execute-query', 'POST', [
+        'query_config' => report_controller_query_config(),
+    ]));
+    $export = $controller->exportQuery(Request::create('/int/v1/reports/export-query', 'POST', [
+        'query_config' => report_controller_query_config(),
+        'format'       => 'json',
+    ]));
+
+    expect($validate->getStatusCode())->toBe(500)
+        ->and(report_controller_payload($validate)['success'])->toBeFalse()
+        ->and(report_controller_payload($validate)['error']['code'])->toBe('QUERY_EXECUTION_FAILED')
+        ->and(report_controller_payload($validate)['meta']['company_id'])->toBe('company-1')
+        ->and($execute->getStatusCode())->toBe(500)
+        ->and(report_controller_payload($execute)['success'])->toBeFalse()
+        ->and(report_controller_payload($execute)['error']['code'])->toBe('QUERY_EXECUTION_FAILED')
+        ->and($export->getStatusCode())->toBe(500)
+        ->and(report_controller_payload($export)['success'])->toBeFalse()
+        ->and(report_controller_payload($export)['error']['code'])->toBe('EXPORT_FAILED')
+        ->and(report_controller_payload($export)['error']['format'])->toBe('json');
 });
 
 test('report controller validates computed column expression boundaries', function () {
@@ -527,6 +573,42 @@ test('report controller executes direct queries with active company scoping', fu
         ->and($payload['meta']['query_sql'])->toContain('company_uuid');
 });
 
+test('report controller reports validation and timeout failures while executing saved or direct reports', function () {
+    report_controller_bind();
+    $capsule = report_controller_database();
+    $capsule->getConnection('testing')->table('reports')->insert([
+        'uuid'         => 'report-invalid-config',
+        'public_id'    => 'report_invalid',
+        'company_uuid' => 'company-1',
+        'query_config' => json_encode(report_controller_query_config([
+            'table' => ['name' => 'missing_table'],
+        ])),
+    ]);
+
+    $controller = new ReportController();
+
+    $savedValidation = $controller->execute(Request::create('/int/v1/reports/report-invalid-config/execute'), 'report-invalid-config');
+
+    config(['reports.query_timeout' => 0]);
+
+    $timeout = $controller->executeQuery(Request::create('/int/v1/reports/execute-query', 'POST', [
+        'query_config' => report_controller_query_config([
+            'columns' => [
+                ['name' => 'status'],
+            ],
+        ]),
+    ]));
+
+    expect($savedValidation->getStatusCode())->toBe(400)
+        ->and(report_controller_payload($savedValidation)['success'])->toBeFalse()
+        ->and(report_controller_payload($savedValidation)['error']['code'])->toBe('VALIDATION_FAILED')
+        ->and(report_controller_payload($savedValidation)['error']['validation_errors'])->toContain("Table 'missing_table' is not available for reporting")
+        ->and($timeout->getStatusCode())->toBe(408)
+        ->and(report_controller_payload($timeout)['success'])->toBeFalse()
+        ->and(report_controller_payload($timeout)['error']['code'])->toBe('TIMEOUT')
+        ->and(report_controller_payload($timeout)['error']['message'])->toBe('Query execution timed out');
+});
+
 test('report controller executes saved reports with active company scoping', function () {
     report_controller_bind();
     report_controller_database();
@@ -601,6 +683,31 @@ test('report controller validates and exports saved reports inside the active co
         ->and($payload['format'])->toBe('json')
         ->and($payload['rows'])->toBe(2)
         ->and($payload['download_url'])->toBe('http://fleetbase.test/reports/download/' . rawurlencode($payload['filename']));
+});
+
+test('report controller reports saved report export execution failures after format validation', function () {
+    report_controller_bind();
+    $capsule = report_controller_database();
+    $capsule->getConnection('testing')->table('reports')->insert([
+        'uuid'         => 'report-export-invalid-config',
+        'public_id'    => 'report_export_invalid',
+        'company_uuid' => 'company-1',
+        'query_config' => json_encode(report_controller_query_config([
+            'table' => ['name' => 'missing_table'],
+        ])),
+    ]);
+
+    $controller = new ReportController();
+    $response   = $controller->export(Request::create('/int/v1/reports/report-export-invalid-config/export', 'POST', [
+        'format' => 'json',
+    ]), 'report-export-invalid-config');
+    $payload = report_controller_payload($response);
+
+    expect($response->getStatusCode())->toBe(500)
+        ->and($payload['success'])->toBeFalse()
+        ->and($payload['error']['code'])->toBe('EXPORT_FAILED')
+        ->and($payload['error']['format'])->toBe('json')
+        ->and($payload['error']['message'])->toBe('Export to json format failed');
 });
 
 test('report controller returns handled errors for report execution and export outside the active company', function () {
