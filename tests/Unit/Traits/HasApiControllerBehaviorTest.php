@@ -4,6 +4,7 @@ use Fleetbase\Http\Requests\Internal\BulkDeleteRequest;
 use Fleetbase\Http\Resources\FleetbaseResource;
 use Fleetbase\Traits\HasApiControllerBehavior;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Facade;
@@ -177,6 +178,7 @@ class HasApiControllerBehaviorController
     use HasApiControllerBehavior;
 
     public array $hookCalls = [];
+    public array $rules     = [];
 
     public function __construct(?HasApiControllerBehaviorModel $model = null)
     {
@@ -325,6 +327,15 @@ test('api controller behavior returns single list find search count and bulk del
     $count                      = $controller->count(has_api_controller_behavior_request('/v1/widgets/count'));
     $bulkDeleteRequest          = BulkDeleteRequest::create('/v1/widgets/bulk-delete', 'DELETE', ['ids' => ['a', 'b', 'c']]);
     $bulkDelete                 = $controller->bulkDelete($bulkDeleteRequest);
+    $bulkDeleteFailureModel     = new class extends HasApiControllerBehaviorModel {
+        public function bulkRemove(array $ids): int
+        {
+            throw new RuntimeException('bulk delete failed');
+        }
+    };
+    $bulkDeleteFailure = (new HasApiControllerBehaviorController($bulkDeleteFailureModel))->bulkDelete(
+        BulkDeleteRequest::create('/v1/widgets/bulk-delete', 'DELETE', ['ids' => ['a']])
+    );
 
     expect($single->resolve())->toMatchArray(['uuid' => 'widget-1', 'name' => 'Primary'])
         ->and($missing->getStatusCode())->toBe(404)
@@ -340,6 +351,7 @@ test('api controller behavior returns single list find search count and bulk del
             'message' => 'Deleted 3 widgets',
             'count'   => 3,
         ])
+        ->and($bulkDeleteFailure->getData(true))->toBe(['errors' => ['bulk delete failed']])
         ->and(array_column($controller->hookCalls, 0))->toContain('onQueryRecord')
         ->and(array_column($controller->hookCalls, 0))->toContain('onFindRecord');
 });
@@ -351,13 +363,23 @@ test('api controller behavior creates updates and formats exception responses', 
     $updated = $controller->updateRecord(has_api_controller_behavior_request('/v1/widgets/widget-1', 'PATCH', ['name' => 'Updated']), 'widget-1');
 
     $failingModel = new class extends HasApiControllerBehaviorModel {
+        public string $failureType = 'runtime';
+
         public function createRecordFromRequest(Request $request, ?callable $onBefore = null, ?callable $onAfter = null): self
         {
+            if ($this->failureType === 'query') {
+                throw new QueryException('mysql', 'insert into widgets', [], new RuntimeException('database unavailable'));
+            }
+
             throw new RuntimeException('write failed');
         }
 
         public function updateRecordFromRequest(Request $request, $id, ?callable $onBefore = null, ?callable $onAfter = null): self
         {
+            if ($this->failureType === 'query') {
+                throw new QueryException('mysql', 'update widgets', [], new RuntimeException('database unavailable'));
+            }
+
             throw new RuntimeException('update failed');
         }
     };
@@ -366,11 +388,28 @@ test('api controller behavior creates updates and formats exception responses', 
     $createFailure = $failingController->createRecord(has_api_controller_behavior_request('/v1/widgets', 'POST', ['name' => 'Nope']));
     $updateFailure = $failingController->updateRecord(has_api_controller_behavior_request('/v1/widgets/widget-1', 'PATCH', ['name' => 'Nope']), 'widget-1');
 
+    $failingModel->failureType = 'query';
+    $createQueryFailure        = $failingController->createRecord(has_api_controller_behavior_request('/v1/widgets', 'POST', ['name' => 'Nope']));
+    $updateQueryFailure        = $failingController->updateRecord(has_api_controller_behavior_request('/v1/widgets/widget-1', 'PATCH', ['name' => 'Nope']), 'widget-1');
+
     expect($created->resolve())->toMatchArray(['uuid' => 'created-widget', 'name' => 'Created'])
         ->and($updated->resolve())->toMatchArray(['uuid' => 'widget-1', 'name' => 'Updated'])
         ->and(array_column($controller->hookCalls, 0))->toBe(['onBeforeCreate', 'onAfterCreate', 'onBeforeUpdate', 'onAfterUpdate'])
         ->and($createFailure->getData(true))->toBe(['errors' => ['Error occurred while trying to create a Widget']])
-        ->and($updateFailure->getData(true))->toBe(['errors' => ['Error occurred while trying to update a Widget']]);
+        ->and($updateFailure->getData(true))->toBe(['errors' => ['Error occurred while trying to update a Widget']])
+        ->and($createQueryFailure->getData(true))->toBe(['errors' => ['Error occurred while trying to create a Widget']])
+        ->and($updateQueryFailure->getData(true))->toBe(['errors' => ['Error occurred while trying to update a Widget']]);
+});
+
+test('api controller behavior validates fallback rule contracts before writing', function () {
+    $controller        = new HasApiControllerBehaviorController();
+    $controller->rules = ['name' => ['required']];
+
+    $createFailure = $controller->createRecord(has_api_controller_behavior_request('/v1/widgets', 'POST'));
+    $updateFailure = $controller->updateRecord(has_api_controller_behavior_request('/v1/widgets/widget-1', 'PATCH'), 'widget-1');
+
+    expect($createFailure->getData(true))->toBe(['errors' => ['validation' => ['The given data was invalid.']]])
+        ->and($updateFailure->getData(true))->toBe(['errors' => ['validation' => ['The given data was invalid.']]]);
 });
 
 test('api controller behavior scopes public deletes by public id and session company', function () {
@@ -399,5 +438,22 @@ test('api controller behavior scopes public deletes by public id and session com
         ->and($missing->getData(true))->toBe([
             'status'  => 'failed',
             'message' => 'Widget not found',
+        ]);
+});
+
+test('api controller behavior returns internal delete resources and skips unavailable company scopes', function () {
+    $model                   = new HasApiControllerBehaviorModel();
+    $model->hasCompanyColumn = false;
+    $model->deletableRecord  = new HasApiControllerBehaviorModel(['uuid' => 'widget-1', 'public_id' => 'widget_public_1', 'name' => 'Delete Me']);
+    $controller              = new HasApiControllerBehaviorController($model);
+
+    $request = has_api_controller_behavior_request('/int/v1/widgets/widget-1', 'DELETE');
+    session(['company' => 'company-1']);
+
+    $response = $controller->deleteRecord('widget-1', $request);
+
+    expect($response->resolve())->toMatchArray(['uuid' => 'widget-1', 'name' => 'Delete Me'])
+        ->and($model->lastBuilder->wheres)->toBe([
+            ['uuid', 'widget-1', null, 'and'],
         ]);
 });
