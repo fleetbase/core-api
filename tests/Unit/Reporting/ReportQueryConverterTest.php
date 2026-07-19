@@ -56,7 +56,7 @@ function report_converter_registry_fixture(): ReportSchemaRegistry
     return $registry;
 }
 
-function report_converter_database_fixture(?string $companyUuid = 'company-1'): void
+function report_converter_database_fixture(mixed $companyUuid = 'company-1'): void
 {
     $connectionConfig = [
         'driver'   => 'sqlite',
@@ -124,7 +124,7 @@ function report_converter_database_fixture(?string $companyUuid = 'company-1'): 
     ]);
 }
 
-function report_converter_execute(array $config, ?string $companyUuid = 'company-1'): array
+function report_converter_execute(array $config, mixed $companyUuid = 'company-1'): array
 {
     report_converter_database_fixture($companyUuid);
 
@@ -336,4 +336,300 @@ test('report query converter returns structured failures for missing tenant scop
     expect($invalidComputedColumn['success'])->toBeFalse()
         ->and($invalidComputedColumn['error'])->toContain("Invalid computed column 'dangerous'")
         ->and($invalidComputedColumn['error'])->toContain('forbidden SQL keyword: DROP');
+});
+
+test('report query converter exports successful results and exposes supported export formats', function () {
+    report_converter_database_fixture();
+
+    $converter = new ReportQueryConverter(report_converter_registry_fixture(), [
+        'table'   => ['name' => 'orders'],
+        'columns' => [
+            ['name' => 'tracking_number', 'label' => 'Tracking Number'],
+            ['name' => 'status', 'label' => 'Status'],
+        ],
+        'conditions' => [
+            [
+                'field'    => ['name' => 'status'],
+                'operator' => ['value' => 'eq'],
+                'value'    => 'pending',
+            ],
+        ],
+    ]);
+
+    $export  = $converter->export('csv');
+    $content = file_get_contents($export['filepath']);
+
+    expect($export['success'])->toBeTrue()
+        ->and($export['format'])->toBe('csv')
+        ->and($export['filename'])->toStartWith('report-orders-')
+        ->and($export['rows'])->toBe(1)
+        ->and($export['size'])->toBeGreaterThan(0)
+        ->and($content)->toContain('"Tracking Number",Status')
+        ->and($content)->toContain('T-002,pending')
+        ->and(array_keys($converter->getAvailableExportFormats()))->toContain('csv', 'json', 'excel');
+});
+
+test('report query converter returns execution failure when exporting invalid queries', function () {
+    report_converter_database_fixture(null);
+
+    $converter = new ReportQueryConverter(report_converter_registry_fixture(), [
+        'table'   => ['name' => 'orders'],
+        'columns' => [
+            ['name' => 'tracking_number'],
+        ],
+    ]);
+
+    $export = $converter->export('json');
+
+    expect($export['success'])->toBeFalse()
+        ->and($export['error'])->toBe('No active company in session; cannot scope report by company_uuid.');
+});
+
+test('report query converter analyzes structural complexity without executing sql', function () {
+    $simple = new ReportQueryConverter(report_converter_registry_fixture(), [
+        'table'   => ['name' => 'orders'],
+        'columns' => [
+            ['name' => 'tracking_number'],
+        ],
+    ]);
+
+    $complex = new ReportQueryConverter(report_converter_registry_fixture(), [
+        'table'            => ['name' => 'orders'],
+        'columns'          => array_fill(0, 22, ['name' => 'tracking_number']),
+        'computed_columns' => [
+            ['name' => 'status_upper', 'expression' => 'UPPER(status)'],
+            ['name' => 'total_label', 'expression' => "CONCAT('total:', total)"],
+        ],
+        'joins' => [
+            ['table' => 'payloads'],
+        ],
+        'conditions' => [
+            ['conditions' => array_fill(0, 6, [
+                'field'    => ['name' => 'status'],
+                'operator' => ['value' => 'eq'],
+                'value'    => 'pending',
+            ])],
+        ],
+        'groupBy' => [
+            [
+                'groupBy'     => ['name' => 'status'],
+                'aggregateFn' => ['value' => 'count'],
+                'aggregateBy' => ['name' => '*'],
+            ],
+        ],
+        'sortBy' => [
+            [
+                'column'    => ['name' => 'count_all'],
+                'direction' => ['value' => 'desc'],
+            ],
+        ],
+        'limit' => 25,
+    ]);
+
+    expect($simple->getQueryAnalysis())->toMatchArray([
+        'table_name'             => 'orders',
+        'complexity'             => 'simple',
+        'joins_count'            => 0,
+        'selected_columns_count' => 1,
+        'conditions_count'       => 0,
+        'has_limit'              => false,
+    ])
+        ->and($complex->getQueryAnalysis())->toMatchArray([
+            'table_name'             => 'orders',
+            'complexity'             => 'complex',
+            'joins_count'            => 1,
+            'selected_columns_count' => 24,
+            'conditions_count'       => 6,
+            'group_by_count'         => 1,
+            'sort_by_count'          => 1,
+            'has_limit'              => true,
+            'limit'                  => 25,
+        ]);
+});
+
+test('report query converter resolves company scope from object and array session values', function () {
+    $objectResult = report_converter_execute([
+        'table'   => ['name' => 'orders'],
+        'columns' => [
+            ['name' => 'tracking_number'],
+        ],
+        'sortBy' => [
+            [
+                'column'    => ['name' => 'tracking_number'],
+                'direction' => ['value' => 'asc'],
+            ],
+        ],
+    ], (object) ['company_uuid' => 'company-1']);
+
+    $arrayResult = report_converter_execute([
+        'table'   => ['name' => 'orders'],
+        'columns' => [
+            ['name' => 'tracking_number'],
+        ],
+    ], ['id' => 'company-2']);
+
+    expect($objectResult['success'])->toBeTrue()
+        ->and(array_map(fn ($row) => $row->tracking_number, $objectResult['data']))->toBe(['T-001', 'T-002'])
+        ->and($arrayResult['success'])->toBeTrue()
+        ->and($arrayResult['data'])->toHaveCount(1)
+        ->and($arrayResult['data'][0]->tracking_number)->toBe('T-003');
+});
+
+test('report query converter applies remaining scalar condition operators and offsets', function () {
+    $notEqual = report_converter_execute([
+        'table'   => ['name' => 'orders'],
+        'columns' => [
+            ['name' => 'tracking_number'],
+        ],
+        'conditions' => [
+            [
+                'field'    => ['name' => 'status'],
+                'operator' => ['value' => 'neq'],
+                'value'    => 'dispatched',
+            ],
+        ],
+    ]);
+
+    $lessThanOrEqual = report_converter_execute([
+        'table'   => ['name' => 'orders'],
+        'columns' => [
+            ['name' => 'tracking_number'],
+        ],
+        'conditions' => [
+            [
+                'field'    => ['name' => 'total'],
+                'operator' => ['value' => 'lte'],
+                'value'    => 75,
+            ],
+        ],
+    ]);
+
+    $notLike = report_converter_execute([
+        'table'   => ['name' => 'orders'],
+        'columns' => [
+            ['name' => 'tracking_number'],
+        ],
+        'conditions' => [
+            [
+                'field'    => ['name' => 'tracking_number'],
+                'operator' => ['value' => 'not_like'],
+                'value'    => '001',
+            ],
+        ],
+    ]);
+
+    $inArray = report_converter_execute([
+        'table'   => ['name' => 'orders'],
+        'columns' => [
+            ['name' => 'tracking_number'],
+        ],
+        'conditions' => [
+            [
+                'field'    => ['name' => 'status'],
+                'operator' => ['value' => 'in'],
+                'value'    => ['pending'],
+            ],
+        ],
+    ]);
+
+    $notBetween = report_converter_execute([
+        'table'   => ['name' => 'orders'],
+        'columns' => [
+            ['name' => 'tracking_number'],
+        ],
+        'conditions' => [
+            [
+                'field'    => ['name' => 'total'],
+                'operator' => ['value' => 'not_between'],
+                'value'    => [100, 200],
+            ],
+        ],
+    ]);
+
+    $nullPayload = report_converter_execute([
+        'table'   => ['name' => 'orders'],
+        'columns' => [
+            ['name' => 'tracking_number'],
+        ],
+        'conditions' => [
+            [
+                'field'    => ['name' => 'payload_uuid'],
+                'operator' => ['value' => 'null'],
+                'value'    => null,
+            ],
+        ],
+    ]);
+
+    $offset = report_converter_execute([
+        'table'   => ['name' => 'orders'],
+        'columns' => [
+            ['name' => 'tracking_number'],
+        ],
+        'sortBy' => [
+            [
+                'column'    => ['name' => 'tracking_number'],
+                'direction' => ['value' => 'asc'],
+            ],
+        ],
+        'limit'  => 1,
+        'offset' => 1,
+    ]);
+
+    expect($notEqual['data'][0]->tracking_number)->toBe('T-002')
+        ->and($lessThanOrEqual['data'][0]->tracking_number)->toBe('T-002')
+        ->and($notLike['data'][0]->tracking_number)->toBe('T-002')
+        ->and($inArray['data'][0]->tracking_number)->toBe('T-002')
+        ->and($notBetween['data'][0]->tracking_number)->toBe('T-002')
+        ->and($nullPayload['data'])->toBe([])
+        ->and($offset['data'])->toHaveCount(1)
+        ->and($offset['data'][0]->tracking_number)->toBe('T-002');
+});
+
+test('report query converter aggregates computed group by metadata supplied by aggregate definitions', function () {
+    $result = report_converter_execute([
+        'table'   => ['name' => 'orders'],
+        'columns' => [
+            ['name' => 'status'],
+        ],
+        'groupBy' => [
+            [
+                'groupBy'     => ['name' => 'status'],
+                'aggregateFn' => ['value' => 'sum'],
+                'aggregateBy' => [
+                    'name'        => 'gross_total',
+                    'computed'    => true,
+                    'computation' => 'total * 2',
+                    'type'        => 'decimal',
+                    'label'       => 'Gross Total',
+                ],
+            ],
+        ],
+        'sortBy' => [
+            [
+                'column'    => ['name' => 'sum_gross_total'],
+                'direction' => ['value' => 'desc'],
+            ],
+        ],
+    ]);
+
+    expect($result['success'])->toBeTrue()
+        ->and($result['data'])->toHaveCount(2)
+        ->and((float) $result['data'][0]->sum_gross_total)->toBe(251.0)
+        ->and((float) $result['data'][1]->sum_gross_total)->toBe(150.0)
+        ->and($result['meta']['query_sql'])->toContain('SUM(orders.total * 2)')
+        ->and($result['columns'])->toContainEqual([
+            'name'        => 'gross_total',
+            'column_name' => 'gross_total',
+            'label'       => 'Gross Total',
+            'type'        => 'decimal',
+            'computed'    => true,
+            'expression'  => 'total * 2',
+        ])
+        ->and($result['columns'])->toContainEqual([
+            'name'           => 'sum_gross_total',
+            'column_name'    => 'sum_gross_total',
+            'label'          => 'Sum (gross_total)',
+            'type'           => 'decimal',
+            'auto_join_path' => null,
+        ]);
 });

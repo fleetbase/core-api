@@ -354,3 +354,125 @@ test('report query validator blocks sql injection patterns anywhere in the query
     expect($result['valid'])->toBeFalse()
         ->and($result['errors'])->toContain('Potential SQL injection detected: value');
 });
+
+test('report query validator stops detailed validation when basic structure is invalid', function () {
+    $result = report_validator_fixture()->validate([
+        'table'   => 'orders',
+        'columns' => [],
+        'limit'   => 0,
+    ]);
+
+    expect($result['valid'])->toBeFalse()
+        ->and($result['errors'])->toContain('The table field must be an array.')
+        ->and($result['errors'])->toContain('The columns field must be at least 1.')
+        ->and($result['errors'])->toContain('The limit field must be at least 1.')
+        ->and($result['errors'])->not->toContain("Table 'orders' is not available for reporting")
+        ->and($result['summary'])->toMatchArray([
+            'complexity'            => 'low',
+            'total_columns'         => 0,
+            'total_joins'           => 0,
+            'total_conditions'      => 0,
+            'has_grouping'          => false,
+            'has_sorting'           => false,
+            'has_limit'             => true,
+            'estimated_performance' => 'fast',
+        ]);
+});
+
+test('report query validator validates joined table selected columns and joined field availability', function () {
+    $result = report_validator_fixture()->validate(valid_report_query_config([
+        'columns' => [
+            ['name' => 'status'],
+        ],
+        'joins' => [
+            [
+                'key'             => 'customers',
+                'table'           => 'customers',
+                'type'            => 'inner',
+                'local_key'       => 'customer_uuid',
+                'foreign_key'     => 'uuid',
+                'selectedColumns' => [
+                    ['name' => 'name', 'alias' => 'customer_name'],
+                    ['name' => 'missing_customer_column'],
+                ],
+            ],
+        ],
+        'conditions' => [
+            [
+                'field'    => ['name' => 'name', 'table' => 'customers'],
+                'operator' => ['value' => 'contains'],
+                'value'    => 'Acme',
+            ],
+        ],
+        'groupBy' => [],
+        'sortBy'  => [],
+    ]));
+
+    expect($result['valid'])->toBeFalse()
+        ->and($result['errors'])->toContain("Column 'missing_customer_column' does not exist in table 'customers'")
+        ->and($result['errors'])->not->toContain("conditions[0]: Field 'name' is not available in the query");
+});
+
+test('report query validator reports condition value errors and empty value warnings by operator', function () {
+    $result = report_validator_fixture()->validate(valid_report_query_config([
+        'conditions' => [
+            [
+                'field'    => ['name' => 'status'],
+                'operator' => ['value' => 'in'],
+                'value'    => 123,
+            ],
+            [
+                'field'    => ['name' => 'total'],
+                'operator' => ['value' => 'not_between'],
+                'value'    => [10],
+            ],
+            [
+                'field'    => ['name' => 'tracking_number'],
+                'operator' => ['value' => 'eq'],
+                'value'    => '',
+            ],
+            [
+                'field'    => ['name' => 'customer_token'],
+                'operator' => ['value' => 'is_null'],
+                'value'    => null,
+            ],
+        ],
+        'groupBy' => [],
+        'sortBy'  => [],
+    ]));
+
+    expect($result['valid'])->toBeFalse()
+        ->and($result['errors'])->toContain("conditions[0]: Value for 'in' operator must be an array or comma-separated string")
+        ->and($result['errors'])->toContain("conditions[1]: Value for 'not_between' operator must be an array with exactly 2 elements")
+        ->and($result['warnings'])->toContain("conditions[2]: Empty value for operator 'eq' may not produce expected results")
+        ->and($result['warnings'])->not->toContain("conditions[3]: Empty value for operator 'is_null' may not produce expected results");
+});
+
+test('report query validator emits resource and cartesian warnings for large joined queries', function () {
+    $joins = array_map(fn () => [
+        'key'         => 'customers',
+        'table'       => 'customers',
+        'type'        => 'left',
+        'local_key'   => 'customer_uuid',
+        'foreign_key' => 'uuid',
+    ], range(1, 6));
+
+    $result = report_validator_fixture()->validate(valid_report_query_config([
+        'columns' => [
+            ['name' => 'status'],
+            ['name' => 'tracking_number'],
+        ],
+        'joins'      => $joins,
+        'conditions' => [],
+        'groupBy'    => [],
+        'sortBy'     => [],
+        'limit'      => 50000,
+    ]));
+
+    expect($result['valid'])->toBeTrue()
+        ->and($result['warnings'])->toContain('Multiple joins (6) may significantly impact performance')
+        ->and($result['warnings'])->toContain('Query may consume significant system resources')
+        ->and($result['warnings'])->toContain('Multiple joins may result in cartesian products - ensure proper join conditions')
+        ->and($result['summary']['complexity'])->toBe('medium')
+        ->and($result['summary']['estimated_performance'])->toBe('slow');
+});

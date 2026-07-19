@@ -203,11 +203,12 @@ class ReportQueryValidator
             return;
         }
 
-        $joinTable = $join['table'];
-        $joinKey   = $join['key'] ?? $joinTable;
+        $joinTable          = $join['table'];
+        $hasExplicitJoinKey = array_key_exists('key', $join);
+        $joinKey            = $join['key'] ?? $joinTable;
 
         // Check if join relationship exists
-        if (!isset($availableRelationships[$joinKey])) {
+        if (!$this->hasAvailableRelationship($availableRelationships, $joinKey, $joinTable, $hasExplicitJoinKey)) {
             $this->errors[] = "Join relationship '{$joinKey}' is not available for table '{$mainTable}'";
 
             return;
@@ -502,6 +503,32 @@ class ReportQueryValidator
                         return true;
                     }
                 }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Determine if a requested join matches a relationship returned by the schema registry.
+     */
+    protected function hasAvailableRelationship(array $availableRelationships, string $joinKey, string $joinTable, bool $hasExplicitJoinKey = false): bool
+    {
+        foreach ($availableRelationships as $key => $relationship) {
+            if (is_string($key) && $key === $joinKey) {
+                return true;
+            }
+
+            if (!is_array($relationship)) {
+                continue;
+            }
+
+            if (($relationship['name'] ?? null) === $joinKey || ($relationship['table'] ?? null) === $joinKey) {
+                return true;
+            }
+
+            if (!$hasExplicitJoinKey && ($relationship['table'] ?? null) === $joinTable) {
+                return true;
             }
         }
 
