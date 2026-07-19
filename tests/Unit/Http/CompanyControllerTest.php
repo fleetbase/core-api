@@ -2,7 +2,9 @@
 
 use Fleetbase\Http\Controllers\Internal\v1\CompanyController;
 use Fleetbase\Http\Requests\AdminRequest;
+use Fleetbase\Models\Company;
 use Fleetbase\Models\Extension;
+use Fleetbase\Models\Invite;
 use Fleetbase\Models\User;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Builder;
@@ -175,6 +177,90 @@ class CompanyControllerActivityRecordFake extends EloquentModel implements Activ
     }
 }
 
+class CompanyControllerPaginatorFake
+{
+    private Collection $collection;
+    private int $total;
+
+    public function __construct(Collection $items, private int $perPage, private int $page = 1, private string $path = '/')
+    {
+        $this->collection = $items->forPage($page, $perPage)->values();
+        $this->total      = $items->count();
+    }
+
+    public function getCollection(): Collection
+    {
+        return $this->collection;
+    }
+
+    public function setCollection(Collection $collection): void
+    {
+        $this->collection = $collection->values();
+    }
+
+    public function currentPage(): int
+    {
+        return $this->page;
+    }
+
+    public function firstItem(): ?int
+    {
+        return $this->total === 0 ? null : (($this->page - 1) * $this->perPage) + 1;
+    }
+
+    public function lastPage(): int
+    {
+        return max(1, (int) ceil($this->total / $this->perPage));
+    }
+
+    public function path(): string
+    {
+        return $this->path;
+    }
+
+    public function perPage(): int
+    {
+        return $this->perPage;
+    }
+
+    public function lastItem(): ?int
+    {
+        if ($this->total === 0) {
+            return null;
+        }
+
+        return min($this->page * $this->perPage, $this->total);
+    }
+
+    public function total(): int
+    {
+        return $this->total;
+    }
+}
+
+class CompanyControllerInvalidUpdateModel extends Company
+{
+    public function getApiPayloadFromRequest($request, array $only = [], array $except = []): array
+    {
+        return ['unexpected_field' => 'not allowed'];
+    }
+
+    public function fillSessionAttributes(?array $target = [], array $except = [], array $only = []): array
+    {
+        return $target ?? [];
+    }
+
+    public function isColumn($column): bool
+    {
+        return false;
+    }
+
+    public function isInvalidUpdateParam(string $key): bool
+    {
+        return true;
+    }
+}
+
 class CompanyControllerActivityLoggerFake extends ActivityLogger
 {
     public function __construct(private CompanyControllerActivityFake $activityFake)
@@ -305,6 +391,10 @@ function company_controller_fixtures(): Capsule
         });
     }
 
+    EloquentBuilder::macro('fastPaginate', function (int $perPage = 15) {
+        return new CompanyControllerPaginatorFake($this->get(), $perPage, 1, '/int/v1/companies');
+    });
+
     $container->instance('cache', new CompanyControllerCacheFake());
     $container->instance(Spatie\Permission\PermissionRegistrar::class, new CompanyControllerPermissionRegistrarFake());
     Facade::clearResolvedInstance('cache');
@@ -371,6 +461,24 @@ function company_controller_fixtures(): Capsule
         $table->increments('id');
         $table->string('key')->nullable()->index();
         $table->text('value')->nullable();
+    });
+    $schema->create('invites', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('public_id')->nullable();
+        $table->string('_key')->nullable();
+        $table->string('company_uuid')->nullable()->index();
+        $table->string('created_by_uuid')->nullable();
+        $table->string('subject_uuid')->nullable()->index();
+        $table->string('subject_type')->nullable();
+        $table->string('uri')->nullable()->index();
+        $table->string('code')->nullable();
+        $table->string('protocol')->nullable();
+        $table->text('recipients')->nullable();
+        $table->string('reason')->nullable();
+        $table->text('meta')->nullable();
+        $table->timestamp('expires_at')->nullable();
+        $table->timestamp('deleted_at')->nullable();
+        $table->timestamps();
     });
     $schema->create('extensions', function ($table) {
         $table->string('uuid')->primary();
@@ -639,6 +747,53 @@ test('company controller resolves only the active session organization for gener
         ->and($deleted->getData(true))->toBe(['errors' => ['Generic organization deletion is not supported.']]);
 });
 
+test('company controller returns stable errors for hidden organization updates deletes and invalid update params', function () {
+    company_controller_fixtures();
+
+    $missingUpdate = company_controller()->updateRecord(company_controller_request('PUT', [
+        'name' => 'Blocked',
+    ]), 'company_public_2');
+    $missingDelete            = company_controller()->deleteRecord('company_public_2', company_controller_request('DELETE'));
+    $invalidController        = company_controller();
+    $invalidController->model = new CompanyControllerInvalidUpdateModel();
+    $invalidUpdate            = $invalidController->updateRecord(company_controller_request('PUT', [
+        'unexpected_field' => 'not allowed',
+    ]), 'company_public_1');
+
+    expect($missingUpdate->getStatusCode())->toBe(404)
+        ->and($missingUpdate->getData(true))->toBe(['errors' => ['Organization not found.']])
+        ->and($missingDelete->getStatusCode())->toBe(404)
+        ->and($missingDelete->getData(true))->toBe(['errors' => ['Organization not found.']])
+        ->and($invalidUpdate->getStatusCode())->toBe(400)
+        ->and($invalidUpdate->getData(true))->toBe(['errors' => ['Invalid param "unexpected_field" in update request!']]);
+});
+
+test('company controller public lookup resolves organizations by public id and join invite uri', function () {
+    company_controller_fixtures();
+
+    Invite::unguarded(function () {
+        Invite::create([
+            'uuid'         => 'invite-join-1',
+            'public_id'    => 'invite_public_1',
+            'company_uuid' => 'company-1',
+            'subject_uuid' => 'company-1',
+            'subject_type' => Company::class,
+            'uri'          => 'join-acme',
+            'code'         => 'ACME123',
+            'protocol'     => 'email',
+            'recipients'   => ['new@example.test'],
+            'reason'       => 'join_company',
+            'meta'         => [],
+        ]);
+    });
+
+    $public = company_controller()->findCompany(' company_public_1 ');
+    $invite = company_controller()->findCompany('join-acme');
+
+    expect($public->resource->uuid)->toBe('company-1')
+        ->and($invite->resource->uuid)->toBe('company-1');
+});
+
 test('company controller user listing respects session company scope unless the requester is admin', function () {
     company_controller_fixtures();
 
@@ -657,6 +812,36 @@ test('company controller user listing respects session company scope unless the 
     sort($adminIds);
 
     expect($adminIds)->toBe(['foreign-1']);
+});
+
+test('company controller user listing filters excludes sorts and paginates response metadata', function () {
+    company_controller_fixtures();
+
+    $searched = company_controller()->users('company_public_1', company_controller_request('GET', [
+        'query'   => 'OWNER',
+        'exclude' => ['member-1'],
+        'sort'    => 'oldest',
+    ]));
+    $searchedIds = $searched->collection->map(fn ($resource) => $resource->resource->uuid)->values()->all();
+
+    $paginated = company_controller()->users('company_public_1', company_controller_request('GET', [
+        'paginate' => true,
+        'limit'    => 1,
+        'sort'     => 'oldest',
+    ]));
+    $payload = $paginated->getData(true);
+
+    expect($searchedIds)->toBe(['owner-1'])
+        ->and($paginated->getStatusCode())->toBe(200)
+        ->and($payload['users'][0]['uuid'])->toBe('owner-1')
+        ->and($payload['meta'])->toMatchArray([
+            'current_page' => 1,
+            'from'         => 1,
+            'last_page'    => 1,
+            'per_page'     => 20,
+            'to'           => 2,
+            'total'        => 2,
+        ]);
 });
 
 test('company controller reads and saves current organization two factor settings', function () {
@@ -878,6 +1063,41 @@ test('company controller admin onboarding toggles completion metadata and handle
         ->and($activity->entries[1]['properties']['attributes'])->toBe(['onboarding_completed_at' => null]);
 });
 
+test('company controller admin ownership transfer validates organization membership and logs owner changes', function () {
+    $capsule  = company_controller_fixtures();
+    $activity = company_controller_bind_activity();
+    $admin    = company_controller_user('admin-1');
+
+    $missingCompany = company_controller()->transferOwnershipAdmin('missing-company', company_controller_admin_request('POST', [
+        'newOwner' => 'member-1',
+    ], $admin));
+    $notMember = company_controller()->transferOwnershipAdmin('company_public_1', company_controller_admin_request('POST', [
+        'newOwner' => 'foreign-1',
+    ], $admin));
+
+    expect($missingCompany->getStatusCode())->toBe(404)
+        ->and($missingCompany->getData(true))->toBe(['error' => 'Organization not found.'])
+        ->and($notMember->getStatusCode())->toBe(422)
+        ->and($notMember->getData(true))->toBe(['error' => 'The new owner is not a member of this organization.']);
+
+    $transferred = company_controller()->transferOwnershipAdmin('company_public_1', company_controller_admin_request('POST', [
+        'newOwner' => 'member-1',
+    ], $admin));
+    $payload     = $transferred->getData(true);
+
+    expect($transferred->getStatusCode())->toBe(200)
+        ->and($payload['status'])->toBe('ok')
+        ->and($payload['newOwner']['uuid'])->toBe('member-1')
+        ->and($payload['company']['uuid'])->toBe('company-1')
+        ->and($capsule->getConnection('mysql')->table('companies')->where('uuid', 'company-1')->value('owner_uuid'))->toBe('member-1')
+        ->and($activity->entries)->toHaveCount(1)
+        ->and($activity->entries[0]['message'])->toBe('Organization ownership transferred')
+        ->and($activity->entries[0]['properties'])->toBe([
+            'old'        => ['owner_uuid' => 'owner-1'],
+            'attributes' => ['owner_uuid' => 'member-1'],
+        ]);
+});
+
 test('company controller admin user lifecycle updates membership verification and removal contracts', function () {
     $capsule  = company_controller_fixtures();
     $activity = company_controller_bind_activity();
@@ -942,7 +1162,7 @@ test('company controller admin user removal protects organization owners', funct
 });
 
 test('company controller transfer ownership rejects invalid session ownership and company mismatches', function () {
-    company_controller_fixtures();
+    $capsule = company_controller_fixtures();
 
     session()->flush();
     $noSession = company_controller()->transferOwnership(company_controller_request('POST', [
@@ -970,6 +1190,15 @@ test('company controller transfer ownership rejects invalid session ownership an
 
     expect($wrongCompany->getStatusCode())->toBe(400)
         ->and($wrongCompany->getData(true))->toBe(['errors' => ['No organization found to transfer ownership for.']]);
+
+    $capsule->getConnection('mysql')->table('companies')->where('uuid', 'company-1')->delete();
+    $missingCompany = company_controller()->transferOwnership(company_controller_request('POST', [
+        'company'  => 'company-1',
+        'newOwner' => 'member-1',
+    ], company_controller_user('owner-1')));
+
+    expect($missingCompany->getStatusCode())->toBe(400)
+        ->and($missingCompany->getData(true))->toBe(['errors' => ['No organization found to transfer ownership for.']]);
 });
 
 test('company controller transfers ownership to another organization member and can remove the previous owner', function () {
@@ -1008,6 +1237,25 @@ test('company controller transfers ownership to another organization member and 
         ->and($capsule->getConnection('mysql')->table('company_users')->where('uuid', 'pivot-owner-1')->whereNull('deleted_at')->exists())->toBeFalse();
 });
 
+test('company controller transfer ownership blocks non members and self-transfer leave requests', function () {
+    company_controller_fixtures();
+
+    $notMember = company_controller()->transferOwnership(company_controller_request('POST', [
+        'company'  => 'company-1',
+        'newOwner' => 'foreign-1',
+    ], company_controller_user('owner-1')));
+    $selfLeave = company_controller()->transferOwnership(company_controller_request('POST', [
+        'company'  => 'company-1',
+        'newOwner' => 'owner-1',
+        'leave'    => true,
+    ], company_controller_user('owner-1')));
+
+    expect($notMember->getStatusCode())->toBe(400)
+        ->and($notMember->getData(true))->toBe(['errors' => ['The new owner provided could not be found for transfer of ownership.']])
+        ->and($selfLeave->getStatusCode())->toBe(422)
+        ->and($selfLeave->getData(true))->toBe(['errors' => ['Select a different organization member before leaving.']]);
+});
+
 test('company controller blocks owners from leaving and moves non owners to their next organization', function () {
     $capsule = company_controller_fixtures();
 
@@ -1027,4 +1275,52 @@ test('company controller blocks owners from leaving and moves non owners to thei
         ->and($memberLeave->getData(true))->toBe(['status' => 'ok'])
         ->and($capsule->getConnection('mysql')->table('company_users')->where('uuid', 'pivot-member-1')->whereNull('deleted_at')->exists())->toBeFalse()
         ->and($capsule->getConnection('mysql')->table('users')->where('uuid', 'member-1')->value('company_uuid'))->toBe('company-3');
+});
+
+test('company controller leave organization rejects missing sessions missing companies and non memberships', function () {
+    $capsule = company_controller_fixtures();
+
+    session()->flush();
+    $noSession = company_controller()->leaveOrganization(company_controller_request('POST', [
+        'company' => 'company-1',
+    ], company_controller_user('member-1')));
+
+    session(['company' => 'company-1', 'user' => 'member-1']);
+    $wrongCompany = company_controller()->leaveOrganization(company_controller_request('POST', [
+        'company' => 'company-2',
+    ], company_controller_user('member-1')));
+
+    $capsule->getConnection('mysql')->table('companies')->where('uuid', 'company-1')->delete();
+    $missingCompany = company_controller()->leaveOrganization(company_controller_request('POST', [
+        'company' => 'company-1',
+    ], company_controller_user('member-1')));
+
+    $capsule->getConnection('mysql')->table('companies')->insert([
+        'uuid'       => 'company-1',
+        'public_id'  => 'company_public_1',
+        'name'       => 'Acme Logistics',
+        'owner_uuid' => 'owner-1',
+        'slug'       => 'acme-logistics',
+        'status'     => null,
+        'timezone'   => 'UTC',
+        'country'    => 'US',
+        'currency'   => 'USD',
+        'created_at' => '2026-07-18 00:00:00',
+        'updated_at' => '2026-07-18 00:00:00',
+    ]);
+    $capsule->getConnection('mysql')->table('company_users')->where('uuid', 'pivot-member-1')->update([
+        'deleted_at' => '2026-07-18 01:00:00',
+    ]);
+    $notMember = company_controller()->leaveOrganization(company_controller_request('POST', [
+        'company' => 'company-1',
+    ], company_controller_user('member-1')));
+
+    expect($noSession->getStatusCode())->toBe(400)
+        ->and($noSession->getData(true))->toBe(['errors' => ['Unable to leave organization.']])
+        ->and($wrongCompany->getStatusCode())->toBe(400)
+        ->and($wrongCompany->getData(true))->toBe(['errors' => ['Unable to leave organization.']])
+        ->and($missingCompany->getStatusCode())->toBe(400)
+        ->and($missingCompany->getData(true))->toBe(['errors' => ['No organization found for user to leave.']])
+        ->and($notMember->getStatusCode())->toBe(400)
+        ->and($notMember->getData(true))->toBe(['errors' => ['User selected to leave organization is not a member of this organization.']]);
 });
