@@ -147,6 +147,63 @@ test('vonage sms service sends form payload and maps success response', function
     });
 });
 
+test('vonage sms service maps provider and transport failures', function () {
+    Http::fake([
+        'https://rest.nexmo.com/sms/json' => Http::response([
+            'messages' => [
+                [
+                    'status'     => '5',
+                    'error-text' => 'Invalid destination',
+                ],
+            ],
+        ], 200),
+    ]);
+
+    $providerFailure = (new VonageSmsService())->send('+15551234567', 'Hello');
+
+    Http::fake([
+        'https://rest.nexmo.com/sms/fail' => Http::response(['unexpected' => true], 503),
+    ]);
+
+    $transportFailure = (new VonageSmsService([
+        'api_key'    => 'vonage-key',
+        'api_secret' => 'vonage-secret',
+        'from'       => 'Fleetbase',
+        'base_url'   => 'https://rest.nexmo.com/sms/fail',
+    ]))->send('+15551234567', 'Hello');
+
+    expect($providerFailure)->toMatchArray([
+        'success' => false,
+        'error'   => 'Invalid destination',
+        'code'    => '5',
+    ])->and($transportFailure)->toMatchArray([
+        'success' => false,
+        'error'   => 'Vonage request failed with status code: 503',
+        'code'    => '503',
+    ]);
+});
+
+test('vonage sms service validates configuration recipient and text inputs', function () {
+    expect((new VonageSmsService())->isConfigured())->toBeTrue()
+        ->and((new VonageSmsService([
+            'api_key'    => '',
+            'api_secret' => 'secret',
+            'from'       => 'Fleetbase',
+        ]))->isConfigured())->toBeFalse()
+        ->and(fn () => (new VonageSmsService([
+            'api_key'    => '',
+            'api_secret' => 'secret',
+            'from'       => 'Fleetbase',
+        ]))->send('+15551234567', 'Hello'))
+        ->toThrow(InvalidArgumentException::class, 'Vonage SMS provider is not configured')
+        ->and(fn () => (new VonageSmsService())->send('', 'Hello'))
+        ->toThrow(InvalidArgumentException::class, 'Recipient phone number (to) is required')
+        ->and(fn () => (new VonageSmsService())->send('+15551234567', ''))
+        ->toThrow(InvalidArgumentException::class, 'Message text cannot be empty');
+
+    Http::assertNothingSent();
+});
+
 test('messagebird sms service sends json payload and maps message id', function () {
     Http::fake([
         'https://rest.messagebird.com/messages' => Http::response([
@@ -466,6 +523,68 @@ test('custom http sms service supports get method with rendered query params', f
     });
 });
 
+test('custom http sms service maps failures validates inputs and appends post query params', function () {
+    Http::fake([
+        'https://sms-gateway.test/send?tenant=fleetbase&trace=custom-post-123' => Http::response([
+            'provider' => [
+                'message' => 'Rejected by gateway',
+            ],
+        ], 422),
+    ]);
+
+    $result = (new CustomHttpSmsService([
+        'method'          => 'POST',
+        'url'             => 'https://sms-gateway.test/send?tenant=fleetbase',
+        'from'            => 'Fleetbase',
+        'headers'         => [
+            'X-Static' => 'value',
+        ],
+        'query_params' => [
+            'trace' => '{{unique_id}}',
+            'empty' => '',
+        ],
+        'body' => [
+            'message' => [
+                'to'   => '{{to}}',
+                'text' => '{{text}}',
+            ],
+            'literal' => 42,
+        ],
+        'error_path' => 'provider.message',
+    ]))->send('+15551234567', 'Hello', null, [
+        'unique_id' => 'custom-post-123',
+    ]);
+
+    expect($result)->toMatchArray([
+        'success' => false,
+        'error'   => 'Rejected by gateway',
+        'code'    => 422,
+    ]);
+
+    Http::assertSent(function ($request) {
+        return $request->method() === 'POST'
+            && $request->url() === 'https://sms-gateway.test/send?tenant=fleetbase&trace=custom-post-123'
+            && $request->hasHeader('X-Static', 'value')
+            && $request['message']['to'] === '+15551234567'
+            && $request['message']['text'] === 'Hello'
+            && $request['literal'] === 42;
+    });
+
+    expect((new CustomHttpSmsService(['url' => 'https://sms-gateway.test/send']))->isConfigured())->toBeTrue()
+        ->and((new CustomHttpSmsService(['url' => '']))->isConfigured())->toBeFalse()
+        ->and(fn () => (new CustomHttpSmsService(['url' => '']))->send('+15551234567', 'Hello'))
+        ->toThrow(InvalidArgumentException::class, 'Custom HTTP SMS gateway is not configured')
+        ->and(fn () => (new CustomHttpSmsService(['url' => 'https://sms-gateway.test/send']))->send('', 'Hello'))
+        ->toThrow(InvalidArgumentException::class, 'Recipient phone number (to) is required')
+        ->and(fn () => (new CustomHttpSmsService(['url' => 'https://sms-gateway.test/send']))->send('+15551234567', ''))
+        ->toThrow(InvalidArgumentException::class, 'Message text cannot be empty')
+        ->and(fn () => (new CustomHttpSmsService([
+            'url'    => 'https://sms-gateway.test/send',
+            'method' => 'PUT',
+        ]))->send('+15551234567', 'Hello'))
+        ->toThrow(InvalidArgumentException::class, 'Custom HTTP SMS method must be GET or POST');
+});
+
 test('aws sns sms service publishes to phone number', function () {
     $mock = new MockHandler();
     $mock->append(new Result(['MessageId' => 'sns-message-id']));
@@ -486,6 +605,31 @@ test('aws sns sms service publishes to phone number', function () {
         'message_id' => 'sns-message-id',
         'status'     => 'sent',
     ]);
+});
+
+test('aws sns sms service validates parameters and exposes configuration state', function () {
+    $service = new AwsSnsSmsService([
+        'key'    => 'explicit-key',
+        'secret' => 'explicit-secret',
+        'region' => 'ap-southeast-1',
+    ]);
+
+    expect($service->isConfigured())->toBeTrue()
+        ->and((new AwsSnsSmsService([
+            'key'    => '',
+            'secret' => 'explicit-secret',
+            'region' => 'ap-southeast-1',
+        ]))->isConfigured())->toBeFalse()
+        ->and(fn () => (new AwsSnsSmsService([
+            'key'    => '',
+            'secret' => 'explicit-secret',
+            'region' => 'ap-southeast-1',
+        ]))->send('+15551234567', 'Hello'))
+        ->toThrow(InvalidArgumentException::class, 'AWS SNS SMS provider is not configured')
+        ->and(fn () => (new AwsSnsSmsService())->send('', 'Hello'))
+        ->toThrow(InvalidArgumentException::class, 'Recipient phone number (to) is required')
+        ->and(fn () => (new AwsSnsSmsService())->send('+15551234567', ''))
+        ->toThrow(InvalidArgumentException::class, 'Message text cannot be empty');
 });
 
 test('smpp sms service validates config and delegates to client', function () {
