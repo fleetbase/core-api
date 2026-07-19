@@ -48,6 +48,85 @@ namespace Illuminate\Foundation\Auth {
     }
 }
 
+namespace PhpOption {
+    if (!class_exists(Option::class)) {
+        class Option
+        {
+            public function __construct(private mixed $value)
+            {
+            }
+
+            public static function fromValue(mixed $value): self
+            {
+                return new self($value);
+            }
+
+            public function map(callable $callback): self
+            {
+                if ($this->value === null) {
+                    return $this;
+                }
+
+                return new self($callback($this->value));
+            }
+
+            public function getOrCall(callable $callback): mixed
+            {
+                return $this->value ?? $callback();
+            }
+
+            public function getOrThrow(\Throwable $throwable): mixed
+            {
+                if ($this->value === null) {
+                    throw $throwable;
+                }
+
+                return $this->value;
+            }
+        }
+    }
+}
+
+namespace Dotenv\Repository {
+    if (!class_exists(RepositoryBuilder::class)) {
+        class RepositoryBuilder
+        {
+            public static function createWithDefaultAdapters(): self
+            {
+                return new self();
+            }
+
+            public function addAdapter(string $adapter): self
+            {
+                return $this;
+            }
+
+            public function immutable(): self
+            {
+                return $this;
+            }
+
+            public function make(): object
+            {
+                return new class {
+                    public function get(string $key): mixed
+                    {
+                        return null;
+                    }
+                };
+            }
+        }
+    }
+}
+
+namespace Dotenv\Repository\Adapter {
+    if (!class_exists(PutenvAdapter::class)) {
+        class PutenvAdapter
+        {
+        }
+    }
+}
+
 namespace Fleetbase\Support {
     if (!function_exists(__NAMESPACE__ . '\\env')) {
         function env(string $key, mixed $default = null): mixed
@@ -55,6 +134,17 @@ namespace Fleetbase\Support {
             $value = getenv($key);
 
             return $value === false ? (is_callable($default) ? $default() : $default) : $value;
+        }
+    }
+}
+
+namespace Fleetbase\Models {
+    if (!function_exists(__NAMESPACE__ . '\\asset')) {
+        function asset(string $path = '', ?bool $secure = null): string
+        {
+            $base = $secure ? 'https://fleetbase.test' : 'http://fleetbase.test';
+
+            return $base . '/' . ltrim($path, '/');
         }
     }
 }

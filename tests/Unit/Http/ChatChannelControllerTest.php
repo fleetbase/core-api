@@ -15,6 +15,7 @@ use Fleetbase\Models\ChatParticipant;
 use Fleetbase\Models\ChatReceipt;
 use Fleetbase\Models\User;
 use Illuminate\Container\Container;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Contracts\Notifications\Dispatcher as NotificationDispatcher;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
@@ -70,6 +71,124 @@ class ChatChannelControllerResponseCacheFake
 {
     public function clear(): void
     {
+    }
+}
+
+class ChatChannelControllerFilesystemFake implements Filesystem
+{
+    public function disk(string $name): self
+    {
+        return $this;
+    }
+
+    public function exists($path)
+    {
+        return true;
+    }
+
+    public function get($path)
+    {
+        return '';
+    }
+
+    public function readStream($path)
+    {
+        return false;
+    }
+
+    public function put($path, $contents, $options = [])
+    {
+        return true;
+    }
+
+    public function writeStream($path, $resource, array $options = [])
+    {
+        return true;
+    }
+
+    public function getVisibility($path)
+    {
+        return 'public';
+    }
+
+    public function setVisibility($path, $visibility)
+    {
+        return true;
+    }
+
+    public function prepend($path, $data)
+    {
+        return true;
+    }
+
+    public function append($path, $data)
+    {
+        return true;
+    }
+
+    public function delete($paths)
+    {
+        return true;
+    }
+
+    public function copy($from, $to)
+    {
+        return true;
+    }
+
+    public function move($from, $to)
+    {
+        return true;
+    }
+
+    public function size($path)
+    {
+        return 0;
+    }
+
+    public function lastModified($path)
+    {
+        return 0;
+    }
+
+    public function files($directory = null, $recursive = false)
+    {
+        return [];
+    }
+
+    public function allFiles($directory = null)
+    {
+        return [];
+    }
+
+    public function directories($directory = null, $recursive = false)
+    {
+        return [];
+    }
+
+    public function allDirectories($directory = null)
+    {
+        return [];
+    }
+
+    public function makeDirectory($path)
+    {
+        return true;
+    }
+
+    public function deleteDirectory($directory)
+    {
+        return true;
+    }
+
+    public function url(?string $path): string
+    {
+        return '/storage/' . ltrim((string) $path, '/');
+    }
+
+    public function temporaryUrl(?string $path, mixed $expiration): string
+    {
+        return $this->url($path) . '?temporary=1';
     }
 }
 
@@ -200,6 +319,8 @@ function chat_channel_controller_database(): Capsule
         'api.cache.enabled'             => false,
         'database.default'              => 'mysql',
         'database.connections.mysql'    => $connection,
+        'filesystems.default'           => 'local',
+        'filesystems.disks.local.root'  => sys_get_temp_dir(),
         'fleetbase.connection.db'       => 'mysql',
     ]);
 
@@ -212,6 +333,7 @@ function chat_channel_controller_database(): Capsule
     $databaseManager = $capsule->getDatabaseManager();
     $databaseManager->setDefaultConnection('mysql');
     $container->instance('db', $databaseManager);
+    $container->instance('filesystem', new ChatChannelControllerFilesystemFake());
     $container->instance(NotificationDispatcher::class, new ChatChannelControllerNotificationDispatcherFake());
     $container->instance('responsecache', new ChatChannelControllerResponseCacheFake());
     Cache::swap(new ChatChannelControllerTaggedCacheFake());
@@ -317,6 +439,8 @@ function chat_channel_controller_database(): Capsule
         $table->string('uuid')->primary();
         $table->string('public_id')->nullable();
         $table->string('company_uuid')->nullable();
+        $table->string('disk')->nullable();
+        $table->string('path')->nullable();
         $table->timestamps();
         $table->softDeletes();
     });
@@ -679,17 +803,37 @@ test('public chat channel updates finds queries and deletes records with not fou
     $updated = public_chat_channel_controller()->update('chat_current', public_chat_channel_update_request([
         'name' => 'Renamed Channel',
     ]));
-    $found   = public_chat_channel_controller()->find('chat_current');
-    $queried = public_chat_channel_controller()->query(public_chat_channel_query_request());
-    $deleted = public_chat_channel_controller()->delete('chat_current');
-    $missing = public_chat_channel_controller()->find('chat_current');
+    $missingUpdate = public_chat_channel_controller()->update('missing_chat', public_chat_channel_update_request([
+        'name' => 'Missing Channel',
+    ]));
+    $found         = public_chat_channel_controller()->find('chat_current');
+    $queried       = public_chat_channel_controller()->query(public_chat_channel_query_request());
+    $deleted       = public_chat_channel_controller()->delete('chat_current');
+    $missing       = public_chat_channel_controller()->find('chat_current');
+    $missingDelete = public_chat_channel_controller()->delete('missing_chat');
 
     expect(public_chat_channel_controller_payload($updated)['name'])->toBe('Renamed Channel')
+        ->and($missingUpdate->getStatusCode())->toBe(404)
+        ->and($missingUpdate->getData(true))->toBe(['error' => 'Chat channel resource not found.'])
         ->and(public_chat_channel_controller_payload($found)['id'])->toBe('chat_current')
         ->and($queried->collection->pluck('public_id')->all())->toContain('chat_current')
         ->and($deleted->resource->public_id)->toBe('chat_current')
         ->and($missing->getStatusCode())->toBe(404)
-        ->and($missing->getData(true))->toBe(['error' => 'Chat channel resource not found.']);
+        ->and($missing->getData(true))->toBe(['error' => 'Chat channel resource not found.'])
+        ->and($missingDelete->getStatusCode())->toBe(404)
+        ->and($missingDelete->getData(true))->toBe(['error' => 'Chat channel resource not found.']);
+});
+
+test('public chat channel available participants optionally excludes existing channel members', function () {
+    chat_channel_controller_database();
+
+    $withoutChannel = public_chat_channel_controller()->getAvailablePartificants(Request::create('/v1/chat-channels/available-participants'));
+    $withChannel    = public_chat_channel_controller()->getAvailablePartificants(Request::create('/v1/chat-channels/available-participants', 'GET', [
+        'channel' => 'chat_current',
+    ]));
+
+    expect($withoutChannel->collection->pluck('uuid')->all())->toBe(['user-current', 'user-active', 'user-extra'])
+        ->and($withChannel->collection->pluck('uuid')->all())->toBe(['user-extra']);
 });
 
 test('public chat channel participant endpoints add remove and reject missing references', function () {
@@ -751,6 +895,40 @@ test('public chat channel messages create records reject missing references and 
         ->and($missingDelete->getData(true))->toBe(['error' => 'Chat message resource not found.']);
 });
 
+test('public chat channel messages attach files and roll back when an attachment is missing', function () {
+    $capsule    = chat_channel_controller_database();
+    $connection = $capsule->getConnection('mysql');
+    $now        = '2026-07-18 00:12:00';
+
+    $connection->table('files')->insert([
+        'uuid'         => 'file-valid',
+        'public_id'    => 'file_valid',
+        'company_uuid' => 'company-1',
+        'disk'         => 'local',
+        'path'         => 'chat/file-valid.txt',
+        'created_at'   => $now,
+        'updated_at'   => $now,
+    ]);
+
+    $sent = public_chat_channel_controller()->sendMessage('chat_current', Request::create('/v1/chat-channels/chat_current/messages', 'POST', [
+        'sender'  => 'participant_current',
+        'content' => 'See attached POD',
+        'files'   => ['file_valid'],
+    ]));
+    $failed = public_chat_channel_controller()->sendMessage('chat_current', Request::create('/v1/chat-channels/chat_current/messages', 'POST', [
+        'sender'  => 'participant_current',
+        'content' => 'Missing attachment',
+        'files'   => ['missing_file'],
+    ]));
+
+    expect($sent->resource->content)->toBe('See attached POD')
+        ->and(ChatAttachment::query()->where('chat_message_uuid', $sent->resource->uuid)->first())->not->toBeNull()
+        ->and(ChatAttachment::query()->where('chat_message_uuid', $sent->resource->uuid)->value('file_uuid'))->toBe('file-valid')
+        ->and($failed->getStatusCode())->toBe(400)
+        ->and($failed->getData(true))->toBe(['error' => 'Attachment file not found.'])
+        ->and(ChatMessage::withTrashed()->where('content', 'Missing attachment')->first()?->trashed())->toBeTrue();
+});
+
 test('public chat channel read receipts are idempotent and validate references', function () {
     $capsule    = chat_channel_controller_database();
     $connection = $capsule->getConnection('mysql');
@@ -782,4 +960,29 @@ test('public chat channel read receipts are idempotent and validate references',
         ->and(ChatReceipt::query()->where('chat_message_uuid', 'message-receipt')->where('participant_uuid', 'participant-current')->count())->toBe(1)
         ->and($invalid->getStatusCode())->toBe(404)
         ->and($invalid->getData(true))->toBe(['error' => 'Invalid message or participant reference.']);
+});
+
+test('public chat channel read receipt reports insert failures with debug details', function () {
+    $capsule    = chat_channel_controller_database();
+    $connection = $capsule->getConnection('mysql');
+    $now        = '2026-07-18 00:25:00';
+
+    $connection->table('chat_messages')->insert([
+        'uuid'              => 'message-receipt-failure',
+        'public_id'         => 'message_receipt_failure',
+        'company_uuid'      => 'company-1',
+        'chat_channel_uuid' => 'channel-current',
+        'sender_uuid'       => 'participant-active',
+        'content'           => 'Receipt failure',
+        'created_at'        => $now,
+        'updated_at'        => $now,
+    ]);
+    $connection->statement("CREATE TRIGGER block_chat_receipt_insert BEFORE INSERT ON chat_receipts BEGIN SELECT RAISE(ABORT, 'receipt insert blocked'); END");
+
+    $response = public_chat_channel_controller()->createReadReceipt('message_receipt_failure', Request::create('/v1/chat-messages/message_receipt_failure/read-receipts', 'POST', [
+        'participant' => 'participant_current',
+    ]));
+
+    expect($response->getStatusCode())->toBe(400)
+        ->and($response->getData(true)['error'])->toContain('receipt insert blocked');
 });
