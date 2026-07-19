@@ -1,11 +1,13 @@
 <?php
 
+use Fleetbase\Exceptions\FleetbaseRequestValidationException;
 use Fleetbase\Http\Controllers\Internal\v1\RoleController;
 use Fleetbase\Http\Resources\FleetbaseResource;
 use Fleetbase\Models\Policy;
 use Illuminate\Container\Container;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
+use Illuminate\Database\QueryException;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Facade;
@@ -67,11 +69,13 @@ class RoleControllerRoleFake extends EloquentModel
     public $timestamps    = false;
     protected $guarded    = [];
 
-    public array $syncedPermissions = [];
-    public array $syncedPolicies    = [];
-    public array $calls             = [];
-    public bool $throwOnCreate      = false;
-    public bool $throwOnUpdate      = false;
+    public array $syncedPermissions    = [];
+    public array $syncedPolicies       = [];
+    public array $calls                = [];
+    public bool $throwOnCreate         = false;
+    public bool $throwOnUpdate         = false;
+    public ?Throwable $createThrowable = null;
+    public ?Throwable $updateThrowable = null;
 
     public function createRecordFromRequest(Request $request, ?callable $onBefore = null, ?callable $onAfter = null): self
     {
@@ -79,6 +83,10 @@ class RoleControllerRoleFake extends EloquentModel
 
         if ($this->throwOnCreate) {
             throw new RuntimeException('role creation failed');
+        }
+
+        if ($this->createThrowable) {
+            throw $this->createThrowable;
         }
 
         $record = new self([
@@ -104,6 +112,10 @@ class RoleControllerRoleFake extends EloquentModel
 
         if ($this->throwOnUpdate) {
             throw new RuntimeException('role update failed');
+        }
+
+        if ($this->updateThrowable) {
+            throw $this->updateThrowable;
         }
 
         $record = new self([
@@ -400,3 +412,35 @@ test('role controller create and update return error responses when model persis
         'role update failed',
     ],
 ]);
+
+test('role controller returns validation and query errors from create and update without generic masking', function () {
+    role_controller_database();
+
+    $validationModel                  = new RoleControllerRoleFake();
+    $validationModel->createThrowable = new FleetbaseRequestValidationException(['role.name' => ['The role name is required.']]);
+    $validationModel->updateThrowable = new FleetbaseRequestValidationException(['role.name' => ['The role name is required.']]);
+
+    $queryModel                  = new RoleControllerRoleFake();
+    $queryModel->createThrowable = new QueryException('mysql', 'insert into roles', [], new RuntimeException('database unavailable'));
+    $queryModel->updateThrowable = new QueryException('mysql', 'update roles', [], new RuntimeException('database unavailable'));
+
+    $validationController = role_controller_with_model($validationModel);
+    $queryController      = role_controller_with_model($queryModel);
+
+    $createValidation = $validationController->createRecord(Request::create('/int/v1/roles', 'POST', ['role' => ['name' => 'Dispatcher']]));
+    $updateValidation = $validationController->updateRecord(Request::create('/int/v1/roles/role-1', 'PATCH', ['role' => ['name' => 'Dispatcher']]), 'role-1');
+    $createQuery      = $queryController->createRecord(Request::create('/int/v1/roles', 'POST', ['role' => ['name' => 'Dispatcher']]));
+    $updateQuery      = $queryController->updateRecord(Request::create('/int/v1/roles/role-1', 'PATCH', ['role' => ['name' => 'Dispatcher']]), 'role-1');
+
+    expect($createValidation->getStatusCode())->toBe(400)
+        ->and($createValidation->getData(true))->toBe([
+            'errors' => [
+                'role.name' => ['The role name is required.'],
+            ],
+        ])
+        ->and($updateValidation->getData(true))->toBe($createValidation->getData(true))
+        ->and($createQuery->getStatusCode())->toBe(400)
+        ->and($createQuery->getData(true)['errors'][0])->toContain('database unavailable')
+        ->and($updateQuery->getStatusCode())->toBe(400)
+        ->and($updateQuery->getData(true)['errors'][0])->toContain('database unavailable');
+});
