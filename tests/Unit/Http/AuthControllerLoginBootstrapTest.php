@@ -718,3 +718,43 @@ test('admin impersonation protects role target and session token contracts', fun
         ->and(session('impersonator'))->toBe('admin-user')
         ->and($capsule->getConnection('mysql')->table('personal_access_tokens')->where('tokenable_id', 'regular-user')->count())->toBe(1);
 });
+
+test('end impersonation validates impersonator session and restores admin access token', function () {
+    $capsule = auth_controller_login_bootstrap_database();
+    auth_controller_login_insert_user($capsule, [
+        'uuid'  => 'admin-user',
+        'email' => 'admin@example.test',
+        'type'  => 'admin',
+    ]);
+    auth_controller_login_insert_user($capsule, [
+        'uuid'  => 'regular-user',
+        'email' => 'regular@example.test',
+        'type'  => 'user',
+    ]);
+
+    session()->flush();
+    $missingSession = (new AuthController())->endImpersonation();
+
+    session(['impersonator' => 'missing-admin']);
+    $missingUser = (new AuthController())->endImpersonation();
+
+    session(['impersonator' => 'regular-user']);
+    $notAdmin = (new AuthController())->endImpersonation();
+
+    session(['impersonator' => 'admin-user', 'user' => 'regular-user']);
+    $success = (new AuthController())->endImpersonation();
+    $payload = $success->getData(true);
+
+    expect($missingSession->getStatusCode())->toBe(400)
+        ->and($missingSession->getData(true))->toBe(['errors' => ['Not impersonator session found.']])
+        ->and($missingUser->getStatusCode())->toBe(400)
+        ->and($missingUser->getData(true))->toBe(['errors' => ['The impersonator user was not found.']])
+        ->and($notAdmin->getStatusCode())->toBe(400)
+        ->and($notAdmin->getData(true))->toBe(['errors' => ['The impersonator does not have permissions. Logout.']])
+        ->and($success->getStatusCode())->toBe(200)
+        ->and($payload['status'])->toBe('ok')
+        ->and($payload['token'])->toContain('|')
+        ->and(session('user'))->toBe('admin-user')
+        ->and(session('impersonator'))->toBeNull()
+        ->and($capsule->getConnection('mysql')->table('personal_access_tokens')->where('tokenable_id', 'admin-user')->count())->toBe(1);
+});

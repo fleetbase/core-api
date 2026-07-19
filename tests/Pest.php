@@ -251,6 +251,14 @@ namespace {
                         $this->store[$key] = $value;
                     }
 
+                    public function remove(string $key): mixed
+                    {
+                        $value = $this->store[$key] ?? null;
+                        unset($this->store[$key]);
+
+                        return $value;
+                    }
+
                     public function flush(): void
                     {
                         $this->store = [];

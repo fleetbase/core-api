@@ -2,6 +2,7 @@
 
 use Fleetbase\Http\Controllers\Internal\v1\AuthController;
 use Fleetbase\Http\Requests\Internal\ResetPasswordRequest;
+use Fleetbase\Http\Requests\Internal\UserForgotPasswordRequest;
 use Fleetbase\Models\User;
 use Fleetbase\Models\VerificationCode;
 use Illuminate\Database\Capsule\Manager as Capsule;
@@ -14,7 +15,8 @@ use Illuminate\Support\Facades\Facade;
 
 class AuthControllerVerificationCodeCacheFake
 {
-    public array $values = [];
+    public array $values   = [];
+    public array $addCalls = [];
 
     public function tags(array|string $tags): self
     {
@@ -28,6 +30,19 @@ class AuthControllerVerificationCodeCacheFake
 
     public function put(string $key, mixed $value, mixed $ttl = null): bool
     {
+        $this->values[$key] = $value;
+
+        return true;
+    }
+
+    public function add(string $key, mixed $value, mixed $ttl = null): bool
+    {
+        $this->addCalls[] = [$key, $value, $ttl];
+
+        if (array_key_exists($key, $this->values)) {
+            return false;
+        }
+
         $this->values[$key] = $value;
 
         return true;
@@ -74,6 +89,23 @@ class AuthControllerVerificationCodeResponseCacheFake
     }
 }
 
+class AuthControllerVerificationCodeNotificationDispatcherFake
+{
+    public array $sent = [];
+
+    public function send($notifiables, $notification): void
+    {
+        foreach (is_iterable($notifiables) ? $notifiables : [$notifiables] as $notifiable) {
+            $this->sent[] = [$notifiable, $notification];
+        }
+    }
+
+    public function sendNow($notifiables, $notification, ?array $channels = null): void
+    {
+        $this->send($notifiables, $notification);
+    }
+}
+
 function auth_controller_verification_code_database(): Capsule
 {
     EloquentModel::clearBootedModels();
@@ -97,6 +129,7 @@ function auth_controller_verification_code_database(): Capsule
     $container->instance('cache', $cache);
     $container->instance('hash', new AuthControllerVerificationCodeHashFake());
     $container->instance('responsecache', new AuthControllerVerificationCodeResponseCacheFake());
+    $container->instance(Illuminate\Contracts\Notifications\Dispatcher::class, new AuthControllerVerificationCodeNotificationDispatcherFake());
     Cache::swap($cache);
 
     $capsule = new Capsule($container);
@@ -188,6 +221,13 @@ function auth_controller_reset_password_request(array $input = []): ResetPasswor
     return ResetPasswordRequest::create('/int/v1/auth/reset-password', 'POST', $input);
 }
 
+function auth_controller_forgot_password_request(array $input = [], string $ip = '203.0.113.5'): UserForgotPasswordRequest
+{
+    return UserForgotPasswordRequest::create('/int/v1/auth/forgot-password', 'POST', $input, [], [], [
+        'REMOTE_ADDR' => $ip,
+    ]);
+}
+
 afterEach(function () {
     Facade::clearResolvedInstances();
 });
@@ -256,6 +296,81 @@ test('validate verification code only checks existence when no purpose is suppli
             'is_valid' => true,
             'id'       => 'used-code',
         ]);
+});
+
+test('create password reset is enumeration safe and dedupes email and ip attempts', function () {
+    $capsule = auth_controller_verification_code_database();
+
+    $missing = (new AuthController())->createPasswordReset(auth_controller_forgot_password_request([
+        'email' => 'missing@example.test',
+    ], '203.0.113.6'));
+
+    expect($missing->getStatusCode())->toBe(200)
+        ->and($missing->getData(true))->toBe(['status' => 'ok'])
+        ->and(VerificationCode::count())->toBe(0);
+
+    auth_controller_verification_code_insert_user($capsule, [
+        'uuid'  => 'user-reset',
+        'email' => 'reset@example.test',
+    ]);
+
+    $cache                                                               = app('cache');
+    $cache->values['password-reset:email:' . sha1('reset@example.test')] = true;
+    $throttled                                                           = (new AuthController())->createPasswordReset(auth_controller_forgot_password_request([
+        'email' => 'reset@example.test',
+    ]));
+
+    expect($throttled->getStatusCode())->toBe(200)
+        ->and($throttled->getData(true))->toBe(['status' => 'ok'])
+        ->and(VerificationCode::count())->toBe(0);
+
+    $cache->values = [];
+
+    $first = (new AuthController())->createPasswordReset(auth_controller_forgot_password_request([
+        'email' => ' RESET@example.test ',
+    ]));
+
+    $codes        = VerificationCode::withTrashed()->where('subject_uuid', 'user-reset')->get();
+    $notification = app(Illuminate\Contracts\Notifications\Dispatcher::class);
+
+    expect($first->getStatusCode())->toBe(200)
+        ->and($first->getData(true))->toBe(['status' => 'ok'])
+        ->and($codes)->toHaveCount(1)
+        ->and($codes->first()->for)->toBe('password_reset')
+        ->and($codes->first()->status)->toBe('active')
+        ->and($codes->first()->meta)->toBe(['email' => 'reset@example.test'])
+        ->and($notification->sent)->toHaveCount(1)
+        ->and($notification->sent[0][0]->uuid)->toBe('user-reset')
+        ->and($notification->sent[0][1])->toBeInstanceOf(Fleetbase\Notifications\UserForgotPassword::class);
+});
+
+test('create password reset deletes stale active codes before issuing a fresh reset code', function () {
+    $capsule = auth_controller_verification_code_database();
+    auth_controller_verification_code_insert_user($capsule, [
+        'uuid'  => 'user-reset',
+        'email' => 'reset@example.test',
+    ]);
+    auth_controller_verification_code_insert($capsule, [
+        'uuid'         => 'old-reset-code',
+        'subject_uuid' => 'user-reset',
+        'subject_type' => User::class,
+        'for'          => 'password_reset',
+        'status'       => 'active',
+    ]);
+
+    $response = (new AuthController())->createPasswordReset(auth_controller_forgot_password_request([
+        'email' => 'reset@example.test',
+    ]));
+
+    $oldCode = VerificationCode::withTrashed()->where('uuid', 'old-reset-code')->first();
+    $newCode = VerificationCode::where('subject_uuid', 'user-reset')->where('uuid', '!=', 'old-reset-code')->first();
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($response->getData(true))->toBe(['status' => 'ok'])
+        ->and($oldCode->deleted_at)->not->toBeNull()
+        ->and($newCode)->not->toBeNull()
+        ->and($newCode->for)->toBe('password_reset')
+        ->and($newCode->meta)->toBe(['email' => 'reset@example.test']);
 });
 
 test('reset password rejects missing or mismatched verification code records', function () {
