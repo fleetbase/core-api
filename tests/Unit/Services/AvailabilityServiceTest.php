@@ -341,6 +341,54 @@ it('returns overlapping availability records in chronological order for a subjec
         ->and($availability->last()->is_available)->toBeTrue();
 });
 
+it('filters schedule availability through direct model scopes and relationship keys', function () {
+    $capsule = availability_service_database();
+
+    $capsule->getConnection()->table('schedule_availability')->insert([
+        [
+            'uuid'         => 'availability-inside-window',
+            'subject_type' => 'driver',
+            'subject_uuid' => 'driver-1',
+            'start_at'     => '2026-10-04 09:00:00',
+            'end_at'       => '2026-10-04 11:00:00',
+            'is_available' => true,
+            'created_at'   => now(),
+            'updated_at'   => now(),
+        ],
+        [
+            'uuid'         => 'availability-encloses-window',
+            'subject_type' => 'driver',
+            'subject_uuid' => 'driver-1',
+            'start_at'     => '2026-10-04 07:00:00',
+            'end_at'       => '2026-10-04 18:00:00',
+            'is_available' => false,
+            'created_at'   => now(),
+            'updated_at'   => now(),
+        ],
+        [
+            'uuid'         => 'availability-other-subject',
+            'subject_type' => 'driver',
+            'subject_uuid' => 'driver-2',
+            'start_at'     => '2026-10-04 09:00:00',
+            'end_at'       => '2026-10-04 11:00:00',
+            'is_available' => true,
+            'created_at'   => now(),
+            'updated_at'   => now(),
+        ],
+    ]);
+
+    $relation = (new ScheduleAvailability())->subject();
+
+    expect(ScheduleAvailability::forSubject('driver', 'driver-1')->available()->pluck('uuid')->all())->toBe(['availability-inside-window'])
+        ->and(ScheduleAvailability::forSubject('driver', 'driver-1')->unavailable()->pluck('uuid')->all())->toBe(['availability-encloses-window'])
+        ->and(ScheduleAvailability::forSubject('driver', 'driver-1')->withinTimeRange('2026-10-04 08:00:00', '2026-10-04 12:00:00')->pluck('uuid')->all())->toBe([
+            'availability-inside-window',
+            'availability-encloses-window',
+        ])
+        ->and($relation->getMorphType())->toBe('subject_type')
+        ->and($relation->getForeignKeyName())->toBe('subject_uuid');
+});
+
 it('reports unique unavailable resource ids for a subject type within a time range', function () {
     $capsule = availability_service_database();
     $service = new AvailabilityService();

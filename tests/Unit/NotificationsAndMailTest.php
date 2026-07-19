@@ -72,6 +72,18 @@ function notification_verification_code(array $attributes = []): VerificationCod
     return $verificationCode;
 }
 
+function notification_apn_private_key(): string
+{
+    $key = openssl_pkey_new([
+        'private_key_type' => OPENSSL_KEYTYPE_EC,
+        'curve_name'       => 'prime256v1',
+    ]);
+
+    openssl_pkey_export($key, $privateKey);
+
+    return trim($privateKey);
+}
+
 function notification_chat_participant(array $attributes = [], ?User $user = null): ChatParticipant
 {
     $participant = new ChatParticipant();
@@ -271,6 +283,43 @@ test('test push notification exposes mobile delivery channels and deterministic 
             'message' => 'Test Push Notification',
             'type'    => 'test',
             'date'    => '2026-07-17 18:22:10',
+        ]);
+});
+
+test('test push notification builds apn messages with configured action payload', function () {
+    bind_test_container([
+        'app.env'                      => 'local',
+        'broadcasting.connections.apn' => [
+            'key_id'              => 'ABC123DEFG',
+            'team_id'             => 'TEAM123456',
+            'app_bundle_id'       => 'com.fleetbase.test',
+            'private_key_content' => notification_apn_private_key(),
+            'production'          => false,
+        ],
+    ]);
+    Carbon::setTestNow(Carbon::parse('2026-07-17 18:22:10'));
+
+    $message = (new TestPushNotification('Test title', 'Test body'))->toApn(notification_user());
+    $custom  = $message->custom;
+
+    expect($message)->toBeInstanceOf(NotificationChannels\Apn\ApnMessage::class)
+        ->and($message->title)->toBe('Test title')
+        ->and($message->body)->toBe('Test body')
+        ->and($message->badge)->toBe(1)
+        ->and($custom)->toMatchArray([
+            'message' => 'Test Push Notification',
+            'type'    => 'test',
+            'date'    => '2026-07-17 18:22:10',
+        ])
+        ->and($custom['id'])->toBeString()->not->toBe('')
+        ->and($custom['action'])->toBe([
+            'action' => 'test_push_notification',
+            'params' => [
+                'id'      => $custom['id'],
+                'message' => 'Test Push Notification',
+                'type'    => 'test',
+                'date'    => '2026-07-17 18:22:10',
+            ],
         ]);
 });
 
