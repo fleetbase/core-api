@@ -1,5 +1,6 @@
 <?php
 
+use Fleetbase\Exceptions\FleetbaseRequestValidationException;
 use Fleetbase\Exports\GroupExport;
 use Fleetbase\Http\Controllers\Internal\v1\GroupController;
 use Fleetbase\Http\Requests\ExportRequest;
@@ -9,6 +10,7 @@ use Fleetbase\Models\GroupUser;
 use Illuminate\Container\Container;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
+use Illuminate\Database\QueryException;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
@@ -71,6 +73,9 @@ class GroupControllerCacheFake
 
 class GroupControllerErrorModel extends Group
 {
+    public ?Throwable $createThrowable = null;
+    public ?Throwable $updateThrowable = null;
+
     public function __construct(private string $operation = 'update')
     {
         parent::__construct();
@@ -78,11 +83,19 @@ class GroupControllerErrorModel extends Group
 
     public function createRecordFromRequest($request, ?callable $onBefore = null, ?callable $onAfter = null, array $options = [])
     {
+        if ($this->createThrowable) {
+            throw $this->createThrowable;
+        }
+
         throw new RuntimeException('Unable to create group.');
     }
 
     public function updateRecordFromRequest(Request $request, $id, ?callable $onBefore = null, ?callable $onAfter = null, array $options = [])
     {
+        if ($this->updateThrowable) {
+            throw $this->updateThrowable;
+        }
+
         throw new RuntimeException("Unable to {$this->operation} group {$id}.");
     }
 }
@@ -405,6 +418,60 @@ test('group controller returns stable error responses when create or update fail
         ->and($createResponse->getData(true))->toBe(['errors' => ['Unable to create group.']])
         ->and($updateResponse->getStatusCode())->toBe(400)
         ->and($updateResponse->getData(true))->toBe(['errors' => ['Unable to update group group-existing.']]);
+});
+
+test('group controller returns validation and query errors from create and update without generic masking', function () {
+    group_controller_container(['app.debug' => true]);
+
+    $validationModel                  = new GroupControllerErrorModel();
+    $validationModel->createThrowable = new FleetbaseRequestValidationException(['group.name' => ['The group name is required.']]);
+    $validationModel->updateThrowable = new FleetbaseRequestValidationException(['group.name' => ['The group name is required.']]);
+
+    $queryModel                  = new GroupControllerErrorModel();
+    $queryModel->createThrowable = new QueryException('mysql', 'insert into groups', [], new RuntimeException('database unavailable'));
+    $queryModel->updateThrowable = new QueryException('mysql', 'update groups', [], new RuntimeException('database unavailable'));
+
+    $validationController        = group_controller();
+    $validationController->model = $validationModel;
+    $queryController             = group_controller();
+    $queryController->model      = $queryModel;
+
+    $createValidation = $validationController->createRecord(group_controller_request('POST', '/int/v1/groups', [
+        'group' => [
+            'name'  => '',
+            'users' => [],
+        ],
+    ]));
+    $updateValidation = $validationController->updateRecord(group_controller_request('PATCH', '/int/v1/groups/group-existing', [
+        'group' => [
+            'name'  => '',
+            'users' => [],
+        ],
+    ]), 'group-existing');
+    $createQuery = $queryController->createRecord(group_controller_request('POST', '/int/v1/groups', [
+        'group' => [
+            'name'  => 'Broken Group',
+            'users' => [],
+        ],
+    ]));
+    $updateQuery = $queryController->updateRecord(group_controller_request('PATCH', '/int/v1/groups/group-existing', [
+        'group' => [
+            'name'  => 'Broken Group',
+            'users' => [],
+        ],
+    ]), 'group-existing');
+
+    expect($createValidation->getStatusCode())->toBe(400)
+        ->and($createValidation->getData(true))->toBe([
+            'errors' => [
+                'group.name' => ['The group name is required.'],
+            ],
+        ])
+        ->and($updateValidation->getData(true))->toBe($createValidation->getData(true))
+        ->and($createQuery->getStatusCode())->toBe(400)
+        ->and($createQuery->getData(true)['errors'][0])->toContain('database unavailable')
+        ->and($updateQuery->getStatusCode())->toBe(400)
+        ->and($updateQuery->getData(true)['errors'][0])->toContain('database unavailable');
 });
 
 test('group controller export downloads group exports with requested format', function () {
