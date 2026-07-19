@@ -747,7 +747,10 @@ test('api request log filter scopes tenant logs by credential and date ranges', 
     expect(concrete_filter_uuids(ApiRequestLogFilter::class, ApiRequestLog::class, [], 'int/v1/api-request-logs'))->toBe(['log-1', 'log-2'])
         ->and(concrete_filter_uuids(ApiRequestLogFilter::class, ApiRequestLog::class, ['key' => 'cred_public_1'], 'int/v1/api-request-logs'))->toBe(['log-1', 'log-2'])
         ->and(concrete_filter_uuids(ApiRequestLogFilter::class, ApiRequestLog::class, ['query' => 'files'], 'int/v1/api-request-logs'))->toBe(['log-2'])
+        ->and(concrete_filter_uuids(ApiRequestLogFilter::class, ApiRequestLog::class, ['query' => 'orders'], 'v1/api-request-logs'))->toBe(['log-1'])
+        ->and(concrete_filter_uuids(ApiRequestLogFilter::class, ApiRequestLog::class, ['created_at' => '2026-07-19'], 'v1/api-request-logs'))->toBe(['log-2'])
         ->and(concrete_filter_uuids(ApiRequestLogFilter::class, ApiRequestLog::class, ['created_at' => '2026-07-18,2026-07-18 23:59:59'], 'int/v1/api-request-logs'))->toBe(['log-1'])
+        ->and(concrete_filter_uuids(ApiRequestLogFilter::class, ApiRequestLog::class, ['updated_at' => '2026-07-18,2026-07-18 23:59:59'], 'int/v1/api-request-logs'))->toBe(['log-1'])
         ->and(concrete_filter_uuids(ApiRequestLogFilter::class, ApiRequestLog::class, ['updated_at' => '2026-07-19'], 'int/v1/api-request-logs'))->toBe(['log-2']);
 });
 
@@ -933,7 +936,15 @@ test('chat receipt filter limits receipts to channels that include current user'
         ['uuid' => 'receipt-other-company', 'company_uuid' => 'company-2', 'chat_message_uuid' => 'message-1', 'participant_uuid' => 'participant-current', 'read_at' => '2026-07-18 08:00:00', 'deleted_at' => null],
     ]);
 
-    expect(concrete_filter_uuids(ChatReceiptFilter::class, ChatReceipt::class, [], 'int/v1/chat-receipts'))->toBe(['receipt-visible']);
+    $searchFilter = concrete_filter_with_any_builder(
+        new ChatReceiptFilter(concrete_filter_request([], 'v1/chat-receipts')),
+        $searchBuilder = new ConcreteFilterSearchBuilderFake()
+    );
+    $searchFilter->query('receipt-visible');
+
+    expect(concrete_filter_uuids(ChatReceiptFilter::class, ChatReceipt::class, [], 'int/v1/chat-receipts'))->toBe(['receipt-visible'])
+        ->and(concrete_filter_uuids(ChatReceiptFilter::class, ChatReceipt::class, [], 'v1/chat-receipts'))->toBe(['receipt-visible'])
+        ->and($searchBuilder->queries)->toBe(['receipt-visible']);
 });
 
 test('chat message and log filters expose only tenant channels with current user participation', function () {

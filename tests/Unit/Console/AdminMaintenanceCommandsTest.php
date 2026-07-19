@@ -189,6 +189,45 @@ it('assigns administrator role to company owners with existing company user pivo
         ])->exists())->toBeTrue();
 });
 
+it('reports administrator role assignment failures without aborting the command', function () {
+    $capsule = admin_maintenance_database();
+    $db      = $capsule->getConnection('mysql');
+
+    $capsule->getConnection('mysql')->getSchemaBuilder()->drop('model_has_roles');
+    $db->table('users')->insert([
+        'uuid'       => 'user-owner',
+        'name'       => 'Owner User',
+        'email'      => 'owner@example.test',
+        'type'       => 'admin',
+        'status'     => 'active',
+        'created_at' => '2026-07-18 00:00:00',
+        'updated_at' => '2026-07-18 00:00:00',
+    ]);
+    $db->table('companies')->insert([
+        'uuid'       => 'company-1',
+        'owner_id'   => 'user-owner',
+        'owner_uuid' => 'user-owner',
+        'name'       => 'Acme Logistics',
+        'created_at' => '2026-07-18 00:00:00',
+        'updated_at' => '2026-07-18 00:00:00',
+    ]);
+    $db->table('company_users')->insert([
+        'uuid'         => 'company-user-1',
+        'company_uuid' => 'company-1',
+        'user_uuid'    => 'user-owner',
+        'status'       => 'active',
+        'created_at'   => '2026-07-18 00:00:00',
+        'updated_at'   => '2026-07-18 00:00:00',
+    ]);
+
+    $command = new AssignAdminRoles();
+    $command->setLaravel(app());
+    $tester = new CommandTester($command);
+
+    expect($tester->execute([]))->toBe(0)
+        ->and($tester->getDisplay())->toContain('no such table: model_has_roles');
+});
+
 it('fixes users with a company uuid but no company user membership', function () {
     $capsule = admin_maintenance_database();
     $db      = $capsule->getConnection('mysql');
