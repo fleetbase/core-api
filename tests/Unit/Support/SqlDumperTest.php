@@ -23,6 +23,33 @@ class SqlDumperTestDumper extends SqlDumper
     }
 }
 
+class SqlDumperStaticTestDumper extends SqlDumper
+{
+    public static array $tables = [];
+
+    public function __construct()
+    {
+        parent::__construct(app('db')->connection('mysql'), 1);
+    }
+
+    protected function listTables(string $dbName): array
+    {
+        return static::$tables;
+    }
+}
+
+class SqlDumperStringTestDumper extends SqlDumper
+{
+    public static string $path = '';
+
+    public static function createCompanyDump($company, ?string $fileName = null)
+    {
+        file_put_contents(static::$path, "dump for {$company->uuid}");
+
+        return static::$path;
+    }
+}
+
 function invokeSqlDumperHelper(string $method, array $arguments = [])
 {
     $reflection = new ReflectionClass(SqlDumper::class);
@@ -220,6 +247,68 @@ test('sql dumper streams tenant rows and dependent records without dumping unrel
             ->and($sql)->not->toContain('other note')
             ->and($sql)->not->toContain('other audit')
             ->and($sql)->not->toContain('global_settings');
+    } finally {
+        @unlink($path);
+    }
+});
+
+test('sql dumper public dump entrypoint writes header and scoped tenant sql', function () {
+    sql_dumper_database();
+
+    SqlDumperStaticTestDumper::$tables = [
+        'orders',
+        'api_events',
+        'order_notes',
+    ];
+
+    $dir  = sys_get_temp_dir() . '/fleetbase-public-sql-dump-' . uniqid('', true);
+    $path = $dir . '/dump.sql';
+
+    try {
+        $created = SqlDumperStaticTestDumper::createCompanyDump((object) ['uuid' => 'company-1'], $path);
+        $sql     = file_get_contents($created);
+
+        expect($created)->toBe($path)
+            ->and($sql)->toContain('-- Fleetbase SQL Dump for company company-1')
+            ->and($sql)->toContain('-- Generated at ')
+            ->and($sql)->toContain('INSERT INTO `orders` (`uuid`, `company_uuid`, `status`, `sequence`)')
+            ->and($sql)->toContain("'order-1', 'company-1', 'created', 1")
+            ->and($sql)->toContain("'order-2', 'company-1', 'driver''s assigned', 2")
+            ->and($sql)->toContain('INSERT INTO `order_notes` (`id`, `order_uuid`, `body`)')
+            ->and($sql)->not->toContain('order-3');
+    } finally {
+        @unlink($path);
+        @rmdir($dir);
+        SqlDumperStaticTestDumper::$tables = [];
+    }
+});
+
+test('sql dumper string entrypoint returns generated dump contents', function () {
+    SqlDumperStringTestDumper::$path = tempnam(sys_get_temp_dir(), 'fleetbase-string-sql-dump-');
+
+    try {
+        $sql = SqlDumperStringTestDumper::getCompanyDumpSql((object) ['uuid' => 'company-1']);
+
+        expect($sql)->toBe('dump for company-1');
+    } finally {
+        @unlink(SqlDumperStringTestDumper::$path);
+        SqlDumperStringTestDumper::$path = '';
+    }
+});
+
+test('sql dumper foreign set streaming ignores unavailable foreign key columns', function () {
+    $path = tempnam(sys_get_temp_dir(), 'fleetbase-fk-sql-dump-');
+
+    try {
+        invokeSqlDumperHelper('streamTableByForeignSet', [
+            'order_notes',
+            ['id', 'body'],
+            'order_uuid',
+            ['order-1' => true],
+            $path,
+        ]);
+
+        expect(file_get_contents($path))->toBe('');
     } finally {
         @unlink($path);
     }
