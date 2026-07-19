@@ -10,7 +10,23 @@ use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+
+class FileResolverLogFake
+{
+    public array $entries = [];
+
+    public function warning(string $message, array $context = []): void
+    {
+        $this->entries[] = ['warning', $message, $context];
+    }
+
+    public function error(string $message, array $context = []): void
+    {
+        $this->entries[] = ['error', $message, $context];
+    }
+}
 
 function file_resolver_fixtures(): Capsule
 {
@@ -214,4 +230,39 @@ test('file resolver returns null for failed urls unsupported inputs and filters 
         ->and($resolved[0]->path)->toEndWith('.bin')
         ->and($resolved[0]->content_type)->toBe('image/jpeg')
         ->and($resolved[0]->file_size)->toEqual(strlen('photo-body'));
+});
+
+test('file resolver logs remote download exceptions and attaches resolved file ids', function () {
+    $capsule = file_resolver_fixtures();
+    $logger  = new FileResolverLogFake();
+    Log::swap($logger);
+    Http::fake([
+        'https://cdn.fleetbase.test/network-error.png' => fn () => throw new RuntimeException('network unavailable'),
+    ]);
+
+    $resolver = new FileResolverService();
+
+    expect($resolver->resolve('https://cdn.fleetbase.test/network-error.png'))->toBeNull()
+        ->and($logger->entries[0][0])->toBe('error')
+        ->and($logger->entries[0][1])->toBe('Failed to download file from URL')
+        ->and($logger->entries[0][2]['url'])->toBe('https://cdn.fleetbase.test/network-error.png')
+        ->and($logger->entries[0][2]['error'])->toBe('network unavailable');
+
+    $capsule->getConnection('mysql')->table('files')->insert([
+        'uuid'              => 'file-attach',
+        'public_id'         => 'file_1234567899',
+        'company_uuid'      => 'company-1',
+        'disk'              => 'testing',
+        'path'              => 'attachments/pod.png',
+        'original_filename' => 'pod.png',
+    ]);
+
+    $model = new class {
+        public ?string $pod_uuid = null;
+    };
+
+    expect($resolver->resolveAndAttach('file_1234567899', $model, 'pod_uuid'))->toBeTrue()
+        ->and($model->pod_uuid)->toBe('file-attach')
+        ->and($resolver->resolveAndAttach('not-a-file', $model, 'pod_uuid'))->toBeFalse()
+        ->and($resolver->resolveAndAttach('file_1234567899', null, 'pod_uuid'))->toBeFalse();
 });

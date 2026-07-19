@@ -5,16 +5,19 @@ use Fleetbase\Services\UserCacheService;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Facade;
 
 class UserCacheServiceCacheFake
 {
-    public array $values    = [];
-    public array $putCalls  = [];
-    public array $forgotten = [];
-    public array $redisKeys = [];
-    public bool $throwOnGet = false;
-    public bool $throwOnPut = false;
+    public array $values       = [];
+    public array $putCalls     = [];
+    public array $forgotten    = [];
+    public array $redisKeys    = [];
+    public bool $throwOnGet    = false;
+    public bool $throwOnPut    = false;
+    public bool $throwOnForget = false;
+    public bool $throwOnKeys   = false;
 
     public function get(string $key): mixed
     {
@@ -39,6 +42,10 @@ class UserCacheServiceCacheFake
 
     public function forget(string $key): bool
     {
+        if ($this->throwOnForget) {
+            throw new RuntimeException('cache forget failed');
+        }
+
         $this->forgotten[] = $key;
         unset($this->values[$key]);
 
@@ -52,6 +59,10 @@ class UserCacheServiceCacheFake
 
     public function keys(string $pattern): array
     {
+        if ($this->throwOnKeys) {
+            throw new RuntimeException('redis keys failed');
+        }
+
         return $this->redisKeys[$pattern] ?? [];
     }
 }
@@ -140,17 +151,30 @@ function user_cache_service_database(): void
     Facade::clearResolvedInstance('db');
 
     $schema = $capsule->getConnection('mysql')->getSchemaBuilder();
+    $schema->create('users', function ($table) {
+        $table->integer('id')->nullable();
+        $table->string('uuid')->primary();
+        $table->timestamp('updated_at')->nullable();
+        $table->timestamp('deleted_at')->nullable();
+    });
     $schema->create('companies', function ($table) {
         $table->string('uuid')->primary();
         $table->string('name')->nullable();
+        $table->timestamp('deleted_at')->nullable();
     });
     $schema->create('company_users', function ($table) {
         $table->string('uuid')->primary();
         $table->string('company_uuid');
         $table->string('user_uuid');
+        $table->timestamp('deleted_at')->nullable();
     });
 
     $connection = $capsule->getConnection('mysql');
+    $connection->table('users')->insert([
+        'id'         => 99,
+        'uuid'       => 'user-1',
+        'updated_at' => '2026-07-17 10:00:00',
+    ]);
     $connection->table('companies')->insert([
         ['uuid' => 'company-1', 'name' => 'Company One'],
         ['uuid' => 'company-2', 'name' => 'Company Two'],
@@ -220,11 +244,13 @@ test('user cache service handles cache failures without leaking exceptions', fun
 test('user cache service handles user invalidation failures and clears redis prefixed keys', function () {
     [$user, $cache, $log] = user_cache_service_fixtures();
     session(['company' => 'company-3']);
+    $cache->throwOnForget = true;
 
     UserCacheService::invalidateUser($user);
 
     expect(collect($log->entries)->contains(fn ($entry) => $entry[0] === 'error' && $entry[1] === 'Failed to invalidate user cache'))->toBeTrue();
 
+    $cache->throwOnForget                         = false;
     $cache->forgotten                             = [];
     $cache->redisKeys['user:current:*:company-1'] = [
         'fleetbase_cache:user:current:user-1:company-1:1784282400',
@@ -248,4 +274,55 @@ test('user cache service handles user invalidation failures and clears redis pre
     expect($cache->forgotten)->toBe([
         'user:current:user-1:company-1:1784282400',
     ]);
+});
+
+test('user cache service invalidates every related company and extra session company', function () {
+    [$user, $cache, $log] = user_cache_service_fixtures();
+    $connection           = DB::connection('mysql');
+    $connection->table('company_users')->delete();
+    $connection->table('company_users')->insert([
+        ['uuid' => 'company-user-valid-1', 'company_uuid' => 'company-1', 'user_uuid' => 'user-1'],
+        ['uuid' => 'company-user-valid-2', 'company_uuid' => 'company-2', 'user_uuid' => 'user-1'],
+    ]);
+    session(['company' => 'company-3']);
+
+    UserCacheService::invalidateUser($user);
+
+    expect($cache->forgotten)->toBe([
+        'user:current:user-1:company-1:1784282400',
+        'user:current:user-1:company-2:1784282400',
+        'user:current:user-1:company-3:1784282400',
+    ])
+        ->and($log->entries)->toContain(['debug', 'User cache invalidated for session company', [
+            'user_id'    => 99,
+            'company_id' => 'company-3',
+            'cache_key'  => 'user:current:user-1:company-3:1784282400',
+        ]]);
+});
+
+test('user cache service logs invalidate and redis scan failures without leaking exceptions', function () {
+    [$user, $cache, $log] = user_cache_service_fixtures();
+    $cache->throwOnForget = true;
+
+    UserCacheService::invalidate($user, 'company-1');
+
+    expect($log->entries[0])->toBe(['error', 'Failed to invalidate user cache', [
+        'error'      => 'cache forget failed',
+        'user_id'    => 'user-1',
+        'company_id' => 'company-1',
+    ]]);
+
+    $cache->throwOnForget = false;
+    $cache->throwOnKeys   = true;
+
+    UserCacheService::invalidateCompany('company-1');
+    UserCacheService::flush();
+
+    expect($log->entries)->toContain(['error', 'Failed to invalidate company cache', [
+        'error'      => 'redis keys failed',
+        'company_id' => 'company-1',
+    ]])
+        ->and($log->entries)->toContain(['error', 'Failed to flush user cache', [
+            'error' => 'redis keys failed',
+        ]]);
 });
