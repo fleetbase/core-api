@@ -16,6 +16,7 @@ namespace {
     use Fleetbase\Auth\Schemas\IAM;
     use Fleetbase\Auth\Signers\AppleSignerInMemory;
     use Fleetbase\Auth\Signers\AppleSignerNone;
+    use Google_Client as GoogleClient;
     use Illuminate\Container\Container;
     use Illuminate\Support\Facades\Facade;
 
@@ -67,6 +68,42 @@ namespace {
         }
     }
 
+    class AuthContractGoogleClientFake extends GoogleClient
+    {
+        public static mixed $payload        = null;
+        public static ?Throwable $exception = null;
+        public static array $instances      = [];
+
+        public mixed $httpClient = null;
+
+        public function __construct(public array $config = [])
+        {
+            static::$instances[] = $this;
+        }
+
+        public function setHttpClient($http)
+        {
+            $this->httpClient = $http;
+        }
+
+        public function verifyIdToken($idToken = null)
+        {
+            if (static::$exception) {
+                throw static::$exception;
+            }
+
+            return static::$payload;
+        }
+    }
+
+    class AuthContractGoogleVerifierFake extends GoogleVerifier
+    {
+        protected static function createGoogleClient(string $clientId): GoogleClient
+        {
+            return new AuthContractGoogleClientFake(['client_id' => $clientId]);
+        }
+    }
+
     function auth_contract_jwt(array $header, array $payload): string
     {
         $encode    = fn (array $data): string => rtrim(strtr(base64_encode(json_encode($data, JSON_THROW_ON_ERROR)), '+/', '-_'), '=');
@@ -100,6 +137,10 @@ namespace {
             'app.debug' => false,
             'app.env'   => 'testing',
         ]);
+
+        AuthContractGoogleClientFake::$payload   = null;
+        AuthContractGoogleClientFake::$exception = null;
+        AuthContractGoogleClientFake::$instances = [];
     });
 
     afterEach(function () {
@@ -161,15 +202,52 @@ namespace {
         expect($result)->toBeNull();
     });
 
+    test('google verifier returns verified payloads without configuring relaxed http outside debug environments', function () {
+        AuthContractGoogleClientFake::$payload = [
+            'sub'            => 'google-user-1',
+            'email'          => 'user@example.test',
+            'email_verified' => true,
+            'aud'            => 'client-id.apps.googleusercontent.com',
+        ];
+
+        $result = AuthContractGoogleVerifierFake::verifyIdToken('valid-token', 'client-id.apps.googleusercontent.com');
+
+        expect($result)->toBe(AuthContractGoogleClientFake::$payload)
+            ->and(AuthContractGoogleClientFake::$instances)->toHaveCount(1)
+            ->and(AuthContractGoogleClientFake::$instances[0]->config)->toBe([
+                'client_id' => 'client-id.apps.googleusercontent.com',
+            ])
+            ->and(AuthContractGoogleClientFake::$instances[0]->httpClient)->toBeNull();
+    });
+
+    test('google verifier returns null when google verification returns a falsey payload', function () {
+        AuthContractGoogleClientFake::$payload = false;
+
+        expect(AuthContractGoogleVerifierFake::verifyIdToken('falsey-token', 'client-id.apps.googleusercontent.com'))->toBeNull();
+    });
+
+    test('google verifier logs fakeable client exceptions and returns null', function () {
+        AuthContractGoogleClientFake::$exception = new RuntimeException('google rejected token');
+
+        $result = AuthContractGoogleVerifierFake::verifyIdToken('bad-token', 'client-id.apps.googleusercontent.com');
+
+        expect($result)->toBeNull()
+            ->and(app('log')->entries[0][0])->toBe('error')
+            ->and(app('log')->entries[0][1])->toBe('Google ID Token verification failed: google rejected token');
+    });
+
     test('google verifier uses relaxed http verification in debug mode and still hides invalid token failures', function () {
         bind_test_container([
             'app.debug' => true,
             'app.env'   => 'development',
         ]);
 
-        $result = GoogleVerifier::verifyIdToken('not-a-jwt', 'client-id.apps.googleusercontent.com');
+        AuthContractGoogleClientFake::$exception = new RuntimeException('debug rejected token');
+
+        $result = AuthContractGoogleVerifierFake::verifyIdToken('not-a-jwt', 'client-id.apps.googleusercontent.com');
 
         expect($result)->toBeNull()
+            ->and(AuthContractGoogleClientFake::$instances[0]->httpClient)->not->toBeNull()
             ->and(app('log')->entries[0][0])->toBe('error')
             ->and(app('log')->entries[0][1])->toContain('Google ID Token verification failed:');
     });

@@ -9,7 +9,7 @@ class GoogleVerifier
 {
     public static function verifyIdToken(string $idToken, string $clientId): ?array
     {
-        $client = new GoogleClient(['client_id' => $clientId]);
+        $client = static::createGoogleClient($clientId);
 
         if (config('app.debug') === true || app()->environment('development')) {
             $httpClient = new GuzzleClient([
@@ -32,5 +32,10 @@ class GoogleVerifier
 
             return null;
         }
+    }
+
+    protected static function createGoogleClient(string $clientId): GoogleClient
+    {
+        return new GoogleClient(['client_id' => $clientId]);
     }
 }
