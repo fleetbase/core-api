@@ -79,6 +79,11 @@ class DataPurgerProbe extends DataPurger
     {
         $this->toggleForeignKeys($enable);
     }
+
+    public function foreignKeysFor(array $parentTables): array
+    {
+        return $this->listForeignKeysReferencing($parentTables);
+    }
 }
 
 class DataPurgerToggleConnection extends Illuminate\Database\Connection
@@ -99,6 +104,78 @@ class DataPurgerToggleConnection extends Illuminate\Database\Connection
         $this->statements[] = compact('query', 'bindings');
 
         return true;
+    }
+}
+
+class DataPurgerMetadataConnection extends Illuminate\Database\Connection
+{
+    public array $queries = [];
+
+    public function __construct(
+        private string $driverName,
+        private array $mysqlRows = [],
+        private array $pgsqlRows = [],
+        private string $databaseName = 'fleetbase_test',
+    ) {
+    }
+
+    public function getDriverName()
+    {
+        return $this->driverName;
+    }
+
+    public function getDatabaseName()
+    {
+        return $this->databaseName;
+    }
+
+    public function table($table, $as = null)
+    {
+        $this->queries[] = ['table' => $table, 'as' => $as];
+
+        return new DataPurgerMetadataQuery($this->mysqlRows);
+    }
+
+    public function select($query, $bindings = [], $useReadPdo = true)
+    {
+        $this->queries[] = ['select' => $query, 'bindings' => $bindings, 'useReadPdo' => $useReadPdo];
+
+        return $this->pgsqlRows;
+    }
+}
+
+class DataPurgerMetadataQuery
+{
+    public array $calls = [];
+
+    public function __construct(private array $rows)
+    {
+    }
+
+    public function select(...$columns): self
+    {
+        $this->calls[] = ['select', $columns];
+
+        return $this;
+    }
+
+    public function where(string $column, mixed $value): self
+    {
+        $this->calls[] = ['where', $column, $value];
+
+        return $this;
+    }
+
+    public function whereNotNull(string $column): self
+    {
+        $this->calls[] = ['whereNotNull', $column];
+
+        return $this;
+    }
+
+    public function get(): Collection
+    {
+        return collect($this->rows);
     }
 }
 
@@ -434,4 +511,33 @@ test('data purger deep reference pass stops cleanly when parent tables have no t
         'total'  => 0,
     ])->and($db->table('order_notes')->pluck('body')->all())->toBe(['tenant note', 'other note'])
         ->and($db->table('orders')->pluck('uuid')->all())->toBe(['order-1', 'order-2', 'order-3']);
+});
+
+test('data purger discovers foreign key metadata by driver and filters unrelated parents', function () {
+    $mysql = new DataPurgerMetadataConnection('mysql', [
+        (object) ['child_table' => 'order_notes', 'child_column' => 'order_uuid', 'parent_table' => 'orders', 'parent_column' => 'uuid'],
+        (object) ['child_table' => 'audit_rows', 'child_column' => 'company_uuid', 'parent_table' => 'companies', 'parent_column' => 'uuid'],
+        (object) ['child_table' => 'global_links', 'child_column' => 'owner_uuid', 'parent_table' => 'users', 'parent_column' => 'uuid'],
+    ]);
+    $pgsql = new DataPurgerMetadataConnection('pgsql', [], [
+        (object) ['child_table' => 'order_notes', 'child_column' => 'order_uuid', 'parent_table' => 'orders', 'parent_column' => 'uuid'],
+        (object) ['child_table' => 'global_links', 'child_column' => 'owner_uuid', 'parent_table' => 'users', 'parent_column' => 'uuid'],
+    ]);
+    $sqlite = new DataPurgerMetadataConnection('sqlite', [
+        (object) ['child_table' => 'ignored', 'child_column' => 'ignored_uuid', 'parent_table' => 'orders', 'parent_column' => 'uuid'],
+    ]);
+
+    $mysqlKeys  = (new DataPurgerProbe($mysql))->foreignKeysFor(['orders', 'companies']);
+    $pgsqlKeys  = (new DataPurgerProbe($pgsql))->foreignKeysFor(['orders']);
+    $sqliteKeys = (new DataPurgerProbe($sqlite))->foreignKeysFor(['orders']);
+
+    expect($mysqlKeys)->toBe([
+        ['order_notes', 'order_uuid', 'orders', 'uuid'],
+        ['audit_rows', 'company_uuid', 'companies', 'uuid'],
+    ])->and($pgsqlKeys)->toBe([
+        ['order_notes', 'order_uuid', 'orders', 'uuid'],
+    ])->and($sqliteKeys)->toBe([])
+        ->and($mysql->queries[0]['table'])->toBe('information_schema.KEY_COLUMN_USAGE')
+        ->and($pgsql->queries[0]['select'])->toContain('FOREIGN KEY')
+        ->and($sqlite->queries)->toBe([]);
 });
