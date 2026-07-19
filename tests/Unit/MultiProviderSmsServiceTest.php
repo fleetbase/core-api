@@ -26,6 +26,32 @@ class MessageBirdSmsServiceProbe extends MessageBirdSmsService
     }
 }
 
+class SmsServiceRoutingProbe extends SmsService
+{
+    public array $dispatches = [];
+
+    protected function sendViaAwsSns(string $to, string $text, array $options = []): array
+    {
+        $this->dispatches[] = ['provider' => self::PROVIDER_AWS_SNS, 'to' => $to, 'text' => $text, 'options' => $options];
+
+        return ['success' => true, 'message_id' => 'aws-sns-id'];
+    }
+
+    protected function sendViaSmpp(string $to, string $text, array $options = []): array
+    {
+        $this->dispatches[] = ['provider' => self::PROVIDER_SMPP, 'to' => $to, 'text' => $text, 'options' => $options];
+
+        return ['success' => true, 'message_id' => 'smpp-id'];
+    }
+
+    protected function sendViaCustomHttp(string $to, string $text, array $options = []): array
+    {
+        $this->dispatches[] = ['provider' => self::PROVIDER_CUSTOM_HTTP, 'to' => $to, 'text' => $text, 'options' => $options];
+
+        return ['success' => true, 'message_id' => 'custom-http-id'];
+    }
+}
+
 if (!function_exists('config')) {
     function config($key = null, $default = null)
     {
@@ -889,4 +915,68 @@ test('sms service routes explicit provider and prefix rules to new providers', f
         'success'  => true,
         'provider' => SmsService::PROVIDER_VONAGE,
     ]);
+});
+
+test('sms service routes aws smpp and custom http providers without leaking formatting', function () {
+    config()->set('sms.default_provider', SmsService::PROVIDER_AWS_SNS);
+    config()->set('sms.routing_rules', [
+        '+88' => SmsService::PROVIDER_SMPP,
+        '+77' => SmsService::PROVIDER_CUSTOM_HTTP,
+    ]);
+
+    $service = new SmsServiceRoutingProbe();
+
+    $awsResult    = $service->send('+1 (555) 123-4567', 'Default AWS', ['sender_id' => 'Fleetbase']);
+    $smppResult   = $service->send('+88 123 456', 'Route SMPP', ['source_addr' => 'FBASE']);
+    $customResult = $service->send('+77-999-000', 'Route HTTP', ['from' => 'Fleetbase']);
+
+    $service->addRoutingRule('+66', SmsService::PROVIDER_CUSTOM_HTTP);
+    $service->setDefaultProvider(SmsService::PROVIDER_SMPP);
+    $staticResult = SmsServiceRoutingProbe::sendSms('+77 111 222', 'Static route');
+
+    expect($awsResult)->toMatchArray([
+        'success'    => true,
+        'message_id' => 'aws-sns-id',
+        'provider'   => SmsService::PROVIDER_AWS_SNS,
+    ])
+        ->and($smppResult)->toMatchArray([
+            'success'    => true,
+            'message_id' => 'smpp-id',
+            'provider'   => SmsService::PROVIDER_SMPP,
+        ])
+        ->and($customResult)->toMatchArray([
+            'success'    => true,
+            'message_id' => 'custom-http-id',
+            'provider'   => SmsService::PROVIDER_CUSTOM_HTTP,
+        ])
+        ->and($staticResult)->toMatchArray([
+            'success'    => true,
+            'message_id' => 'custom-http-id',
+            'provider'   => SmsService::PROVIDER_CUSTOM_HTTP,
+        ])
+        ->and($service->dispatches)->toBe([
+            ['provider' => SmsService::PROVIDER_AWS_SNS, 'to' => '+15551234567', 'text' => 'Default AWS', 'options' => ['sender_id' => 'Fleetbase']],
+            ['provider' => SmsService::PROVIDER_SMPP, 'to' => '+88123456', 'text' => 'Route SMPP', 'options' => ['source_addr' => 'FBASE']],
+            ['provider' => SmsService::PROVIDER_CUSTOM_HTTP, 'to' => '+77999000', 'text' => 'Route HTTP', 'options' => ['from' => 'Fleetbase']],
+        ])
+        ->and($service->getRoutingRules())->toBe([
+            '+88' => SmsService::PROVIDER_SMPP,
+            '+77' => SmsService::PROVIDER_CUSTOM_HTTP,
+            '+66' => SmsService::PROVIDER_CUSTOM_HTTP,
+        ])
+        ->and($service->getDefaultProvider())->toBe(SmsService::PROVIDER_SMPP);
+});
+
+test('aws sns sms service can construct a configured client lazily', function () {
+    $service = new AwsSnsSmsService([
+        'key'    => 'lazy-key',
+        'secret' => 'lazy-secret',
+        'region' => 'ap-southeast-1',
+    ]);
+
+    $client = new ReflectionMethod(AwsSnsSmsService::class, 'client');
+    $client->setAccessible(true);
+
+    expect($client->invoke($service))->toBeInstanceOf(SnsClient::class)
+        ->and($client->invoke($service))->toBe($client->invoke($service));
 });
