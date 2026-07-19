@@ -55,6 +55,10 @@ class CoreExpansionDirectiveControllerStub
     }
 }
 
+class CoreExpansionRouteControllerStub extends Illuminate\Routing\Controller
+{
+}
+
 class CoreExpansionValidatorFake implements ValidatorContract
 {
     public function __construct(private array $messages)
@@ -182,6 +186,26 @@ function core_expansion_builder_database(): Capsule
         $table->timestamps();
     });
 
+    $schema->create('companies', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('public_id')->nullable();
+        $table->string('name')->nullable();
+        $table->timestamp('deleted_at')->nullable();
+        $table->timestamps();
+    });
+
+    $schema->create('files', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('public_id')->nullable();
+        $table->string('company_uuid')->nullable();
+        $table->string('disk')->nullable();
+        $table->string('path')->nullable();
+        $table->string('original_filename')->nullable();
+        $table->string('content_type')->nullable();
+        $table->timestamp('deleted_at')->nullable();
+        $table->timestamps();
+    });
+
     $schema->create('permissions', function ($table) {
         $table->string('id')->primary();
         $table->string('name')->nullable();
@@ -273,11 +297,48 @@ test('array expansion helpers preserve key order and search semantics', function
 });
 
 test('request expansion helpers normalize parameters and global filter payloads', function () {
+    core_expansion_builder_database();
+
     $expansion = new RequestExpansion();
     HttpRequest::macro('or', $expansion->or());
+    HttpRequest::macro('array', $expansion->array());
+
+    app('db')->connection('mysql')->table('companies')->insert([
+        'uuid'       => 'company-1',
+        'public_id'  => 'company_public',
+        'name'       => 'Acme Logistics',
+        'created_at' => '2026-07-19 00:00:00',
+        'updated_at' => '2026-07-19 00:00:00',
+    ]);
+
+    app('db')->connection('mysql')->table('files')->insert([
+        [
+            'uuid'              => '11111111-1111-4111-8111-111111111111',
+            'public_id'         => 'file_first',
+            'company_uuid'      => 'company-1',
+            'disk'              => 'local',
+            'path'              => 'uploads/first.pdf',
+            'original_filename' => 'first.pdf',
+            'content_type'      => 'application/pdf',
+            'created_at'        => '2026-07-19 00:00:00',
+            'updated_at'        => '2026-07-19 00:00:00',
+        ],
+        [
+            'uuid'              => '22222222-2222-4222-8222-222222222222',
+            'public_id'         => 'file_second',
+            'company_uuid'      => 'company-1',
+            'disk'              => 'local',
+            'path'              => 'uploads/second.pdf',
+            'original_filename' => 'second.pdf',
+            'content_type'      => 'application/pdf',
+            'created_at'        => '2026-07-19 00:00:00',
+            'updated_at'        => '2026-07-19 00:00:00',
+        ],
+    ]);
 
     $request = HttpRequest::create('/int/v1/test', 'POST', [
         'ids'         => 'one,two,three',
+        'files'       => '11111111-1111-4111-8111-111111111111,22222222-2222-4222-8222-222222222222',
         'tags'        => ['fragile', 'cold'],
         'count'       => '12',
         'uuid'        => '11111111-1111-4111-8111-111111111111',
@@ -289,7 +350,21 @@ test('request expansion helpers normalize parameters and global filter payloads'
         'tenant_only' => 'drop',
     ]);
 
-    expect($expansion->or()->call($request, ['missing', 'status'], 'fallback'))->toBe('active')
+    $routeController          = new CoreExpansionRouteControllerStub();
+    $route                    = new Route(['POST'], 'int/v1/test', ['controller' => CoreExpansionRouteControllerStub::class . '@index']);
+    $route->controller        = $routeController;
+    $request->setRouteResolver(fn () => $route);
+    $request->setLaravelSession(new Illuminate\Session\Store('testing', new Illuminate\Session\ArraySessionHandler(120)));
+    $request->session()->put('company', 'company-1');
+
+    expect(RequestExpansion::target())->toBe(Illuminate\Support\Facades\Request::class)
+        ->and($expansion->company()->call($request)?->name)->toBe('Acme Logistics')
+        ->and($expansion->getController()->call($request))->toBe($routeController)
+        ->and($expansion->resolveFilesFromIds()->call($request)->pluck('uuid')->all())->toBe([
+            '11111111-1111-4111-8111-111111111111',
+            '22222222-2222-4222-8222-222222222222',
+        ])
+        ->and($expansion->or()->call($request, ['missing', 'status'], 'fallback'))->toBe('active')
         ->and($expansion->or()->call($request, ['missing'], 'fallback'))->toBe('fallback')
         ->and($expansion->array()->call($request, 'ids'))->toBe(['one', 'two', 'three'])
         ->and($expansion->array()->call($request, 'tags'))->toBe(['fragile', 'cold'])
@@ -301,6 +376,7 @@ test('request expansion helpers normalize parameters and global filter payloads'
         ->and($expansion->searchQuery()->call($request))->toBe('fleetbase api')
         ->and($expansion->getFilters()->call($request, ['tenant_only']))->toBe([
             'ids'    => 'one,two,three',
+            'files'  => '11111111-1111-4111-8111-111111111111,22222222-2222-4222-8222-222222222222',
             'tags'   => ['fragile', 'cold'],
             'count'  => '12',
             'uuid'   => '11111111-1111-4111-8111-111111111111',

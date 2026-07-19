@@ -645,6 +645,11 @@ namespace {
         $authorizedUpload   = request_with_session(UploadFileRequest::class, 'POST', [], ['user' => 'user-1']);
         $base64Upload       = request_with_session(UploadBase64FileRequest::class, 'POST', [], ['user' => 'user-1']);
         $download           = request_with_session(DownloadFileRequest::class, 'GET', [], ['user' => 'user-1']);
+        $routeDownload      = request_with_route_parameter(DownloadFileRequest::class, 'id', '11111111-1111-4111-8111-111111111111');
+        $prepareDownload    = new ReflectionMethod(DownloadFileRequest::class, 'prepareForValidation');
+
+        $prepareDownload->setAccessible(true);
+        $prepareDownload->invoke($routeDownload);
 
         $uploadRules   = $authorizedUpload->rules();
         $base64Rules   = $base64Upload->rules();
@@ -670,6 +675,7 @@ namespace {
             ->and($downloadRules['file'])->toBe(['required_without:id', 'uuid', 'exists:files,uuid'])
             ->and($downloadRules['id'])->toBe(['required_without:file', 'uuid', 'exists:files,uuid'])
             ->and($downloadRules['disk'])->toBe(['sometimes', 'string'])
+            ->and($routeDownload->input('id'))->toBe('11111111-1111-4111-8111-111111111111')
             ->and($download->messages()['file.exists'])->toBe('The requested file does not exist.');
     });
 
