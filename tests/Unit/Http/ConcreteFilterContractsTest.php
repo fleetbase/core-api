@@ -906,9 +906,11 @@ test('activity filter respects admin override and subject causer constraints', f
         ->all();
 
     expect(concrete_filter_uuids(ActivityFilter::class, ConcreteFilterActivityRecord::class, [], 'int/v1/activities'))->toBe(['activity-1', 'activity-2'])
+        ->and(concrete_filter_uuids(ActivityFilter::class, ConcreteFilterActivityRecord::class, [], 'v1/activities'))->toBe(['activity-1', 'activity-2'])
         ->and(concrete_filter_uuids(ActivityFilter::class, ConcreteFilterActivityRecord::class, ['subject_id' => 'order-1'], 'int/v1/activities'))->toBe(['activity-1'])
         ->and(concrete_filter_uuids(ActivityFilter::class, ConcreteFilterActivityRecord::class, ['causer_id' => 'user-2'], 'int/v1/activities'))->toBe(['activity-2'])
         ->and(concrete_filter_uuids(ActivityFilter::class, ConcreteFilterActivityRecord::class, ['created_at' => '2026-07-18,2026-07-18 23:59:59'], 'int/v1/activities'))->toBe(['activity-1'])
+        ->and(concrete_filter_uuids(ActivityFilter::class, ConcreteFilterActivityRecord::class, ['created_at' => '2026-07-19'], 'int/v1/activities'))->toBe(['activity-2'])
         ->and($adminMatches)->toBe(['activity-hidden']);
 });
 
