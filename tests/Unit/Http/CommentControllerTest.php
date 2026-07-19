@@ -315,10 +315,14 @@ test('public comment controller updates finds deletes and reports tenant scoped 
     $updated = comment_controller()->update('comment_root', comment_controller_update_request([
         'content' => 'Updated root comment',
     ]));
-    $found   = comment_controller()->find('comment_root');
-    $deleted = comment_controller()->delete('comment_root');
-    $missing = comment_controller()->find('comment_root');
-    $foreign = comment_controller()->find('comment_foreign');
+    $found         = comment_controller()->find('comment_root');
+    $deleted       = comment_controller()->delete('comment_root');
+    $missing       = comment_controller()->find('comment_root');
+    $foreign       = comment_controller()->find('comment_foreign');
+    $missingUpdate = comment_controller()->update('comment_root', comment_controller_update_request([
+        'content' => 'No longer available',
+    ]));
+    $missingDelete = comment_controller()->delete('comment_root');
 
     expect($updated->resource->content)->toBe('Updated root comment')
         ->and(comment_controller_payload($found)['content'])->toBe('Updated root comment')
@@ -327,7 +331,11 @@ test('public comment controller updates finds deletes and reports tenant scoped 
         ->and($missing->getStatusCode())->toBe(404)
         ->and($missing->getData(true))->toBe(['error' => 'Comment resource not found.'])
         ->and($foreign->getStatusCode())->toBe(404)
-        ->and($foreign->getData(true))->toBe(['error' => 'Comment resource not found.']);
+        ->and($foreign->getData(true))->toBe(['error' => 'Comment resource not found.'])
+        ->and($missingUpdate->getStatusCode())->toBe(404)
+        ->and($missingUpdate->getData(true))->toBe(['error' => 'Comment resource not found.'])
+        ->and($missingDelete->getStatusCode())->toBe(404)
+        ->and($missingDelete->getData(true))->toBe(['error' => 'Comment resource not found.']);
 });
 
 test('public comment controller query applies subject parent and active company filters', function () {

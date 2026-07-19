@@ -183,6 +183,29 @@ test('has options attributes manages nested options and boolean checks', functio
         ->and($record->isOption('dispatch.priority'))->toBeFalse();
 });
 
+test('has options attributes quietly updates persisted nested option values', function () {
+    model_attribute_traits_database();
+
+    $record = new ModelAttributeTraitsRecord([
+        'uuid'    => 'record-options-1',
+        'meta'    => [],
+        'options' => ['dispatch' => ['priority' => 'normal']],
+    ]);
+    $record->save();
+
+    expect($record->updateOption('dispatch.priority', 'urgent'))->toBeTrue()
+        ->and($record->getOption('dispatch.priority'))->toBe('urgent');
+
+    $rawOptions = Capsule::connection('testing')
+        ->table('trait_records')
+        ->where('uuid', 'record-options-1')
+        ->value('options');
+
+    expect(json_decode($rawOptions, true))->toBe([
+        'dispatch' => ['priority' => 'urgent'],
+    ]);
+});
+
 test('has session attributes tracks strict session agnostic columns', function () {
     $record = new ModelAttributeTraitsRecord();
 

@@ -3,7 +3,10 @@
 use Fleetbase\Models\ScheduleItem;
 use Fleetbase\Services\Scheduling\ConstraintService;
 use Fleetbase\Support\Scheduling\ConstraintResult;
+use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Events\Dispatcher;
+use Illuminate\Support\Facades\Facade;
 use Spatie\Activitylog\ActivityLogger;
 use Spatie\Activitylog\Contracts\Activity as ActivityContract;
 use Spatie\Activitylog\PendingActivityLog;
@@ -177,6 +180,48 @@ function schedule_item_for_constraint_test(string $assigneeType, string $assigne
     return $item;
 }
 
+function scheduling_constraint_service_database(): Capsule
+{
+    Model::clearBootedModels();
+
+    $connectionConfig = [
+        'driver'   => 'sqlite',
+        'database' => ':memory:',
+        'prefix'   => '',
+    ];
+
+    $container = bind_test_container([
+        'database.default'             => 'testing',
+        'database.connections.testing' => $connectionConfig,
+        'fleetbase.connection.db'      => 'testing',
+    ]);
+
+    $capsule = new Capsule($container);
+    $capsule->addConnection($connectionConfig, 'testing');
+    $capsule->setEventDispatcher(new Dispatcher($container));
+    $capsule->setAsGlobal();
+    $capsule->bootEloquent();
+
+    $databaseManager = $capsule->getDatabaseManager();
+    $databaseManager->setDefaultConnection('testing');
+    $container->instance('db', $databaseManager);
+    Facade::clearResolvedInstance('db');
+
+    $capsule->getConnection('testing')->getSchemaBuilder()->create('schedule_constraints', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('company_uuid')->nullable();
+        $table->string('subject_uuid')->nullable();
+        $table->string('subject_type')->nullable();
+        $table->string('type')->nullable();
+        $table->integer('priority')->nullable();
+        $table->boolean('is_active')->default(true);
+        $table->timestamps();
+        $table->softDeletes();
+    });
+
+    return $capsule;
+}
+
 it('returns no schedule constraint violations when no handler is registered for the assignee type', function () {
     bind_test_container();
 
@@ -250,4 +295,19 @@ it('resolves and runs registered schedule constraint handlers for matching assig
     expect($service->validate($vehicleItem))->toBe([])
         ->and($handler->items)->toHaveCount(3)
         ->and($handler->items[2])->toBe($vehicleItem);
+});
+
+it('returns active schedule constraints by subject and type ordered by priority', function () {
+    $capsule = scheduling_constraint_service_database();
+    $capsule->getConnection('testing')->table('schedule_constraints')->insert([
+        ['uuid' => 'constraint-low', 'subject_type' => 'driver', 'subject_uuid' => 'driver-1', 'type' => 'availability', 'priority' => 1, 'is_active' => true, 'created_at' => '2026-07-19 00:00:00', 'updated_at' => '2026-07-19 00:00:00'],
+        ['uuid' => 'constraint-high', 'subject_type' => 'driver', 'subject_uuid' => 'driver-1', 'type' => 'availability', 'priority' => 50, 'is_active' => true, 'created_at' => '2026-07-19 00:00:00', 'updated_at' => '2026-07-19 00:00:00'],
+        ['uuid' => 'constraint-maintenance', 'subject_type' => 'vehicle', 'subject_uuid' => 'vehicle-1', 'type' => 'maintenance', 'priority' => 25, 'is_active' => true, 'created_at' => '2026-07-19 00:00:00', 'updated_at' => '2026-07-19 00:00:00'],
+        ['uuid' => 'constraint-inactive', 'subject_type' => 'driver', 'subject_uuid' => 'driver-1', 'type' => 'availability', 'priority' => 100, 'is_active' => false, 'created_at' => '2026-07-19 00:00:00', 'updated_at' => '2026-07-19 00:00:00'],
+    ]);
+
+    $service = new ConstraintService();
+
+    expect($service->getConstraintsForSubject('driver', 'driver-1')->pluck('uuid')->all())->toBe(['constraint-high', 'constraint-low'])
+        ->and($service->getConstraintsByType('maintenance')->pluck('uuid')->all())->toBe(['constraint-maintenance']);
 });

@@ -552,8 +552,17 @@ namespace {
             ->and(bind_active_request($createComment)->authorize())->toBeTrue()
             ->and(request_rule_strings($createComment->rules()['subject']))->toBe(['required'])
             ->and(request_rule_strings($createComment->rules()['subject_id']))->toBe(['required'])
+            ->and(request_rule_strings($createComment->rules()['subject_uuid']))->toBe(['required'])
+            ->and(request_rule_strings($createComment->rules()['subject_type']))->toBe(['required'])
+            ->and(request_rule_strings($createComment->rules()['parent']))->toBe(['required'])
+            ->and(request_rule_strings($createComment->rules()['parent_comment_uuid']))->toBe(['required'])
             ->and(request_rule_strings($createComment->rules()['content']))->toBe(['required'])
             ->and(request_rule_strings($nestedComment->rules()['subject']))->toBe([''])
+            ->and(request_rule_strings($nestedComment->rules()['subject_id']))->toBe([''])
+            ->and(request_rule_strings($nestedComment->rules()['subject_uuid']))->toBe([''])
+            ->and(request_rule_strings($nestedComment->rules()['subject_type']))->toBe([''])
+            ->and(request_rule_strings($nestedComment->rules()['parent']))->toBe([''])
+            ->and(request_rule_strings($nestedComment->rules()['parent_comment_uuid']))->toBe(['required'])
             ->and(bind_active_request($export)->authorize())->toBeTrue()
             ->and($export->rules()['format'])->toBe('in:csv,xlsx,xls,html,pdf');
     });
@@ -613,6 +622,7 @@ namespace {
         $validateRules    = (new ValidateReportQueryRequest())->rules();
         $validateMessages = (new ValidateReportQueryRequest())->messages();
         $executeRules     = (new ExecuteReportQueryRequest())->rules();
+        $executeMessages  = (new ExecuteReportQueryRequest())->messages();
         $exportRules      = (new ExportReportRequest())->rules();
 
         expect((new CreateReportRequest())->authorize())->toBeTrue()
@@ -647,6 +657,12 @@ namespace {
             ])
             ->and($executeRules['limit'])->toBe('nullable|integer|min:1|max:1000')
             ->and($executeRules['offset'])->toBe('nullable|integer|min:0')
+            ->and($executeMessages)->toBe([
+                'query_config.required'        => 'Query configuration is required',
+                'query_config.select.required' => 'At least one column must be selected',
+                'query_config.from.required'   => 'Primary table must be specified',
+                'limit.max'                    => 'Query limit cannot exceed 1,000 rows for execution',
+            ])
             ->and($exportRules['format'])->toBe('required|string|in:json,csv,xlsx')
             ->and((new ExportReportRequest())->messages()['format.in'])->toBe('Export format must be one of: json, csv, xlsx');
     });
