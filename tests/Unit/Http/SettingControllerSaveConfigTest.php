@@ -4,11 +4,13 @@ use Fleetbase\Http\Controllers\Internal\v1\SettingController;
 use Fleetbase\Http\Requests\AdminRequest;
 use Fleetbase\Models\Setting;
 use Illuminate\Contracts\Console\Kernel as ConsoleKernel;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Facade;
+use Psr\Log\AbstractLogger;
 
 class SettingControllerSaveConfigCacheFake
 {
@@ -77,6 +79,8 @@ class SettingControllerSaveConfigArtisanFake implements ConsoleKernel
 {
     public array $calls = [];
 
+    public ?string $exceptionMessage = null;
+
     public function bootstrap(): void
     {
     }
@@ -89,6 +93,10 @@ class SettingControllerSaveConfigArtisanFake implements ConsoleKernel
     public function call($command, array $parameters = [], $outputBuffer = null): int
     {
         $this->calls[] = [$command, $parameters];
+
+        if ($this->exceptionMessage) {
+            throw new RuntimeException($this->exceptionMessage);
+        }
 
         return 0;
     }
@@ -123,13 +131,143 @@ class SettingControllerSaveConfigFilesystemFake
     }
 }
 
-class SettingControllerSaveConfigDiskFake
+class SettingControllerSaveConfigDiskFake implements Filesystem
 {
     public array $files = [];
 
-    public function get(string $path): ?string
+    public function get($path)
     {
         return $this->files[$path] ?? null;
+    }
+
+    public function readStream($path)
+    {
+        return false;
+    }
+
+    public function put($path, $contents, $options = [])
+    {
+        $this->files[$path] = $contents;
+
+        return true;
+    }
+
+    public function writeStream($path, $resource, array $options = [])
+    {
+        return false;
+    }
+
+    public function getVisibility($path)
+    {
+        return 'public';
+    }
+
+    public function setVisibility($path, $visibility)
+    {
+        return true;
+    }
+
+    public function prepend($path, $data)
+    {
+        $this->files[$path] = $data . ($this->files[$path] ?? '');
+
+        return true;
+    }
+
+    public function append($path, $data)
+    {
+        $this->files[$path] = ($this->files[$path] ?? '') . $data;
+
+        return true;
+    }
+
+    public function delete($paths)
+    {
+        foreach ((array) $paths as $path) {
+            unset($this->files[$path]);
+        }
+
+        return true;
+    }
+
+    public function copy($from, $to)
+    {
+        $this->files[$to] = $this->files[$from] ?? null;
+
+        return true;
+    }
+
+    public function move($from, $to)
+    {
+        $this->copy($from, $to);
+        unset($this->files[$from]);
+
+        return true;
+    }
+
+    public function size($path)
+    {
+        return strlen((string) ($this->files[$path] ?? ''));
+    }
+
+    public function lastModified($path)
+    {
+        return 0;
+    }
+
+    public function files($directory = null, $recursive = false)
+    {
+        return array_keys($this->files);
+    }
+
+    public function allFiles($directory = null)
+    {
+        return $this->files($directory, true);
+    }
+
+    public function directories($directory = null, $recursive = false)
+    {
+        return [];
+    }
+
+    public function allDirectories($directory = null)
+    {
+        return [];
+    }
+
+    public function makeDirectory($path)
+    {
+        return true;
+    }
+
+    public function deleteDirectory($directory)
+    {
+        return true;
+    }
+
+    public function exists($path)
+    {
+        return array_key_exists($path, $this->files);
+    }
+
+    public function url($path)
+    {
+        return '/storage/' . ltrim($path, '/');
+    }
+
+    public function temporaryUrl($path, $expiration)
+    {
+        return 'https://signed.example.test/' . ltrim($path, '/');
+    }
+}
+
+class SettingControllerSaveConfigLoggerFake extends AbstractLogger
+{
+    public array $records = [];
+
+    public function log($level, string|Stringable $message, array $context = []): void
+    {
+        $this->records[] = compact('level', 'message', 'context');
     }
 }
 
@@ -255,6 +393,38 @@ afterEach(function () {
     Facade::clearResolvedInstances();
 });
 
+test('admin overview returns aggregate platform counts', function () {
+    [$capsule] = setting_controller_save_config_database();
+    $schema    = $capsule->getConnection('mysql')->getSchemaBuilder();
+    $schema->create('users', function ($table) {
+        $table->increments('id');
+        $table->string('name')->nullable();
+        $table->softDeletes();
+    });
+    $schema->create('companies', function ($table) {
+        $table->increments('id');
+        $table->string('name')->nullable();
+        $table->softDeletes();
+    });
+    $schema->create('transactions', function ($table) {
+        $table->increments('id');
+        $table->string('name')->nullable();
+        $table->softDeletes();
+    });
+    $capsule->getConnection('mysql')->table('users')->insert([['name' => 'Ada'], ['name' => 'Grace']]);
+    $capsule->getConnection('mysql')->table('companies')->insert([['name' => 'Acme'], ['name' => 'Globex'], ['name' => 'Initech']]);
+    $capsule->getConnection('mysql')->table('transactions')->insert([['name' => 'txn-1']]);
+
+    $response = (new SettingController())->adminOverview(setting_controller_save_config_request('/int/v1/settings/admin-overview'));
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($response->getData(true))->toBe([
+            'total_users'         => 2,
+            'total_organizations' => 3,
+            'total_transactions'  => 1,
+        ]);
+});
+
 test('save filesystem config persists merged disk settings and resolves gcs credential files', function () {
     [$capsule, $cache, $artisan, $filesystem] = setting_controller_save_config_database();
     $capsule->getConnection('mysql')->table('files')->insert([
@@ -297,6 +467,54 @@ test('save filesystem config persists merged disk settings and resolves gcs cred
         ])
         ->and(setting_controller_artisan_commands($artisan))->toBe(['config:clear', 'config:cache'])
         ->and($cache->forgotten)->toContain('system_settings.system.previous');
+});
+
+test('filesystem config response includes resolved gcs credential file metadata', function () {
+    [$capsule] = setting_controller_save_config_database([
+        'filesystems.disks.gcs.key_file_id' => '11111111-1111-4111-8111-111111111111',
+    ]);
+    $capsule->getConnection('mysql')->table('files')->insert([
+        'uuid' => '11111111-1111-4111-8111-111111111111',
+        'disk' => 'local',
+        'path' => 'gcs-service-account.json',
+    ]);
+
+    $response = (new SettingController())->getFilesystemConfig(setting_controller_save_config_request('/int/v1/settings/filesystem'));
+    $payload  = $response->getData(true);
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($payload['gcsCredentialsFileId'])->toBe('11111111-1111-4111-8111-111111111111')
+        ->and($payload['gcsCredentialsFile']['uuid'])->toBe('11111111-1111-4111-8111-111111111111')
+        ->and($payload['gcsCredentialsFile']['disk'])->toBe('local')
+        ->and($payload['gcsCredentialsFile']['path'])->toBe('gcs-service-account.json');
+});
+
+test('notification channel config response includes resolved apn and firebase file metadata', function () {
+    [$capsule] = setting_controller_save_config_database([
+        'broadcasting.connections.apn.private_key_file_id' => '22222222-2222-4222-8222-222222222222',
+        'firebase.projects.app.credentials_file_id'        => '33333333-3333-4333-8333-333333333333',
+    ]);
+    $capsule->getConnection('mysql')->table('files')->insert([
+        [
+            'uuid' => '22222222-2222-4222-8222-222222222222',
+            'disk' => 'local',
+            'path' => 'apn-key.p8',
+        ],
+        [
+            'uuid' => '33333333-3333-4333-8333-333333333333',
+            'disk' => 'local',
+            'path' => 'firebase.json',
+        ],
+    ]);
+
+    $response = (new SettingController())->getNotificationChannelsConfig(setting_controller_save_config_request('/int/v1/settings/notification-channels'));
+    $payload  = $response->getData(true);
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($payload['apn']['private_key_file']['uuid'])->toBe('22222222-2222-4222-8222-222222222222')
+        ->and($payload['apn']['private_key_file']['path'])->toBe('apn-key.p8')
+        ->and($payload['firebase']['credentials_file']['uuid'])->toBe('33333333-3333-4333-8333-333333333333')
+        ->and($payload['firebase']['credentials_file']['path'])->toBe('firebase.json');
 });
 
 test('save mail config persists provider settings and refreshes config cache', function () {
@@ -406,4 +624,79 @@ test('save notification channel config strips file-only keys and persists channe
         ])
         ->and(setting_controller_saved_value('system.firebase.app'))->not->toHaveKey('credentials_file')
         ->and(setting_controller_artisan_commands($artisan))->toBe(['config:clear', 'config:cache']);
+});
+
+test('save notification channel config reads apn and firebase credential files into persisted settings', function () {
+    [$capsule, , $artisan, $filesystem] = setting_controller_save_config_database();
+    $capsule->getConnection('mysql')->table('files')->insert([
+        [
+            'uuid' => '22222222-2222-4222-8222-222222222222',
+            'disk' => 'local',
+            'path' => 'apn-key.p8',
+        ],
+        [
+            'uuid' => '33333333-3333-4333-8333-333333333333',
+            'disk' => 'local',
+            'path' => 'firebase.json',
+        ],
+    ]);
+    $filesystem->disk('local')->files['apn-key.p8']    = '-----BEGIN PRIVATE KEY-----\\nabc123\\n-----END PRIVATE KEY-----';
+    $filesystem->disk('local')->files['firebase.json'] = json_encode([
+        'project_id'  => 'fleetbase-firebase',
+        'private_key' => '-----BEGIN PRIVATE KEY-----\\nfirebase-key\\n-----END PRIVATE KEY-----',
+    ]);
+
+    $response = (new SettingController())->saveNotificationChannelsConfig(setting_controller_save_config_request('/int/v1/settings/notification-channels', [
+        'apn'      => [
+            'key_id'              => 'saved-apn-key',
+            'private_key_path'    => '/tmp/should-not-persist.p8',
+            'private_key_file'    => ['uuid' => 'object-should-not-persist'],
+            'private_key_file_id' => '22222222-2222-4222-8222-222222222222',
+        ],
+        'firebase' => [
+            'project_id'          => 'saved-firebase',
+            'credentials_file'    => '/tmp/should-not-persist.json',
+            'credentials_file_id' => '33333333-3333-4333-8333-333333333333',
+        ],
+    ]));
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($response->getData(true))->toBe(['status' => 'OK'])
+        ->and(setting_controller_saved_value('system.broadcasting.apn'))->toMatchArray([
+            'key_id'              => 'saved-apn-key',
+            'private_key_file_id' => '22222222-2222-4222-8222-222222222222',
+            'private_key_content' => "-----BEGIN PRIVATE KEY-----\nabc123\n-----END PRIVATE KEY-----",
+        ])
+        ->and(setting_controller_saved_value('system.broadcasting.apn'))->not->toHaveKeys(['private_key_path', 'private_key_file'])
+        ->and(setting_controller_saved_value('system.firebase.app'))->toMatchArray([
+            'project_id'          => 'saved-firebase',
+            'credentials_file_id' => '33333333-3333-4333-8333-333333333333',
+            'credentials'         => [
+                'project_id'  => 'fleetbase-firebase',
+                'private_key' => "-----BEGIN PRIVATE KEY-----\nfirebase-key\n-----END PRIVATE KEY-----",
+            ],
+        ])
+        ->and(setting_controller_saved_value('system.firebase.app'))->not->toHaveKey('credentials_file')
+        ->and(setting_controller_artisan_commands($artisan))->toBe(['config:clear', 'config:cache']);
+});
+
+test('save config logs refresh cache failures after persisting settings', function () {
+    [, , $artisan]             = setting_controller_save_config_database();
+    $logger                    = new SettingControllerSaveConfigLoggerFake();
+    $artisan->exceptionMessage = 'config cache unavailable';
+    app()->instance('log', $logger);
+    Facade::clearResolvedInstance('log');
+
+    $response = (new SettingController())->saveQueueConfig(setting_controller_save_config_request('/int/v1/settings/queue', [
+        'driver' => 'redis',
+    ]));
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($response->getData(true))->toBe(['status' => 'OK'])
+        ->and(setting_controller_saved_value('system.queue.driver'))->toBe('redis')
+        ->and(setting_controller_artisan_commands($artisan))->toBe(['config:clear'])
+        ->and($logger->records)->toHaveCount(1)
+        ->and($logger->records[0]['level'])->toBe('error')
+        ->and($logger->records[0]['message'])->toBe('Failed to refresh config cache.')
+        ->and($logger->records[0]['context'])->toBe(['error' => 'config cache unavailable']);
 });
