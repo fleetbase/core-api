@@ -5,7 +5,10 @@ use Fleetbase\Models\ScheduleConstraint;
 use Fleetbase\Models\ScheduleException;
 use Fleetbase\Models\ScheduleItem;
 use Fleetbase\Models\ScheduleTemplate;
+use Fleetbase\Models\User;
 use Illuminate\Database\Capsule\Manager as Capsule;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -338,7 +341,8 @@ it('approves rejects and evaluates schedule exceptions', function () {
 
     expect($exception->type_label)->toBe('Time Off')
         ->and($exception->is_pending)->toBeTrue()
-        ->and($exception->isActive())->toBeFalse();
+        ->and($exception->isActive())->toBeFalse()
+        ->and(ScheduleException::pending()->pluck('uuid')->all())->toBe([$exception->uuid]);
 
     $exception->approve('reviewer-1');
 
@@ -358,6 +362,27 @@ it('approves rejects and evaluates schedule exceptions', function () {
     expect($exception->type_label)->toBe('Custom training');
 
     Carbon::setTestNow();
+});
+
+it('defines schedule exception relationship contracts', function () {
+    scheduling_models_database();
+
+    $exception  = new ScheduleException();
+    $subject    = $exception->subject();
+    $schedule   = $exception->schedule();
+    $reviewedBy = $exception->reviewedBy();
+
+    expect($subject)->toBeInstanceOf(MorphTo::class)
+        ->and($subject->getMorphType())->toBe('subject_type')
+        ->and($subject->getForeignKeyName())->toBe('subject_uuid')
+        ->and($schedule)->toBeInstanceOf(BelongsTo::class)
+        ->and($schedule->getRelated())->toBeInstanceOf(Schedule::class)
+        ->and($schedule->getForeignKeyName())->toBe('schedule_uuid')
+        ->and($schedule->getOwnerKeyName())->toBe('uuid')
+        ->and($reviewedBy)->toBeInstanceOf(BelongsTo::class)
+        ->and($reviewedBy->getRelated())->toBeInstanceOf(User::class)
+        ->and($reviewedBy->getForeignKeyName())->toBe('reviewed_by_uuid')
+        ->and($reviewedBy->getOwnerKeyName())->toBe('uuid');
 });
 
 it('reports unavailable schedule template rrule support clearly in this package install', function () {
@@ -448,7 +473,7 @@ it('exposes schedule template relationship keys and rrule dependency failures', 
         'uuid'          => 'template-relations',
         'company_uuid'  => 'company-1',
         'schedule_uuid' => 'schedule-1',
-        'subject_type'  => Fleetbase\Models\User::class,
+        'subject_type'  => User::class,
         'subject_uuid'  => 'driver-1',
         'start_time'    => '09:15',
         'rrule'         => 'FREQ=DAILY;COUNT=1',
@@ -476,7 +501,7 @@ it('scopes schedule templates and applies library copies to schedules', function
     $schedule = Schedule::create([
         'uuid'         => 'schedule-driver-1',
         'company_uuid' => 'company-1',
-        'subject_type' => Fleetbase\Models\User::class,
+        'subject_type' => User::class,
         'subject_uuid' => 'driver-1',
         'name'         => 'Driver Schedule',
         'start_date'   => '2026-03-01',
@@ -502,7 +527,7 @@ it('scopes schedule templates and applies library copies to schedules', function
         'uuid'          => 'template-applied',
         'company_uuid'  => 'company-1',
         'schedule_uuid' => $schedule->uuid,
-        'subject_type'  => Fleetbase\Models\User::class,
+        'subject_type'  => User::class,
         'subject_uuid'  => 'driver-1',
         'name'          => 'Applied Shift',
         'start_time'    => '10:00',
@@ -523,14 +548,14 @@ it('scopes schedule templates and applies library copies to schedules', function
     expect(ScheduleTemplate::library()->pluck('uuid')->all())->toBe([$library->uuid])
         ->and(ScheduleTemplate::applied()->pluck('uuid')->all())->toBe([$applied->uuid])
         ->and(ScheduleTemplate::forCompany('company-1')->count())->toBe(2)
-        ->and(ScheduleTemplate::forSubject(Fleetbase\Models\User::class, 'driver-1')->pluck('uuid')->all())->toBe([$applied->uuid])
+        ->and(ScheduleTemplate::forSubject(User::class, 'driver-1')->pluck('uuid')->all())->toBe([$applied->uuid])
         ->and($applied->schedule()->first()->uuid)->toBe($schedule->uuid)
         ->and($applied->items()->count())->toBe(1);
 
     $copy = $library->applyToSchedule($schedule);
 
     expect($copy->schedule_uuid)->toBe($schedule->uuid)
-        ->and($copy->subject_type)->toBe(Fleetbase\Models\User::class)
+        ->and($copy->subject_type)->toBe(User::class)
         ->and($copy->subject_uuid)->toBe('driver-1')
         ->and($copy->description)->toBe('Weekday morning shift')
         ->and($copy->meta)->toBe(['source' => 'library']);
@@ -550,7 +575,7 @@ it('filters schedule items by assignment recurrence status and time windows', fu
     $schedule = Schedule::create([
         'uuid'         => 'schedule-1',
         'company_uuid' => 'schedule-company',
-        'subject_type' => Fleetbase\Models\User::class,
+        'subject_type' => User::class,
         'subject_uuid' => 'driver-1',
         'name'         => 'Driver Schedule',
         'status'       => 'active',
@@ -560,7 +585,7 @@ it('filters schedule items by assignment recurrence status and time windows', fu
         'uuid'          => 'item-from-schedule-company',
         'schedule_uuid' => $schedule->uuid,
         'template_uuid' => 'template-1',
-        'assignee_type' => Fleetbase\Models\User::class,
+        'assignee_type' => User::class,
         'assignee_uuid' => 'driver-1',
         'resource_type' => Fleetbase\Models\Company::class,
         'resource_uuid' => 'vehicle-1',
@@ -572,7 +597,7 @@ it('filters schedule items by assignment recurrence status and time windows', fu
 
     $fromSession = ScheduleItem::create([
         'uuid'          => 'item-from-session-company',
-        'assignee_type' => Fleetbase\Models\User::class,
+        'assignee_type' => User::class,
         'assignee_uuid' => 'driver-2',
         'start_at'      => '2026-03-09 08:00:00',
         'end_at'        => '2026-03-09 12:00:00',
@@ -584,7 +609,7 @@ it('filters schedule items by assignment recurrence status and time windows', fu
         'uuid'          => 'item-window-containing',
         'company_uuid'  => 'company-explicit',
         'template_uuid' => 'template-1',
-        'assignee_type' => Fleetbase\Models\User::class,
+        'assignee_type' => User::class,
         'assignee_uuid' => 'driver-1',
         'start_at'      => '2026-03-11 00:00:00',
         'end_at'        => '2026-03-15 00:00:00',
@@ -605,7 +630,7 @@ it('filters schedule items by assignment recurrence status and time windows', fu
     expect($fromSchedule->company_uuid)->toBe('schedule-company')
         ->and($fromSchedule->duration)->toBe(240)
         ->and($fromSession->company_uuid)->toBe('session-company')
-        ->and($sortedUuids(ScheduleItem::forAssignee(Fleetbase\Models\User::class, 'driver-1')))->toBe($driverOneUuids)
+        ->and($sortedUuids(ScheduleItem::forAssignee(User::class, 'driver-1')))->toBe($driverOneUuids)
         ->and($sortedUuids(ScheduleItem::fromTemplate('template-1')))->toBe($driverOneUuids)
         ->and(ScheduleItem::exceptions()->pluck('uuid')->all())->toBe([$fromSession->uuid])
         ->and($sortedUuids(ScheduleItem::generated()))->toBe($driverOneUuids)
