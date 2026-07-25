@@ -130,9 +130,11 @@ namespace {
         bind_test_container();
         Facade::clearResolvedInstances();
 
-        $handler = new TestableExceptionHandler(app());
+        $handler   = new TestableExceptionHandler(app());
+        $exception = new RuntimeException('Report me');
 
         $handler->register();
+        ($handler->reportableCallbacks[0])($exception);
 
         expect($handler->reportableCallbacks)->toHaveCount(1)
             ->and($handler->reportableCallbacks[0])->toBeCallable();
@@ -194,5 +196,25 @@ namespace {
             'file'    => $exception->getFile(),
             'line'    => $exception->getLine(),
         ]);
+    });
+
+    it('falls back to exception messages when CloudWatch json encoding cannot represent the message', function () {
+        $handler   = exception_handler_subject();
+        $exception = new RuntimeException("\xB1\x31");
+
+        expect($handler->getCloudwatchLoggableException($exception))->toBe("\xB1\x31");
+    });
+
+    it('keeps a default manual error response for explicitly invoked fallback handling', function () {
+        $handler = exception_handler_subject();
+        $method  = new ReflectionMethod($handler, 'manuallyHandleException');
+        $method->setAccessible(true);
+
+        $response = $method->invoke($handler, new RuntimeException('Manually handled failure'));
+
+        expect($response->getStatusCode())->toBe(400)
+            ->and($response->getData(true))->toBe([
+                'errors' => ['Manually handled failure'],
+            ]);
     });
 }
