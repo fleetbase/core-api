@@ -519,6 +519,7 @@ test('utils resolves uuids and models across tables and ember style resource typ
     $fileModel  = Utils::findModel(['orders', 'files'], ['public_id' => 'file_1234567']);
 
     expect(Utils::getUuid('fleet-ops:order', ['public_id' => 'order_1234567']))->toBe('order-1')
+        ->and(Utils::getUuid(['order', 'file'], ['public_id' => 'order_1234567']))->toBe('order-1')
         ->and(Utils::getUuid(['order', 'file'], ['public_id' => 'file_1234567'], ['with_table' => true]))->toBe([
             'uuid'  => 'file-1',
             'table' => 'file',
@@ -625,7 +626,8 @@ test('utils handles numeric text url formatting and encoded string edge cases', 
 
     putenv('CONSOLE_HOST');
 
-    expect(Utils::getDefaultMailFromAddress(null))->toBe('hello@192.0.2.44');
+    expect(Utils::getDefaultMailFromAddress(null))->toBe('hello@192.0.2.44')
+        ->and(Utils::getDefaultMailFromAddress(''))->toBe('');
 });
 
 test('utils converts arrays from nullable strings objects and iterables', function () {
@@ -738,6 +740,10 @@ test('utils serializes resources images queues countries and connectivity edges'
 
         session(['company' => 'company-session-country']);
         expect(Utils::isSubscriptionValidForAction(Request::create('/v1/orders', 'GET')))->toBeTrue();
+
+        session()->flush();
+
+        expect(Utils::getModelCountry(new User()))->toBeNull();
 
         app()->instance('db', new UtilsFailingDatabaseFake());
         DB::clearResolvedInstance('db');
