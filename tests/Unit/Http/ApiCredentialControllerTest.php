@@ -354,6 +354,20 @@ test('api credential controller upserts fillable sandbox payloads with json and 
         ->and(property_exists($stored, 'ignored'))->toBeFalse();
 });
 
+test('api credential controller skips sandbox upserts without string uuids', function () {
+    $capsule = api_credential_controller_database();
+    $model   = new ApiCredentialSandboxPayloadModel();
+    $model->setRawAttributes([
+        'name'       => 'Missing UUID',
+        'payload'    => ['scope' => ['orders']],
+        'created_at' => '2026-07-18T08:30:00+00:00',
+    ], true);
+
+    api_credential_controller_reflect(new ApiCredentialController(), 'upsertModelToSandbox', $model);
+
+    expect($capsule->getConnection('sandbox')->table('api_credential_sandbox_payloads')->count())->toBe(0);
+});
+
 test('api credential controller roll rejects unauthenticated and missing tenant credentials', function () {
     api_credential_controller_database();
     Auth::swap(new ApiCredentialControllerAuthFake(false));

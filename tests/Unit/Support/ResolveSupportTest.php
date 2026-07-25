@@ -131,12 +131,15 @@ namespace {
 
         $model = new ResolveWidget(['uuid' => 'widget-1', 'name' => 'Resolved Widget']);
 
-        $resource = Resolve::httpResourceForModel($model, '\Fleetbase\Tests\ResolveFixtures');
-        $request  = Resolve::httpRequestForModel(ResolveWidget::class, '\Fleetbase\Tests\ResolveFixtures');
-        $filter   = Resolve::httpFilterForModel($model, Request::create('/v1/resolve-widgets', 'GET', ['name' => 'Resolved Widget']));
+        $resource            = Resolve::httpResourceForModel($model, '\Fleetbase\Tests\ResolveFixtures');
+        $classStringResource = Resolve::httpResourceForModel(ResolveWidget::class, '\Fleetbase\Tests\ResolveFixtures');
+        $request             = Resolve::httpRequestForModel(ResolveWidget::class, '\Fleetbase\Tests\ResolveFixtures');
+        $filter              = Resolve::httpFilterForModel($model, Request::create('/v1/resolve-widgets', 'GET', ['name' => 'Resolved Widget']));
 
         expect($resource)->toBeInstanceOf(ResolveWidgetResource::class)
             ->and($resource->resource)->toBe($model)
+            ->and($classStringResource)->toBeInstanceOf(ResolveWidgetResource::class)
+            ->and($classStringResource->resource)->toBeInstanceOf(ResolveWidget::class)
             ->and($request)->toBeInstanceOf(CreateResolveWidgetRequest::class)
             ->and($filter)->toBeInstanceOf(ResolveWidgetFilter::class);
     });
@@ -158,11 +161,14 @@ namespace {
     test('resolve creates resources for morph references and returns null for empty or missing targets', function () {
         resolve_support_fixtures();
 
-        $resource = Resolve::resourceForMorph(ResolveWidget::class, 'widget-1', ResolveWidgetResource::class);
+        $resource     = Resolve::resourceForMorph(ResolveWidget::class, 'widget-1', ResolveWidgetResource::class);
+        $autoResource = Resolve::resourceForMorph(ResolveWidget::class, 'widget-1');
 
         expect($resource)->toBeInstanceOf(ResolveWidgetResource::class)
             ->and($resource->resource)->toBeInstanceOf(ResolveWidget::class)
             ->and($resource->resource->uuid)->toBe('widget-1')
+            ->and($autoResource)->toBeInstanceOf(FleetbaseResource::class)
+            ->and($autoResource->resource)->toBeInstanceOf(ResolveWidget::class)
             ->and(Resolve::resourceForMorph('', 'widget-1'))->toBeNull()
             ->and(Resolve::resourceForMorph(ResolveWidget::class, 'missing'))->toBeNull()
             ->and(Resolve::instance([]))->toBeNull()

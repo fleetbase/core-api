@@ -13,6 +13,11 @@ class QueueStatusCommandOutputFake extends QueueStatusCommand
 {
     public array $messages = [];
 
+    public function exposeMakeSqsClient(array $sqsConfig, Credentials $credentials): SqsClient
+    {
+        return $this->makeSqsClient($sqsConfig, $credentials);
+    }
+
     public function info($string, $verbosity = null): void
     {
         $this->messages[] = ['info', $string];
@@ -221,6 +226,17 @@ it('reports healthy and failing sqs queue connections', function () {
             ['info', 'Checking queue status for driver: sqs'],
             ['error', 'SQS connection failed: AWS credentials rejected'],
         ]);
+});
+
+it('builds default sqs clients from queue region and credentials', function () {
+    $credentials = new Credentials('test-key', 'test-secret', 'test-token');
+    $client      = (new QueueStatusCommandOutputFake())->exposeMakeSqsClient([
+        'region' => 'ap-southeast-1',
+    ], $credentials);
+
+    expect($client)->toBeInstanceOf(SqsClient::class)
+        ->and($client->getRegion())->toBe('ap-southeast-1')
+        ->and($client->getCredentials()->wait())->toBe($credentials);
 });
 
 it('warns without failing for drivers without a health check', function () {

@@ -55,6 +55,10 @@ it('builds reporting columns with computed aggregate transformer and copy contra
         ->and(Column::avg('total_avg', 'total')->getComputation())->toBe('AVG(total)')
         ->and(Column::max('latest_date', 'created_at')->getComputation())->toBe('MAX(created_at)')
         ->and(Column::min('first_date', 'created_at')->getComputation())->toBe('MIN(created_at)')
+        ->and(Column::computed('computed_default', 'LOWER(status)')->isComputed())->toBeTrue()
+        ->and(Column::computed('computed_default', 'LOWER(status)')->isAggregatable())->toBeFalse()
+        ->and(Column::computed('computed_default', 'LOWER(status)')->isSortable())->toBeFalse()
+        ->and(Column::computed('computed_default', 'LOWER(status)')->isSearchable())->toBeFalse()
         ->and(Column::computed('safe_total', 'COALESCE(total, 0)', 'decimal', [
             'aggregatable' => true,
             'sortable'     => true,
@@ -66,6 +70,21 @@ it('builds reporting columns with computed aggregate transformer and copy contra
             'sortable'     => true,
             'searchable'   => false,
         ]);
+});
+
+it('builds reporting columns from callable transformers and leaves untransformed values unchanged', function () {
+    $callableTransformer = [new class {
+        public function format(mixed $value): string
+        {
+            return 'formatted:' . $value;
+        }
+    }, 'format'];
+
+    $column = Column::make('status')->transformer($callableTransformer);
+
+    expect($column->getTransformer())->toBeInstanceOf(Closure::class)
+        ->and($column->transformValue('pending'))->toBe('formatted:pending')
+        ->and(Column::make('raw_status')->transformValue('pending'))->toBe('pending');
 });
 
 it('rejects unsupported reporting column copy overrides', function () {
