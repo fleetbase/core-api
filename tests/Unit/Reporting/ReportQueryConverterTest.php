@@ -222,6 +222,46 @@ test('report query converter builds grouped aggregate result metadata and skips 
         ]);
 });
 
+test('report query converter groups and aggregates through nested auto join relationship paths', function () {
+    $result = report_converter_execute([
+        'table'   => ['name' => 'orders'],
+        'columns' => [
+            ['name' => 'payload.pickup.city', 'label' => 'Pickup City'],
+        ],
+        'groupBy' => [
+            [
+                'groupBy'     => ['name' => 'payload.pickup.city', 'alias' => 'pickup_city'],
+                'aggregateFn' => ['value' => 'min'],
+                'aggregateBy' => ['name' => 'payload.description'],
+            ],
+        ],
+        'sortBy' => [
+            [
+                'column'    => ['name' => 'payload.pickup.city', 'alias' => 'pickup_city'],
+                'direction' => ['value' => 'asc'],
+            ],
+        ],
+        'limit' => 10,
+    ]);
+
+    expect($result['success'])->toBeTrue()
+        ->and(array_map(fn ($row) => $row->pickup_city, $result['data']))->toBe(['Erdenet', 'Ulaanbaatar'])
+        ->and(array_map(fn ($row) => $row->min_payload_description, $result['data']))->toBe(['Groceries', 'Electronics'])
+        ->and($result['meta']['joined_tables'])->toHaveCount(2)
+        ->and($result['meta']['joined_tables'][0]['path'])->toBe('payload')
+        ->and($result['meta']['joined_tables'][1]['path'])->toBe('payload.pickup')
+        ->and($result['meta']['query_sql'])->toContain('MIN(orders_payload.description)')
+        ->and($result['meta']['query_sql'])->toContain('group by')
+        ->and($result['meta']['query_sql'])->toContain('`pickup_city` asc')
+        ->and($result['columns'])->toContainEqual([
+            'name'           => 'min_payload_description',
+            'column_name'    => 'min_payload_description',
+            'label'          => 'Min (payload.description)',
+            'type'           => 'string',
+            'auto_join_path' => null,
+        ]);
+});
+
 test('report query converter applies validator accepted operators and manual join aliases', function () {
     $result = report_converter_execute([
         'table'   => ['name' => 'orders'],

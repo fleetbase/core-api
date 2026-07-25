@@ -10,6 +10,7 @@ use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Filesystem\FilesystemManager;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -377,10 +378,13 @@ test('utils reads and writes nested data without overwriting protected values', 
         ->and(Utils::exists($target, 'contact.email'))->toBeFalse()
         ->and(Utils::notSet($target, 'contact.email'))->toBeTrue()
         ->and(Utils::firstValue($target, ['contact.email', 'contact.phone'], 'fallback'))->toBe('+15612767156')
+        ->and(Utils::firstValue($target, ['contact.email', 'contact.missing'], 'fallback'))->toBe('fallback')
         ->and(Utils::firstValue('not-readable', ['contact.phone'], 'fallback'))->toBe('fallback')
         ->and(Utils::or($object, ['meta.locale', 'meta.timezone'], 'UTC'))->toBe('Asia/Ulaanbaatar')
         ->and(Utils::count($target, 'contact.counts.orders'))->toBe(3)
-        ->and(Utils::count($target, 'contact.phone'))->toBe(0);
+        ->and(Utils::count($target, 'contact.phone'))->toBe(0)
+        ->and(Utils::isNotScalar(['fleetbase']))->toBeTrue()
+        ->and(Utils::isNotScalar('fleetbase'))->toBeFalse();
 
     $written = Utils::setProperties($target, [
         'contact.email'       => 'new@example.test',
@@ -643,6 +647,13 @@ test('utils serializes resources images queues countries and connectivity edges'
             ->and(Utils::getFleetbaseDatabaseName())->toBe(':memory:')
             ->and(Utils::hasDatabaseConnection())->toBeTrue();
 
+        session(['company' => 'missing-company']);
+        config(['api.subscription_required_endpoints' => ['post:orders']]);
+        expect(Utils::isSubscriptionValidForAction(Request::create('/v1/orders', 'POST')))->toBeFalse();
+
+        session(['company' => 'company-session-country']);
+        expect(Utils::isSubscriptionValidForAction(Request::create('/v1/orders', 'GET')))->toBeTrue();
+
         app()->instance('db', new UtilsFailingDatabaseFake());
         DB::clearResolvedInstance('db');
 
@@ -755,17 +766,25 @@ test('utils recursively deletes directories and ignores missing paths', function
 test('utils looks up ip metadata through the configured external api contract', function () {
     bind_test_container();
     putenv('IPINFO_API_KEY=test-ip-key');
+    app('request')->server->set('REMOTE_ADDR', '198.51.100.24');
 
     Http::fake([
         'https://api.ipdata.co/203.0.113.42?api-key=test-ip-key' => Http::response([
             'ip'           => '203.0.113.42',
             'country_code' => 'US',
         ]),
+        'https://api.ipdata.co/198.51.100.24?api-key=test-ip-key' => Http::response([
+            'ip'           => '198.51.100.24',
+            'country_code' => 'MN',
+        ]),
     ]);
 
     expect(Utils::lookupIp('203.0.113.42'))->toBe([
         'ip'           => '203.0.113.42',
         'country_code' => 'US',
+    ])->and(Utils::lookupIp())->toBe([
+        'ip'           => '198.51.100.24',
+        'country_code' => 'MN',
     ]);
 
     Http::assertSent(fn ($request) => (string) $request->url() === 'https://api.ipdata.co/203.0.113.42?api-key=test-ip-key');
