@@ -131,22 +131,35 @@ test('has internal id generates ids from explicit prefixes and session company n
     $capsule = insertable_internal_id_database();
     $capsule->getConnection('mysql')->table('companies')->insert([
         ['uuid' => 'company-1', 'name' => 'Acme Logistics', 'deleted_at' => null],
+        ['uuid' => 'company-2', 'name' => 'Acme', 'deleted_at' => null],
     ]);
+
+    $fallbackId = InternalIdTraitRecord::generateInternalId();
+
     session(['company' => 'company-1']);
 
     $arrayId    = InternalIdTraitRecord::generateInternalId(['prepend' => 'PRE-', 'append' => '-A']);
     $companyId  = InternalIdTraitRecord::generateInternalId();
     $explicitId = InternalIdTraitRecord::generateInternalId('INV-', '-B');
 
-    expect($arrayId)->toStartWith('PRE-')->toEndWith('-A')
+    session(['company' => 'company-2']);
+    $singleWordCompanyId = InternalIdTraitRecord::generateInternalId();
+
+    expect($fallbackId)->toBeString()->toHaveLength(6)
+        ->and($arrayId)->toStartWith('PRE-')->toEndWith('-A')
         ->and($companyId)->toStartWith('AL')
+        ->and($singleWordCompanyId)->toStartWith('AC')
         ->and($explicitId)->toStartWith('INV-')->toEndWith('-B');
 
     $record = new InternalIdTraitRecord(['internal_id' => ['prepend' => 'JOB-', 'append' => '-Z']]);
     $record->save();
+    $manualRecord = new InternalIdTraitRecord(['internal_id' => 'MANUAL-001']);
+    $manualRecord->save();
 
     expect($record->internal_id)->toStartWith('JOB-')->toEndWith('-Z')
-        ->and($capsule->getConnection('mysql')->table('internal_id_trait_records')->where('internal_id', $record->internal_id)->exists())->toBeTrue();
+        ->and($manualRecord->internal_id)->toBe('MANUAL-001')
+        ->and($capsule->getConnection('mysql')->table('internal_id_trait_records')->where('internal_id', $record->internal_id)->exists())->toBeTrue()
+        ->and($capsule->getConnection('mysql')->table('internal_id_trait_records')->where('internal_id', 'MANUAL-001')->exists())->toBeTrue();
 });
 
 test('insertable bulk insert enriches rows removes unsafe attributes applies hooks and flushes cache', function () {

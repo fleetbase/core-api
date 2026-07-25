@@ -6,6 +6,7 @@ use Fleetbase\Http\Filter\ApiCredentialFilter;
 use Fleetbase\Http\Filter\ApiEventFilter;
 use Fleetbase\Http\Filter\ApiRequestLogFilter;
 use Fleetbase\Http\Filter\CategoryFilter;
+use Fleetbase\Http\Filter\ChatChannelFilter;
 use Fleetbase\Http\Filter\ChatLogFilter;
 use Fleetbase\Http\Filter\ChatMessageFilter;
 use Fleetbase\Http\Filter\ChatReceiptFilter;
@@ -980,6 +981,15 @@ test('chat message and log filters expose only tenant channels with current user
         ->and(concrete_filter_uuids(ChatMessageFilter::class, ChatMessage::class, [], 'v1/chat-messages'))->toBe(['message-visible'])
         ->and(concrete_filter_uuids(ChatLogFilter::class, ChatLog::class, [], 'int/v1/chat-logs'))->toBe(['log-visible'])
         ->and(concrete_filter_uuids(ChatLogFilter::class, ChatLog::class, [], 'v1/chat-logs'))->toBe(['log-visible']);
+});
+
+test('chat channel filter delegates free text query to searchable builder', function () {
+    $builder = new ConcreteFilterSearchBuilderFake();
+    $filter  = concrete_filter_with_any_builder(new ChatChannelFilter(concrete_filter_request([], 'int/v1/chat-channels')), $builder);
+
+    $filter->query('dispatch');
+
+    expect($builder->queries)->toBe(['dispatch']);
 });
 
 test('category filter applies tenant core parent and list filters', function () {

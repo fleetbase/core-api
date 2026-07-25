@@ -373,14 +373,19 @@ test('policy controller returns validation and query errors from create and upda
     $validationPolicy->throwable = new FleetbaseRequestValidationException(['policy.name' => ['The policy name is required.']]);
     $queryPolicy                 = new PolicyControllerFailingPolicy();
     $queryPolicy->throwable      = new QueryException('mysql', 'select * from policies', [], new RuntimeException('database unavailable'));
+    $genericPolicy               = new PolicyControllerFailingPolicy();
+    $genericPolicy->throwable    = new RuntimeException('sync failed');
 
     $validationController = policy_controller_with_model($validationPolicy);
     $queryController      = policy_controller_with_model($queryPolicy);
+    $genericController    = policy_controller_with_model($genericPolicy);
 
     $createValidation = $validationController->createRecord(policy_controller_request('POST', '/int/v1/policies', []));
     $updateValidation = $validationController->updateRecord(policy_controller_request('PATCH', '/int/v1/policies/policy-company', []), 'policy-company');
     $createQuery      = $queryController->createRecord(policy_controller_request('POST', '/int/v1/policies', []));
     $updateQuery      = $queryController->updateRecord(policy_controller_request('PATCH', '/int/v1/policies/policy-company', []), 'policy-company');
+    $createGeneric    = $genericController->createRecord(policy_controller_request('POST', '/int/v1/policies', []));
+    $updateGeneric    = $genericController->updateRecord(policy_controller_request('PATCH', '/int/v1/policies/policy-company', []), 'policy-company');
 
     expect($createValidation)->toBeInstanceOf(JsonResponse::class)
         ->and($createValidation->getStatusCode())->toBe(400)
@@ -392,5 +397,9 @@ test('policy controller returns validation and query errors from create and upda
         ->and($updateValidation->getData(true))->toBe($createValidation->getData(true))
         ->and($createQuery->getStatusCode())->toBe(400)
         ->and($createQuery->getData(true)['errors'][0])->toContain('database unavailable')
-        ->and($updateQuery->getData(true)['errors'][0])->toContain('database unavailable');
+        ->and($updateQuery->getData(true)['errors'][0])->toContain('database unavailable')
+        ->and($createGeneric->getStatusCode())->toBe(400)
+        ->and($createGeneric->getData(true))->toBe(['errors' => ['sync failed']])
+        ->and($updateGeneric->getStatusCode())->toBe(400)
+        ->and($updateGeneric->getData(true))->toBe(['errors' => ['sync failed']]);
 });

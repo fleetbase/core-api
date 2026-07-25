@@ -361,6 +361,7 @@ it('defines transaction relationship key contracts and item monetary calculation
         ->and($transaction->items()->getForeignKeyName())->toBe('transaction_uuid')
         ->and($transaction->items()->getLocalKeyName())->toBe('uuid');
 
+    $item     = new TransactionItem();
     $computed = new TransactionItem([
         'quantity'   => 3,
         'unit_price' => '12.50',
@@ -380,6 +381,8 @@ it('defines transaction relationship key contracts and item monetary calculation
         ->and($computed->unit_price)->toBe(1250)
         ->and($computed->amount)->toBe(100)
         ->and((string) $computed->tax_rate)->toBe('8.25')
+        ->and($item->transaction()->getForeignKeyName())->toBe('transaction_uuid')
+        ->and($item->transaction()->getOwnerKeyName())->toBe('uuid')
         ->and($computed->getLineTotal())->toBe(3750)
         ->and($computed->calculateTax())->toBe(309)
         ->and($fallback->getLineTotal())->toBe(4200)

@@ -115,10 +115,13 @@ test('has meta attributes manages nested values booleans defaults and selected s
     $record->setMeta([
         'flags.billable' => true,
         'flags.reviewed' => false,
+        'labels.check'   => 'Fleetbase ✓',
     ]);
 
-    expect($record->getMeta('customer.id'))->toBe(1846473)
+    expect($record->getMeta())->toBe($record->getAllMeta())
+        ->and($record->getMeta('customer.id'))->toBe(1846473)
         ->and($record->getMeta('flags.billable'))->toBeTrue()
+        ->and($record->getMeta('labels.check'))->toBe('Fleetbase ✓')
         ->and($record->isMeta('flags.billable'))->toBeTrue()
         ->and($record->isMeta('flags.reviewed'))->toBeFalse()
         ->and($record->hasMeta(['customer.id', 'flags.billable']))->toBeTrue()
@@ -151,6 +154,12 @@ test('has meta attributes updates database meta properties without discarding ex
         'count'    => 2,
         'new'      => 'value',
     ]);
+
+    expect($record->updateMeta('nested.flag', true))->toBeTrue();
+
+    $record->refresh();
+
+    expect($record->getMeta('nested.flag'))->toBeTrue();
 });
 
 test('has options attributes manages nested options and boolean checks', function () {

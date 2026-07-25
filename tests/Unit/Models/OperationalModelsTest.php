@@ -223,13 +223,16 @@ function operational_models_database(): Capsule
 it('humanizes activity subject and causer model types for API display', function () {
     bind_test_container();
 
-    $activity = new Activity();
+    $emptyActivity = new Activity();
+    $activity      = new Activity();
     $activity->setRawAttributes([
         'subject_type' => 'Fleetbase\\FleetOps\\Models\\ServiceQuote',
         'causer_type'  => User::class,
     ], true);
 
-    expect($activity->humanized_subject_type)->toBe('Service Quote')
+    expect($emptyActivity->humanized_subject_type)->toBeNull()
+        ->and($emptyActivity->humanized_causer_type)->toBeNull()
+        ->and($activity->humanized_subject_type)->toBe('Service Quote')
         ->and($activity->humanized_causer_type)->toBe('User');
 });
 

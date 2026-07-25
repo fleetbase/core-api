@@ -94,9 +94,15 @@ class VerificationCodeModelTwilioFake
 {
     public array $messages = [];
 
+    public ?Throwable $sendException = null;
+
     public function message(string $to, string $message, array $mediaUrls = [], array $params = []): object
     {
         $this->messages[] = compact('to', 'message', 'mediaUrls', 'params');
+
+        if ($this->sendException) {
+            throw $this->sendException;
+        }
 
         return (object) ['sid' => 'SM-verification-code'];
     }
@@ -446,6 +452,42 @@ it('account created listener falls back to sms verification when email delivery 
         ->and($twilio->messages)->toHaveCount(1)
         ->and($twilio->messages[0]['to'])->toBe('+15550004444')
         ->and($twilio->messages[0]['message'])->toContain('Fleetbase verification code is');
+
+    Carbon::setTestNow();
+});
+
+it('account created listener swallows sms fallback delivery failures', function () {
+    verification_code_model_database();
+    Carbon::setTestNow(Carbon::parse('2026-07-17 11:30:00', 'UTC'));
+    config([
+        'app.name'             => 'Fleetbase',
+        'sms.default_provider' => SmsService::PROVIDER_TWILIO,
+        'sms.routing_rules'    => [],
+    ]);
+
+    $mailer                = new VerificationCodeModelMailerFake();
+    $mailer->sendException = new RuntimeException('SMTP unavailable');
+    $container             = Illuminate\Container\Container::getInstance();
+    $container->instance('mail.manager', $mailer);
+
+    $twilio                = new VerificationCodeModelTwilioFake();
+    $twilio->sendException = new RuntimeException('Twilio unavailable');
+    $container->instance('twilio', $twilio);
+    Facade::clearResolvedInstance('twilio');
+
+    $user = verification_code_subject([
+        'uuid'  => 'user-fallback-failure',
+        'type'  => 'user',
+        'email' => 'fallback-failure@example.test',
+        'phone' => '+15550005555',
+    ]);
+    $company = verification_code_company();
+
+    (new HandleAccountCreated())->handle(new AccountCreated($user, $company));
+
+    expect(VerificationCode::query()->orderBy('for')->pluck('for')->all())->toBe(['email_verification', 'phone_verification'])
+        ->and($twilio->messages)->toHaveCount(1)
+        ->and($twilio->messages[0]['to'])->toBe('+15550005555');
 
     Carbon::setTestNow();
 });
