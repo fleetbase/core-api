@@ -138,6 +138,19 @@ it('defaults invite expiration to one hour and parses explicit expiration values
     Carbon::setTestNow();
 });
 
+it('exposes invite ownership and subject relationships', function () {
+    bind_test_container();
+
+    $invite = new Invite();
+
+    expect($invite->createdBy()->getRelated())->toBeInstanceOf(User::class)
+        ->and($invite->createdBy()->getForeignKeyName())->toBe('created_by_uuid')
+        ->and($invite->company()->getRelated())->toBeInstanceOf(Company::class)
+        ->and($invite->company()->getForeignKeyName())->toBe('company_uuid')
+        ->and($invite->subject()->getMorphType())->toBe('subject_type')
+        ->and($invite->subject()->getForeignKeyName())->toBe('subject_uuid');
+});
+
 it('detects duplicate company invites by company subject protocol reason and recipient', function () {
     invite_model_database();
 

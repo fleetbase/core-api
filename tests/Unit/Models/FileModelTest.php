@@ -309,6 +309,16 @@ it('derives file extensions MIME types and hash names from stable metadata', fun
         ->and($pdf->hash_name)->toBe('invoice.pdf');
 });
 
+it('exposes file uploader relationship metadata', function () {
+    bind_test_container();
+
+    $file = new File();
+
+    expect($file->uploader()->getRelated())->toBeInstanceOf(User::class)
+        ->and($file->uploader()->getForeignKeyName())->toBe('uploader_uuid')
+        ->and($file->uploader()->getOwnerKeyName())->toBe('uuid');
+});
+
 it('resolves cached temporary urls and reads stored contents through the configured disk', function () {
     $filesystem = bind_file_model_filesystem([
         'filesystems.default' => 's3',

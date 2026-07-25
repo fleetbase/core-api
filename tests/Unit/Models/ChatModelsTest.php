@@ -268,6 +268,21 @@ it('counts unread chat messages by participant receipts and ignores sender messa
         ->and($channel->getUnreadMessageCountForUser($missingUser))->toBe(0);
 });
 
+it('silently skips chat message notifications when no channel is available', function () {
+    chat_models_database();
+
+    $message = new ChatMessage([
+        'uuid'              => 'message-without-channel',
+        'chat_channel_uuid' => null,
+        'sender_uuid'       => 'participant-1',
+        'content'           => 'No channel yet',
+    ]);
+
+    $message->notifyParticipants();
+
+    expect($message->chatChannel)->toBeNull();
+});
+
 it('sets chat receipt read timestamps and exposes participant names', function () {
     chat_models_database();
     Carbon::setTestNow(Carbon::parse('2026-06-02 08:15:00', 'UTC'));

@@ -1,5 +1,6 @@
 <?php
 
+use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\Permission;
 use Fleetbase\Models\Policy;
@@ -220,6 +221,17 @@ it('merges direct role policy and role-policy permissions for company users', fu
         ->and($companyUser->hasPermissions(collect(['orders.dispatch'])))->toBeTrue()
         ->and($companyUser->hasPermissions(['reports.export']))->toBeTrue()
         ->and($companyUser->doesntHavePermissions(['users.delete']))->toBeTrue();
+});
+
+it('exposes company user ownership relationships', function () {
+    bind_test_container();
+
+    $companyUser = new CompanyUser();
+
+    expect($companyUser->user()->getRelated())->toBeInstanceOf(Fleetbase\Models\User::class)
+        ->and($companyUser->user()->getForeignKeyName())->toBe('user_uuid')
+        ->and($companyUser->company()->getRelated())->toBeInstanceOf(Company::class)
+        ->and($companyUser->company()->getForeignKeyName())->toBe('company_uuid');
 });
 
 it('exposes role policy and permission mutator and response metadata contracts', function () {

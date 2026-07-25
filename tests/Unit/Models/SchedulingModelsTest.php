@@ -274,10 +274,19 @@ it('evaluates schedule horizon and timezone helper contracts', function () {
     $schedule->setRawAttributes([
         'timezone'                => null,
         'materialization_horizon' => null,
+        'company_uuid'            => 'company-1',
+        'subject_type'            => User::class,
+        'subject_uuid'            => 'driver-1',
     ], true);
 
     expect($schedule->getEffectiveTimezone())->toBe('UTC')
-        ->and($schedule->needsMaterializationUpTo(Carbon::parse('2026-01-15')))->toBeTrue();
+        ->and($schedule->needsMaterializationUpTo(Carbon::parse('2026-01-15')))->toBeTrue()
+        ->and($schedule->subject()->getMorphType())->toBe('subject_type')
+        ->and($schedule->subject()->getForeignKeyName())->toBe('subject_uuid')
+        ->and($schedule->company()->getRelated())->toBeInstanceOf(Fleetbase\Models\Company::class)
+        ->and($schedule->company()->getForeignKeyName())->toBe('company_uuid')
+        ->and($schedule->items()->getRelated())->toBeInstanceOf(ScheduleItem::class)
+        ->and($schedule->items()->getForeignKeyName())->toBe('schedule_uuid');
 
     $schedule->setAttribute('timezone', 'Asia/Ulaanbaatar');
     $schedule->setAttribute('materialization_horizon', '2026-01-31');
@@ -300,7 +309,18 @@ it('calculates schedule item duration active state and exception flagging', func
     ]);
 
     expect($item->calculateDuration())->toBe(510)
-        ->and($item->isActive())->toBeTrue();
+        ->and($item->isActive())->toBeTrue()
+        ->and((new ScheduleItem())->calculateDuration())->toBe(0)
+        ->and($item->schedule()->getRelated())->toBeInstanceOf(Schedule::class)
+        ->and($item->schedule()->getForeignKeyName())->toBe('schedule_uuid')
+        ->and($item->template()->getRelated())->toBeInstanceOf(ScheduleTemplate::class)
+        ->and($item->template()->getForeignKeyName())->toBe('template_uuid')
+        ->and($item->assignee())->toBeInstanceOf(MorphTo::class)
+        ->and($item->assignee()->getMorphType())->toBe('assignee_type')
+        ->and($item->assignee()->getForeignKeyName())->toBe('assignee_uuid')
+        ->and($item->resource())->toBeInstanceOf(MorphTo::class)
+        ->and($item->resource()->getMorphType())->toBe('resource_type')
+        ->and($item->resource()->getForeignKeyName())->toBe('resource_uuid');
 
     $item->status   = 'in_progress';
     $item->start_at = Carbon::parse('2026-03-11 09:00:00', 'UTC');
@@ -321,6 +341,10 @@ it('calculates schedule item duration active state and exception flagging', func
     expect($saved->refresh()->is_exception)->toBeTrue()
         ->and($saved->exception_for_date)->toBe('2026-03-12')
         ->and($saved->duration)->toBe(240);
+
+    $saved->markAsException();
+
+    expect($saved->refresh()->exception_for_date)->toBe('2026-03-12');
 
     Carbon::setTestNow();
 });
@@ -673,6 +697,19 @@ it('marks generated schedule items as exceptions when schedule fields change', f
     $generated->markAsException();
 
     expect($generated->refresh()->exception_for_date)->toBe('2026-03-16');
+
+    $withoutOriginalStart = ScheduleItem::create([
+        'uuid'          => 'generated-item-without-original-start',
+        'company_uuid'  => 'company-1',
+        'template_uuid' => 'template-1',
+        'status'        => 'scheduled',
+        'is_exception'  => false,
+    ]);
+
+    $withoutOriginalStart->update(['status' => 'completed']);
+
+    expect($withoutOriginalStart->refresh()->is_exception)->toBeTrue()
+        ->and($withoutOriginalStart->exception_for_date)->toBeNull();
 });
 
 it('scopes schedule constraints by active state type category subject and priority', function () {
