@@ -129,6 +129,36 @@ class UtilsFailingDatabaseFake
     }
 }
 
+class UtilsRecordingDatabaseFake
+{
+    public array $queries = [];
+
+    public function connection(string $name): object
+    {
+        return new class($this, $name) {
+            public function __construct(private UtilsRecordingDatabaseFake $database, public string $name)
+            {
+            }
+
+            public function getPdo(): object
+            {
+                return new class($this->database) {
+                    public function __construct(private UtilsRecordingDatabaseFake $database)
+                    {
+                    }
+
+                    public function exec(string $query): int
+                    {
+                        $this->database->queries[] = $query;
+
+                        return 1;
+                    }
+                };
+            }
+        };
+    }
+}
+
 class UtilsHttpStreamFake
 {
     public static array $responses = [];
@@ -173,6 +203,27 @@ class UtilsInstalledExtensionsFake extends Utils
     public static function getInstalledFleetbaseExtensions()
     {
         return static::$packages;
+    }
+}
+
+class UtilsSubjectQueryFake
+{
+    public array $constraints = [];
+
+    public function __construct(private object $subject)
+    {
+    }
+
+    public function where(string $column, mixed $value): self
+    {
+        $this->constraints[] = compact('column', 'value');
+
+        return $this;
+    }
+
+    public function first(): object
+    {
+        return $this->subject;
     }
 }
 
@@ -358,7 +409,15 @@ test('utils validates identifiers base64 and numeric strings across edge cases',
 });
 
 test('utils resolves model class mutation and ember resource type contracts', function () {
-    $user = new User();
+    $user  = new User();
+    $order = (object) [
+        'public_id' => 'order_1234567',
+        'status'    => 'created',
+    ];
+    $subjectQuery = new UtilsSubjectQueryFake($order);
+
+    bind_test_container();
+    app()->instance('Fleetbase\FleetOps\Models\Order', $subjectQuery);
 
     expect(Utils::getModelClassName('users'))->toBe('\Fleetbase\Models\User')
         ->and(Utils::getModelClassName($user))->toBe('\Fleetbase\Models\User')
@@ -374,7 +433,14 @@ test('utils resolves model class mutation and ember resource type contracts', fu
         ->and(Utils::toEmberResourceType('Acme\Packages\Models\Invoice'))->toBe('invoice')
         ->and(Utils::toEmberResourceType('fliit:client'))->toBe('fliit:client')
         ->and(Utils::toEmberResourceType('SimpleClass'))->toBe('simple-class')
-        ->and(Utils::toEmberResourceType(null))->toBeNull();
+        ->and(Utils::toEmberResourceType(null))->toBeNull()
+        ->and(Utils::resolveSubject('order_1234567'))->toBe($order)
+        ->and($subjectQuery->constraints)->toBe([
+            [
+                'column' => 'public_id',
+                'value'  => 'order_1234567',
+            ],
+        ]);
 });
 
 test('utils reads and writes nested data without overwriting protected values', function () {
@@ -816,7 +882,14 @@ test('utils generates public ids and emits dry run database statements without e
     Utils::dbExec('ALTER TABLE `orders` CONVERT TO CHARACTER SET utf8mb4', true, 'mysql');
     $output = ob_get_clean();
 
-    expect($output)->toBe("ALTER TABLE `orders` CONVERT TO CHARACTER SET utf8mb4;\n");
+    $database = new UtilsRecordingDatabaseFake();
+    app()->instance('db', $database);
+    DB::clearResolvedInstance('db');
+
+    Utils::dbExec('SET FOREIGN_KEY_CHECKS = 0', false, 'mysql');
+
+    expect($output)->toBe("ALTER TABLE `orders` CONVERT TO CHARACTER SET utf8mb4;\n")
+        ->and($database->queries)->toBe(['SET FOREIGN_KEY_CHECKS = 0']);
 });
 
 test('utils resolves package namespaces from root and server composer layouts', function () {
