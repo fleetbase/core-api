@@ -4,6 +4,8 @@ use Fleetbase\Support\Reporting\ReportSchemaRegistry;
 use Fleetbase\Support\Reporting\Schema\Column;
 use Fleetbase\Support\Reporting\Schema\Relationship;
 use Fleetbase\Support\Reporting\Schema\Table;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Facade;
 
 function reporting_registry_fixture(): ReportSchemaRegistry
 {
@@ -101,6 +103,9 @@ test('report schema registry validates direct and nested auto join column paths'
 });
 
 test('report schema registry returns schema, relationships, auto join paths, and cache controls', function () {
+    bind_test_container();
+    Facade::clearResolvedInstance('cache');
+
     $registry = reporting_registry_fixture();
 
     $schema = $registry->getTableSchema('orders');
@@ -121,4 +126,54 @@ test('report schema registry returns schema, relationships, auto join paths, and
     $registry->clearAllCache();
 
     expect($registry->hasTable('orders'))->toBeTrue();
+});
+
+test('report schema registry caches table column and relationship metadata and clears scoped keys', function () {
+    bind_test_container();
+    Facade::clearResolvedInstance('cache');
+
+    $registry = reporting_registry_fixture();
+    $registry->setCacheEnabled(true);
+    $registry->setCacheTtl(15);
+
+    Cache::put('report_tables_fleetops_operations', [['name' => 'cached-operations']]);
+    expect($registry->getAvailableTables('fleetops', 'operations'))->toBe([['name' => 'cached-operations']]);
+
+    Cache::forget('report_tables_fleetops_operations');
+    $tables = $registry->getAvailableTables('fleetops', 'operations');
+
+    expect($tables[0]['name'])->toBe('orders')
+        ->and(Cache::get('report_tables_fleetops_operations'))->toBe($tables);
+
+    Cache::put('report_columns_orders', [['name' => 'cached-column']]);
+    expect($registry->getTableColumns('orders'))->toBe([['name' => 'cached-column']]);
+
+    Cache::forget('report_columns_orders');
+    $columns = $registry->getTableColumns('orders');
+
+    expect(array_column($columns, 'name'))->toContain('tracking_number')
+        ->and(Cache::get('report_columns_orders'))->toBe($columns);
+
+    Cache::put('report_relationships_orders', [['name' => 'cached-relationship']]);
+    expect($registry->getTableRelationships('orders'))->toBe([['name' => 'cached-relationship']]);
+
+    Cache::forget('report_relationships_orders');
+    $relationships = $registry->getTableRelationships('orders');
+
+    expect(array_column($relationships, 'name'))->toContain('payload')
+        ->and(Cache::get('report_relationships_orders'))->toBe($relationships);
+
+    Cache::put('report_tables_fleetops_all', [['name' => 'all']]);
+    $registry->clearTableCache('orders');
+
+    expect(Cache::get('report_columns_orders'))->toBeNull()
+        ->and(Cache::get('report_relationships_orders'))->toBeNull()
+        ->and(Cache::get('report_tables_fleetops_all'))->toBeNull()
+        ->and(Cache::get('report_tables_fleetops_operations'))->toBeNull();
+
+    $registry->setCacheEnabled(false);
+    Cache::put('report_columns_orders', [['name' => 'preserved']]);
+    $registry->clearAllCache();
+
+    expect(Cache::get('report_columns_orders'))->toBe([['name' => 'preserved']]);
 });
