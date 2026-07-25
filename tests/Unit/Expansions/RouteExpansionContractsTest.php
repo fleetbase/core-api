@@ -233,6 +233,45 @@ test('route expansion registers prefixed rest route groups from slash separated 
         ->toBe('AdminWidgetController@findRecord');
 });
 
+test('route expansion accepts rest route callbacks in the options slot', function () {
+    $router = route_expansion_router();
+
+    $router->fleetbaseRestRoutes('service-areas', 'ServiceAreaController', function (Router $router) {
+        $router->get('service-areas/summary', 'ServiceAreaController@summary');
+    })->register();
+
+    $routes = route_expansion_rows($router);
+
+    expect(route_expansion_find($routes, 'GET', 'service-areas/summary')['action'])
+        ->toBe('ServiceAreaController@summary')
+        ->and(route_expansion_find($routes, 'GET', 'service-areas')['action'])
+        ->toBe('ServiceAreaController@queryRecord');
+});
+
+test('route expansion accepts fleetbase route options and controller-slot callbacks', function () {
+    $router = route_expansion_router();
+
+    $router->fleetbaseRoutes('service-tools', ['middleware' => ['fleetbase.tools']]);
+
+    $router->fleetbaseRoutes('audits', null, [], function (Router $router, callable $make, string $controller) {
+        expect($controller)->toBe('AuditController')
+            ->and($make('timeline'))->toBe('AuditController@timeline');
+
+        $router->get('timeline', $make('timeline'));
+    });
+
+    $routes = route_expansion_rows($router);
+
+    expect(route_expansion_find($routes, 'GET', 'service-tools')['middleware'])
+        ->toContain('fleetbase.tools')
+        ->and(route_expansion_find($routes, 'GET', 'service-tools')['action'])
+        ->toBe('ServiceToolController@queryRecord')
+        ->and(route_expansion_find($routes, 'GET', 'audits/timeline')['action'])
+        ->toBe('AuditController@timeline')
+        ->and(route_expansion_find($routes, 'GET', 'audits')['action'])
+        ->toBe('AuditController@queryRecord');
+});
+
 test('route expansion registers public and protected auth routes and extension callbacks', function () {
     $router = route_expansion_router();
 

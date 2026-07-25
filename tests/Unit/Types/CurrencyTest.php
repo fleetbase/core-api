@@ -40,6 +40,7 @@ test('currency supports array construction lookup filtering and mutable formatti
         ->and($currency->getSymbolPlacement())->toBe('after')
         ->and(Currency::has('USD'))->toBeTrue()
         ->and(Currency::has(null))->toBeFalse()
+        ->and(Currency::getAllCurrencies())->toHaveKey('USD')
         ->and(Currency::getCurrency('USD')['title'])->toBe('US Dollar')
         ->and(Currency::first(fn (Currency $candidate) => $candidate->getCode() === 'MNT')->getCode())->toBe('MNT')
         ->and(Currency::filter(fn (Currency $candidate) => str_ends_with($candidate->getTitle(), 'Dollar'))->map(fn (Currency $candidate) => $candidate->getCode()))->toContain('USD')

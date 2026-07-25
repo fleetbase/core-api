@@ -251,6 +251,7 @@ test('string carbon and blade expansions preserve formatting contracts', functio
     expect(BladeExpansion::target())->toBe(Illuminate\Support\Facades\Blade::class)
         ->and(CarbonExpansion::target())->toBe(Carbon::class)
         ->and(PendingResourceRegistrationExpansion::target())->toBe(Illuminate\Routing\PendingResourceRegistration::class)
+        ->and(StrExpansion::target())->toBe(Illuminate\Support\Str::class)
         ->and(\Fleetbase\Expansions\args(' created_at , "Y-m-d" '))->toBe(['created_at', '"Y-m-d"'])
         ->and(\Fleetbase\Expansions\args(['created_at', 'timestamp']))->toBe(['created_at', 'timestamp'])
         ->and($humanize('apiCredentialID'))->toBe('API credential i d')

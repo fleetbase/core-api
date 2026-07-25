@@ -15,6 +15,13 @@ namespace Fleetbase\Webhook {
             return \Fleetbase\Tests\WebhookFixtures\WebhookJobEventRecorder::record($event);
         }
     }
+
+    if (!function_exists('Fleetbase\\Webhook\\dispatch_sync')) {
+        function dispatch_sync(mixed $job): mixed
+        {
+            return \Fleetbase\Tests\WebhookFixtures\WebhookSyncDispatchRecorder::record($job);
+        }
+    }
 }
 
 namespace Fleetbase\Tests\WebhookFixtures {
@@ -48,6 +55,23 @@ namespace Fleetbase\Tests\WebhookFixtures {
             static::$events[] = $event;
 
             return $event;
+        }
+    }
+
+    class WebhookSyncDispatchRecorder
+    {
+        public static array $jobs = [];
+
+        public static function reset(): void
+        {
+            static::$jobs = [];
+        }
+
+        public static function record(mixed $job): mixed
+        {
+            static::$jobs[] = $job;
+
+            return $job;
         }
     }
 
@@ -195,6 +219,7 @@ namespace {
     use Fleetbase\Tests\WebhookFixtures\InspectableWebhookJob;
     use Fleetbase\Tests\WebhookFixtures\RecordingWebhookClient;
     use Fleetbase\Tests\WebhookFixtures\WebhookJobEventRecorder;
+    use Fleetbase\Tests\WebhookFixtures\WebhookSyncDispatchRecorder;
     use Fleetbase\Webhook\BackoffStrategy\ExponentialBackoffStrategy;
     use Fleetbase\Webhook\CallWebhookJob;
     use Fleetbase\Webhook\Events\FinalWebhookCallFailedEvent;
@@ -256,6 +281,7 @@ namespace {
     afterEach(function () {
         Facade::clearResolvedInstances();
         WebhookJobEventRecorder::reset();
+        WebhookSyncDispatchRecorder::reset();
     });
 
     test('webhook call applies configured job transport signing headers and metadata before dispatch', function () {
@@ -312,6 +338,46 @@ namespace {
 
         expect(WebhookCall::create()->dispatchIf(false))->toBeNull()
             ->and(WebhookCall::create()->dispatchUnless(true))->toBeNull();
+    });
+
+    test('webhook call sync dispatch helpers prepare jobs only when conditions pass', function () {
+        webhook_test_container();
+
+        $call = WebhookCall::create()
+            ->url('https://example.test/hooks/sync')
+            ->payload(['event' => 'sync.test'])
+            ->useSecret('sync-secret')
+            ->doNotVerifySsl();
+
+        $result = $call->dispatchSync();
+        $job    = WebhookSyncDispatchRecorder::$jobs[0];
+
+        expect($result)->toBeNull()
+            ->and($job)->toBeInstanceOf(ConfiguredWebhookJob::class)
+            ->and($job->webhookUrl)->toBe('https://example.test/hooks/sync')
+            ->and($job->verifySsl)->toBeFalse()
+            ->and($job->headers['X-Test-Signature'])->toBe('https://example.test/hooks/sync|{"event":"sync.test"}|sync-secret');
+
+        WebhookCall::create()->dispatchSyncIf(false);
+        WebhookCall::create()->dispatchSyncUnless(true);
+
+        expect(WebhookSyncDispatchRecorder::$jobs)->toHaveCount(1);
+
+        WebhookCall::create()
+            ->url('https://example.test/hooks/sync-if')
+            ->payload(['event' => 'sync.if'])
+            ->useSecret('sync-secret')
+            ->dispatchSyncIf(true);
+
+        WebhookCall::create()
+            ->url('https://example.test/hooks/sync-unless')
+            ->payload(['event' => 'sync.unless'])
+            ->useSecret('sync-secret')
+            ->dispatchSyncUnless(false);
+
+        expect(WebhookSyncDispatchRecorder::$jobs)->toHaveCount(3)
+            ->and(WebhookSyncDispatchRecorder::$jobs[1]->webhookUrl)->toBe('https://example.test/hooks/sync-if')
+            ->and(WebhookSyncDispatchRecorder::$jobs[2]->webhookUrl)->toBe('https://example.test/hooks/sync-unless');
     });
 
     test('webhook call rejects missing dispatch requirements and invalid strategy classes', function () {
