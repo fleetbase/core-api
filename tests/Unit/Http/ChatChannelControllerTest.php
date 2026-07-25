@@ -589,6 +589,7 @@ test('internal chat channel available participants excludes self existing partic
 
     $response = chat_channel_controller()->getAvailableParticipants(Request::create('/int/v1/chat-channels/available-participants', 'GET', [
         'channel' => 'chat_current',
+        'query'   => 'Extra',
     ]));
 
     expect($response->collection->pluck('uuid')->all())->toBe(['user-extra']);
@@ -640,6 +641,50 @@ test('internal chat channel unread count requires active company channel and par
         ->and($success->getData(true))->toBe(['unreadCount' => 1])
         ->and($notParticipant->getStatusCode())->toBe(404)
         ->and($notParticipant->getData(true))->toBe(['error' => 'Chat channel not found.']);
+});
+
+test('internal chat channel aggregate unread count sums only channels for the current user', function () {
+    $capsule    = chat_channel_controller_database();
+    $connection = $capsule->getConnection('mysql');
+    $now        = '2026-07-18 01:00:00';
+
+    $connection->table('chat_channels')->insert([
+        'uuid'            => 'channel-second',
+        'public_id'       => 'chat_second',
+        'company_uuid'    => 'company-1',
+        'created_by_uuid' => 'user-active',
+        'name'            => 'Second Channel',
+        'created_at'      => $now,
+        'updated_at'      => $now,
+    ]);
+    $connection->table('chat_participants')->insert([
+        ['uuid' => 'participant-current-second', 'public_id' => 'participant_current_second', 'company_uuid' => 'company-1', 'chat_channel_uuid' => 'channel-second', 'user_uuid' => 'user-current', 'created_at' => $now, 'updated_at' => $now],
+        ['uuid' => 'participant-active-second', 'public_id' => 'participant_active_second', 'company_uuid' => 'company-1', 'chat_channel_uuid' => 'channel-second', 'user_uuid' => 'user-active', 'created_at' => $now, 'updated_at' => $now],
+    ]);
+    $connection->table('chat_messages')->insert([
+        ['uuid' => 'aggregate-read', 'company_uuid' => 'company-1', 'chat_channel_uuid' => 'channel-current', 'sender_uuid' => 'participant-active', 'content' => 'read', 'created_at' => '2026-07-18 01:01:00', 'updated_at' => $now],
+        ['uuid' => 'aggregate-current-unread', 'company_uuid' => 'company-1', 'chat_channel_uuid' => 'channel-current', 'sender_uuid' => 'participant-active', 'content' => 'current unread', 'created_at' => '2026-07-18 01:02:00', 'updated_at' => $now],
+        ['uuid' => 'aggregate-current-own', 'company_uuid' => 'company-1', 'chat_channel_uuid' => 'channel-current', 'sender_uuid' => 'participant-current', 'content' => 'own', 'created_at' => '2026-07-18 01:03:00', 'updated_at' => $now],
+        ['uuid' => 'aggregate-second-unread', 'company_uuid' => 'company-1', 'chat_channel_uuid' => 'channel-second', 'sender_uuid' => 'participant-active-second', 'content' => 'second unread', 'created_at' => '2026-07-18 01:04:00', 'updated_at' => $now],
+        ['uuid' => 'aggregate-other-company', 'company_uuid' => 'company-2', 'chat_channel_uuid' => 'channel-other-company', 'sender_uuid' => 'participant-other-company', 'content' => 'hidden', 'created_at' => '2026-07-18 01:05:00', 'updated_at' => $now],
+    ]);
+    $connection->table('chat_receipts')->insert([
+        'uuid'              => 'aggregate-receipt-read',
+        'company_uuid'      => 'company-1',
+        'chat_message_uuid' => 'aggregate-read',
+        'participant_uuid'  => 'participant-current',
+        'read_at'           => $now,
+        'created_at'        => $now,
+        'updated_at'        => $now,
+    ]);
+
+    $request = Request::create('/int/v1/chat-channels/unread-count');
+    $request->setUserResolver(fn () => User::query()->whereKey('user-current')->first());
+
+    $response = chat_channel_controller()->getUnreadCount($request);
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($response->getData(true))->toBe(['unreadCount' => 2]);
 });
 
 test('internal chat message controller creates attachments and notifies participants', function () {

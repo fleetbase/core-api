@@ -1,5 +1,7 @@
 <?php
 
+use Aws\Exception\MultipartUploadException;
+use Aws\Multipart\UploadState;
 use Fleetbase\Console\Commands\BackupDatabase\MysqlS3Backup;
 use Fleetbase\Console\Commands\BackupDatabase\S3BackupTrimmer;
 use Illuminate\Container\Container;
@@ -57,11 +59,16 @@ class BackupDatabaseUploaderFake
         public object $s3,
         public string $fileName,
         public array $options,
+        private ?MultipartUploadException $exception = null,
     ) {
     }
 
     public function upload(): void
     {
+        if ($this->exception) {
+            throw $this->exception;
+        }
+
         $this->uploaded = true;
     }
 }
@@ -85,13 +92,14 @@ class BackupDatabaseTrimmerFake extends S3BackupTrimmer
 
 class BackupDatabaseTestCommand extends MysqlS3Backup
 {
-    public array $processes           = [];
-    public array $s3Configs           = [];
-    public array $uploaders           = [];
-    public array $deletedFiles        = [];
-    public array $trimmers            = [];
-    public bool $processSuccessful    = true;
-    public string $processErrorOutput = '';
+    public array $processes                           = [];
+    public array $s3Configs                           = [];
+    public array $uploaders                           = [];
+    public array $deletedFiles                        = [];
+    public array $trimmers                            = [];
+    public bool $processSuccessful                    = true;
+    public string $processErrorOutput                 = '';
+    public ?MultipartUploadException $uploadException = null;
 
     protected function makeProcess(string $command)
     {
@@ -107,7 +115,7 @@ class BackupDatabaseTestCommand extends MysqlS3Backup
 
     protected function makeMultipartUploader($s3, string $fileName, array $options)
     {
-        return $this->uploaders[] = new BackupDatabaseUploaderFake($s3, $fileName, $options);
+        return $this->uploaders[] = new BackupDatabaseUploaderFake($s3, $fileName, $options, $this->uploadException);
     }
 
     protected function deleteLocalFile(string $fileName): void
@@ -247,6 +255,35 @@ it('stops backup processing when a database dump fails before upload or cleanup'
         ->and($command->deletedFiles)->toBeEmpty()
         ->and($command->trimmers)->toBeEmpty()
         ->and($tester->getDisplay())->toContain('mysqldump failed');
+});
+
+it('reports multipart upload failures while still cleaning up local backups', function () {
+    backup_database_container([
+        'laravel-mysql-s3-backup.keep_local_copy'     => false,
+        'laravel-mysql-s3-backup.rolling_backup_days' => null,
+    ]);
+    Carbon::setTestNow(Carbon::parse('2026-07-18 11:00:00'));
+
+    $command                  = new BackupDatabaseTestCommand();
+    $command->uploadException = new MultipartUploadException(new UploadState([
+        'Bucket' => 'fleetbase-backups',
+        'Key'    => 'daily/fleetbase.sql.gz',
+    ]));
+    $command->setLaravel(app());
+    $tester = new CommandTester($command);
+
+    expect($tester->execute([], ['verbosity' => OutputInterface::VERBOSITY_VERBOSE]))->toBe(0)
+        ->and($command->processes)->toHaveCount(2)
+        ->and($command->uploaders)->toHaveCount(2)
+        ->and($command->uploaders[0]->uploaded)->toBeFalse()
+        ->and($command->uploaders[1]->uploaded)->toBeFalse()
+        ->and($command->deletedFiles)->toBe([
+            $command->uploaders[0]->fileName,
+            $command->uploaders[1]->fileName,
+        ])
+        ->and($command->trimmers)->toBeEmpty()
+        ->and($tester->getDisplay())->toContain('Unable to upload "' . $command->uploaders[0]->fileName . '" backup to s3. Error: An exception occurred while performing a multipart upload')
+        ->and($tester->getDisplay())->toContain('Deleting local backup file ' . $command->uploaders[0]->fileName);
 });
 
 it('trims only old backup objects inside the configured s3 folder', function () {
