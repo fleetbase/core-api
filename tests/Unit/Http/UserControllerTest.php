@@ -1,6 +1,8 @@
 <?php
 
+use Fleetbase\Exports\UserExport;
 use Fleetbase\Http\Controllers\Internal\v1\UserController;
+use Fleetbase\Http\Requests\ExportRequest;
 use Fleetbase\Http\Requests\Internal\AcceptCompanyInvite;
 use Fleetbase\Http\Requests\Internal\ChangeCurrentUserEmailRequest;
 use Fleetbase\Http\Requests\Internal\ChangeUserEmailRequest;
@@ -15,6 +17,7 @@ use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Facade;
 
@@ -130,6 +133,20 @@ class UserControllerNotificationDispatcherFake implements Illuminate\Contracts\N
     public function sendNow($notifiables, $notification, ?array $channels = null): void
     {
         $this->sent[] = [$notifiables, $notification, $channels];
+    }
+}
+
+class UserControllerExcelFake
+{
+    public ?object $export   = null;
+    public ?string $filename = null;
+
+    public function download(object $export, string $filename): Response
+    {
+        $this->export   = $export;
+        $this->filename = $filename;
+
+        return new Response('user export');
     }
 }
 
@@ -510,6 +527,36 @@ test('user controller scopes query and lookup to the active company unless reque
     expect($visible['user']->resource->uuid)->toBe('member-1')
         ->and($foreign->getStatusCode())->toBe(404)
         ->and($foreign->getData(true))->toBe(['errors' => ['User not found']]);
+});
+
+test('user controller search and export endpoints expose compact response and download contracts', function () {
+    user_controller_database();
+
+    $searchResponse = user_controller()->searchRecords(user_controller_request('GET', [
+        'query' => 'example.test',
+    ], user_controller_user('owner-1'), 'searchRecords'));
+    $searchPayload = $searchResponse->getData(true);
+
+    $excel = new UserControllerExcelFake();
+    app()->instance('excel', $excel);
+    Facade::clearResolvedInstance('excel');
+
+    $exportResponse = user_controller()->export(ExportRequest::create('/int/v1/users/export', 'GET', [
+        'format'     => 'csv',
+        'selections' => ['member-1', 'foreign-1'],
+    ]));
+
+    expect($searchResponse->getStatusCode())->toBe(200)
+        ->and($searchPayload)->toHaveCount(5)
+        ->and($searchPayload[0])->toHaveKeys(['uuid', 'name'])
+        ->and($searchPayload[0])->not->toHaveKeys(['email', 'phone', 'password'])
+        ->and(collect($searchPayload)->pluck('name')->all())->toContain('Owner One', 'Foreign User')
+        ->and($exportResponse)->toBeInstanceOf(Response::class)
+        ->and($exportResponse->getContent())->toBe('user export')
+        ->and($excel->export)->toBeInstanceOf(UserExport::class)
+        ->and($excel->export->collection()->pluck('uuid')->all())->toBe(['member-1'])
+        ->and($excel->filename)->toMatch('/^users-\d{4}-\d{2}-\d{2}-\d{4}\.csv$/')
+        ->and($excel->filename)->toEndWith('.csv');
 });
 
 test('user controller blocks generic deletes and identity mutations for organization scoped users', function () {
