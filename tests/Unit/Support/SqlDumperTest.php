@@ -38,6 +38,27 @@ class SqlDumperStaticTestDumper extends SqlDumper
     }
 }
 
+class SqlDumperInspectableTestDumper extends SqlDumper
+{
+    public function chunkSize(): int
+    {
+        $reflection = new ReflectionProperty(SqlDumper::class, 'chunk');
+        $reflection->setAccessible(true);
+
+        return $reflection->getValue($this);
+    }
+
+    public function tables(string $dbName): array
+    {
+        return $this->listTables($dbName);
+    }
+
+    public function streamForeignSet(string $table, array $columns, string $fkColumn, array $parents, string $filePath): void
+    {
+        $this->streamTableByForeignSet($table, $columns, $fkColumn, $parents, $filePath);
+    }
+}
+
 class SqlDumperStringTestDumper extends SqlDumper
 {
     public static string $path = '';
@@ -309,6 +330,42 @@ test('sql dumper foreign set streaming ignores unavailable foreign key columns',
         ]);
 
         expect(file_get_contents($path))->toBe('');
+    } finally {
+        @unlink($path);
+    }
+});
+
+test('sql dumper constructor normalizes tiny chunk sizes and lists sqlite tables through schema fallback', function () {
+    $capsule = sql_dumper_database();
+    $dumper  = new SqlDumperInspectableTestDumper($capsule->getConnection('mysql'), 1);
+
+    expect($dumper->chunkSize())->toBe(100)
+        ->and($dumper->tables('ignored'))->toContain('orders')
+        ->and($dumper->tables('ignored'))->toContain('order_notes')
+        ->and($dumper->tables('ignored'))->toContain('global_settings');
+});
+
+test('sql dumper foreign set streaming writes matching dependent rows and skips empty batches', function () {
+    $capsule = sql_dumper_database();
+    $dumper  = new SqlDumperInspectableTestDumper($capsule->getConnection('mysql'), 100);
+    $path    = tempnam(sys_get_temp_dir(), 'fleetbase-fk-sql-dump-');
+
+    try {
+        $dumper->streamForeignSet('order_notes', ['id', 'order_uuid', 'body'], 'order_uuid', [
+            'order-1' => true,
+            'missing' => true,
+        ], $path);
+
+        $dumper->streamForeignSet('order_notes', ['id', 'order_uuid', 'body'], 'order_uuid', [
+            'missing' => true,
+        ], $path);
+
+        $sql = file_get_contents($path);
+
+        expect($sql)->toContain('INSERT INTO `order_notes` (`id`, `order_uuid`, `body`)')
+            ->and($sql)->toContain("'order-1', 'tenant note'")
+            ->and($sql)->not->toContain('other note')
+            ->and(substr_count($sql, 'INSERT INTO `order_notes`'))->toBe(1);
     } finally {
         @unlink($path);
     }
