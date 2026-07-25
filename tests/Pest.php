@@ -36,6 +36,15 @@ namespace Illuminate\Foundation\Http {
     if (!class_exists(FormRequest::class)) {
         class FormRequest extends \Illuminate\Http\Request
         {
+            public function setContainer($container): static
+            {
+                return $this;
+            }
+
+            public function setRedirector($redirector): static
+            {
+                return $this;
+            }
         }
     }
 }

@@ -18,7 +18,12 @@ class UnauthorizedRequestException extends \Exception implements \Throwable
 
     public function getErrorMessage(Request $request): string
     {
-        $requiredPermission = Auth::getRequiredPermissionNameFromRequest($request);
+        try {
+            $requiredPermission = Auth::getRequiredPermissionNameFromRequest($request);
+        } catch (\Throwable) {
+            return 'Unauthorized Request';
+        }
+
         if (!$requiredPermission) {
             return 'Unauthorized Request';
         }

@@ -5,9 +5,12 @@ use Fleetbase\Http\Resources\FleetbaseResource;
 use Fleetbase\Traits\HasApiControllerBehavior;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
+use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Redirector;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Facade;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class HasApiControllerBehaviorModel extends Model
 {
@@ -266,10 +269,77 @@ class HasApiControllerBehaviorValidatorFactory
     }
 }
 
+class HasApiControllerBehaviorCreateRequest extends FormRequest
+{
+    public static array $withValidatorCalls = [];
+
+    public function rules(): array
+    {
+        return ['name' => ['required']];
+    }
+
+    public function messages(): array
+    {
+        return ['name.required' => 'Widget name is required.'];
+    }
+
+    public function attributes(): array
+    {
+        return ['name' => 'widget name'];
+    }
+
+    public function withValidator($validator): void
+    {
+        self::$withValidatorCalls[] = $validator;
+    }
+
+    public function authorize(): bool
+    {
+        return true;
+    }
+}
+
+class HasApiControllerBehaviorUpdateRequest extends FormRequest
+{
+    public function rules(): array
+    {
+        return ['sku' => ['required']];
+    }
+}
+
+class HasApiControllerBehaviorConfiguredRequest extends FormRequest
+{
+    public function rules(): array
+    {
+        return ['token' => ['required']];
+    }
+}
+
+class HasApiControllerBehaviorDeniedRequest extends FormRequest
+{
+    public function rules(): array
+    {
+        return [];
+    }
+
+    public function authorize(): bool
+    {
+        return false;
+    }
+}
+
+if (!function_exists('abort')) {
+    function abort(int $code, string $message = ''): never
+    {
+        throw new HttpException($code, $message);
+    }
+}
+
 function has_api_controller_behavior_request(string $uri, string $method = 'GET', array $parameters = []): Request
 {
     $container = bind_test_container();
     $container->instance('validator', new HasApiControllerBehaviorValidatorFactory());
+    $container->instance(Redirector::class, new stdClass());
     Facade::clearResolvedInstances();
     session()->flush();
 
@@ -410,6 +480,32 @@ test('api controller behavior validates fallback rule contracts before writing',
 
     expect($createFailure->getData(true))->toBe(['errors' => ['validation' => ['The given data was invalid.']]])
         ->and($updateFailure->getData(true))->toBe(['errors' => ['validation' => ['The given data was invalid.']]]);
+});
+
+test('api controller behavior validates form request classes for create update and configured requests', function () {
+    HasApiControllerBehaviorCreateRequest::$withValidatorCalls = [];
+
+    $controller                = new HasApiControllerBehaviorController();
+    $controller->createRequest = HasApiControllerBehaviorCreateRequest::class;
+    $controller->updateRequest = HasApiControllerBehaviorUpdateRequest::class;
+
+    $controller->validateRequest(has_api_controller_behavior_request('/v1/widgets', 'POST', ['name' => 'Created']));
+
+    $createFailure = $controller->createRecord(has_api_controller_behavior_request('/v1/widgets', 'POST'));
+    $updateFailure = $controller->updateRecord(has_api_controller_behavior_request('/v1/widgets/widget-1', 'PATCH'), 'widget-1');
+
+    $configuredController          = new HasApiControllerBehaviorController();
+    $configuredController->request = HasApiControllerBehaviorConfiguredRequest::class;
+    $configuredController->validateRequest(has_api_controller_behavior_request('/v1/widgets/validate', 'GET', ['token' => 'abc']));
+
+    $deniedController                = new HasApiControllerBehaviorController();
+    $deniedController->createRequest = HasApiControllerBehaviorDeniedRequest::class;
+
+    expect(HasApiControllerBehaviorCreateRequest::$withValidatorCalls)->toHaveCount(2)
+        ->and($createFailure->getData(true))->toBe(['errors' => ['validation' => ['The given data was invalid.']]])
+        ->and($updateFailure->getData(true))->toBe(['errors' => ['validation' => ['The given data was invalid.']]])
+        ->and(fn () => $deniedController->validateRequest(has_api_controller_behavior_request('/v1/widgets', 'POST', ['name' => 'Denied'])))
+        ->toThrow(HttpException::class);
 });
 
 test('api controller behavior scopes public deletes by public id and session company', function () {
