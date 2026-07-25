@@ -3,6 +3,7 @@
 use Fleetbase\Models\Company;
 use Fleetbase\Models\Setting;
 use Fleetbase\Models\User;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Events\Dispatcher;
@@ -16,6 +17,11 @@ class SettingModelCacheFake
     public function get(string $key, mixed $default = null): mixed
     {
         return $this->values[$key] ?? $default;
+    }
+
+    public function has(string $key): bool
+    {
+        return array_key_exists($key, $this->values);
     }
 
     public function put(string $key, mixed $value, mixed $ttl = null): bool
@@ -34,6 +40,18 @@ class SettingModelCacheFake
         return $this->values[$key];
     }
 
+    public function tags(array $tags): self
+    {
+        return $this;
+    }
+
+    public function flush(): bool
+    {
+        $this->values = [];
+
+        return true;
+    }
+
     public function forget(string $key): bool
     {
         $this->forgotten[] = $key;
@@ -50,6 +68,131 @@ class SettingModelCacheFake
     }
 }
 
+class SettingModelFilesystemFake
+{
+    public function disk(string $name): SettingModelDiskFake
+    {
+        return new SettingModelDiskFake($name);
+    }
+}
+
+class SettingModelDiskFake implements Filesystem
+{
+    public function __construct(private string $name)
+    {
+    }
+
+    public function temporaryUrl(string $path, mixed $expiration): string
+    {
+        return 'https://cdn.example.test/' . $this->name . '/' . $path;
+    }
+
+    public function url(string $path): string
+    {
+        return 'https://cdn.example.test/' . $this->name . '/' . $path;
+    }
+
+    public function exists($path): bool
+    {
+        return true;
+    }
+
+    public function get($path): ?string
+    {
+        return null;
+    }
+
+    public function readStream($path)
+    {
+        return null;
+    }
+
+    public function put($path, $contents, $options = []): bool
+    {
+        return true;
+    }
+
+    public function writeStream($path, $resource, array $options = []): bool
+    {
+        return true;
+    }
+
+    public function getVisibility($path): string
+    {
+        return Filesystem::VISIBILITY_PUBLIC;
+    }
+
+    public function setVisibility($path, $visibility): bool
+    {
+        return true;
+    }
+
+    public function prepend($path, $data): bool
+    {
+        return true;
+    }
+
+    public function append($path, $data): bool
+    {
+        return true;
+    }
+
+    public function delete($paths): bool
+    {
+        return true;
+    }
+
+    public function copy($from, $to): bool
+    {
+        return true;
+    }
+
+    public function move($from, $to): bool
+    {
+        return true;
+    }
+
+    public function size($path): int
+    {
+        return 0;
+    }
+
+    public function lastModified($path): int
+    {
+        return 0;
+    }
+
+    public function files($directory = null, $recursive = false): array
+    {
+        return [];
+    }
+
+    public function allFiles($directory = null): array
+    {
+        return [];
+    }
+
+    public function directories($directory = null, $recursive = false): array
+    {
+        return [];
+    }
+
+    public function allDirectories($directory = null): array
+    {
+        return [];
+    }
+
+    public function makeDirectory($path): bool
+    {
+        return true;
+    }
+
+    public function deleteDirectory($directory): bool
+    {
+        return true;
+    }
+}
+
 function setting_model_database(): array
 {
     EloquentModel::clearBootedModels();
@@ -61,14 +204,17 @@ function setting_model_database(): array
     ];
 
     $container = bind_test_container([
-        'api.cache.enabled'          => false,
-        'database.default'           => 'mysql',
-        'database.connections.mysql' => $connectionConfig,
-        'fleetbase.connection.db'    => 'mysql',
+        'api.cache.enabled'           => false,
+        'database.default'            => 'mysql',
+        'database.connections.mysql'  => $connectionConfig,
+        'fleetbase.connection.db'     => 'mysql',
+        'fleetbase.branding.icon_url' => 'https://static.example.test/default-icon.svg',
+        'fleetbase.branding.logo_url' => 'https://static.example.test/default-logo.svg',
     ]);
 
     $cache = new SettingModelCacheFake();
     $container->instance('cache', $cache);
+    $container->instance('filesystem', new SettingModelFilesystemFake());
 
     $capsule = new Capsule($container);
     $capsule->addConnection($connectionConfig, 'mysql');
@@ -82,6 +228,8 @@ function setting_model_database(): array
     $container->instance('db.schema', $capsule->getConnection('mysql')->getSchemaBuilder());
     Facade::clearResolvedInstance('db');
     Facade::clearResolvedInstance('db.schema');
+    Facade::clearResolvedInstance('cache');
+    Facade::clearResolvedInstance('filesystem');
 
     $schema = $capsule->getConnection('mysql')->getSchemaBuilder();
     $schema->create('settings', function ($table) {
@@ -99,6 +247,18 @@ function setting_model_database(): array
         $table->string('uuid')->primary();
         $table->string('name')->nullable();
         $table->string('email')->nullable();
+        $table->timestamps();
+        $table->softDeletes();
+    });
+    $schema->create('files', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('public_id')->nullable();
+        $table->string('disk')->nullable();
+        $table->string('path')->nullable();
+        $table->string('original_filename')->nullable();
+        $table->string('content_type')->nullable();
+        $table->unsignedBigInteger('file_size')->nullable();
+        $table->text('meta')->nullable();
         $table->timestamps();
         $table->softDeletes();
     });
@@ -165,6 +325,55 @@ it('exposes JSON value helpers and database connection checks', function () {
         ->and($setting->getBoolean('feature.enabled'))->toBeTrue()
         ->and(Setting::hasConnection())->toBeTrue()
         ->and(Setting::doesntHaveConnection())->toBeFalse();
+});
+
+it('resolves branding logo and icon urls from files with default fallbacks', function () {
+    [$capsule] = setting_model_database();
+
+    expect(Setting::getBrandingLogoUrl())->toBe('https://static.example.test/default-logo.svg')
+        ->and(Setting::getBrandingIconUrl())->toBe('https://static.example.test/default-icon.svg');
+
+    Setting::query()->create([
+        'key'   => 'branding.logo_uuid',
+        'value' => 'not-a-uuid',
+    ]);
+    Setting::query()->create([
+        'key'   => 'branding.icon_uuid',
+        'value' => '33333333-3333-4333-8333-333333333333',
+    ]);
+
+    expect(Setting::getBrandingLogoUrl())->toBe('https://static.example.test/default-logo.svg')
+        ->and(Setting::getBrandingIconUrl())->toBe('https://static.example.test/default-icon.svg');
+
+    $logoUuid = '11111111-1111-4111-8111-111111111111';
+    $iconUuid = '22222222-2222-4222-8222-222222222222';
+
+    $capsule->getConnection('mysql')->table('files')->insert([
+        'uuid'              => $logoUuid,
+        'public_id'         => 'file_logo',
+        'disk'              => 's3',
+        'path'              => 'branding/logo.svg',
+        'original_filename' => 'logo.svg',
+        'content_type'      => 'image/svg+xml',
+        'file_size'         => 1024,
+        'meta'              => json_encode([]),
+    ]);
+    $capsule->getConnection('mysql')->table('files')->insert([
+        'uuid'              => $iconUuid,
+        'public_id'         => 'file_icon',
+        'disk'              => 's3',
+        'path'              => 'branding/icon.svg',
+        'original_filename' => 'icon.svg',
+        'content_type'      => 'image/svg+xml',
+        'file_size'         => 512,
+        'meta'              => json_encode([]),
+    ]);
+
+    Setting::query()->where('key', 'branding.logo_uuid')->update(['value' => json_encode($logoUuid)]);
+    Setting::query()->where('key', 'branding.icon_uuid')->update(['value' => json_encode($iconUuid)]);
+
+    expect(Setting::getBrandingLogoUrl())->toBe('https://cdn.example.test/s3/branding/logo.svg')
+        ->and(Setting::getBrandingIconUrl())->toBe('https://cdn.example.test/s3/branding/icon.svg');
 });
 
 it('clears deleted setting cache entries and resolves owner models from setting keys', function () {

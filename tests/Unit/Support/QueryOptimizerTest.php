@@ -35,6 +35,34 @@ class QueryOptimizerProbe extends QueryOptimizer
     }
 }
 
+class QueryOptimizerBindingMismatchProbe extends QueryOptimizer
+{
+    protected static function extractBindings(array $whereClauses): array
+    {
+        return [];
+    }
+}
+
+class QueryOptimizerValidationFailureProbe extends QueryOptimizer
+{
+    protected static function validateOptimization(
+        array $originalWheres,
+        array $originalBindings,
+        array $uniqueWheres,
+        array $uniqueBindings,
+    ): bool {
+        return false;
+    }
+}
+
+class QueryOptimizerExceptionProbe extends QueryOptimizer
+{
+    protected static function buildWhereClauseList(array $wheres, array $bindings): array
+    {
+        throw new RuntimeException('optimizer probe failed');
+    }
+}
+
 function query_optimizer_database(): void
 {
     $connectionConfig = [
@@ -76,6 +104,18 @@ test('query optimizer removes duplicate wheres while preserving binding order', 
     expect($query->getQuery()->wheres)->toHaveCount(3)
         ->and($query->getBindings())->toBe(['company-1', 'pending', 'ready'])
         ->and($query->toSql())->toBe('select * from "orders" where "company_uuid" = ? and "status" in (?, ?) and "deleted_at" is null');
+});
+
+test('query optimizer treats builders without wheres as no ops', function () {
+    query_optimizer_database();
+
+    $query = QueryOptimizerOrder::query();
+
+    $result = QueryOptimizer::removeDuplicateWheres($query);
+
+    expect($result)->toBe($query)
+        ->and($query->getQuery()->wheres)->toBe([])
+        ->and($query->getBindings())->toBe([]);
 });
 
 test('query optimizer keeps matching columns with distinct binding values', function () {
@@ -227,4 +267,60 @@ test('query optimizer validation rejects expanded missing and mismatched optimiz
         ->and(QueryOptimizerProbe::valid($originalWheres, ['pending'], $originalWheres, ['pending', 'extra']))->toBeFalse()
         ->and(QueryOptimizerProbe::valid($originalWheres, ['pending'], [], []))->toBeFalse()
         ->and(QueryOptimizerProbe::valid($originalWheres, ['pending'], $originalWheres, []))->toBeFalse();
+});
+
+test('query optimizer keeps original queries when defensive validation fails', function () {
+    $container = bind_test_container();
+    query_optimizer_database();
+
+    $query = QueryOptimizerOrder::query()
+        ->where('company_uuid', 'company-1')
+        ->where('company_uuid', 'company-1');
+
+    $beforeWheres   = $query->getQuery()->wheres;
+    $beforeBindings = $query->getBindings();
+
+    QueryOptimizerBindingMismatchProbe::removeDuplicateWheres($query);
+
+    expect($query->getQuery()->wheres)->toBe($beforeWheres)
+        ->and($query->getBindings())->toBe($beforeBindings)
+        ->and($container->make('log')->entries)->toContain([
+            'warning',
+            'QueryOptimizer: binding mismatch, aborting optimization',
+            [
+                'expected' => 1,
+                'actual'   => 0,
+                'sql'      => 'select * from "orders" where "company_uuid" = ? and "company_uuid" = ?',
+            ],
+        ]);
+
+    QueryOptimizerValidationFailureProbe::removeDuplicateWheres($query);
+
+    expect($query->getQuery()->wheres)->toBe($beforeWheres)
+        ->and($query->getBindings())->toBe($beforeBindings)
+        ->and($container->make('log')->entries)->toContain([
+            'warning',
+            'QueryOptimizer: Validation failed, returning original query',
+            [],
+        ]);
+});
+
+test('query optimizer logs unexpected optimization exceptions and keeps the query unchanged', function () {
+    $container = bind_test_container();
+    query_optimizer_database();
+    Facade::clearResolvedInstance('log');
+
+    $query = QueryOptimizerOrder::query()->where('status', 'pending');
+
+    $beforeWheres   = $query->getQuery()->wheres;
+    $beforeBindings = $query->getBindings();
+
+    QueryOptimizerExceptionProbe::removeDuplicateWheres($query);
+
+    expect($query->getQuery()->wheres)->toBe($beforeWheres)
+        ->and($query->getBindings())->toBe($beforeBindings)
+        ->and($container->make('log')->entries[0][0])->toBe('error')
+        ->and($container->make('log')->entries[0][1])->toBe('QueryOptimizer: Exception during optimization')
+        ->and($container->make('log')->entries[0][2]['message'])->toBe('optimizer probe failed')
+        ->and($container->make('log')->entries[0][2]['trace'])->toBeString();
 });
