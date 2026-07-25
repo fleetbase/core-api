@@ -177,8 +177,9 @@ class TemplateQuery extends Model
         }
 
         // Eager-load relationships
-        if (!empty($this->with)) {
-            $query->with($this->with);
+        $with = $this->getAttribute('with');
+        if (!empty($with)) {
+            $query->with($with);
         }
 
         return $query->get();

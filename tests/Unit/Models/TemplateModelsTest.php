@@ -14,6 +14,27 @@ class TemplateQueryTenantFixture extends Model
     protected $table      = 'template_query_tenant_fixtures';
     protected $guarded    = [];
     public $timestamps    = false;
+
+    public function notes()
+    {
+        return $this->hasMany(TemplateQueryTenantNoteFixture::class, 'fixture_id');
+    }
+}
+
+class TemplateQueryTenantNoteFixture extends Model
+{
+    protected $connection = 'mysql';
+    protected $table      = 'template_query_tenant_note_fixtures';
+    protected $guarded    = [];
+    public $timestamps    = false;
+}
+
+class TemplateQueryUnscopedFixture extends Model
+{
+    protected $connection = 'mysql';
+    protected $table      = 'template_query_unscoped_fixtures';
+    protected $guarded    = [];
+    public $timestamps    = false;
 }
 
 class TemplateQueryGlobalFixture extends Model
@@ -89,6 +110,7 @@ function template_models_database(): Capsule
         'fleetbase.template_query_models' => [
             TemplateQueryTenantFixture::class,
             TemplateQueryGlobalFixture::class,
+            TemplateQueryUnscopedFixture::class,
         ],
         'fleetbase.template_global_query_models' => [
             TemplateQueryGlobalFixture::class,
@@ -163,6 +185,15 @@ function template_models_database(): Capsule
         $table->integer('score')->default(0);
         $table->timestamp('archived_at')->nullable();
     });
+    $schema->create('template_query_tenant_note_fixtures', function ($table) {
+        $table->increments('id');
+        $table->integer('fixture_id');
+        $table->string('body')->nullable();
+    });
+    $schema->create('template_query_unscoped_fixtures', function ($table) {
+        $table->increments('id');
+        $table->string('name')->nullable();
+    });
     $schema->create('template_query_global_fixtures', function ($table) {
         $table->increments('id');
         $table->string('category')->nullable();
@@ -196,6 +227,14 @@ function template_models_database(): Capsule
         ['company_uuid' => 'company-1', 'status' => 'active', 'name' => 'Beta order', 'score' => 70, 'archived_at' => '2026-07-10 10:00:00'],
         ['company_uuid' => 'company-1', 'status' => 'draft', 'name' => 'Gamma order', 'score' => 60, 'archived_at' => null],
         ['company_uuid' => 'company-2', 'status' => 'active', 'name' => 'Other tenant order', 'score' => 99, 'archived_at' => null],
+    ]);
+    $capsule->getConnection('mysql')->table('template_query_tenant_note_fixtures')->insert([
+        ['fixture_id' => 1, 'body' => 'First alpha note'],
+        ['fixture_id' => 1, 'body' => 'Second alpha note'],
+        ['fixture_id' => 2, 'body' => 'Archived beta note'],
+    ]);
+    $capsule->getConnection('mysql')->table('template_query_unscoped_fixtures')->insert([
+        ['name' => 'Unscoped allowed but not global'],
     ]);
     $capsule->getConnection('mysql')->table('template_query_global_fixtures')->insert([
         ['category' => 'public', 'name' => 'Global Alpha', 'rank' => 2],
@@ -340,6 +379,23 @@ it('builds searchable query branches for custom search json relations and additi
         ->and($query->getBindings())->toContain('%alpha%001%');
 });
 
+it('exposes template query ownership relationships', function () {
+    template_models_database();
+
+    $query = new TemplateQuery([
+        'template_uuid'   => 'template-company',
+        'company_uuid'    => 'company-1',
+        'created_by_uuid' => 'user-1',
+    ]);
+
+    expect($query->template())->toBeInstanceOf(Illuminate\Database\Eloquent\Relations\BelongsTo::class)
+        ->and($query->template()->getForeignKeyName())->toBe('template_uuid')
+        ->and($query->company())->toBeInstanceOf(Illuminate\Database\Eloquent\Relations\BelongsTo::class)
+        ->and($query->company()->getForeignKeyName())->toBe('company_uuid')
+        ->and($query->createdBy())->toBeInstanceOf(Illuminate\Database\Eloquent\Relations\BelongsTo::class)
+        ->and($query->createdBy()->getForeignKeyName())->toBe('created_by_uuid');
+});
+
 it('executes tenant scoped template queries with conditions sorting and limits', function () {
     template_models_database();
 
@@ -353,6 +409,7 @@ it('executes tenant scoped template queries with conditions sorting and limits',
             ['field' => 'archived_at', 'operator' => 'null'],
             ['field' => null, 'operator' => '=', 'value' => 'ignored'],
         ],
+        'with' => ['notes'],
         'sort' => [
             ['field' => 'score', 'direction' => 'desc'],
         ],
@@ -363,7 +420,12 @@ it('executes tenant scoped template queries with conditions sorting and limits',
 
     expect($results)->toHaveCount(1)
         ->and($results->first()->name)->toBe('Alpha order')
-        ->and($results->first()->company_uuid)->toBe('company-1');
+        ->and($results->first()->company_uuid)->toBe('company-1')
+        ->and($results->first()->relationLoaded('notes'))->toBeTrue()
+        ->and($results->first()->notes->pluck('body')->all())->toBe([
+            'First alpha note',
+            'Second alpha note',
+        ]);
 });
 
 it('falls back to session company for tenant scoped template queries', function () {
@@ -394,10 +456,14 @@ it('returns empty results for disallowed missing or unscoped tenant query models
     $missingTenant = new TemplateQuery([
         'model_type' => TemplateQueryTenantFixture::class,
     ]);
+    $unscopedAllowedModel = new TemplateQuery([
+        'model_type' => TemplateQueryUnscopedFixture::class,
+    ]);
 
     expect($disallowed->execute())->toBeEmpty()
         ->and($missingClass->execute())->toBeEmpty()
-        ->and($missingTenant->execute())->toBeEmpty();
+        ->and($missingTenant->execute())->toBeEmpty()
+        ->and($unscopedAllowedModel->execute())->toBeEmpty();
 });
 
 it('allows explicitly global template query models without tenant columns', function () {
@@ -409,6 +475,7 @@ it('allows explicitly global template query models without tenant columns', func
             ['field' => 'category', 'operator' => '=', 'value' => 'public'],
             ['field' => 'name', 'operator' => 'like', 'value' => 'Global'],
             ['field' => 'rank', 'operator' => 'not in', 'value' => [3]],
+            ['field' => 'name', 'operator' => 'not null'],
         ],
         'sort' => [
             ['field' => 'rank', 'direction' => 'asc'],
