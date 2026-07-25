@@ -10,7 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Facade;
 
-function admin_metrics_database(): Capsule
+function admin_metrics_database(bool $includeFailedJobsTable = true, bool $includeActivityLogTable = true): Capsule
 {
     EloquentModel::clearBootedModels();
 
@@ -73,25 +73,29 @@ function admin_metrics_database(): Capsule
         $table->timestamp('deleted_at')->nullable();
     });
 
-    $schema->create('failed_jobs', function ($table) {
-        $table->increments('id');
-        $table->timestamp('failed_at')->nullable();
-    });
+    if ($includeFailedJobsTable) {
+        $schema->create('failed_jobs', function ($table) {
+            $table->increments('id');
+            $table->timestamp('failed_at')->nullable();
+        });
+    }
 
-    $schema->create('activity_log', function ($table) {
-        $table->increments('id');
-        $table->string('log_name')->nullable();
-        $table->text('description')->nullable();
-        $table->string('subject_type')->nullable();
-        $table->string('subject_id')->nullable();
-        $table->string('causer_type')->nullable();
-        $table->string('causer_id')->nullable();
-        $table->string('event')->nullable();
-        $table->text('properties')->nullable();
-        $table->uuid('batch_uuid')->nullable();
-        $table->timestamp('created_at')->nullable();
-        $table->timestamp('updated_at')->nullable();
-    });
+    if ($includeActivityLogTable) {
+        $schema->create('activity_log', function ($table) {
+            $table->increments('id');
+            $table->string('log_name')->nullable();
+            $table->text('description')->nullable();
+            $table->string('subject_type')->nullable();
+            $table->string('subject_id')->nullable();
+            $table->string('causer_type')->nullable();
+            $table->string('causer_id')->nullable();
+            $table->string('event')->nullable();
+            $table->text('properties')->nullable();
+            $table->uuid('batch_uuid')->nullable();
+            $table->timestamp('created_at')->nullable();
+            $table->timestamp('updated_at')->nullable();
+        });
+    }
 
     return $capsule;
 }
@@ -116,21 +120,25 @@ function admin_metrics_seed(Capsule $capsule): void
         ['uuid' => 'company-suspended', 'public_id' => 'company_suspended', 'name' => 'Suspended Org', 'owner_uuid' => 'admin-current', 'status' => 'suspended', 'onboarding_completed_at' => '2026-07-09 08:00:00', 'created_at' => '2026-07-09 08:00:00', 'updated_at' => '2026-07-09 08:00:00', 'deleted_at' => null],
     ]);
 
-    $db->table('failed_jobs')->insert([
-        ['failed_at' => '2026-07-17 12:00:00'],
-        ['failed_at' => '2026-06-01 12:00:00'],
-    ]);
+    if ($db->getSchemaBuilder()->hasTable('failed_jobs')) {
+        $db->table('failed_jobs')->insert([
+            ['failed_at' => '2026-07-17 12:00:00'],
+            ['failed_at' => '2026-06-01 12:00:00'],
+        ]);
+    }
 
-    $db->table('activity_log')->insert([
-        ['log_name' => 'default', 'description' => 'admin impersonated user', 'subject_type' => User::class, 'subject_id' => 'user-current', 'causer_type' => null, 'causer_id' => null, 'event' => 'impersonated', 'properties' => '{}', 'batch_uuid' => null, 'created_at' => '2026-07-17 09:00:00', 'updated_at' => '2026-07-17 09:00:00'],
-        ['log_name' => 'default', 'description' => 'password reset requested', 'subject_type' => Company::class, 'subject_id' => 'company-current', 'causer_type' => null, 'causer_id' => null, 'event' => 'password.reset', 'properties' => '{}', 'batch_uuid' => null, 'created_at' => '2026-06-01 09:00:00', 'updated_at' => '2026-06-01 09:00:00'],
-        ['log_name' => 'default', 'description' => 'ordinary update', 'subject_type' => Company::class, 'subject_id' => 'company-current', 'causer_type' => null, 'causer_id' => null, 'event' => 'updated', 'properties' => '{}', 'batch_uuid' => null, 'created_at' => '2026-07-17 10:00:00', 'updated_at' => '2026-07-17 10:00:00'],
-    ]);
+    if ($db->getSchemaBuilder()->hasTable('activity_log')) {
+        $db->table('activity_log')->insert([
+            ['log_name' => 'default', 'description' => 'admin impersonated user', 'subject_type' => User::class, 'subject_id' => 'user-current', 'causer_type' => null, 'causer_id' => null, 'event' => 'impersonated', 'properties' => '{}', 'batch_uuid' => null, 'created_at' => '2026-07-17 09:00:00', 'updated_at' => '2026-07-17 09:00:00'],
+            ['log_name' => 'default', 'description' => 'password reset requested', 'subject_type' => Company::class, 'subject_id' => 'company-current', 'causer_type' => null, 'causer_id' => null, 'event' => 'password.reset', 'properties' => '{}', 'batch_uuid' => null, 'created_at' => '2026-06-01 09:00:00', 'updated_at' => '2026-06-01 09:00:00'],
+            ['log_name' => 'default', 'description' => 'ordinary update', 'subject_type' => Company::class, 'subject_id' => 'company-current', 'causer_type' => null, 'causer_id' => null, 'event' => 'updated', 'properties' => '{}', 'batch_uuid' => null, 'created_at' => '2026-07-17 10:00:00', 'updated_at' => '2026-07-17 10:00:00'],
+        ]);
+    }
 }
 
-function admin_metrics_controller(): AdminMetricsController
+function admin_metrics_controller(bool $includeFailedJobsTable = true, bool $includeActivityLogTable = true): AdminMetricsController
 {
-    $capsule = admin_metrics_database();
+    $capsule = admin_metrics_database($includeFailedJobsTable, $includeActivityLogTable);
     admin_metrics_seed($capsule);
 
     return new AdminMetricsController();
@@ -163,12 +171,15 @@ afterEach(function () {
 test('admin metrics kpis expose totals deltas statuses and unknown metric errors', function () {
     $controller = admin_metrics_controller();
 
-    $users      = $controller->kpi(admin_metrics_request(), 'users-total')->getData(true);
-    $admins     = $controller->kpi(admin_metrics_request(), 'active-admins')->getData(true);
-    $attention  = $controller->kpi(admin_metrics_request(), 'organizations-attention')->getData(true);
-    $failedJobs = $controller->kpi(admin_metrics_request(), 'failed-jobs')->getData(true);
-    $suspicious = $controller->kpi(admin_metrics_request(), 'suspicious-activity')->getData(true);
-    $unknown    = $controller->kpi(admin_metrics_request(), 'missing-metric');
+    $users            = $controller->kpi(admin_metrics_request(), 'users-total')->getData(true);
+    $organizations    = $controller->kpi(admin_metrics_request(), 'organizations-total')->getData(true);
+    $admins           = $controller->kpi(admin_metrics_request(), 'active-admins')->getData(true);
+    $attention        = $controller->kpi(admin_metrics_request(), 'organizations-attention')->getData(true);
+    $newUsers         = $controller->kpi(admin_metrics_request(), 'new-users')->getData(true);
+    $newOrganizations = $controller->kpi(admin_metrics_request(), 'new-organizations')->getData(true);
+    $failedJobs       = $controller->kpi(admin_metrics_request(), 'failed-jobs')->getData(true);
+    $suspicious       = $controller->kpi(admin_metrics_request(), 'suspicious-activity')->getData(true);
+    $unknown          = $controller->kpi(admin_metrics_request(), 'missing-metric');
 
     expect($users)->toMatchArray([
         'title'     => 'Users',
@@ -179,6 +190,13 @@ test('admin metrics kpis expose totals deltas statuses and unknown metric errors
         'icon'      => 'users',
         'sparkline' => ['labels' => ['Previous', 'Current'], 'data' => [1, 4]],
     ])
+        ->and($organizations)->toMatchArray([
+            'title'     => 'Organizations',
+            'value'     => 5,
+            'delta_pct' => 300,
+            'icon'      => 'building',
+            'sparkline' => ['labels' => ['Previous', 'Current'], 'data' => [1, 4]],
+        ])
         ->and($admins)->toMatchArray([
             'title'     => 'Active Admins',
             'value'     => 2,
@@ -192,6 +210,20 @@ test('admin metrics kpis expose totals deltas statuses and unknown metric errors
             'status'    => 'warning',
             'icon'      => 'building-circle-exclamation',
             'sparkline' => ['labels' => ['Previous', 'Current'], 'data' => [0, 1]],
+        ])
+        ->and($newUsers)->toMatchArray([
+            'title'     => 'New Users',
+            'value'     => 4,
+            'delta_pct' => 300,
+            'icon'      => 'user-plus',
+            'sparkline' => ['labels' => ['Previous', 'Current'], 'data' => [1, 4]],
+        ])
+        ->and($newOrganizations)->toMatchArray([
+            'title'     => 'New Organizations',
+            'value'     => 4,
+            'delta_pct' => 300,
+            'icon'      => 'building-circle-check',
+            'sparkline' => ['labels' => ['Previous', 'Current'], 'data' => [1, 4]],
         ])
         ->and($failedJobs)->toMatchArray([
             'title'     => 'Failed Jobs',
@@ -209,6 +241,34 @@ test('admin metrics kpis expose totals deltas statuses and unknown metric errors
         ])
         ->and($unknown->getStatusCode())->toBe(404)
         ->and($unknown->getData(true))->toBe(['error' => 'Unknown admin metric.']);
+});
+
+test('admin metrics fall back cleanly when optional activity and failed job tables are unavailable', function () {
+    $controller = admin_metrics_controller(false, false);
+
+    $failedJobs = $controller->kpi(admin_metrics_request(), 'failed-jobs')->getData(true);
+    $suspicious = $controller->kpi(admin_metrics_request(), 'suspicious-activity')->getData(true);
+    $activity   = $controller->widget(admin_metrics_request(), 'admin-activity')->getData(true);
+
+    expect($failedJobs)->toMatchArray([
+        'title'     => 'Failed Jobs',
+        'value'     => 0,
+        'status'    => 'success',
+        'sparkline' => ['labels' => ['Previous', 'Current'], 'data' => [0, 0]],
+    ])
+        ->and($suspicious)->toMatchArray([
+            'title'     => 'Suspicious Activity',
+            'value'     => 0,
+            'status'    => 'success',
+            'sparkline' => ['labels' => ['Previous', 'Current'], 'data' => [0, 0]],
+        ])
+        ->and($activity)->toBe([
+            'title'    => 'Admin Activity',
+            'subtitle' => 'Recent sensitive admin events',
+            'icon'     => 'clock-rotate-left',
+            'empty'    => 'Activity logging is unavailable.',
+            'items'    => [],
+        ]);
 });
 
 test('admin metrics growth compares users and organizations across current and previous periods', function () {
@@ -269,6 +329,18 @@ test('admin dashboard widgets expose diagnostics configuration gaps and unknown 
 test('admin dashboard widgets expose activity and organization risk queues', function () {
     $controller = admin_metrics_controller();
 
+    Company::insert([
+        'uuid'                    => 'company-no-public-id',
+        'public_id'               => null,
+        'name'                    => 'No Public ID Org',
+        'owner_uuid'              => null,
+        'status'                  => 'active',
+        'onboarding_completed_at' => '2026-07-11 08:00:00',
+        'created_at'              => '2026-07-11 08:00:00',
+        'updated_at'              => '2026-07-11 08:00:00',
+        'deleted_at'              => null,
+    ]);
+
     $activity = $controller->widget(admin_metrics_request(), 'admin-activity')->getData(true);
     $risk     = $controller->widget(admin_metrics_request(), 'organization-risk-queue')->getData(true);
 
@@ -296,8 +368,14 @@ test('admin dashboard widgets expose activity and organization risk queues', fun
             'title'       => 'Organization Risk Queue',
             'queryParams' => ['needs_attention' => 1],
         ])
-        ->and(collect($risk['items'])->pluck('value')->all())->toBe(['Status review', 'Incomplete onboarding', 'Missing owner'])
+        ->and(collect($risk['items'])->pluck('value')->all())->toBe(['Missing owner', 'Status review', 'Incomplete onboarding', 'Missing owner'])
         ->and($risk['items'][0])->toMatchArray([
+            'title'       => 'No Public ID Org',
+            'description' => 'company-no-public-id',
+            'status'      => 'warning',
+            'routeModels' => [null],
+        ])
+        ->and($risk['items'][1])->toMatchArray([
             'title'       => 'Suspended Org',
             'description' => 'company_suspended',
             'status'      => 'danger',
