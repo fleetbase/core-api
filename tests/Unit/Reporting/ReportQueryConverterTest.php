@@ -7,6 +7,7 @@ use Fleetbase\Support\Reporting\Schema\Relationship;
 use Fleetbase\Support\Reporting\Schema\Table;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Events\Dispatcher;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Facade;
 
 function report_converter_registry_fixture(): ReportSchemaRegistry
@@ -129,6 +130,26 @@ function report_converter_execute(array $config, mixed $companyUuid = 'company-1
     report_converter_database_fixture($companyUuid);
 
     return (new ReportQueryConverter(report_converter_registry_fixture(), $config))->execute();
+}
+
+function report_converter_call(object $target, string $method, mixed ...$arguments): mixed
+{
+    $reflection = new ReflectionMethod($target, $method);
+    $reflection->setAccessible(true);
+
+    return $reflection->invoke($target, ...$arguments);
+}
+
+function report_converter_property(object $target, string $property, mixed $value = null, bool $set = false): mixed
+{
+    $reflection = new ReflectionProperty($target, $property);
+    $reflection->setAccessible(true);
+
+    if ($set) {
+        $reflection->setValue($target, $value);
+    }
+
+    return $reflection->getValue($target);
 }
 
 test('report query converter executes tenant scoped nested auto join queries with computed columns', function () {
@@ -260,6 +281,67 @@ test('report query converter groups and aggregates through nested auto join rela
             'type'           => 'string',
             'auto_join_path' => null,
         ]);
+});
+
+test('report query converter helper contracts resolve aliases computed references and repeated auto joins', function () {
+    report_converter_database_fixture();
+
+    $converter = new ReportQueryConverter(report_converter_registry_fixture(), [
+        'table'            => ['name' => 'orders'],
+        'columns'          => [
+            ['name' => 'tracking_number'],
+        ],
+        'computed_columns' => [
+            [
+                'name'       => 'pickup_label',
+                'expression' => "CONCAT(payload.pickup.city, '-', tracking_number)",
+            ],
+            [
+                'name'       => 'decorated_label',
+                'expression' => "CONCAT(\"literal.with.dot\", pickup_label, 'quoted.value')",
+            ],
+        ],
+    ]);
+
+    report_converter_property($converter, 'joinAliases', [
+        'payload'        => 'orders_payload',
+        'payload.pickup' => 'orders_payload_pickup',
+    ], true);
+
+    $paths                = [];
+    $collectComputedPaths = new ReflectionMethod($converter, 'collectAutoJoinPathsFromComputedColumns');
+    $collectComputedPaths->setAccessible(true);
+    $collectComputedPaths->invokeArgs($converter, [[
+        ['expression' => ''],
+        ['expression' => 'decorated_label'],
+    ], &$paths, 'orders']);
+
+    expect(report_converter_call($converter, 'resolveAliasAndColumn', 'orders', 'tracking_number'))->toBe(['orders', 'tracking_number'])
+        ->and(report_converter_call($converter, 'resolveAliasAndColumn', 'orders', 'payload.pickup.city'))->toBe(['orders_payload_pickup', 'city'])
+        ->and(report_converter_call($converter, 'resolveAliasAndColumn', 'orders', 'payload.unknown_label'))->toBe(['orders_payload', 'unknown_label'])
+        ->and(report_converter_call($converter, 'resolveAliasAndColumn', 'orders', 'missing.path.city'))->toBe(['orders', 'missing.path.city'])
+        ->and($paths)->toBe(['payload.pickup'])
+        ->and(report_converter_call($converter, 'extractRelationshipPathsFromExpression', 'decorated_label', 'orders'))->toBe(['payload.pickup']);
+
+    $resolved = report_converter_call($converter, 'resolveComputedColumnReferences', 'CASE WHEN decorated_label IS NULL THEN "literal.with.dot" ELSE CONCAT(decorated_label, \'x.y\') END', 'orders');
+
+    expect($resolved)
+        ->toContain('orders_payload_pickup.city')
+        ->toContain('orders.tracking_number')
+        ->toContain('"literal.with.dot"')
+        ->toContain("'quoted.value'")
+        ->toContain("'x.y'");
+
+    report_converter_property($converter, 'joinAliases', [], true);
+    report_converter_call($converter, 'applyAutoJoinPath', DB::table('orders'), 'orders', 'payload.pickup');
+    $firstAutoJoins = report_converter_property($converter, 'autoJoins');
+
+    report_converter_call($converter, 'applyAutoJoinPath', DB::table('orders'), 'orders', 'payload.pickup');
+    report_converter_call($converter, 'applyAutoJoinPath', DB::table('orders'), 'orders', 'payload.missing');
+
+    expect($firstAutoJoins)->toHaveCount(2)
+        ->and(array_column($firstAutoJoins, 'path'))->toBe(['payload', 'payload.pickup'])
+        ->and(report_converter_property($converter, 'autoJoins'))->toHaveCount(2);
 });
 
 test('report query converter applies validator accepted operators and manual join aliases', function () {
