@@ -2,6 +2,7 @@
 
 use Fleetbase\Models\ApiCredential;
 use Fleetbase\Models\Company;
+use Fleetbase\Models\User;
 use Fleetbase\Models\WebhookEndpoint;
 use Fleetbase\Observers\ApiCredentialObserver;
 use Illuminate\Database\Capsule\Manager as Capsule;
@@ -74,6 +75,12 @@ it('derives api credential sandbox mode expiration values and generated key pref
 
     expect($credential->getAttributes()['test_mode'])->toBeTrue();
 
+    $credential->expires_at = null;
+    expect($credential->getAttributes()['expires_at'])->toBeNull();
+
+    $credential->expires_at = '';
+    expect($credential->getAttributes()['expires_at'])->toBeNull();
+
     Carbon::setTestNow(Carbon::parse('2026-06-04 12:00:00', 'UTC'));
     $credential->expires_at = 'never';
     expect($credential->getAttributes()['expires_at'])->toBeNull();
@@ -143,6 +150,7 @@ it('evaluates webhook endpoint event filters and api credential display labels',
         'name' => 'Console Key',
         'key'  => 'flb_live_named',
     ], true);
+    $credentialLogOptions = $namedCredential->getActivitylogOptions();
 
     $namedEndpoint = new WebhookEndpoint();
     $namedEndpoint->setRawAttributes([
@@ -153,6 +161,9 @@ it('evaluates webhook endpoint event filters and api credential display labels',
     $logOptions = $namedEndpoint->getActivitylogOptions();
 
     expect($namedEndpoint->is_listening_on_all_events)->toBeFalse()
+        ->and($credentialLogOptions->logAttributes)->toBe(['*'])
+        ->and($credentialLogOptions->logOnlyDirty)->toBeTrue()
+        ->and($namedCredential->user()->getRelated())->toBeInstanceOf(User::class)
         ->and($logOptions->logAttributes)->toBe(['*'])
         ->and($logOptions->logOnlyDirty)->toBeTrue()
         ->and($namedEndpoint->company()->getRelated())->toBeInstanceOf(Company::class)

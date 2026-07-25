@@ -292,6 +292,26 @@ test('expirable reports expiry ttl timestamp and qualified columns', function ()
     Carbon::setTestNow();
 });
 
+test('expirable resolves cached model configuration by class basename', function () {
+    bind_test_container([
+        'expirable' => [
+            'LifecycleTraitsExpirableRecord' => [
+                'column'       => 'expires_at',
+                'revival_time' => 3600,
+            ],
+        ],
+    ]);
+
+    $record = new LifecycleTraitsExpirableRecord();
+    $method = new ReflectionMethod($record, 'getConfiguration');
+    $method->setAccessible(true);
+
+    expect($method->invoke($record))->toBe([
+        'column'       => 'expires_at',
+        'revival_time' => 3600,
+    ]);
+});
+
 test('expirable revives expired records using default custom and named expiry columns', function () {
     Carbon::setTestNow(Carbon::parse('2026-07-17 12:00:00'));
 
