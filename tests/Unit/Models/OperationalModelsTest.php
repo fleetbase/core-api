@@ -3,11 +3,14 @@
 use Fleetbase\Models\Activity;
 use Fleetbase\Models\Alert;
 use Fleetbase\Models\Comment;
+use Fleetbase\Models\Company;
 use Fleetbase\Models\Notification;
 use Fleetbase\Models\ReportAuditLog;
 use Fleetbase\Models\User;
 use Illuminate\Auth\AuthManager;
 use Illuminate\Database\Capsule\Manager as Capsule;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Facade;
@@ -552,4 +555,26 @@ it('publishes comments with session defaults sanitized payloads and timestamps',
         ->and(Comment::query()->whereKey('comment-1')->exists())->toBeTrue();
 
     Carbon::setTestNow();
+});
+
+it('defines comment company parent and replies relationship contracts', function () {
+    operational_models_database();
+
+    $comment = new Comment();
+    $company = $comment->company();
+    $parent  = $comment->parent();
+    $replies = $comment->replies();
+
+    expect($company)->toBeInstanceOf(BelongsTo::class)
+        ->and($company->getRelated())->toBeInstanceOf(Company::class)
+        ->and($company->getForeignKeyName())->toBe('company_uuid')
+        ->and($company->getOwnerKeyName())->toBe('uuid')
+        ->and($parent)->toBeInstanceOf(BelongsTo::class)
+        ->and($parent->getRelated())->toBeInstanceOf(Comment::class)
+        ->and($parent->getForeignKeyName())->toBe('parent_uuid')
+        ->and($parent->getOwnerKeyName())->toBe('uuid')
+        ->and($replies)->toBeInstanceOf(HasMany::class)
+        ->and($replies->getRelated())->toBeInstanceOf(Comment::class)
+        ->and($replies->getForeignKeyName())->toBe('parent_comment_uuid')
+        ->and($replies->getLocalKeyName())->toBe('uuid');
 });
