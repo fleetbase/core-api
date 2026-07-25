@@ -90,6 +90,38 @@ class AuthControllerLoginBootstrapResponseCacheFake
     }
 }
 
+class AuthControllerLoginBootstrapRedisFake
+{
+    public array $values = [];
+
+    public array $sets = [];
+
+    public function set(string $key, mixed $value, mixed ...$options): bool
+    {
+        $this->values[$key] = $value;
+        $this->sets[]       = compact('key', 'value', 'options');
+
+        return true;
+    }
+
+    public function exists(string $key): bool
+    {
+        return array_key_exists($key, $this->values);
+    }
+
+    public function del(?string $key): bool
+    {
+        unset($this->values[$key]);
+
+        return true;
+    }
+
+    public function connection(): self
+    {
+        return $this;
+    }
+}
+
 class AuthControllerLoginBootstrapPermissionRegistrarFake
 {
     public string $pivotRole       = 'role_id';
@@ -135,6 +167,7 @@ function auth_controller_login_bootstrap_database(): Capsule
     $container = bind_test_container([
         'app.env'                                      => 'testing',
         'app.timezone'                                 => 'UTC',
+        'app.key'                                      => 'base64:' . base64_encode(str_repeat('a', 32)),
         'auth.defaults.guard'                          => 'sanctum',
         'auth.guards.sanctum.provider'                 => 'users',
         'auth.providers.users.model'                   => User::class,
@@ -155,11 +188,13 @@ function auth_controller_login_bootstrap_database(): Capsule
     $cache = new AuthControllerLoginBootstrapCacheFake();
     $container->instance('cache', $cache);
     $container->instance('hash', new AuthControllerLoginBootstrapHashFake());
+    $container->instance('redis', new AuthControllerLoginBootstrapRedisFake());
     $container->instance('responsecache', new AuthControllerLoginBootstrapResponseCacheFake());
     $container->instance(Spatie\Permission\PermissionRegistrar::class, new AuthControllerLoginBootstrapPermissionRegistrarFake());
     Cache::swap($cache);
     Facade::clearResolvedInstance('cache');
     Facade::clearResolvedInstance('hash');
+    Facade::clearResolvedInstance('redis');
     Facade::clearResolvedInstance('responsecache');
 
     $capsule = new Capsule($container);
@@ -454,6 +489,57 @@ test('login reuses a matching existing auth token without issuing a new token', 
             'type'  => 'admin',
         ])
         ->and($capsule->getConnection('mysql')->table('personal_access_tokens')->count())->toBe(1);
+});
+
+test('login rejects matching customer auth tokens before reusing existing sessions', function () {
+    $capsule = auth_controller_login_bootstrap_database();
+    auth_controller_login_insert_user($capsule, [
+        'type' => 'customer',
+    ]);
+
+    $user      = User::find('11111111-1111-4111-8111-111111111111');
+    $authToken = $user->createToken($user->uuid)->plainTextToken;
+
+    $response = (new AuthController())->login(auth_controller_login_request([
+        'identity'  => 'auth@example.test',
+        'password'  => 'unused-password',
+        'authToken' => $authToken,
+    ]));
+
+    expect($response->getStatusCode())->toBe(403)
+        ->and($response->getData(true))->toBe([
+            'errors' => ['Customer accounts must sign in through the customer portal.'],
+            'code'   => 'customer_login_not_allowed',
+        ])
+        ->and($capsule->getConnection('mysql')->table('personal_access_tokens')->count())->toBe(1);
+});
+
+test('login starts two factor authentication without issuing a sanctum token when enabled', function () {
+    $capsule = auth_controller_login_bootstrap_database();
+    auth_controller_login_insert_user($capsule, [
+        'type'              => 'dispatcher',
+        'email_verified_at' => '2026-07-18 10:00:00',
+    ]);
+    $capsule->getConnection('mysql')->table('settings')->insert([
+        'key'   => 'user.11111111-1111-4111-8111-111111111111.2fa',
+        'value' => json_encode(['enabled' => true, 'method' => 'email']),
+    ]);
+
+    $response = (new AuthController())->login(auth_controller_login_request([
+        'identity' => 'auth@example.test',
+        'password' => 'correct-password',
+    ]));
+    $payload = $response->getData(true);
+    $redis   = app('redis');
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($payload['isEnabled'])->toBeTrue()
+        ->and($payload['twoFaSession'])->toBeString()
+        ->and($payload['twoFaSession'])->not->toContain('two_fa_session')
+        ->and($redis->sets)->toHaveCount(1)
+        ->and($redis->sets[0]['key'])->toStartWith('two_fa_session:11111111-1111-4111-8111-111111111111:')
+        ->and($redis->sets[0]['value'])->toBe('11111111-1111-4111-8111-111111111111')
+        ->and($capsule->getConnection('mysql')->table('personal_access_tokens')->count())->toBe(0);
 });
 
 test('bootstrap returns cached session and organization response contracts', function () {

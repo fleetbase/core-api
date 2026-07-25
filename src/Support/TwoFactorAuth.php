@@ -399,14 +399,14 @@ class TwoFactorAuth
     /**
      * Start a Two-Factor Authentication session.
      *
-     * @param string $identity    the user identity
-     * @param int    $tokenLength the length of the generated token
+     * @param string|User $identity    the user identity or resolved user
+     * @param int         $tokenLength the length of the generated token
      *
      * @return string|null the Two-Factor Authentication session key, or null on failure
      */
-    public static function start(string $identity, int $tokenLength = 40): ?string
+    public static function start(string|User $identity, int $tokenLength = 40): ?string
     {
-        $user = static::getUserFromIdentity($identity);
+        $user = $identity instanceof User ? $identity : static::getUserFromIdentity($identity);
 
         if ($user) {
             $token           = Str::random($tokenLength);
