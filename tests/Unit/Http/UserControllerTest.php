@@ -11,6 +11,7 @@ use Fleetbase\Http\Requests\Internal\ValidatePasswordRequest;
 use Fleetbase\Models\User;
 use Illuminate\Container\Container;
 use Illuminate\Database\Capsule\Manager as Capsule;
+use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Http\Request;
@@ -238,6 +239,10 @@ function user_controller_database(): Capsule
             return $this->route()?->controller;
         });
     }
+
+    EloquentBuilder::macro('fastPaginate', function (int $perPage = 15, array $columns = ['*']) {
+        return $this->limit($perPage)->get($columns);
+    });
 
     $container->instance('hash', new UserControllerHashFake());
     $container->instance('cache', new UserControllerCacheFake());
@@ -1149,6 +1154,72 @@ test('user controller accepts company invitations and activates pending users wi
         ->and($capsule->getConnection('mysql')->table('users')->where('uuid', 'pending-1')->value('email_verified_at'))->not->toBeNull()
         ->and($capsule->getConnection('mysql')->table('invites')->where('uuid', 'invite-1')->whereNull('deleted_at')->exists())->toBeFalse()
         ->and($capsule->getConnection('mysql')->table('personal_access_tokens')->where('tokenable_id', 'pending-1')->count())->toBe(1);
+});
+
+test('user controller accepts invitations for existing members without duplicate memberships and reports missing inviting organizations', function () {
+    $capsule = user_controller_database();
+    $db      = $capsule->getConnection('mysql');
+    EloquentModel::setEventDispatcher(new Dispatcher(app()));
+    $db->table('roles')->insert([
+        'id'           => 'InviteRole',
+        'company_uuid' => 'company-1',
+        'name'         => 'InviteRole',
+        'guard_name'   => 'sanctum',
+        'created_at'   => '2026-07-18 10:00:00',
+        'updated_at'   => '2026-07-18 10:00:00',
+    ]);
+    $db->table('invites')->insert([
+        [
+            'uuid'            => 'invite-existing-member',
+            'public_id'       => 'invite_public_existing_member',
+            'code'            => 'MEMBER1',
+            'uri'             => 'member1',
+            'company_uuid'    => 'company-1',
+            'created_by_uuid' => 'owner-1',
+            'subject_uuid'    => 'company-1',
+            'subject_type'    => Fleetbase\Support\Utils::getMutationType(Fleetbase\Models\Company::where('uuid', 'company-1')->first()),
+            'protocol'        => 'email',
+            'recipients'      => json_encode(['member@example.test']),
+            'reason'          => 'join_company',
+            'meta'            => json_encode(['role_uuid' => 'InviteRole']),
+            'expires_at'      => now()->addHours(48),
+            'created_at'      => now(),
+            'updated_at'      => now(),
+        ],
+        [
+            'uuid'            => 'invite-missing-company',
+            'public_id'       => 'invite_public_missing_company',
+            'code'            => 'NOCOMP1',
+            'uri'             => 'nocomp1',
+            'company_uuid'    => 'missing-company',
+            'created_by_uuid' => 'owner-1',
+            'subject_uuid'    => 'missing-company',
+            'subject_type'    => Fleetbase\Models\Company::class,
+            'protocol'        => 'email',
+            'recipients'      => json_encode(['member@example.test']),
+            'reason'          => 'join_company',
+            'meta'            => null,
+            'expires_at'      => now()->addHours(48),
+            'created_at'      => now(),
+            'updated_at'      => now(),
+        ],
+    ]);
+
+    $acceptedExisting = user_controller()->acceptCompanyInvite(user_controller_request('POST', [
+        'code' => 'MEMBER1',
+    ], user_controller_user('member-1'), 'acceptCompanyInvite', AcceptCompanyInvite::class));
+    $missingCompany = user_controller()->acceptCompanyInvite(user_controller_request('POST', [
+        'code' => 'NOCOMP1',
+    ], user_controller_user('member-1'), 'acceptCompanyInvite', AcceptCompanyInvite::class));
+
+    expect($acceptedExisting->getStatusCode())->toBe(200)
+        ->and($acceptedExisting->getData(true)['status'])->toBe('ok')
+        ->and($acceptedExisting->getData(true)['needs_password'])->toBeFalse()
+        ->and($db->table('company_users')->where('company_uuid', 'company-1')->where('user_uuid', 'member-1')->count())->toBe(1)
+        ->and($db->table('model_has_roles')->where('model_type', Fleetbase\Models\CompanyUser::class)->where('model_uuid', 'pivot-member-1')->where('role_id', 'InviteRole')->exists())->toBeTrue()
+        ->and($db->table('invites')->where('uuid', 'invite-existing-member')->whereNull('deleted_at')->exists())->toBeFalse()
+        ->and($missingCompany->getStatusCode())->toBe(400)
+        ->and($missingCompany->getData(true))->toBe(['errors' => ['The organization that invited you no longer exists.']]);
 });
 
 test('user controller rejects unavailable and malformed company invitations', function () {
