@@ -4,6 +4,7 @@ use Fleetbase\Models\Company;
 use Fleetbase\Models\Setting;
 use Fleetbase\Models\User;
 use Fleetbase\Models\VerificationCode;
+use Fleetbase\Services\SmsService;
 use Fleetbase\Support\TwoFactorAuth;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
@@ -139,6 +140,16 @@ class TwoFactorAuthMailerFake
     }
 }
 
+class TwoFactorAuthTwilioFake
+{
+    public array $messages = [];
+
+    public function message(string $to, string $message, array $mediaUrls = [], array $params = []): void
+    {
+        $this->messages[] = compact('to', 'message', 'mediaUrls', 'params');
+    }
+}
+
 class TwoFactorAuthResponseCacheFake
 {
     public function clear(): void
@@ -188,8 +199,10 @@ function two_factor_auth_fixtures(): array
     $user->setAttribute($user->getKeyName(), $user->uuid);
 
     app('db')->table('companies')->insert([
-        'uuid' => $company->uuid,
-        'name' => $company->name,
+        'uuid'       => $company->uuid,
+        'name'       => $company->name,
+        'options'    => json_encode([]),
+        'deleted_at' => null,
     ]);
     app('db')->table('users')->insert([
         'uuid'         => $user->uuid,
@@ -245,6 +258,8 @@ function two_factor_auth_database(): void
     $schema->create('companies', function ($table) {
         $table->string('uuid')->primary();
         $table->string('name')->nullable();
+        $table->text('options')->nullable();
+        $table->timestamp('deleted_at')->nullable();
     });
     $schema->create('users', function ($table) {
         $table->string('uuid')->primary();
@@ -410,6 +425,28 @@ test('two factor auth validates delivery method requirements before creating ver
         ->and(app('db')->table('verification_codes')->count())->toBe(0);
 });
 
+test('two factor auth sends sms verification codes with configured provider routing', function () {
+    [$user] = two_factor_auth_fixtures();
+    $twilio = new TwoFactorAuthTwilioFake();
+
+    app()->instance('twilio', $twilio);
+    Facade::clearResolvedInstance('twilio');
+    config([
+        'sms.default_provider' => SmsService::PROVIDER_TWILIO,
+        'sms.routing_rules'    => [],
+    ]);
+
+    TwoFactorAuth::saveTwoFaSettingsForUser($user, ['enabled' => true, 'method' => 'sms']);
+
+    $verificationCode = TwoFactorAuth::sendVerificationCode($user);
+
+    expect($verificationCode)->toBeInstanceOf(VerificationCode::class)
+        ->and($verificationCode->for)->toBe('2fa')
+        ->and($twilio->messages)->toHaveCount(1)
+        ->and($twilio->messages[0]['to'])->toBe($user->phone)
+        ->and($twilio->messages[0]['message'])->toBe($verificationCode->code . ' is your Fleetbase 2FA Code');
+});
+
 test('two factor auth issues and reuses client tokens for valid active sessions', function () {
     [$user, , $redis] = two_factor_auth_fixtures();
 
@@ -425,6 +462,24 @@ test('two factor auth issues and reuses client tokens for valid active sessions'
         ->and($redis->deleted)->toBe([]);
 });
 
+test('two factor auth rejects expired client tokens and invalid session keys for client token issuance', function () {
+    [$user, , $redis] = two_factor_auth_fixtures();
+    TwoFactorAuth::saveTwoFaSettingsForUser($user, ['enabled' => true, 'method' => 'email']);
+
+    $token              = TwoFactorAuth::start($user->email, 10);
+    $expiredCode        = two_factor_auth_verification_code($user, Carbon::now()->subMinute());
+    $expiredClientToken = TwoFactorAuth::createClientSessionToken($expiredCode);
+
+    expect(fn () => TwoFactorAuth::getClientSessionTokenFromTwoFaSession($token, $user->email, $expiredClientToken))
+        ->toThrow(Exception::class, '2FA Verification code is invalid or has expired.')
+        ->and($redis->deleted)->toBe([$redis->sets[0]['key']]);
+
+    $invalidSessionToken = base64_encode('too-short-for-an-initialization-vector');
+
+    expect(fn () => TwoFactorAuth::getClientSessionTokenFromTwoFaSession($invalidSessionToken, $user->email))
+        ->toThrow(Exception::class, '2FA Authentication session is invalid');
+});
+
 test('two factor auth rejects invalid client tokens and missing identities with stable errors', function () {
     [$user, , $redis] = two_factor_auth_fixtures();
     TwoFactorAuth::saveTwoFaSettingsForUser($user, ['enabled' => true, 'method' => 'email']);
@@ -434,6 +489,33 @@ test('two factor auth rejects invalid client tokens and missing identities with 
     expect(fn () => TwoFactorAuth::getClientSessionTokenFromTwoFaSession($token, 'missing@example.com'))->toThrow(Exception::class, 'No user found for the identity provided.')
         ->and(fn () => TwoFactorAuth::getClientSessionTokenFromTwoFaSession($token, $user->email, base64_encode('expires|missing-code|nonce')))->toThrow(Exception::class, '2FA Verification code is invalid or has expired.')
         ->and($redis->deleted)->toContain($redis->sets[0]['key']);
+});
+
+test('two factor auth rejects missing session cache entries and non user verification subjects', function () {
+    [$user, $company, $redis] = two_factor_auth_fixtures();
+    TwoFactorAuth::saveTwoFaSettingsForUser($user, ['enabled' => true, 'method' => 'email']);
+
+    $token         = TwoFactorAuth::start($user->email, 10);
+    $redis->values = [];
+
+    expect(TwoFactorAuth::validateSessionToken($token, $user->email))->toBeFalse();
+
+    app('db')->table('verification_codes')->insert([
+        'uuid'         => '44444444-4444-4444-8444-444444444444',
+        'subject_uuid' => $company->uuid,
+        'subject_type' => Company::class,
+        'code'         => '654321',
+        'for'          => '2fa',
+        'expires_at'   => Carbon::now()->addMinutes(5)->toDateTimeString(),
+        'meta'         => json_encode([]),
+        'status'       => 'active',
+    ]);
+
+    $companyCode        = VerificationCode::where('uuid', '44444444-4444-4444-8444-444444444444')->firstOrFail();
+    $companyClientToken = TwoFactorAuth::createClientSessionToken($companyCode);
+
+    expect(fn () => TwoFactorAuth::verifyCode('654321', $token, $companyClientToken))
+        ->toThrow(Exception::class, 'User not found for verification code.');
 });
 
 test('two factor auth verifies matching codes creates access tokens and forgets sessions', function () {
