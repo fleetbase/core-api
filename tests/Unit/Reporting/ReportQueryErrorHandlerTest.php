@@ -61,6 +61,44 @@ test('report query error handler handles validation timeout and export failures'
         ->and($export['error']['format'])->toBe('csv');
 });
 
+test('report query error handler classifies specific failures and validation suggestions', function () {
+    $handler = new ReportQueryErrorHandler();
+
+    $column     = $handler->handleError(new RuntimeException('column total not found'));
+    $permission = $handler->handleError(new RuntimeException('access denied for reporting table'));
+    $timeout    = $handler->handleError(new RuntimeException('query timeout exceeded'));
+    $memory     = $handler->handleError(new RuntimeException('allowed memory exhausted'));
+    $invalid    = $handler->handleError(new RuntimeException('invalid query configuration'));
+    $generic    = $handler->handleError(new RuntimeException('unexpected sql grammar failure'));
+
+    $validation = $handler->handleValidationError([
+        'errors'   => [
+            'Join from orders to users is not configured',
+            'Filter condition status ~~ active is invalid',
+            'Unknown report problem',
+        ],
+        'warnings' => [],
+    ]);
+    $genericValidation = $handler->handleValidationError([
+        'errors'   => ['Unexpected report problem'],
+        'warnings' => [],
+    ]);
+
+    expect($column['error']['code'])->toBe('COLUMN_NOT_FOUND')
+        ->and($column['error']['message'])->toBe('One or more selected columns are not available.')
+        ->and($permission['error']['code'])->toBe('PERMISSION_DENIED')
+        ->and($permission['error']['suggestions'])->toContain('Contact your administrator for access to this data')
+        ->and($timeout['error']['code'])->toBe('TIMEOUT')
+        ->and($timeout['error']['details']['timeout_limit'])->toBe(45)
+        ->and($memory['error']['code'])->toBe('MEMORY_LIMIT')
+        ->and($memory['error']['details']['memory_limit'])->toBe(ini_get('memory_limit'))
+        ->and($invalid['error']['code'])->toBe('VALIDATION_FAILED')
+        ->and($generic['error']['code'])->toBe('QUERY_EXECUTION_FAILED')
+        ->and($validation['error']['suggestions'])->toContain('Ensure join relationships are properly configured')
+        ->and($validation['error']['suggestions'])->toContain('Verify that filter conditions use valid operators and values')
+        ->and($genericValidation['error']['suggestions'])->toBe(['Review your query configuration and try again']);
+});
+
 test('report query error handler exposes retry and output formatting contracts', function () {
     $handler = new ReportQueryErrorHandler();
     $error   = $handler->handleTimeoutError(42);
