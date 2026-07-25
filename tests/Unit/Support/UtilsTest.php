@@ -20,6 +20,15 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str as SupportStr;
 
+if (!function_exists('base_path')) {
+    function base_path(string $path = ''): string
+    {
+        $base = dirname(__DIR__, 3);
+
+        return $path ? $base . DIRECTORY_SEPARATOR . ltrim($path, DIRECTORY_SEPARATOR) : $base;
+    }
+}
+
 class UtilsRedisFake
 {
     public array $values = [];
@@ -154,6 +163,16 @@ class UtilsHttpStreamFake
     public function stream_stat(): array
     {
         return [];
+    }
+}
+
+class UtilsInstalledExtensionsFake extends Utils
+{
+    public static array $packages = [];
+
+    public static function getInstalledFleetbaseExtensions()
+    {
+        return static::$packages;
     }
 }
 
@@ -829,5 +848,96 @@ test('utils resolves package namespaces from root and server composer layouts', 
     } finally {
         Utils::deleteDirectory($rootPackage);
         Utils::deleteDirectory($serverPackage);
+    }
+});
+
+test('utils discovers extension seeders migrations and auth schemas from installed package metadata', function () {
+    $demoRoot     = base_path('vendor/acme/fleetbase-demo');
+    $fallbackRoot = base_path('vendor/acme/fleetbase-root-only');
+
+    Utils::deleteDirectory($demoRoot);
+    Utils::deleteDirectory($fallbackRoot);
+
+    mkdir($demoRoot . '/server/seeders', 0777, true);
+    mkdir($demoRoot . '/server/migrations', 0777, true);
+    mkdir($demoRoot . '/migrations', 0777, true);
+    mkdir($demoRoot . '/server/src/Auth/Schemas', 0777, true);
+    mkdir($fallbackRoot . '/seeders', 0777, true);
+    mkdir($fallbackRoot . '/migrations', 0777, true);
+    mkdir($fallbackRoot . '/src/Acme/Fallback/Auth/Schemas', 0777, true);
+
+    file_put_contents($demoRoot . '/server/seeders/DemoSeeder.php', '<?php');
+    file_put_contents($demoRoot . '/server/migrations/2026_07_25_000000_create_demo_table.php', '<?php');
+    file_put_contents($demoRoot . '/migrations/2026_07_25_000001_create_demo_root_table.php', '<?php');
+    file_put_contents($demoRoot . '/server/src/Auth/Schemas/Demo.php', '<?php');
+    file_put_contents($fallbackRoot . '/seeders/FallbackSeeder.php', '<?php');
+    file_put_contents($fallbackRoot . '/migrations/2026_07_25_000002_create_fallback_table.php', '<?php');
+    file_put_contents($fallbackRoot . '/src/Acme/Fallback/Auth/Schemas/Fallback.php', '<?php');
+
+    if (!class_exists('Acme\\Demo\\Auth\\Schemas\\Demo', false)) {
+        eval('namespace Acme\\Demo\\Auth\\Schemas; class Demo {}');
+    }
+
+    if (!class_exists('Acme\\Fallback\\Auth\\Schemas\\Fallback', false)) {
+        eval('namespace Acme\\Fallback\\Auth\\Schemas; class Fallback {}');
+    }
+
+    UtilsInstalledExtensionsFake::$packages = [
+        'acme/fleetbase-demo'      => [
+            'name'     => 'acme/fleetbase-demo',
+            'autoload' => [
+                'psr-4' => [
+                    'Acme\\Demo\\'          => 'server/src/',
+                    'Acme\\Demo\\Seeders\\' => 'server/seeders/',
+                ],
+            ],
+        ],
+        'acme/fleetbase-root-only' => [
+            'name'     => 'acme/fleetbase-root-only',
+            'autoload' => [
+                'psr-4' => [
+                    'Acme\\Fallback\\'          => 'src/',
+                    'Acme\\Fallback\\Seeders\\' => 'seeders/',
+                ],
+            ],
+        ],
+        'acme/fleetbase-empty'     => [
+            'name'     => 'acme/fleetbase-empty',
+            'autoload' => [
+                'psr-4' => [
+                    'Acme\\Empty\\' => 'server/src/',
+                ],
+            ],
+        ],
+    ];
+
+    try {
+        $seeders       = UtilsInstalledExtensionsFake::getSeederClassesFromExtensions();
+        $seederPaths   = UtilsInstalledExtensionsFake::getSeedersFromExtensions();
+        $migrationDirs = UtilsInstalledExtensionsFake::getMigrationDirectories();
+        $authSchemas   = UtilsInstalledExtensionsFake::getAuthSchemaNamespaces();
+
+        expect($seeders)->toContain('Acme\\Demo\\Seeders\\DemoSeeder')
+            ->and($seeders)->toContain('Acme\\Fallback\\Seeders\\FallbackSeeder')
+            ->and($seederPaths)->toContain([
+                'class' => 'Acme\\Demo\\Seeders\\DemoSeeder',
+                'path'  => $demoRoot . '/server/seeders/DemoSeeder.php',
+            ])
+            ->and($seederPaths)->toContain([
+                'class' => 'Acme\\Fallback\\Seeders\\FallbackSeeder',
+                'path'  => $fallbackRoot . '/seeders/FallbackSeeder.php',
+            ])
+            ->and($migrationDirs)->toContain($demoRoot . '/server/migrations/')
+            ->and($migrationDirs)->toContain($demoRoot . '//migrations/')
+            ->and($migrationDirs)->toContain($fallbackRoot . '//migrations/')
+            ->and(UtilsInstalledExtensionsFake::getMigrationDirectoryForExtension('acme/fleetbase-demo'))->toBe($demoRoot . '/server/migrations/')
+            ->and(UtilsInstalledExtensionsFake::getMigrationDirectoryForExtension('acme/fleetbase-root-only'))->toBe($fallbackRoot . '//migrations/')
+            ->and(UtilsInstalledExtensionsFake::getMigrationDirectoryForExtension('acme/missing'))->toBeNull()
+            ->and($authSchemas)->toContain('Acme\\Demo\\Auth\\Schemas\\Demo')
+            ->and($authSchemas)->toContain('Acme\\Fallback\\Auth\\Schemas\\Fallback');
+    } finally {
+        UtilsInstalledExtensionsFake::$packages = [];
+        Utils::deleteDirectory($demoRoot);
+        Utils::deleteDirectory($fallbackRoot);
     }
 });
