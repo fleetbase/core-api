@@ -3,6 +3,7 @@
 use Fleetbase\Http\Controllers\Internal\v1\AuthController;
 use Fleetbase\Http\Requests\AdminRequest;
 use Fleetbase\Http\Requests\ChangePasswordRequest;
+use Fleetbase\Http\Requests\JoinOrganizationRequest;
 use Fleetbase\Http\Requests\LoginRequest;
 use Fleetbase\Models\User;
 use Illuminate\Database\Capsule\Manager as Capsule;
@@ -12,6 +13,13 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Facade;
+
+if (!function_exists('base_path')) {
+    function base_path(string $path = ''): string
+    {
+        return getcwd() . ($path ? DIRECTORY_SEPARATOR . $path : '');
+    }
+}
 
 class AuthControllerLoginBootstrapCacheFake
 {
@@ -314,6 +322,19 @@ function auth_controller_login_bootstrap_database(): Capsule
         $table->string('model_type');
         $table->string('model_uuid');
     });
+    $schema->create('invites', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('company_uuid')->nullable();
+        $table->string('subject_uuid')->nullable();
+        $table->string('subject_type')->nullable();
+        $table->string('created_by_uuid')->nullable();
+        $table->string('protocol')->nullable();
+        $table->string('reason')->nullable();
+        $table->json('recipients')->nullable();
+        $table->timestamp('expires_at')->nullable();
+        $table->timestamp('deleted_at')->nullable();
+        $table->timestamps();
+    });
 
     session()->flush();
 
@@ -364,6 +385,47 @@ function auth_controller_authenticated_request(string $method, array $input, Use
     session(['user' => $user->uuid, 'company' => $user->company_uuid]);
 
     return $request;
+}
+
+function auth_controller_join_organization_request(User $user, string $publicId): JoinOrganizationRequest
+{
+    /** @var JoinOrganizationRequest $request */
+    $request = auth_controller_authenticated_request(
+        'POST',
+        ['next' => $publicId],
+        $user,
+        '/int/v1/organizations/join',
+        JoinOrganizationRequest::class
+    );
+
+    return $request;
+}
+
+function auth_controller_insert_company(Capsule $capsule, array $attributes = []): void
+{
+    $capsule->getConnection('mysql')->table('companies')->insert(array_merge([
+        'uuid'                    => 'company-join',
+        'public_id'               => 'company_join_public',
+        'owner_uuid'              => 'owner-user',
+        'name'                    => 'Joinable Company',
+        'description'             => 'Accepts invited users',
+        'phone'                   => '+15555550999',
+        'logo_uuid'               => null,
+        'backdrop_uuid'           => null,
+        'options'                 => null,
+        'currency'                => 'USD',
+        'country'                 => 'US',
+        'timezone'                => 'UTC',
+        'plan'                    => 'starter',
+        'trial_ends_at'           => null,
+        'status'                  => 'active',
+        'type'                    => 'business',
+        'slug'                    => 'joinable-company',
+        'onboarding_completed_at' => null,
+        'created_at'              => '2026-07-18 10:00:00',
+        'updated_at'              => '2026-07-18 10:00:00',
+        'deleted_at'              => null,
+    ], $attributes));
 }
 
 afterEach(function () {
@@ -690,6 +752,42 @@ test('get user organizations returns active membership organizations with cache 
         ])
         ->and($payload['data'][0]['users_count'])->toBe(1)
         ->and($payload['data'][0]['onboarding_completed'])->toBeTrue();
+});
+
+test('join organization requires an invite before modifying membership or session', function () {
+    $capsule = auth_controller_login_bootstrap_database();
+    auth_controller_login_insert_user($capsule, [
+        'uuid'         => 'joining-user',
+        'email'        => 'joining@example.test',
+        'company_uuid' => 'company-current',
+        'type'         => 'admin',
+    ]);
+    auth_controller_insert_company($capsule, [
+        'uuid'      => 'company-join',
+        'public_id' => 'company_join_public',
+    ]);
+
+    $response = (new AuthController())->joinOrganization(
+        auth_controller_join_organization_request(User::find('joining-user'), 'company_join_public')
+    );
+
+    expect($response->getStatusCode())->toBe(400)
+        ->and($response->getData(true))->toBe([
+            'errors' => ['User has not been invited to join this organization.'],
+        ])
+        ->and($capsule->getConnection('mysql')->table('company_users')->where('user_uuid', 'joining-user')->count())->toBe(0)
+        ->and(session('company'))->toBe('company-current');
+});
+
+test('auth services response returns unique configured authorization schema names', function () {
+    auth_controller_login_bootstrap_database();
+
+    $response = (new AuthController())->services();
+    $payload  = $response->getData(true);
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($payload)->toBeArray()
+        ->and($payload)->toBe(array_values(array_unique($payload)));
 });
 
 test('admin password change enforces authorization target and confirmation contracts', function () {
