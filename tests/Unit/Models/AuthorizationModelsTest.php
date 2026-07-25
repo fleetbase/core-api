@@ -90,7 +90,15 @@ class AuthorizationModelsPermissionRegistrarFake
     public function forgetWildcardPermissionIndex(mixed $record = null): void
     {
     }
+
+    public function forgetCachedPermissions(): void
+    {
+    }
 }
+
+afterEach(function () {
+    Illuminate\Support\Carbon::setTestNow();
+});
 
 function authorization_models_database(): Capsule
 {
@@ -112,6 +120,7 @@ function authorization_models_database(): Capsule
             return true;
         }
     });
+    $container->instance('cache', new AuthorizationModelsTaggedCacheFake());
     $container->instance(PermissionRegistrar::class, new AuthorizationModelsPermissionRegistrarFake());
 
     $connection = [
@@ -138,6 +147,16 @@ function authorization_models_database(): Capsule
         $table->string('role_id')->nullable();
         $table->string('model_type')->nullable();
         $table->string('model_uuid')->nullable();
+    });
+    $schema->create('roles', function ($table) {
+        $table->string('id')->primary();
+        $table->string('company_uuid')->nullable();
+        $table->string('name')->nullable();
+        $table->string('guard_name')->nullable();
+        $table->string('service')->nullable();
+        $table->string('description')->nullable();
+        $table->timestamps();
+        $table->softDeletes();
     });
     $schema->create('permissions', function ($table) {
         $table->string('id')->primary();
@@ -204,7 +223,8 @@ it('merges direct role policy and role-policy permissions for company users', fu
 });
 
 it('exposes role policy and permission mutator and response metadata contracts', function () {
-    bind_test_container([
+    authorization_models_database();
+    config([
         'auth.defaults.guard' => 'web',
     ]);
 
@@ -214,6 +234,18 @@ it('exposes role policy and permission mutator and response metadata contracts',
     $companyRole->setRawAttributes(['name' => 'Dispatcher', 'company_uuid' => 'company-1'], true);
     $companyRole->permissions = ['orders.view'];
     $companyRole->setAttribute('guard_name', 'api');
+
+    Illuminate\Support\Carbon::setTestNow(Illuminate\Support\Carbon::parse('2026-07-18 09:00:00', 'UTC'));
+    $persistedRole = Role::create([
+        'id'           => 'role-update-hook',
+        'company_uuid' => 'company-1',
+        'name'         => 'Before update',
+        'guard_name'   => 'sanctum',
+    ]);
+
+    Illuminate\Support\Carbon::setTestNow(Illuminate\Support\Carbon::parse('2026-07-18 10:15:00', 'UTC'));
+    $persistedRole->name = 'After update';
+    $persistedRole->save();
 
     $globalPolicy               = new Policy(['name' => 'Manage billing']);
     $companyPolicy              = new Policy(['name' => 'View reports', 'company_uuid' => 'company-1']);
@@ -230,6 +262,7 @@ it('exposes role policy and permission mutator and response metadata contracts',
         ->and($companyRole->is_deletable)->toBeTrue()
         ->and($companyRole->getAttributes())->not->toHaveKey('permissions')
         ->and($companyRole->getAttribute('guard_name'))->toBe('sanctum')
+        ->and($persistedRole->refresh()->updated_at->toDateTimeString())->toBe('2026-07-18 10:15:00')
         ->and($globalPolicy->getAttribute('guard_name'))->toBe('sanctum')
         ->and($globalPolicy->type)->toBe('FLB Managed')
         ->and($companyPolicy->type)->toBe('Organization Managed')

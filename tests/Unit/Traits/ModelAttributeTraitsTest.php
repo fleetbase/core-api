@@ -1,5 +1,6 @@
 <?php
 
+use Fleetbase\Traits\HasCacheableAttributes;
 use Fleetbase\Traits\HasMetaAttributes;
 use Fleetbase\Traits\HasOptionsAttributes;
 use Fleetbase\Traits\HasPresence;
@@ -43,6 +44,18 @@ class ModelAttributeTraitsPresenceRecord
     }
 }
 
+class ModelAttributeTraitsCacheableRecord extends Model
+{
+    use HasCacheableAttributes;
+
+    protected $table      = 'cacheable_trait_records';
+    protected $primaryKey = 'uuid';
+    public $incrementing  = false;
+    protected $keyType    = 'string';
+    public $timestamps    = false;
+    protected $guarded    = [];
+}
+
 class ModelAttributeTraitsCacheFake
 {
     public array $values  = [];
@@ -64,6 +77,65 @@ class ModelAttributeTraitsCacheFake
     {
         $this->deleted[] = $key;
         unset($this->values[$key]);
+
+        return true;
+    }
+}
+
+class ModelAttributeTraitsTaggedCacheFake
+{
+    public array $values    = [];
+    public array $tags      = [];
+    public array $puts      = [];
+    public array $forever   = [];
+    public array $forgotten = [];
+    public array $flushed   = [];
+
+    private array $activeTags = [];
+
+    public function tags(array|string $tags): self
+    {
+        $this->activeTags = (array) $tags;
+        $this->tags[]     = $this->activeTags;
+
+        return $this;
+    }
+
+    public function get(string $key, mixed $default = null): mixed
+    {
+        return $this->values[$key] ?? $default;
+    }
+
+    public function put(string $key, mixed $value, mixed $ttl = null): bool
+    {
+        $this->values[$key] = $value;
+        $this->puts[]       = [$this->activeTags, $key, $value, $ttl];
+
+        return true;
+    }
+
+    public function rememberForever(string $key, Closure $callback): mixed
+    {
+        if (!array_key_exists($key, $this->values)) {
+            $this->values[$key] = $callback();
+        }
+
+        $this->forever[] = [$this->activeTags, $key];
+
+        return $this->values[$key];
+    }
+
+    public function forget(string $key): bool
+    {
+        $this->forgotten[] = $key;
+        unset($this->values[$key]);
+
+        return true;
+    }
+
+    public function flush(): bool
+    {
+        $this->flushed[] = $this->activeTags;
 
         return true;
     }
@@ -224,6 +296,34 @@ test('has session attributes tracks strict session agnostic columns', function (
         ->and($record->getSessionAgnosticColumns())->toBe(['company_uuid', 'created_by_uuid'])
         ->and($record->isSessionAgnosticColumn('company_uuid'))->toBeTrue()
         ->and($record->isSessionAgnosticColumn('Company_UUID'))->toBeFalse();
+});
+
+test('has cacheable attributes reads writes forever remembers and flushes model attribute cache', function () {
+    bind_test_container();
+    $cache = new ModelAttributeTraitsTaggedCacheFake();
+    Cache::swap($cache);
+
+    $record = new ModelAttributeTraitsCacheableRecord([
+        'uuid' => 'record-cache-1',
+        'name' => 'Alpha',
+    ]);
+
+    $cacheKey         = 'model_attribute_cache:connection:cacheable_trait_records:record-cache-1:name';
+    $computedCacheKey = 'model_attribute_cache:connection:cacheable_trait_records:record-cache-1:computed';
+    $tag              = 'model_attribute_cache:connection:cacheable_trait_records:record-cache-1';
+
+    expect($record->fromCache('name'))->toBe('Alpha')
+        ->and($cache->values[$cacheKey])->toBe('Alpha');
+
+    $record->name = 'Beta';
+
+    expect($record->rememberAttribute('name'))->toBe('Alpha')
+        ->and($record->rememberAttributeForever('computed', fn () => 'Forever'))->toBe('Forever')
+        ->and($cache->forever)->toBe([[[$tag], $computedCacheKey]])
+        ->and($record->forgetAttribute('name'))->toBeTrue()
+        ->and($cache->forgotten)->toBe([$cacheKey])
+        ->and($record->flushAttributesCache())->toBeTrue()
+        ->and($cache->flushed)->toContain([$tag]);
 });
 
 test('has presence records last seen state and evaluates online windows', function () {

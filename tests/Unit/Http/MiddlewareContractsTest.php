@@ -67,6 +67,16 @@ namespace {
         protected array $except = ['health'];
     }
 
+    class MiddlewareContractsCustomMiddlewareHarness
+    {
+        use Fleetbase\Traits\CustomMiddleware;
+
+        public function runningUnitTestsPublic(): bool
+        {
+            return $this->runningUnitTests();
+        }
+    }
+
     class MiddlewareContractsTestRoute
     {
         public array $action = [];
@@ -847,6 +857,10 @@ namespace {
         });
 
         expect($response->getData(true))->toBe(['ok' => true]);
+    });
+
+    test('custom middleware detects the unit test console runtime', function () {
+        expect((new MiddlewareContractsCustomMiddlewareHarness())->runningUnitTestsPublic())->toBeTrue();
     });
 
     test('reset json resource wrap disables default resource data envelope', function () {

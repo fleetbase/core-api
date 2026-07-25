@@ -4,6 +4,7 @@ use Fleetbase\Expansions\Arr as ArrExpansion;
 use Fleetbase\Expansions\Blade as BladeExpansion;
 use Fleetbase\Expansions\Builder as BuilderExpansion;
 use Fleetbase\Expansions\Carbon as CarbonExpansion;
+use Fleetbase\Expansions\PendingResourceRegistration as PendingResourceRegistrationExpansion;
 use Fleetbase\Expansions\Request as RequestExpansion;
 use Fleetbase\Expansions\Response as ResponseExpansion;
 use Fleetbase\Expansions\Str as StrExpansion;
@@ -248,6 +249,8 @@ test('string carbon and blade expansions preserve formatting contracts', functio
     $fromString = $carbonExpansion->fromString()->bindTo(null, Carbon::class);
 
     expect(BladeExpansion::target())->toBe(Illuminate\Support\Facades\Blade::class)
+        ->and(CarbonExpansion::target())->toBe(Carbon::class)
+        ->and(PendingResourceRegistrationExpansion::target())->toBe(Illuminate\Routing\PendingResourceRegistration::class)
         ->and(\Fleetbase\Expansions\args(' created_at , "Y-m-d" '))->toBe(['created_at', '"Y-m-d"'])
         ->and(\Fleetbase\Expansions\args(['created_at', 'timestamp']))->toBe(['created_at', 'timestamp'])
         ->and($humanize('apiCredentialID'))->toBe('API credential i d')
@@ -549,6 +552,8 @@ test('response expansion helpers keep internal and public error response shapes 
     $apiError           = $responseExpansion->apiError()->bindTo($factory, CoreExpansionResponseFactoryFake::class);
     $authorizationError = $responseExpansion->authorizationError()->bindTo($factory, CoreExpansionResponseFactoryFake::class);
     $compressedJson     = $responseExpansion->compressedJson()->bindTo($factory, CoreExpansionResponseFactoryFake::class);
+
+    expect(ResponseExpansion::target())->toBe(Illuminate\Support\Facades\Response::class);
 
     $internalResponse = $error('Unable to continue', 409, ['code' => 'conflict']);
     $messageBagError  = $error(new MessageBag(['email' => ['Email is required.'], 'name' => ['Name is required.']]), 422);

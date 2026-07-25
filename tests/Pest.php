@@ -378,6 +378,16 @@ namespace {
                 ? $this->make('config')->get('app.debug', false)
                 : false);
         }
+
+        public function runningInConsole(): bool
+        {
+            return true;
+        }
+
+        public function runningUnitTests(): bool
+        {
+            return true;
+        }
     }
 
     function bind_test_container(array $config = []): Container

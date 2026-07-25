@@ -163,6 +163,8 @@ afterEach(function () {
 test('route expansion registers rest routes with default controller callback and bulk delete ordering', function () {
     $router = route_expansion_router();
 
+    expect(Fleetbase\Expansions\Route::target())->toBe(Illuminate\Support\Facades\Route::class);
+
     $pending = $router->fleetbaseRestRoutes('delivery-zones', function (Router $router) {
         $router->get('delivery-zones/map', 'DeliveryZoneController@map');
     });

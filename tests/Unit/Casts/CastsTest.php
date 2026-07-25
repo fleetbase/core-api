@@ -89,6 +89,7 @@ test('money cast stores values as integer minor-unit-like digits', function () {
         ->and($cast->set($model, 'amount', null, []))->toBe(0)
         ->and($cast->set($model, 'amount', '$1,234.56', []))->toBe(123456)
         ->and($cast->set($model, 'amount', 'MNT ₮9,900', []))->toBe(9900)
+        ->and(Money::apply(null))->toBe(0)
         ->and(Money::apply('€7.05'))->toBe(705)
         ->and(Money::removeCurrencySymbols('$€£¥₹¢฿₽₪₩₮100'))->toBe('100')
         ->and(Money::removeSpecialCharactersExceptDotAndComma('USD 1,234.56!!'))->toBe('1,234.56');

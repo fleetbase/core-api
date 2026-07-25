@@ -983,13 +983,25 @@ test('chat message and log filters expose only tenant channels with current user
         ->and(concrete_filter_uuids(ChatLogFilter::class, ChatLog::class, [], 'v1/chat-logs'))->toBe(['log-visible']);
 });
 
-test('chat channel filter delegates free text query to searchable builder', function () {
+test('chat filters delegate free text queries to searchable builders', function () {
     $builder = new ConcreteFilterSearchBuilderFake();
     $filter  = concrete_filter_with_any_builder(new ChatChannelFilter(concrete_filter_request([], 'int/v1/chat-channels')), $builder);
 
     $filter->query('dispatch');
 
-    expect($builder->queries)->toBe(['dispatch']);
+    $messageBuilder = new ConcreteFilterSearchBuilderFake();
+    $messageFilter  = concrete_filter_with_any_builder(new ChatMessageFilter(concrete_filter_request([], 'int/v1/chat-messages')), $messageBuilder);
+
+    $messageFilter->query('pickup');
+
+    $logBuilder = new ConcreteFilterSearchBuilderFake();
+    $logFilter  = concrete_filter_with_any_builder(new ChatLogFilter(concrete_filter_request([], 'int/v1/chat-logs')), $logBuilder);
+
+    $logFilter->query('delivered');
+
+    expect($builder->queries)->toBe(['dispatch'])
+        ->and($messageBuilder->queries)->toBe(['pickup'])
+        ->and($logBuilder->queries)->toBe(['delivered']);
 });
 
 test('category filter applies tenant core parent and list filters', function () {

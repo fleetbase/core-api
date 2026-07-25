@@ -78,7 +78,7 @@ trait HasCacheableAttributes
      */
     public function rememberAttributeForever($key, $default = null)
     {
-        return $this->rememberAttribute($this, $key, $default, -1);
+        return $this->rememberAttribute($key, $default, -1);
     }
 
     /**
