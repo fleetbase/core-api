@@ -12,6 +12,14 @@ class HasPoliciesSubject extends Model
 {
     use HasPolicies;
 
+    public array $detachedPolicies = [];
+
+    public array $loadedRelations = [];
+
+    public array $syncedPolicies = [];
+
+    public ?bool $forceDeletingForTest = null;
+
     public function getDefaultGuardName(): string
     {
         return 'sanctum';
@@ -25,6 +33,38 @@ class HasPoliciesSubject extends Model
     public function resolveStoredPolicy(string|Policy $policy): Policy
     {
         return $this->getStoredPolicy($policy);
+    }
+
+    public function policies()
+    {
+        return new HasPoliciesRelationFake($this);
+    }
+
+    public function load($relations)
+    {
+        $this->loadedRelations[] = $relations;
+
+        return $this;
+    }
+
+    public function forgetCachedPermissions()
+    {
+        return true;
+    }
+
+    public function getModel()
+    {
+        return $this;
+    }
+
+    public function fireSavedEventForTest(): void
+    {
+        $this->fireModelEvent('saved', false);
+    }
+
+    public function isForceDeleting(): bool
+    {
+        return (bool) $this->forceDeletingForTest;
     }
 }
 
@@ -85,6 +125,25 @@ class HasPoliciesBuilderFake extends Builder
         $this->whereInCalls[] = compact('column', 'values', 'boolean', 'not');
 
         return $this;
+    }
+}
+
+class HasPoliciesRelationFake
+{
+    public function __construct(private HasPoliciesSubject $subject)
+    {
+    }
+
+    public function detach(mixed $policies = null): void
+    {
+        $this->subject->detachedPolicies[] = $policies;
+    }
+
+    public function sync(array $policies, bool $detaching = true): void
+    {
+        $policies = array_values($policies);
+
+        $this->subject->syncedPolicies[] = compact('policies', 'detaching');
     }
 }
 
@@ -266,4 +325,71 @@ test('has policies avoids recursive policy permission lookups for policy role an
         ->and($policy->getPermissionsViaRolePolicies())->toBeEmpty()
         ->and($role->getPermissionsViaRolePolicies())->toBeEmpty()
         ->and($permission->getPermissionsViaRolePolicies())->toBeEmpty();
+});
+
+test('has policies assign remove and sync mutate policy relations through stable side effects', function () {
+    $repository = new HasPoliciesPolicyRepositoryFake();
+    $subject    = has_policies_subject();
+    app()->instance(Policy::class, $repository);
+
+    $subject->exists = true;
+
+    expect($subject->assignPolicy('', null, 'Dispatch Manager', has_policies_policy('policy-direct', 'Direct Policy')))->toBe($subject)
+        ->and($subject->syncedPolicies)->toBe([
+            ['policies' => ['policy-resolved-name', 'policy-direct'], 'detaching' => false],
+        ])
+        ->and($subject->loadedRelations)->toBe(['policies'])
+        ->and($repository->calls)->toBe([
+            ['findByName', 'Dispatch Manager', 'sanctum'],
+        ]);
+
+    $subject->removePolicy('Dispatch Manager');
+
+    expect($subject->detachedPolicies[0])->toBeInstanceOf(Policy::class)
+        ->and($subject->detachedPolicies[0]->name)->toBe('Dispatch Manager')
+        ->and($subject->loadedRelations)->toBe(['policies', 'policies']);
+
+    $subject->syncPolicies('Billing Manager');
+
+    expect($subject->detachedPolicies[1])->toBeNull()
+        ->and($subject->syncedPolicies[1])->toBe([
+            'policies'  => ['policy-resolved-name'],
+            'detaching' => false,
+        ]);
+});
+
+test('has policies defers assignment for unsaved models and detaches on force delete only', function () {
+    $repository = new HasPoliciesPolicyRepositoryFake();
+    $subject    = has_policies_subject();
+    app()->instance(Policy::class, $repository);
+
+    HasPoliciesSubject::setEventDispatcher(new Illuminate\Events\Dispatcher(app()));
+
+    $subject->exists = false;
+    $subject->assignPolicy('Dispatch Manager');
+
+    expect($subject->syncedPolicies)->toBe([]);
+
+    $subject->fireSavedEventForTest();
+
+    expect($subject->syncedPolicies)->toBe([
+        ['policies' => ['policy-resolved-name'], 'detaching' => false],
+    ])
+        ->and($subject->loadedRelations)->toBe(['policies']);
+
+    $softDeleting                        = has_policies_subject();
+    $softDeleting->forceDeletingForTest  = false;
+    $forceDeleting                       = has_policies_subject();
+    $forceDeleting->forceDeletingForTest = true;
+    $dispatcher                          = new Illuminate\Events\Dispatcher(app());
+    HasPoliciesSubject::flushEventListeners();
+    HasPoliciesSubject::setEventDispatcher($dispatcher);
+    HasPoliciesSubject::bootHasPolicies();
+    $listeners = $dispatcher->getListeners('eloquent.deleting: ' . HasPoliciesSubject::class);
+
+    $listeners[0]('eloquent.deleting: ' . HasPoliciesSubject::class, [$softDeleting]);
+    $listeners[0]('eloquent.deleting: ' . HasPoliciesSubject::class, [$forceDeleting]);
+
+    expect($softDeleting->detachedPolicies)->toBe([])
+        ->and($forceDeleting->detachedPolicies)->toBe([null]);
 });
