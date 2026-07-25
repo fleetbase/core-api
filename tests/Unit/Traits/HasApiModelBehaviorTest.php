@@ -3,8 +3,10 @@
 use Fleetbase\Models\Model;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Illuminate\Database\Capsule\Manager as Capsule;
+use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Events\Dispatcher;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Cache;
@@ -61,7 +63,7 @@ class HasApiModelBehaviorRouteFake
 
     public object $controller;
 
-    public function __construct()
+    public function __construct(private string $uri = 'api/v1/records')
     {
         $this->controller = new HasApiModelBehaviorControllerFake();
     }
@@ -82,7 +84,7 @@ class HasApiModelBehaviorRouteFake
 
     public function uri(): string
     {
-        return 'api/v1/records';
+        return ltrim($this->uri, '/');
     }
 }
 
@@ -151,6 +153,18 @@ class HasApiModelBehaviorOptionRecord extends HasApiModelBehaviorRecord
     protected $option_key = 'uuid';
 
     protected $option_label = 'name';
+}
+
+class HasApiModelBehaviorCustomCreationRecord extends HasApiModelBehaviorRecord
+{
+    protected $creationMethod = 'createFromContract';
+
+    public function createFromContract(array $input): HasApiModelBehaviorRecord
+    {
+        $input['status'] = 'custom-created';
+
+        return static::create($input);
+    }
 }
 
 class HasApiModelBehaviorSnakeRelationRecord extends Model
@@ -315,7 +329,7 @@ function has_api_model_behavior_request(array $input = [], string $uri = '/api/v
     }
 
     $request = Request::create($uri, $method, $input);
-    $request->setRouteResolver(fn () => new HasApiModelBehaviorRouteFake());
+    $request->setRouteResolver(fn () => new HasApiModelBehaviorRouteFake($uri));
     app()->instance('request', $request);
 
     return $request;
@@ -458,6 +472,59 @@ test('api model behavior applies optimized filters sorting pagination and relati
         ->and($record->childItems)->toHaveCount(2);
 });
 
+test('api model behavior query helpers support callbacks cache bypass and internal pagination', function () {
+    $capsule = has_api_model_behavior_database();
+    has_api_model_behavior_seed_records($capsule);
+
+    EloquentBuilder::macro('fastPaginate', function (int $perPage = 15, array $columns = ['*']) {
+        $total = $this->count();
+        $items = $this->limit($perPage)->get($columns)->all();
+
+        return new class($items, $total) {
+            public function __construct(private array $items, private int $total)
+            {
+            }
+
+            public function items(): array
+            {
+                return $this->items;
+            }
+
+            public function total(): int
+            {
+                return $this->total;
+            }
+        };
+    });
+
+    $callbackRequest = has_api_model_behavior_request([
+        'limit' => -1,
+        'page'  => 2,
+    ]);
+    $callbackResults = HasApiModelBehaviorRecord::queryWithRequest($callbackRequest, function ($builder, Request $request) {
+        $builder->where('company_uuid', 'company-a')
+            ->where('amount', '>', 20);
+
+        expect($request->integer('page'))->toBe(2);
+    }, withoutCache: true);
+
+    $withoutCacheResults = HasApiModelBehaviorRecord::withoutCache()->queryFromRequest(has_api_model_behavior_request([
+        'company_uuid' => 'company-a',
+        'limit'        => 1,
+        'offset'       => 1,
+    ]));
+
+    $internal = (new HasApiModelBehaviorRecord())->queryFromRequest(has_api_model_behavior_request([
+        'company_uuid' => 'company-a',
+        'limit'        => 1,
+    ], '/int/v1/records'));
+
+    expect($callbackResults->pluck('uuid')->all())->toBe(['record-2'])
+        ->and($withoutCacheResults->pluck('uuid')->all())->toBe(['record-2'])
+        ->and($internal->items())->toHaveCount(1)
+        ->and($internal->total())->toBe(2);
+});
+
 test('api model behavior scopes reads updates and bulk deletion to the session company', function () {
     $capsule = has_api_model_behavior_database();
     has_api_model_behavior_seed_records($capsule);
@@ -486,6 +553,64 @@ test('api model behavior scopes reads updates and bulk deletion to the session c
         ->and($deleteCount)->toBe(1)
         ->and($capsule->getConnection('mysql')->table('api_model_behavior_records')->where('uuid', 'record-2')->whereNotNull('deleted_at')->exists())->toBeTrue()
         ->and($capsule->getConnection('mysql')->table('api_model_behavior_records')->where('uuid', 'record-3')->whereNull('deleted_at')->exists())->toBeTrue();
+});
+
+test('api model behavior create and update callbacks can return response contracts', function () {
+    $capsule = has_api_model_behavior_database();
+    has_api_model_behavior_seed_records($capsule);
+    session(['user' => 'session-user', 'company' => 'company-a']);
+
+    $model = new HasApiModelBehaviorRecord();
+
+    $beforeCreate = $model->createRecordFromRequest(
+        has_api_model_behavior_request(['name' => 'Blocked create'], method: 'POST'),
+        fn () => response()->json(['blocked' => 'before-create'], 409)
+    );
+    $afterCreate = $model->createRecordFromRequest(
+        has_api_model_behavior_request([
+            'uuid'      => 'record-after-create',
+            'public_id' => 'record_after_create',
+            'name'      => 'After create',
+        ], method: 'POST'),
+        null,
+        fn () => response()->json(['blocked' => 'after-create'], 202)
+    );
+    $customCreated = (new HasApiModelBehaviorCustomCreationRecord())->createRecordFromRequest(
+        has_api_model_behavior_request([
+            'uuid'      => 'record-custom',
+            'public_id' => 'record_custom',
+            'name'      => 'Custom create',
+        ], method: 'POST'),
+        options: ['return_object' => true]
+    );
+    $beforeUpdate = $model->updateRecordFromRequest(
+        has_api_model_behavior_request(['name' => 'Blocked update'], method: 'PATCH'),
+        'record_alpha',
+        fn () => response()->json(['blocked' => 'before-update'], 409)
+    );
+    $afterUpdate = $model->updateRecordFromRequest(
+        has_api_model_behavior_request(['name' => 'After update'], method: 'PATCH'),
+        'record_alpha',
+        null,
+        fn () => response()->json(['blocked' => 'after-update'], 202)
+    );
+
+    expect($beforeCreate)->toBeInstanceOf(JsonResponse::class)
+        ->and($beforeCreate->getStatusCode())->toBe(409)
+        ->and($beforeCreate->getData(true))->toBe(['blocked' => 'before-create'])
+        ->and($afterCreate)->toBeInstanceOf(JsonResponse::class)
+        ->and($afterCreate->getStatusCode())->toBe(202)
+        ->and($afterCreate->getData(true))->toBe(['blocked' => 'after-create'])
+        ->and($customCreated->uuid)->toBe('record-custom')
+        ->and($customCreated->status)->toBe('custom-created')
+        ->and($customCreated->company_uuid)->toBe('company-a')
+        ->and($beforeUpdate)->toBeInstanceOf(JsonResponse::class)
+        ->and($beforeUpdate->getStatusCode())->toBe(409)
+        ->and($beforeUpdate->getData(true))->toBe(['blocked' => 'before-update'])
+        ->and($afterUpdate)->toBeInstanceOf(JsonResponse::class)
+        ->and($afterUpdate->getStatusCode())->toBe(202)
+        ->and($afterUpdate->getData(true))->toBe(['blocked' => 'after-update'])
+        ->and($capsule->getConnection('mysql')->table('api_model_behavior_records')->where('uuid', 'record-1')->value('name'))->toBe('After update');
 });
 
 test('api model behavior validates update parameters and find record scoping contracts', function () {
