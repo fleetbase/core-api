@@ -214,6 +214,23 @@ test('route expansion wraps custom fleetbase routes and preserves generated cont
         ->toBe('WidgetController@bulkDelete');
 });
 
+test('route expansion registers prefixed rest route groups from slash separated names', function () {
+    $router = route_expansion_router();
+
+    $router->fleetbaseRestRoutes('admin/widgets', 'AdminWidgetController')->register();
+
+    $routes = route_expansion_rows($router);
+
+    expect(route_expansion_find($routes, 'GET', 'admin/widgets')['action'])
+        ->toBe('AdminWidgetController@queryRecord')
+        ->and(route_expansion_find($routes, 'POST', 'admin/widgets')['action'])
+        ->toBe('AdminWidgetController@createRecord')
+        ->and(route_expansion_find($routes, 'DELETE', 'admin/widgets/bulk-delete')['action'])
+        ->toBe('AdminWidgetController@bulkDelete')
+        ->and(route_expansion_find($routes, 'GET', 'admin/widgets/{widget}')['action'])
+        ->toBe('AdminWidgetController@findRecord');
+});
+
 test('route expansion registers public and protected auth routes and extension callbacks', function () {
     $router = route_expansion_router();
 
