@@ -64,6 +64,26 @@ class CompanyModelRoleSpy extends Company
     }
 }
 
+class CompanyModelAssignUserSpy extends Company
+{
+    public array $addedUsers = [];
+    private CompanyUser $createdCompanyUser;
+
+    public function __construct(?CompanyUser $companyUser = null)
+    {
+        parent::__construct();
+        $this->createdCompanyUser = $companyUser ?? new CompanyUser();
+        $this->setRawAttributes(['uuid' => 'company-1'], true);
+    }
+
+    public function addUser(User $user, string $role = 'Administrator', string $status = 'active'): CompanyUser
+    {
+        $this->addedUsers[] = [$user->uuid, $role, $status];
+
+        return $this->createdCompanyUser;
+    }
+}
+
 function company_model_container(): void
 {
     $container = bind_test_container();
@@ -253,6 +273,29 @@ it('changes company user roles and reports missing or failing pivot assignments'
 
     expect(fn () => (new CompanyModelRoleSpy(new CompanyModelCompanyUserSpy(true)))->changeUserRole($user, 'Dispatcher'))
         ->toThrow(Exception::class, 'Role assignment failed. Please try again later.');
+});
+
+it('assigns users through company membership and active company helpers', function () {
+    company_model_container();
+
+    $user = new class extends User {
+        public array $assignedCompanies = [];
+
+        public function assignCompany(Company $company, string $role = 'Administrator'): User
+        {
+            $this->assignedCompanies[] = [$company->uuid, $role];
+
+            return $this;
+        }
+    };
+    $user->setRawAttributes(['uuid' => 'user-1'], true);
+
+    $companyUser = new CompanyModelCompanyUserSpy();
+    $company     = new CompanyModelAssignUserSpy($companyUser);
+
+    expect($company->assignUser($user, 'Dispatcher'))->toBe($companyUser)
+        ->and($company->addedUsers)->toBe([['user-1', 'Dispatcher', 'active']])
+        ->and($user->assignedCompanies)->toBe([['company-1', 'Administrator']]);
 });
 
 it('resolves the current company from session using the configured connection', function () {

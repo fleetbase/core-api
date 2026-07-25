@@ -134,8 +134,11 @@ class ReportModelRegistrySpy extends ReportSchemaRegistry
 
 function report_model_container(): ReportModelCacheFake
 {
+    Illuminate\Database\Eloquent\Model::clearBootedModels();
+
     $container = bind_test_container([
-        'reports.cache_ttl' => 900,
+        'fleetbase.connection.db' => 'mysql',
+        'reports.cache_ttl'       => 900,
     ]);
 
     $connection = [
@@ -242,6 +245,12 @@ it('validates report query config shape and exposes simple source metadata', fun
     expect(fn () => $report->assertValidQueryConfig())
         ->toThrow(InvalidArgumentException::class, 'Query configuration is required');
 
+    expect($report->getQueryComplexity())->toBe('invalid')
+        ->and($report->export('csv'))->toBe([
+            'success' => false,
+            'error'   => 'Query configuration is required',
+        ]);
+
     $report->query_config = ['table' => ['name' => 'orders']];
 
     expect(fn () => $report->assertValidQueryConfig())
@@ -328,6 +337,15 @@ it('classifies query complexity and summarizes filters joins and auto joins', fu
     ]);
 
     expect($wideReport->getQueryComplexity())->toBe('complex');
+
+    $filteredReport               = new Report();
+    $filteredReport->query_config = report_model_query_config([
+        'conditions' => [
+            ['field' => 'status', 'operator' => '=', 'value' => 'pending'],
+        ],
+    ]);
+
+    expect($filteredReport->getQueryComplexity())->toBe('moderate');
 });
 
 it('caches and clears report result payloads with stable report cache keys', function () {

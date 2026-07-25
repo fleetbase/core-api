@@ -50,6 +50,12 @@ test('template string resolves placeholders with modifier syntaxes and escaping'
     expect($resolved)->toBe('Ref ORDER_A_B_C; next Pickup; plural boxes; literal {empty}')
         ->and(TemplateString::resolve('Missing [{empty}]', $model))->toBe('Missing []')
         ->and(TemplateString::resolve('{waypoint.type title}', $model))->toBe('Pickup')
+        ->and(TemplateString::resolve('{lowercase order.number}', $model))->toBe('order abc')
+        ->and(TemplateString::resolve('{order.number | camel}', $model))->toBe('orderABC')
+        ->and(TemplateString::resolve('{order.number | studly}', $model))->toBe('OrderABC')
+        ->and(TemplateString::resolve('{order.number | slug}', $model))->toBe('order-a-b-c')
+        ->and(TemplateString::resolve('{item | singular}', $model))->toBe('box')
+        ->and(TemplateString::resolve('Blank [{   }]', $model))->toBe('Blank []')
         ->and(TemplateString::resolve('{order.number unknown_modifier}', $model))->toBe('Order ABC');
 });
 

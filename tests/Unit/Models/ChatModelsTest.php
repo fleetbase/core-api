@@ -259,6 +259,7 @@ it('counts unread chat messages by participant receipts and ignores sender messa
     $user->setRawAttributes(['uuid' => 'user-reader'], true);
 
     expect($channel->getUnreadMessageCountForUser($user))->toBe(1)
+        ->and($channel->getUnreadMessagesForUser($user)->pluck('uuid')->all())->toBe(['message-unread'])
         ->and($channel->getUnreadMessagesForParticipant($reader)->pluck('uuid')->all())->toBe(['message-unread']);
 
     $missingUser = new User();
@@ -362,6 +363,13 @@ it('combines chat messages attachments and logs into chronological feed entries'
         ->and($feed[0]['data'])->toBeInstanceOf(ChatAttachment::class)
         ->and($feed[1]['data'])->toBeInstanceOf(ChatMessage::class)
         ->and($feed[2]['data'])->toBeInstanceOf(ChatLog::class);
+
+    $resourceFeed = $channel->resource_feed;
+
+    expect($resourceFeed->pluck('type')->all())->toBe(['attachment', 'message', 'log'])
+        ->and($resourceFeed[0]['data'])->toBeInstanceOf(Fleetbase\Http\Resources\ChatAttachment::class)
+        ->and($resourceFeed[1]['data'])->toBeInstanceOf(Fleetbase\Http\Resources\ChatMessage::class)
+        ->and($resourceFeed[2]['data'])->toBeInstanceOf(Fleetbase\Http\Resources\ChatLog::class);
 });
 
 it('resolves chat log subjects content and relationship contracts', function () {
@@ -475,4 +483,30 @@ it('defines chat attachment ownership channel message and file relationships', f
         ->and($attachment->message()->getForeignKeyName())->toBe('chat_message_uuid')
         ->and($attachment->file()->getRelated())->toBeInstanceOf(File::class)
         ->and($attachment->file()->getForeignKeyName())->toBe('file_uuid');
+});
+
+it('defines chat channel ownership and feed relationship contracts', function () {
+    bind_test_container();
+
+    $channel = new ChatChannel([
+        'company_uuid'    => 'company-1',
+        'created_by_uuid' => 'user-1',
+    ]);
+
+    expect($channel->company()->getRelated())->toBeInstanceOf(Company::class)
+        ->and($channel->company()->getForeignKeyName())->toBe('company_uuid')
+        ->and($channel->company()->getOwnerKeyName())->toBe('uuid')
+        ->and($channel->createdBy()->getRelated())->toBeInstanceOf(User::class)
+        ->and($channel->createdBy()->getForeignKeyName())->toBe('created_by_uuid')
+        ->and($channel->createdBy()->getOwnerKeyName())->toBe('uuid')
+        ->and($channel->lastMessage()->getRelated())->toBeInstanceOf(ChatMessage::class)
+        ->and($channel->lastMessage()->getForeignKeyName())->toBe('chat_channel_uuid')
+        ->and($channel->participants()->getRelated())->toBeInstanceOf(ChatParticipant::class)
+        ->and($channel->participants()->getForeignKeyName())->toBe('chat_channel_uuid')
+        ->and($channel->messages()->getRelated())->toBeInstanceOf(ChatMessage::class)
+        ->and($channel->messages()->getForeignKeyName())->toBe('chat_channel_uuid')
+        ->and($channel->attachments()->getRelated())->toBeInstanceOf(ChatAttachment::class)
+        ->and($channel->attachments()->getForeignKeyName())->toBe('chat_channel_uuid')
+        ->and($channel->logs()->getRelated())->toBeInstanceOf(ChatLog::class)
+        ->and($channel->logs()->getForeignKeyName())->toBe('chat_channel_uuid');
 });

@@ -122,6 +122,29 @@ it('builds reporting relationships with nested auto join metadata and prefixed c
         ]);
 });
 
+it('builds reporting relationships through alternate factories and incremental mutators', function () {
+    $hasMany = Relationship::hasMany('events', 'events')
+        ->autoJoin(false)
+        ->columns([
+            ['name' => 'event_name', 'type' => 'string', 'label' => 'Event Name', 'description' => 'Lifecycle event'],
+            'occurred_at',
+        ])
+        ->addColumn(Column::make('status'))
+        ->meta('audited', true);
+
+    $hasOne = Relationship::hasOne('latestEvent', 'events')
+        ->addNestedRelationship($hasMany);
+
+    expect($hasMany->getType())->toBe('left')
+        ->and($hasMany->isAutoJoin())->toBeFalse()
+        ->and(array_map(fn (Column $column) => $column->getName(), $hasMany->getColumns()))->toBe(['event_name', 'occurred_at', 'status'])
+        ->and($hasMany->getColumns()[0]->getLabel())->toBe('Event Name')
+        ->and($hasMany->getColumns()[0]->getDescription())->toBe('Lifecycle event')
+        ->and($hasMany->getMeta())->toBe(['audited' => true])
+        ->and($hasOne->getType())->toBe('left')
+        ->and($hasOne->getNestedRelationships())->toBe([$hasMany]);
+});
+
 it('builds reporting tables with visible columns joins lookup helpers and serialization', function () {
     $status      = Column::make('status')->label('Status');
     $companyUuid = Column::make('company_uuid')->label('Company UUID');
@@ -195,4 +218,28 @@ it('builds reporting tables with visible columns joins lookup helpers and serial
         ->and($serialized['computed_columns'])->toHaveCount(1)
         ->and($serialized['auto_join_relationships'])->toHaveCount(1)
         ->and($serialized['manual_join_relationships'])->toHaveCount(1);
+});
+
+it('builds reporting tables through array shorthand and incremental mutators', function () {
+    $status = Column::make('status');
+    $events = Relationship::hasMany('events', 'events');
+
+    $table = Table::make('audit_logs')
+        ->columns([
+            ['name' => 'event_name', 'type' => 'string', 'label' => 'Event Name', 'description' => 'Lifecycle event'],
+            'created_at',
+        ])
+        ->addColumn($status)
+        ->computedColumns([Column::computed('events_count', 'COUNT(*)')])
+        ->addComputedColumn(Column::computed('last_event_at', 'MAX(created_at)'))
+        ->relationships([$events])
+        ->addRelationship(Relationship::hasOne('actor', 'users'))
+        ->meta('retention_days', 30);
+
+    expect(array_map(fn (Column $column) => $column->getName(), $table->getColumns()))->toBe(['event_name', 'created_at', 'status'])
+        ->and($table->getColumns()[0]->getLabel())->toBe('Event Name')
+        ->and($table->getColumns()[0]->getDescription())->toBe('Lifecycle event')
+        ->and(array_map(fn (Column $column) => $column->getName(), $table->getComputedColumns()))->toBe(['events_count', 'last_event_at'])
+        ->and(array_map(fn (Relationship $relationship) => $relationship->getName(), $table->getRelationships()))->toBe(['events', 'actor'])
+        ->and($table->getMeta())->toBe(['retention_days' => 30]);
 });

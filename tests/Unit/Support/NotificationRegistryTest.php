@@ -105,6 +105,17 @@ class NotificationRegistryDispatchSubject extends EloquentModel
     }
 }
 
+class NotificationRegistryDispatchPropertySubject extends EloquentModel
+{
+    protected $primaryKey = 'uuid';
+
+    public $incrementing = false;
+
+    protected $keyType = 'string';
+
+    public $timestamps = false;
+}
+
 class NotificationRegistryDispatchCacheFake
 {
     private array $values = [];
@@ -322,7 +333,7 @@ test('notification registry dispatches configured notifiables once across direct
                         'key'        => 'target-1',
                     ],
                     [
-                        'definition' => 'dynamic:dispatcher',
+                        'definition' => 'dynamic:assignee',
                         'primaryKey' => 'uuid',
                         'key'        => 'ignored-for-dynamic',
                     ],
@@ -355,6 +366,15 @@ test('notification registry dispatches configured notifiables once across direct
             'label'        => 'ready',
         ],
     ]);
+});
+
+test('notification registry ignores missing notification classes before resolving settings', function () {
+    notification_registry_dispatch_database();
+
+    NotificationRegistry::notify('Missing\\Notification\\Class');
+    NotificationRegistry::notifyUsingDefinitionName('Missing\\Notification\\Class', 'Missing Notice');
+
+    expect(NotificationRegistryDispatchTarget::$sent)->toBe([]);
 });
 
 test('notification registry dispatches by definition name with dynamic subject context', function () {
@@ -397,6 +417,45 @@ test('notification registry dispatches by definition name with dynamic subject c
             'notification' => NotificationRegistryDispatchNotification::class,
             'subject'      => 'subject-2',
             'label'        => 'manual',
+        ],
+    ]);
+});
+
+test('notification registry dispatches by definition name to grouped notifiables', function () {
+    notification_registry_dispatch_database();
+
+    Fleetbase\Models\Setting::query()->create([
+        'key'   => 'notification_settings',
+        'value' => [
+            'notificationRegistryDispatchNotification__manualNotice' => [
+                'notifiables' => [
+                    [
+                        'definition' => NotificationRegistryDispatchGroup::class,
+                        'primaryKey' => 'uuid',
+                        'key'        => 'group-1',
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    $subject       = new NotificationRegistryDispatchPropertySubject();
+    $subject->uuid = 'subject-3';
+
+    NotificationRegistry::notifyUsingDefinitionName(NotificationRegistryDispatchNotification::class, 'Manual Notice', $subject, 'property');
+
+    expect(NotificationRegistryDispatchTarget::$sent)->toBe([
+        [
+            'target'       => 'target-2',
+            'notification' => NotificationRegistryDispatchNotification::class,
+            'subject'      => 'subject-3',
+            'label'        => 'property',
+        ],
+        [
+            'target'       => 'target-1',
+            'notification' => NotificationRegistryDispatchNotification::class,
+            'subject'      => 'subject-3',
+            'label'        => 'property',
         ],
     ]);
 });

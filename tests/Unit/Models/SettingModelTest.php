@@ -325,6 +325,11 @@ it('exposes JSON value helpers and database connection checks', function () {
         ->and($setting->getBoolean('feature.enabled'))->toBeTrue()
         ->and(Setting::hasConnection())->toBeTrue()
         ->and(Setting::doesntHaveConnection())->toBeFalse();
+
+    app('db')->connection('mysql')->getSchemaBuilder()->drop('settings');
+
+    expect(Setting::hasConnection())->toBeFalse()
+        ->and(Setting::doesntHaveConnection())->toBeTrue();
 });
 
 it('resolves branding logo and icon urls from files with default fallbacks', function () {
