@@ -510,12 +510,31 @@ test('builder expansion applies request sort aliases and explicit directions', f
         ->pluck('name')
         ->all();
 
+    $applySort = $builderExpansion->applySortFromRequest();
+
+    $arraySortQuery = CoreExpansionBuilderModel::query();
+    $arraySort      = $applySort
+        ->call($arraySortQuery, HttpRequest::create('/int/v1/test', 'GET', [
+            'nestedSort' => [['status:desc', 'name']],
+        ]))
+        ->pluck('name')
+        ->all();
+
+    $arrayDescendingQuery = CoreExpansionBuilderModel::query();
+    $arrayDescendingSql   = $applySort
+        ->call($arrayDescendingQuery, HttpRequest::create('/int/v1/test', 'GET', [
+            'nestedSort' => ['-name'],
+        ]))
+        ->toSql();
+
     expect($latest)->toBe(['Gamma Fleet', 'Beta Dispatch', 'Alpha Fleet'])
         ->and($oldest)->toBe(['Alpha Fleet', 'Beta Dispatch', 'Gamma Fleet'])
         ->and($explicit)->toBe(['Beta Dispatch', 'Gamma Fleet', 'Alpha Fleet'])
         ->and($distance)->toBe(['Alpha Fleet', 'Beta Dispatch', 'Gamma Fleet'])
         ->and($unsortedQuery->getQuery()->orders)->toBeNull()
-        ->and($default)->toBe(['Gamma Fleet', 'Beta Dispatch', 'Alpha Fleet']);
+        ->and($default)->toBe(['Gamma Fleet', 'Beta Dispatch', 'Alpha Fleet'])
+        ->and($arraySort)->toBe(['Beta Dispatch', 'Alpha Fleet', 'Gamma Fleet'])
+        ->and($arrayDescendingSql)->toContain('order by "name" desc');
 });
 
 test('builder expansion directive macros preserve builders when no directives resolve', function () {
