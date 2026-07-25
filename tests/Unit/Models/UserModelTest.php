@@ -67,6 +67,48 @@ class UserModelCompanyUserSpy extends CompanyUser
     }
 }
 
+class UserModelAuthorizationRelation
+{
+    public array $calls = [];
+
+    public function hasRole(string $role): string
+    {
+        $this->calls[] = ['hasRole', $role];
+
+        return 'role:' . $role;
+    }
+
+    public function hasPermission(string $permission): string
+    {
+        $this->calls[] = ['hasPermission', $permission];
+
+        return 'permission:' . $permission;
+    }
+}
+
+class UserModelAuthorizationProxyUser extends User
+{
+    public array $loaded                                     = [];
+    public int $loadCompanyUserCalls                         = 0;
+    public ?UserModelAuthorizationRelation $fallbackRelation = null;
+
+    public function loadMissing($relations)
+    {
+        $this->loaded[] = $relations;
+
+        return $this;
+    }
+
+    public function loadCompanyUser(): self
+    {
+        $this->loadCompanyUserCalls++;
+        $this->fallbackRelation = new UserModelAuthorizationRelation();
+        $this->setRelation('companyUser', $this->fallbackRelation);
+
+        return $this;
+    }
+}
+
 class UserModelHashFake
 {
     public function make(mixed $value, array $options = []): string
@@ -457,4 +499,27 @@ it('assigns a single company role only when the company-user relation exists', f
         ->and($companyUser->assignedRoles)->toBe(['Dispatcher'])
         ->and(fn () => (new UserModelSaveSpy())->assignSingleRole('Dispatcher'))
         ->toThrow(Exception::class, 'Company User relationship not found!');
+});
+
+it('proxies authorization helpers through configured and fallback relationships', function () {
+    $user       = new UserModelAuthorizationProxyUser();
+    $membership = new UserModelAuthorizationRelation();
+
+    $user->setRelation('membership', $membership);
+    $user->setAuthorizationRelationship('membership');
+
+    expect($user->hasPermission('orders.read'))->toBe('permission:orders.read')
+        ->and($user->loaded)->toBe(['membership'])
+        ->and($membership->calls)->toBe([
+            ['hasPermission', 'orders.read'],
+        ]);
+
+    $fallback = new UserModelAuthorizationProxyUser();
+
+    expect($fallback->hasRole('administrator'))->toBe('role:administrator')
+        ->and($fallback->loaded)->toBe(['companyUser'])
+        ->and($fallback->loadCompanyUserCalls)->toBe(1)
+        ->and($fallback->fallbackRelation?->calls)->toBe([
+            ['hasRole', 'administrator'],
+        ]);
 });
