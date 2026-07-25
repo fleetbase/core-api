@@ -182,10 +182,15 @@ trait PurgeCommand
                 }
             }, $pkColumn);
         } else {
-            (clone $baseQuery)->chunk(1000, function ($chunk) use (&$deleted) {
+            (clone $baseQuery)->orderByRaw('1')->chunk(1000, function ($chunk) use (&$deleted, $tableName) {
                 foreach ($chunk as $m) {
-                    $m->delete();
-                    $deleted++;
+                    $deleteQuery = DB::table($tableName);
+
+                    foreach ($m->getAttributes() as $column => $value) {
+                        $value === null ? $deleteQuery->whereNull($column) : $deleteQuery->where($column, $value);
+                    }
+
+                    $deleted += $deleteQuery->delete();
                 }
             });
         }

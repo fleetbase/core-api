@@ -451,6 +451,37 @@ it('runs purge flow with backup upload deletion and empty set handling', functio
         ->and($empty->infos)->toBe(['No records to purge from purge_command_records.']);
 });
 
+it('writes purge sql dumps for empty sets first writes nulls quoted values and numeric values', function () {
+    purge_log_commands_database();
+
+    $command   = new PurgeCommandTestCommand();
+    $directory = sys_get_temp_dir() . '/fleetbase-purge-sql-dump-' . uniqid();
+    $emptyFile = "{$directory}/empty.sql";
+    $dataFile  = "{$directory}/records.sql";
+
+    mkdir($directory, 0775, true);
+
+    $command->writeSqlDumpForTest('purge_command_records', collect(), $emptyFile);
+    $command->writeSqlDumpForTest('purge_command_records', collect([
+        [
+            'id'   => 10,
+            'uuid' => '001-leading-zero',
+            'name' => null,
+        ],
+        [
+            'id'   => 11,
+            'uuid' => 'record-11',
+            'name' => "O'Hare",
+        ],
+    ]), $dataFile);
+
+    expect(file_get_contents($emptyFile))->toBe("-- empty set\n")
+        ->and(file_get_contents($dataFile))->toContain("-- Dump of purge_command_records\n")
+        ->and(file_get_contents($dataFile))->toContain('INSERT INTO `purge_command_records` (`id`, `uuid`, `name`)')
+        ->and(file_get_contents($dataFile))->toContain("(10, '001-leading-zero', NULL)")
+        ->and(file_get_contents($dataFile))->toContain("(11, 'record-11', 'O''Hare');");
+});
+
 it('runs purge flow skip backup and decline paths and detects primary keys', function () {
     $capsule = purge_log_commands_database();
     $capsule->getConnection('mysql')->table('purge_command_records')->insert([
@@ -474,4 +505,19 @@ it('runs purge flow skip backup and decline paths and detects primary keys', fun
         ->and($skipBackup->detectPrimaryKeyForTest('purge_command_records'))->toBe('uuid')
         ->and($skipBackup->detectPrimaryKeyForTest('purge_command_records', new PurgeCommandRecord()))->toBe('id')
         ->and($skipBackup->detectPrimaryKeyForTest('purge_command_no_key_records', new PurgeCommandNoKeyRecord()))->toBeNull();
+});
+
+it('runs purge flow through model deletes when no primary key can be detected', function () {
+    $capsule = purge_log_commands_database();
+    $capsule->getConnection('mysql')->table('purge_command_no_key_records')->insert([
+        ['name' => 'Delete no key', 'created_at' => '2026-06-01 00:00:00'],
+        ['name' => 'Keep no key', 'created_at' => '2026-07-01 00:00:00'],
+    ]);
+
+    $command = new PurgeCommandTestCommand(['skip-backup' => true, 'force' => true]);
+
+    expect($command->runPurgeForTest(PurgeCommandNoKeyRecord::query()->where('name', 'Delete no key'), new PurgeCommandNoKeyRecord()))->toBe(1)
+        ->and(PurgeCommandNoKeyRecord::query()->pluck('name')->all())->toBe(['Keep no key'])
+        ->and($command->infos)->toContain('Purge completed. Deleted: 1')
+        ->and($command->warnings)->toContain('Skipping backup as --skip-backup was provided.');
 });
