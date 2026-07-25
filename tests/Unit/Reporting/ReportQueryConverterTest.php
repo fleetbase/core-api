@@ -378,6 +378,60 @@ test('report query converter returns structured failures for missing tenant scop
         ->and($invalidComputedColumn['error'])->toContain('forbidden SQL keyword: DROP');
 });
 
+test('report query converter returns stable validation errors for malformed query configurations', function () {
+    $missingTable = report_converter_execute([
+        'table'   => [],
+        'columns' => [
+            ['name' => 'tracking_number'],
+        ],
+    ]);
+
+    $missingColumns = report_converter_execute([
+        'table'   => ['name' => 'orders'],
+        'columns' => [],
+    ]);
+
+    $unknownTable = report_converter_execute([
+        'table'   => ['name' => 'missing_reports'],
+        'columns' => [
+            ['name' => 'tracking_number'],
+        ],
+    ]);
+
+    $unknownColumn = report_converter_execute([
+        'table'   => ['name' => 'orders'],
+        'columns' => [
+            ['name' => 'not_allowed'],
+        ],
+    ]);
+
+    $ungroupedColumn = report_converter_execute([
+        'table'   => ['name' => 'orders'],
+        'columns' => [
+            ['name' => 'tracking_number'],
+            ['name' => 'status'],
+        ],
+        'groupBy' => [
+            [
+                'groupBy'     => ['name' => 'status'],
+                'aggregateFn' => ['value' => 'sum'],
+                'aggregateBy' => ['name' => 'total'],
+            ],
+        ],
+    ]);
+
+    expect($missingTable['success'])->toBeFalse()
+        ->and($missingTable['error'])->toBe('Table name is required')
+        ->and($missingColumns['success'])->toBeFalse()
+        ->and($missingColumns['error'])->toBe('At least one column or computed column must be selected')
+        ->and($unknownTable['success'])->toBeFalse()
+        ->and($unknownTable['error'])->toBe("Table 'missing_reports' is not registered")
+        ->and($unknownColumn['success'])->toBeFalse()
+        ->and($unknownColumn['error'])->toBe("Column 'not_allowed' is not allowed for table 'orders'")
+        ->and($ungroupedColumn['success'])->toBeFalse()
+        ->and($ungroupedColumn['error'])->toBe("Column 'tracking_number' must be grouped or aggregated when GROUP BY is used");
+});
+
 test('report query converter exports successful results and exposes supported export formats', function () {
     report_converter_database_fixture();
 
