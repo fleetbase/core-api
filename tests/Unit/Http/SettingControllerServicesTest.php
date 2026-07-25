@@ -84,6 +84,7 @@ namespace {
     use Fleetbase\Http\Requests\AdminRequest;
     use Fleetbase\Services\SmsService;
     use Illuminate\Support\Facades\Facade;
+    use Illuminate\Support\Facades\Http;
     use Psr\Log\NullLogger;
 
     function setting_controller_services_fixtures(): void
@@ -229,5 +230,87 @@ namespace {
                 'api_key' => 'unsupported-key',
                 'from'    => 'Fleetbase',
             ]);
+    });
+
+    test('test sms provider config applies temporary twilio package configuration before provider errors', function () {
+        setting_controller_services_fixtures();
+
+        $response = (new SettingController())->testSmsProviderConfig(setting_controller_services_request([
+            'provider' => SmsService::PROVIDER_TWILIO,
+            'phone'    => '+15555550123',
+            'message'  => 'Hello from Fleetbase',
+            'config'   => [
+                'sid'   => 'temporary-twilio-sid',
+                'token' => 'temporary-twilio-token',
+                'from'  => '+15555550999',
+            ],
+        ]));
+
+        expect($response->getStatusCode())->toBe(200)
+            ->and($response->getData(true))->toMatchArray([
+                'status'   => 'error',
+                'message'  => 'Target class [twilio] does not exist.',
+                'provider' => SmsService::PROVIDER_TWILIO,
+                'result'   => null,
+            ])
+            ->and(config('services.twilio'))->toMatchArray([
+                'sid'   => 'temporary-twilio-sid',
+                'token' => 'temporary-twilio-token',
+                'from'  => '+15555550999',
+            ])
+            ->and(config('twilio.twilio.connections.twilio'))->toMatchArray([
+                'sid'   => 'temporary-twilio-sid',
+                'token' => 'temporary-twilio-token',
+                'from'  => '+15555550999',
+            ]);
+    });
+
+    test('test sms provider config returns provider failure responses and applies callpro config aliases', function () {
+        setting_controller_services_fixtures();
+
+        Http::fake([
+            'https://callpro.example.test/send' => Http::response([
+                'error' => 'Gateway rejected sender',
+            ], 400),
+        ]);
+
+        $response = (new SettingController())->testSmsProviderConfig(setting_controller_services_request([
+            'provider' => SmsService::PROVIDER_CALLPRO,
+            'phone'    => '99112233',
+            'message'  => 'Hello from Fleetbase',
+            'config'   => [
+                'api_key'  => 'temporary-callpro-key',
+                'from'     => '72001234',
+                'base_url' => 'https://callpro.example.test',
+            ],
+        ]));
+
+        expect($response->getStatusCode())->toBe(200)
+            ->and($response->getData(true))->toMatchArray([
+                'status'   => 'error',
+                'message'  => 'Gateway rejected sender',
+                'provider' => SmsService::PROVIDER_CALLPRO,
+                'result'   => [
+                    'success'  => false,
+                    'error'    => 'Gateway rejected sender',
+                    'code'     => 400,
+                    'provider' => SmsService::PROVIDER_CALLPRO,
+                ],
+            ])
+            ->and(config('services.callpromn'))->toMatchArray([
+                'api_key'  => 'temporary-callpro-key',
+                'from'     => '72001234',
+                'base_url' => 'https://callpro.example.test',
+            ])
+            ->and(config('services.sms.providers.callpro'))->toMatchArray([
+                'api_key'  => 'temporary-callpro-key',
+                'from'     => '72001234',
+                'base_url' => 'https://callpro.example.test',
+            ]);
+
+        Http::assertSent(fn ($request) => $request->url() === 'https://callpro.example.test/send'
+            && $request['from'] === '72001234'
+            && $request['to'] === '99112233'
+            && $request['text'] === 'Hello from Fleetbase');
     });
 }
