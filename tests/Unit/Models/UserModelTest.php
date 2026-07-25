@@ -3,7 +3,10 @@
 use Fleetbase\Exceptions\InvalidVerificationCodeException;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
+use Fleetbase\Models\File;
+use Fleetbase\Models\Group;
 use Fleetbase\Models\User;
+use Fleetbase\Models\UserDevice;
 use Fleetbase\Models\VerificationCode;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model;
@@ -106,6 +109,14 @@ class UserModelAuthorizationProxyUser extends User
         $this->setRelation('companyUser', $this->fallbackRelation);
 
         return $this;
+    }
+}
+
+class UserModelAvatarFile extends File
+{
+    public function getUrlAttribute()
+    {
+        return 'https://cdn.example.test/avatar.png';
     }
 }
 
@@ -277,6 +288,32 @@ it('routes notification tokens by channel and exposes broadcast and sms identiti
         ->and($user->receivesBroadcastNotificationsOn())->toBe('user.user-1');
 });
 
+it('exposes user relationship contracts and fallback accessors without querying response state', function () {
+    user_model_container();
+
+    $user = new User();
+    $user->setRawAttributes([
+        'uuid'         => 'user-1',
+        'company_uuid' => 'company-1',
+    ], true);
+
+    $avatar = new UserModelAvatarFile();
+    $avatar->setRawAttributes([
+        'uuid' => 'file-1',
+    ], true);
+
+    $user->setRelation('avatar', $avatar);
+    $user->setRelation('driver', (object) ['uuid' => 'driver-1']);
+
+    expect($user->devices()->getRelated())->toBeInstanceOf(UserDevice::class)
+        ->and($user->groups()->getRelated())->toBeInstanceOf(Group::class)
+        ->and(array_column($user->companyUser()->getQuery()->getQuery()->wheres, 'value'))->toContain('company-1')
+        ->and($user->anyCompanyUser()->getRelated())->toBeInstanceOf(CompanyUser::class)
+        ->and($user->avatar_url)->toBe('https://cdn.example.test/avatar.png')
+        ->and((new User())->avatar_url)->toBe('https://s3.ap-southeast-1.amazonaws.com/flb-assets/static/no-avatar.png')
+        ->and($user->driver_uuid)->toBe('driver-1');
+});
+
 it('hashes and verifies passwords while save-backed password helpers preserve fluent behavior', function () {
     user_model_container();
 
@@ -431,6 +468,43 @@ it('assigns companies from uuid or public id and ignores invalid identifiers', f
         ->and($user->saves)->toBe(1);
 });
 
+it('resolves company user pivots from loaded relations explicit companies and empty session state', function () {
+    user_model_schema();
+
+    app('db')->connection('mysql')->table('companies')->insert([
+        'uuid'       => '33333333-3333-4333-8333-333333333333',
+        'public_id'  => 'company_public_3',
+        'name'       => 'Initech',
+        'owner_uuid' => 'user-3',
+    ]);
+    app('db')->connection('mysql')->table('company_users')->insert([
+        'uuid'         => 'company-user-3',
+        'company_uuid' => '33333333-3333-4333-8333-333333333333',
+        'user_uuid'    => 'user-3',
+        'status'       => 'active',
+    ]);
+
+    $preloadedPivot = new CompanyUser();
+    $preloadedPivot->setRawAttributes(['uuid' => 'company-user-preloaded'], true);
+    $preloaded = new User();
+    $preloaded->setRelation('companyUser', $preloadedPivot);
+    $preloaded->setRelation('companyUsers', collect());
+
+    $unscoped = new User();
+    $unscoped->setRawAttributes(['uuid' => 'user-without-company'], true);
+
+    $user = new User();
+    $user->setRawAttributes([
+        'uuid' => 'user-3',
+    ], true);
+    $company = Company::where('uuid', '33333333-3333-4333-8333-333333333333')->first();
+
+    expect($preloaded->getCompanyUser())->toBe($preloadedPivot)
+        ->and($unscoped->getCompanyUser())->toBeNull()
+        ->and($user->getCompanyUser($company))->toBeInstanceOf(CompanyUser::class)
+        ->and($user->companyUser->uuid)->toBe('company-user-3');
+});
+
 it('falls back to database lookups for company and verification code helpers', function () {
     user_model_schema();
 
@@ -467,6 +541,18 @@ it('falls back to database lookups for company and verification code helpers', f
         ->and($user->email_verified_at)->toBeInstanceOf(Carbon::class);
 });
 
+it('returns early from company invitations when required company or recipient context is missing', function () {
+    user_model_container();
+
+    $company = new Company();
+    $company->setRawAttributes(['uuid' => 'company-1'], true);
+
+    $user = new User();
+    $user->setRawAttributes(['uuid' => 'user-1'], true);
+
+    expect($user->sendInviteFromCompany($company))->toBeFalse();
+});
+
 it('enriches new and existing users from request timezone data without calling missing helpers', function () {
     user_model_container();
 
@@ -486,6 +572,43 @@ it('enriches new and existing users from request timezone data without calling m
         ->and($existing->setUserInfoFromRequest($request, true))->toBe($existing)
         ->and($existing->timezone)->toBe('Asia/Ulaanbaatar')
         ->and($existing->saves)->toBe(1);
+});
+
+it('enriches user request info from public ip lookup metadata when request timezone is absent', function () {
+    user_model_container();
+
+    config(['fleetbase.services.ipinfo.api_key' => null]);
+    Illuminate\Support\Facades\Http::fake([
+        'https://json.geoiplookup.io/8.8.8.8' => Illuminate\Support\Facades\Http::response([
+            'ip'             => '8.8.8.8',
+            'country_code'   => 'US',
+            'country_name'   => 'United States',
+            'continent_name' => 'North America',
+            'calling_code'   => '1',
+            'currency'       => ['code' => 'USD'],
+            'languages'      => ['en'],
+            'latitude'       => 37.751,
+            'longitude'      => -97.822,
+            'time_zone'      => ['name' => 'America/Chicago'],
+        ]),
+    ]);
+
+    $request = Request::create('/signup', 'POST', [], [], [], ['REMOTE_ADDR' => '8.8.8.8']);
+
+    expect(User::applyUserInfoFromRequest($request))->toMatchArray([
+        'country'    => 'US',
+        'ip_address' => '8.8.8.8',
+        'timezone'   => 'America/Chicago',
+        'meta'       => [
+            'areacode'   => '1',
+            'currency'   => 'USD',
+            'language'   => 'en',
+            'country'    => 'United States',
+            'contintent' => 'North America',
+            'latitude'   => 37.751,
+            'longitude'  => -97.822,
+        ],
+    ]);
 });
 
 it('assigns a single company role only when the company-user relation exists', function () {
