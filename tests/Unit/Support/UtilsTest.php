@@ -310,6 +310,14 @@ test('utils handles boolean json inflection and sql helpers', function () {
 
     expect($formattedSql)->toContain('active')
         ->and($formattedSql)->toContain('company-1');
+
+    ob_start();
+    Utils::sqlDump($query, false, true);
+    $rawSql = ob_get_clean();
+
+    expect($rawSql)->toContain('select')
+        ->and($rawSql)->toContain('`orders`')
+        ->and($rawSql)->toContain('?');
 });
 
 test('utils validates identifiers base64 and numeric strings across edge cases', function () {
@@ -480,8 +488,14 @@ test('utils resolves country metadata cache fallback and locale helpers', functi
 });
 
 test('utils handles numeric text url formatting and encoded string edge cases', function () {
+    bind_test_container();
     putenv('MAIL_FROM_ADDRESS');
     putenv('CONSOLE_HOST');
+    app('request')->server->set('SERVER_ADDR', '192.0.2.44');
+
+    if (!SupportStr::hasMacro('domain')) {
+        SupportStr::macro('domain', (new StrExpansion())->domain());
+    }
 
     expect(Utils::randomNumber(6))->toMatch('/^\d{6}$/')
         ->and(Utils::ordinalNumber(21))->toBe('21st')
@@ -515,6 +529,14 @@ test('utils handles numeric text url formatting and encoded string edge cases', 
         ->and(Utils::formatPhoneNumber('+1 561-276-7156'))->toBe('+15612767156')
         ->and(Utils::delinkify('Email ron@example.test or visit https://fleetbase.io'))->toContain('&#8203;@')
         ->and(Utils::delinkify('Email ron@example.test or visit https://fleetbase.io'))->toContain('https://&#8203;');
+
+    putenv('CONSOLE_HOST=https://console.fleetbase.test');
+
+    expect(Utils::getDefaultMailFromAddress(null))->toBe('hello@fleetbase.test');
+
+    putenv('CONSOLE_HOST');
+
+    expect(Utils::getDefaultMailFromAddress(null))->toBe('hello@192.0.2.44');
 });
 
 test('utils converts arrays from nullable strings objects and iterables', function () {
@@ -544,6 +566,7 @@ test('utils serializes resources images queues countries and connectivity edges'
             'database' => ':memory:',
             'prefix'   => '',
         ],
+        'fleetbase.connection.db'    => 'mysql',
     ]);
 
     $previousEnv = [];
@@ -617,6 +640,7 @@ test('utils serializes resources images queues countries and connectivity edges'
             ->and(Utils::getModelCountry(new User()))->toBe('CA')
             ->and(Utils::getModelCountry(new Company(['country' => 'United States'])))->toBe('US')
             ->and(Utils::getModelCountry(new Company()))->toBeNull()
+            ->and(Utils::getFleetbaseDatabaseName())->toBe(':memory:')
             ->and(Utils::hasDatabaseConnection())->toBeTrue();
 
         app()->instance('db', new UtilsFailingDatabaseFake());

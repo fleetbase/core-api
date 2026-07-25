@@ -3,7 +3,9 @@
 use Fleetbase\Support\ApiModelCache;
 use Fleetbase\Traits\HasApiModelCache;
 use Illuminate\Database\Capsule\Manager as Capsule;
+use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Events\Dispatcher;
 use Illuminate\Http\Request;
 use Illuminate\Session\Store;
 use Illuminate\Support\Facades\Facade;
@@ -49,6 +51,13 @@ class ApiModelCacheTraitTestModel extends Model
     public function queryFromRequest(Request $request, ?Closure $queryCallback = null)
     {
         return $this->queryFromRequestWithoutCache($request, $queryCallback);
+    }
+
+    public function load($relations)
+    {
+        $this->setAttribute('loaded_relations', is_string($relations) ? [$relations] : $relations);
+
+        return $this;
     }
 
     public function getCachedPayloadAttribute(): array
@@ -247,6 +256,21 @@ function api_model_cache_request(array $query = [], mixed $company = 'company-1'
         $session->put('company', $company);
     }
     $request->setLaravelSession($session);
+
+    return $request;
+}
+
+function api_model_cache_internal_request(array $query = [], mixed $company = 'company-1'): Request
+{
+    $request = api_model_cache_request($query, $company);
+    $request->setRouteResolver(fn () => new class {
+        public array $action = [];
+
+        public function uri(): string
+        {
+            return 'int/v1/orders';
+        }
+    });
 
     return $request;
 }
@@ -620,6 +644,96 @@ test('has api model cache caches request queries with callback markers page offs
             'limit'  => 1,
             'page'   => 2,
         ]);
+});
+
+test('has api model cache covers disabled lookups internal pagination relation no ops and warmup bypasses', function () {
+    $capsule = api_model_cache_trait_database();
+    api_model_cache_fixture(['api.cache.enabled' => false]);
+
+    EloquentBuilder::macro('fastPaginate', function (int $perPage = 15, array $columns = ['*']) {
+        $items = $this->limit($perPage)->get($columns)->all();
+
+        return new class($items, $perPage) {
+            public function __construct(private array $items, private int $perPage)
+            {
+            }
+
+            public function items(): array
+            {
+                return $this->items;
+            }
+
+            public function perPage(): int
+            {
+                return $this->perPage;
+            }
+        };
+    });
+
+    $byId       = ApiModelCacheTraitTestModel::findCached('order-1', ['cached_payload']);
+    $byPublicId = ApiModelCacheTraitTestModel::findByPublicIdCached('order_public_2', ['cached_payload']);
+
+    $model = new ApiModelCacheTraitTestModel([
+        'uuid'         => 'order-disabled',
+        'company_uuid' => 'company-1',
+    ]);
+    $model->exists = true;
+    $model->loadCached('cached_payload');
+    $model->loadMultipleCached('cached_payload', 'other_payload');
+    $model->invalidateQueryCache(api_model_cache_request(['status' => 'active']));
+    ApiModelCacheTraitTestModel::warmUpCache(api_model_cache_request(['status' => 'active']));
+
+    expect($byId?->uuid)->toBe('order-1')
+        ->and($byId?->loaded_relations)->toBe(['cached_payload'])
+        ->and($byPublicId?->uuid)->toBe('order-2')
+        ->and($byPublicId?->loaded_relations)->toBe(['cached_payload'])
+        ->and($model->loaded_relations)->toBe(['cached_payload'])
+        ->and(app('cache')->taggedValues)->toBe([]);
+
+    api_model_cache_fixture();
+    $internal = (new ApiModelCacheTraitTestModel())->queryFromRequestCached(api_model_cache_internal_request([
+        'status' => 'active',
+        'limit'  => 1,
+        'page'   => 2,
+    ]));
+
+    $loaded = new ApiModelCacheTraitTestModel([
+        'uuid'         => 'order-loaded',
+        'company_uuid' => 'company-1',
+    ]);
+    $loaded->exists = true;
+    $loaded->setRelation('cached_payload', ['already' => true]);
+
+    expect($internal->items()[0]->uuid)->toBe('order-2')
+        ->and($internal->perPage())->toBe(1)
+        ->and($loaded->loadCached('cached_payload'))->toBe($loaded)
+        ->and($loaded->getRelation('cached_payload'))->toBe(['already' => true]);
+
+    $capsule->getConnection('mysql')->disconnect();
+});
+
+test('has api model cache boot hooks invalidate cache on model lifecycle events', function () {
+    api_model_cache_trait_database();
+    $store = app('cache');
+
+    Model::setEventDispatcher(new Dispatcher(app()));
+    Model::clearBootedModels();
+
+    $model = ApiModelCacheTraitTestModel::create([
+        'uuid'         => 'order-event',
+        'public_id'    => 'order_public_event',
+        'company_uuid' => 'company-1',
+        'status'       => 'active',
+    ]);
+
+    $model->status = 'inactive';
+    $model->save();
+    $model->delete();
+
+    expect($store->flushedTags)->toContain(['api_cache', 'api_model:orders', 'company:company-1'])
+        ->and($store->flushedTags)->toContain(['api_cache', 'api_model:orders', 'api_query:orders', 'company:company-1']);
+
+    Model::unsetEventDispatcher();
 });
 
 test('has api model cache wraps id public id relationship invalidation and stats helpers', function () {
