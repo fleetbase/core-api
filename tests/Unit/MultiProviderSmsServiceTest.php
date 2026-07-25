@@ -52,6 +52,19 @@ class SmsServiceRoutingProbe extends SmsService
     }
 }
 
+class SmppSmsServiceProbe extends SmppSmsService
+{
+    public function exposeValidateParameters(string $to, string $text, ?string $from): void
+    {
+        $this->validateParameters($to, $text, $from);
+    }
+
+    public function exposeMakeClient(): SmppGatewayClient
+    {
+        return $this->makeClient();
+    }
+}
+
 if (!function_exists('config')) {
     function config($key = null, $default = null)
     {
@@ -695,6 +708,29 @@ test('smpp sms service validates config and delegates to client', function () {
         ->and($client->closed)->toBeTrue()
         ->and($client->submitted['from'])->toBe('FLEETBASE')
         ->and($client->submitted['to'])->toBe('+15551234567');
+});
+
+test('smpp sms service rejects missing config recipient text and source address', function () {
+    expect(fn () => (new SmppSmsService([
+        'host'        => '',
+        'port'        => 2775,
+        'system_id'   => 'fleetbase',
+        'password'    => 'secret',
+        'source_addr' => 'FLEETBASE',
+    ]))->send('+15551234567', 'Hello'))
+        ->toThrow(InvalidArgumentException::class, 'SMPP SMS gateway is not configured')
+        ->and(fn () => (new SmppSmsService())->send('', 'Hello'))
+        ->toThrow(InvalidArgumentException::class, 'Recipient phone number (to) is required')
+        ->and(fn () => (new SmppSmsService())->send('+15551234567', ''))
+        ->toThrow(InvalidArgumentException::class, 'Message text cannot be empty')
+        ->and(fn () => (new SmppSmsServiceProbe())->exposeValidateParameters('+15551234567', 'Hello', null))
+        ->toThrow(InvalidArgumentException::class, 'SMPP source address is required');
+});
+
+test('smpp sms service default client factory builds a gateway client from config', function () {
+    $client = (new SmppSmsServiceProbe())->exposeMakeClient();
+
+    expect($client)->toBeInstanceOf(SmppGatewayClient::class);
 });
 
 test('smpp gateway client encodes configured submit ton and npi values', function () {
