@@ -751,6 +751,60 @@ test('user controller activates deactivates verifies and removes users only thro
         ->and($capsule->getConnection('mysql')->table('users')->where('uuid', 'single-1')->whereNotNull('deleted_at')->exists())->toBeTrue();
 });
 
+test('user controller reports activation and removal authorization edge cases without mutating records', function () {
+    $capsule = user_controller_database();
+    $db      = $capsule->getConnection('mysql');
+
+    $db->table('company_users')->insert([
+        'uuid'         => 'pivot-admin-1',
+        'company_uuid' => 'company-1',
+        'user_uuid'    => 'admin-1',
+        'status'       => 'active',
+        'created_at'   => '2026-07-18 10:00:00',
+        'updated_at'   => '2026-07-18 10:00:00',
+    ]);
+
+    user_controller_request('POST', [], user_controller_user('owner-1'), 'deactivate');
+    $missingDeactivateId = user_controller()->deactivate(null);
+    $adminDeactivate     = user_controller()->deactivate('admin-1');
+
+    user_controller_request('POST', [], user_controller_user('owner-1'), 'activate');
+    $missingActivateId = user_controller()->activate(null);
+
+    user_controller_request('POST', [], user_controller_user('owner-1'), 'verify');
+    $missingVerifyId = user_controller()->verify(null);
+    $foreignVerify   = user_controller()->verify('foreign-1');
+
+    user_controller_request('POST', [], user_controller_user('owner-1'), 'removeFromCompany');
+    $missingRemoveId = user_controller()->removeFromCompany(null);
+    $foreignRemove   = user_controller()->removeFromCompany('foreign-1');
+
+    session()->flush();
+    session(['user' => 'admin-1']);
+    user_controller_request('POST', [], user_controller_user('admin-1'), 'removeFromCompany');
+    $missingCompanyRemove = user_controller()->removeFromCompany('member-1');
+
+    expect($missingDeactivateId->getStatusCode())->toBe(401)
+        ->and($missingDeactivateId->getData(true))->toBe(['errors' => ['No user to deactivate']])
+        ->and($adminDeactivate->getStatusCode())->toBe(403)
+        ->and($adminDeactivate->getData(true))->toBe(['errors' => ['Insufficient permissions to deactivate this user.']])
+        ->and($missingActivateId->getStatusCode())->toBe(401)
+        ->and($missingActivateId->getData(true))->toBe(['errors' => ['No user to activate']])
+        ->and($missingVerifyId->getStatusCode())->toBe(401)
+        ->and($missingVerifyId->getData(true))->toBe(['errors' => ['No user to activate']])
+        ->and($foreignVerify->getStatusCode())->toBe(401)
+        ->and($foreignVerify->getData(true))->toBe(['errors' => ['No user found']])
+        ->and($missingRemoveId->getStatusCode())->toBe(401)
+        ->and($missingRemoveId->getData(true))->toBe(['errors' => ['No user to remove']])
+        ->and($foreignRemove->getStatusCode())->toBe(401)
+        ->and($foreignRemove->getData(true))->toBe(['errors' => ['No user found']])
+        ->and($missingCompanyRemove->getStatusCode())->toBe(401)
+        ->and($missingCompanyRemove->getData(true))->toBe(['errors' => ['Unable to remove user from this company']])
+        ->and($db->table('company_users')->where('uuid', 'pivot-admin-1')->value('status'))->toBe('active')
+        ->and($db->table('company_users')->where('uuid', 'pivot-member-1')->whereNull('deleted_at')->exists())->toBeTrue()
+        ->and($db->table('users')->where('uuid', 'member-1')->whereNull('deleted_at')->exists())->toBeTrue();
+});
+
 test('user controller covers current-user password locale and simple validation response contracts', function () {
     $capsule = user_controller_database();
     $user    = user_controller_user('owner-1');
