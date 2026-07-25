@@ -405,7 +405,7 @@ it('falls back to database lookups for company and verification code helpers', f
         'code'         => '123456',
         'for'          => 'email_verification',
         'status'       => 'active',
-        'expires_at'   => Carbon::parse('2026-07-20 00:00:00', 'UTC')->toDateTimeString(),
+        'expires_at'   => Carbon::now('UTC')->addDay()->toDateTimeString(),
     ]);
 
     $user = new UserModelSaveSpy();

@@ -6,12 +6,14 @@ use Fleetbase\Traits\DisablesSoftDeletes;
 use Fleetbase\Traits\Expirable;
 use Fleetbase\Traits\HasAliases;
 use Fleetbase\Traits\HasFileResolution;
+use Fleetbase\Traits\HasUuid;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Facade;
+use Illuminate\Support\Str;
 
 class LifecycleTraitsAliasRecord extends Model
 {
@@ -132,6 +134,22 @@ class LifecycleTraitsFileRecord extends Model
     }
 }
 
+class LifecycleTraitsUuidRecord extends Model
+{
+    use HasUuid;
+    use SoftDeletes;
+
+    protected $connection = 'mysql';
+    protected $table      = 'lifecycle_uuid_records';
+    protected $guarded    = [];
+    public $timestamps    = false;
+}
+
+class LifecycleTraitsMultiUuidRecord extends LifecycleTraitsUuidRecord
+{
+    protected $uuidColumn = ['public_uuid', 'tracking_uuid'];
+}
+
 class LifecycleTraitsFileResolverFake extends FileResolverService
 {
     public array $calls = [];
@@ -187,6 +205,40 @@ function lifecycle_traits_expirable_database(): Capsule
     $capsule->getConnection('mysql')->table('expiry_scope_related_records')->insert([
         ['uuid' => 'related-active', 'expiry_scope_record_uuid' => 'active'],
     ]);
+
+    return $capsule;
+}
+
+function lifecycle_traits_uuid_database(): Capsule
+{
+    Model::clearBootedModels();
+
+    $container = bind_test_container([
+        'database.default'           => 'mysql',
+        'database.connections.mysql' => [
+            'driver'   => 'sqlite',
+            'database' => ':memory:',
+            'prefix'   => '',
+        ],
+    ]);
+    Facade::setFacadeApplication($container);
+
+    $capsule = new Capsule($container);
+    $capsule->addConnection($container->make('config')->get('database.connections.mysql'), 'mysql');
+    $capsule->setEventDispatcher(new Dispatcher($container));
+    $capsule->setAsGlobal();
+    $capsule->bootEloquent();
+    $capsule->getDatabaseManager()->setDefaultConnection('mysql');
+    $container->instance('db', $capsule->getDatabaseManager());
+    Facade::clearResolvedInstance('db');
+
+    $capsule->getConnection('mysql')->getSchemaBuilder()->create('lifecycle_uuid_records', function ($table) {
+        $table->increments('id');
+        $table->string('uuid')->nullable();
+        $table->string('public_uuid')->nullable();
+        $table->string('tracking_uuid')->nullable();
+        $table->timestamp('deleted_at')->nullable();
+    });
 
     return $capsule;
 }
@@ -299,6 +351,39 @@ test('expiry scope resolves qualified expiry columns for joined builders', funct
 
     expect($column->invoke($scope, $plain))->toBe('expires_at')
         ->and($column->invoke($scope, $joined))->toBe('expiry_scope_records.expires_at');
+});
+
+test('has uuid fills custom uuid columns and retries generated collisions', function () {
+    $capsule = lifecycle_traits_uuid_database();
+
+    try {
+        Str::createUuidsUsingSequence([
+            '11111111-1111-4111-8111-111111111111',
+            '22222222-2222-4222-8222-222222222222',
+        ]);
+
+        $multiUuid = LifecycleTraitsMultiUuidRecord::create();
+
+        expect($multiUuid->uuid)->toBeNull()
+            ->and($multiUuid->public_uuid)->toBe('11111111-1111-4111-8111-111111111111')
+            ->and($multiUuid->tracking_uuid)->toBe('22222222-2222-4222-8222-222222222222');
+
+        $capsule->getConnection('mysql')->table('lifecycle_uuid_records')->insert([
+            'uuid' => '33333333-3333-4333-8333-333333333333',
+        ]);
+
+        Str::createUuidsUsingSequence([
+            '33333333-3333-4333-8333-333333333333',
+            '44444444-4444-4444-8444-444444444444',
+        ]);
+
+        $retried = LifecycleTraitsUuidRecord::create();
+
+        expect($retried->uuid)->toBe('44444444-4444-4444-8444-444444444444');
+    } finally {
+        Str::createUuidsNormally();
+        Model::clearBootedModels();
+    }
 });
 
 test('disables soft deletes forces hard deletes and makes restore a no op', function () {
