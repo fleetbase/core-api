@@ -455,6 +455,9 @@ test('report controller wraps validator exceptions for validation and direct que
         'query_config' => report_controller_query_config(),
         'format'       => 'json',
     ]));
+    $analysis = $controller->analyzeQuery(Request::create('/int/v1/reports/analyze-query', 'POST', [
+        'query_config' => report_controller_query_config(),
+    ]));
 
     expect($validate->getStatusCode())->toBe(500)
         ->and(report_controller_payload($validate)['success'])->toBeFalse()
@@ -466,7 +469,11 @@ test('report controller wraps validator exceptions for validation and direct que
         ->and($export->getStatusCode())->toBe(500)
         ->and(report_controller_payload($export)['success'])->toBeFalse()
         ->and(report_controller_payload($export)['error']['code'])->toBe('EXPORT_FAILED')
-        ->and(report_controller_payload($export)['error']['format'])->toBe('json');
+        ->and(report_controller_payload($export)['error']['format'])->toBe('json')
+        ->and($analysis->getStatusCode())->toBe(500)
+        ->and(report_controller_payload($analysis)['success'])->toBeFalse()
+        ->and(report_controller_payload($analysis)['error']['code'])->toBe('QUERY_EXECUTION_FAILED')
+        ->and(report_controller_payload($analysis)['meta']['request_id'])->toBe('request-1');
 });
 
 test('report controller validates computed column expression boundaries', function () {
@@ -587,7 +594,18 @@ test('report controller reports validation and timeout failures while executing 
 
     $controller = new ReportController();
 
-    $savedValidation = $controller->execute(Request::create('/int/v1/reports/report-invalid-config/execute'), 'report-invalid-config');
+    $savedValidation  = $controller->execute(Request::create('/int/v1/reports/report-invalid-config/execute'), 'report-invalid-config');
+    $directValidation = $controller->executeQuery(Request::create('/int/v1/reports/execute-query', 'POST', [
+        'query_config' => report_controller_query_config([
+            'table' => ['name' => 'missing_table'],
+        ]),
+    ]));
+    $exportValidation = $controller->exportQuery(Request::create('/int/v1/reports/export-query', 'POST', [
+        'query_config' => report_controller_query_config([
+            'table' => ['name' => 'missing_table'],
+        ]),
+        'format' => 'json',
+    ]));
 
     config(['reports.query_timeout' => 0]);
 
@@ -603,10 +621,39 @@ test('report controller reports validation and timeout failures while executing 
         ->and(report_controller_payload($savedValidation)['success'])->toBeFalse()
         ->and(report_controller_payload($savedValidation)['error']['code'])->toBe('VALIDATION_FAILED')
         ->and(report_controller_payload($savedValidation)['error']['validation_errors'])->toContain("Table 'missing_table' is not available for reporting")
+        ->and($directValidation->getStatusCode())->toBe(400)
+        ->and(report_controller_payload($directValidation)['success'])->toBeFalse()
+        ->and(report_controller_payload($directValidation)['error']['code'])->toBe('VALIDATION_FAILED')
+        ->and(report_controller_payload($directValidation)['error'])->not->toHaveKey('context')
+        ->and(report_controller_payload($directValidation)['error']['validation_errors'])->toContain("Table 'missing_table' is not available for reporting")
+        ->and($exportValidation->getStatusCode())->toBe(400)
+        ->and(report_controller_payload($exportValidation)['success'])->toBeFalse()
+        ->and(report_controller_payload($exportValidation)['error']['code'])->toBe('VALIDATION_FAILED')
+        ->and(report_controller_payload($exportValidation)['error'])->not->toHaveKey('context')
+        ->and(report_controller_payload($exportValidation)['error']['validation_errors'])->toContain("Table 'missing_table' is not available for reporting")
         ->and($timeout->getStatusCode())->toBe(408)
         ->and(report_controller_payload($timeout)['success'])->toBeFalse()
         ->and(report_controller_payload($timeout)['error']['code'])->toBe('TIMEOUT')
         ->and(report_controller_payload($timeout)['error']['message'])->toBe('Query execution timed out');
+});
+
+test('report controller wraps saved report execution failures after validation passes', function () {
+    report_controller_bind();
+    $capsule = report_controller_database();
+    $capsule->getConnection('testing')->getSchemaBuilder()->drop('orders');
+
+    $controller = new ReportController();
+    $response   = $controller->execute(Request::create('/int/v1/reports/report-current/execute'), 'report-current');
+    $payload    = report_controller_payload($response);
+
+    expect($response->getStatusCode())->toBe(500)
+        ->and($payload['success'])->toBeFalse()
+        ->and($payload['error']['code'])->toBe('CONNECTION_ERROR')
+        ->and($payload['error']['message'])->toBe('Could not connect to the database.')
+        ->and($payload['error'])->not->toHaveKey('context')
+        ->and($payload['error']['details']['database'])->toBe('testing')
+        ->and($payload['error']['details']['type'])->toBe(Exception::class)
+        ->and($payload['meta']['company_id'])->toBe('company-1');
 });
 
 test('report controller executes saved reports with active company scoping', function () {
