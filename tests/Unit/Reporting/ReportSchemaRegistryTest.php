@@ -99,6 +99,10 @@ test('report schema registry validates direct and nested auto join column paths'
         ->and($registry->isColumnAllowed('orders', 'payload.description'))->toBeTrue()
         ->and($registry->isColumnAllowed('orders', 'payload.pickup.city'))->toBeTrue()
         ->and($registry->isColumnAllowed('orders', 'payload.dropoff.city'))->toBeFalse()
+        ->and($registry->isColumnAllowed('orders', 'customer.name'))->toBeFalse()
+        ->and($registry->isColumnAllowed('orders', 'payload.pickup.missing'))->toBeFalse()
+        ->and($registry->isColumnAllowed('orders', 'payload.pickup.city.extra'))->toBeFalse()
+        ->and($registry->isColumnAllowed('missing', 'payload.description'))->toBeFalse()
         ->and($registry->isColumnAllowed('missing', 'public_id'))->toBeFalse();
 });
 
@@ -118,14 +122,113 @@ test('report schema registry returns schema, relationships, auto join paths, and
         ->and($path[0]['relationship'])->toBe('payload')
         ->and($registry->getTableSchema('unknown'))->toBe([])
         ->and($registry->resolveAutoJoinPath('orders', 'public_id'))->toBeNull()
+        ->and($registry->resolveAutoJoinPath('missing', 'payload.description'))->toBeNull()
+        ->and($registry->resolveAutoJoinPath('orders', 'customer.name'))->toBeNull()
+        ->and($registry->getTableColumns('missing'))->toBe([])
+        ->and($registry->getTableRelationships('missing'))->toBe([])
+        ->and($registry->getAutoJoinColumns('missing'))->toBe([])
         ->and($registry->getRegisteredTableNames())->toContain('orders', 'customers');
 
     $registry->setCacheEnabled(true);
     $registry->setCacheTtl(30);
     $registry->clearTableCache('orders');
+    $registry->clearTableCache('unknown');
     $registry->clearAllCache();
 
     expect($registry->hasTable('orders'))->toBeTrue();
+});
+
+test('report schema registry ignores invalid batch registrations and supports defensive relationship branches', function () {
+    $registry = reporting_registry_fixture();
+    $registry->registerTables([
+        'not-a-table',
+        Table::make('categories')
+            ->label('Categories')
+            ->extension('core')
+            ->columns([
+                Column::make('name')->label('Name'),
+            ]),
+    ]);
+
+    $childResolver = new ReflectionMethod($registry, 'getChildRelationship');
+    $childResolver->setAccessible(true);
+
+    expect($registry->hasTable('categories'))->toBeTrue()
+        ->and($registry->hasTable('not-a-table'))->toBeFalse()
+        ->and($registry->getAvailableTables('fleetops', 'missing'))->toBe([])
+        ->and($registry->isColumnAllowed('categories', 'name'))->toBeTrue()
+        ->and($childResolver->invoke($registry, new stdClass(), 'missing'))->toBeNull();
+});
+
+test('report schema registry accepts relationship available column fallback matches', function () {
+    $registry     = new ReportSchemaRegistry();
+    $relationship = new class('shadow', 'shadow_records') extends Relationship {
+        public function __construct(string $name, string $table)
+        {
+            parent::__construct($name, $table);
+
+            $enabler = new ReflectionMethod(Relationship::class, 'setAutoJoin');
+            $enabler->setAccessible(true);
+            $enabler->invoke($this, true);
+        }
+
+        public function getColumns(): array
+        {
+            return [];
+        }
+
+        public function getAllAvailableColumns(): array
+        {
+            return [Column::make('shadow_code')->label('Shadow Code')];
+        }
+    };
+
+    $registry->registerTable(
+        Table::make('orders')
+            ->columns([
+                Column::make('public_id'),
+            ])
+            ->relationships([$relationship])
+    );
+
+    expect($registry->isColumnAllowed('orders', 'shadow.shadow_code'))->toBeTrue();
+});
+
+test('report schema registry preserves label fallback and no category cache clearing contracts', function () {
+    bind_test_container();
+    Facade::clearResolvedInstance('cache');
+
+    $registry = new ReportSchemaRegistry();
+    $registry->setCacheEnabled(true);
+
+    $blankLabel = Relationship::hasAutoJoin('metadata', 'metadata')
+        ->label('')
+        ->localKey('metadata_uuid')
+        ->foreignKey('uuid')
+        ->columns([
+            Column::make('code')->label('Code'),
+        ]);
+
+    $registry->registerTable(
+        Table::make('assets')
+            ->label('Assets')
+            ->extension('core')
+            ->columns([
+                Column::make('name')->label('Name'),
+            ])
+            ->relationships([$blankLabel])
+    );
+
+    $columns = $registry->getTableColumns('assets');
+
+    Cache::put('report_tables_core_all', [['name' => 'assets']]);
+    Cache::put('report_tables_core_uncategorized', [['name' => 'uncategorized']]);
+    $registry->clearTableCache('assets');
+
+    expect(array_column($columns, 'name'))->toContain('metadata.code')
+        ->and(collect($columns)->firstWhere('name', 'metadata.code')['label'])->toBe('Code')
+        ->and(Cache::get('report_tables_core_all'))->toBeNull()
+        ->and(Cache::get('report_tables_core_uncategorized'))->toBe([['name' => 'uncategorized']]);
 });
 
 test('report schema registry caches table column and relationship metadata and clears scoped keys', function () {
@@ -173,6 +276,7 @@ test('report schema registry caches table column and relationship metadata and c
 
     $registry->setCacheEnabled(false);
     Cache::put('report_columns_orders', [['name' => 'preserved']]);
+    $registry->clearTableCache('orders');
     $registry->clearAllCache();
 
     expect(Cache::get('report_columns_orders'))->toBe([['name' => 'preserved']]);
