@@ -4,6 +4,10 @@ use Fleetbase\Build\Expansion as ExpansionContract;
 use Fleetbase\Support\Expansion;
 use Fleetbase\Support\Scheduling\ConstraintResult;
 use Fleetbase\Traits\Expandable;
+use Illuminate\Database\Capsule\Manager as Capsule;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model as EloquentModel;
+use Illuminate\Events\Dispatcher;
 use Illuminate\Support\Traits\Macroable;
 
 class ExpansionAndConstraintResultExpansion implements ExpansionContract
@@ -55,6 +59,48 @@ class ExpansionAndConstraintResultRuntimeExpansion
     }
 }
 
+class ExpansionAndConstraintResultExpandableParent
+{
+    public function __call($method, $parameters)
+    {
+        return $method . ':' . implode(',', $parameters);
+    }
+}
+
+class ExpansionAndConstraintResultExpandableChild extends ExpansionAndConstraintResultExpandableParent
+{
+    use Expandable;
+}
+
+class ExpansionAndConstraintResultInvalidExpansionTarget
+{
+    use Expandable;
+
+    public static function isExpansion(string $name): bool
+    {
+        return $name === 'invalidExpansion';
+    }
+
+    public static function getExpansionClosure(string $name): mixed
+    {
+        return 'not a closure';
+    }
+}
+
+class ExpansionAndConstraintResultExpandableModel extends EloquentModel
+{
+    use Expandable;
+
+    protected $table = 'builder_expansion_records';
+
+    public $timestamps = false;
+
+    protected function protectedFallback(string $value): string
+    {
+        return 'protected:' . $value;
+    }
+}
+
 class ExpansionAndConstraintResultMacroableTarget
 {
     use Macroable;
@@ -62,6 +108,32 @@ class ExpansionAndConstraintResultMacroableTarget
 
 class ExpansionAndConstraintResultPlainTarget
 {
+}
+
+function expansion_constraint_result_database(): Capsule
+{
+    $connection = [
+        'driver'   => 'sqlite',
+        'database' => ':memory:',
+        'prefix'   => '',
+    ];
+
+    $container = bind_test_container([
+        'database.default'           => 'mysql',
+        'database.connections.mysql' => $connection,
+    ]);
+
+    $capsule = new Capsule($container);
+    $capsule->addConnection($connection, 'mysql');
+    $capsule->setEventDispatcher(new Dispatcher($container));
+    $capsule->setAsGlobal();
+    $capsule->bootEloquent();
+
+    $databaseManager = $capsule->getDatabaseManager();
+    $databaseManager->setDefaultConnection('mysql');
+    $container->instance('db', $databaseManager);
+
+    return $capsule;
 }
 
 test('expansion support detects expansion expandable and macroable targets', function () {
@@ -103,6 +175,20 @@ test('expandable trait registers direct and imported runtime methods', function 
         ->and(ExpansionAndConstraintResultRuntimeExpansion::$importedInstanceCalls)->toBe(1)
         ->and($target->importedInstanceClosure('hook'))->toBe('target:hook')
         ->and($target->importedStaticClosure(2, 5))->toBe(7);
+});
+
+test('expandable trait delegates invalid model and parent fallback calls predictably', function () {
+    expansion_constraint_result_database();
+
+    $model = new ExpansionAndConstraintResultExpandableModel();
+    $query = $model->where('name', 'Alpha Fleet');
+
+    expect(fn () => (new ExpansionAndConstraintResultInvalidExpansionTarget())->invalidExpansion())
+        ->toThrow(RuntimeException::class, 'Invalid closure provided')
+        ->and($model->protectedFallback('value'))->toBe('protected:value')
+        ->and($query)->toBeInstanceOf(Builder::class)
+        ->and($query->toSql())->toContain('where')
+        ->and((new ExpansionAndConstraintResultExpandableChild())->missingParentMethod('one', 'two'))->toBe('missingParentMethod:one,two');
 });
 
 test('constraint result exposes pass fail and violation contracts', function () {
