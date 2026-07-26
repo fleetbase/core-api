@@ -911,8 +911,9 @@ class SettingController extends Controller
         // Set config from request
         config(['sentry.dsn' => $dsn]);
 
-        $message = 'Sentry configuration is successful, test Exception sent.';
-        $status  = 'success';
+        $message       = 'Sentry configuration is successful, test Exception sent.';
+        $status        = 'success';
+        $clientBuilder = null;
 
         try {
             $clientBuilder = \Sentry\ClientBuilder::create([

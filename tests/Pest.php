@@ -359,11 +359,15 @@ namespace {
 
     class FleetbaseTestContainer extends Container
     {
-        public function environment(array|string $environments): bool|string
+        public function environment(array|string|null $environments = null): bool|string
         {
             $current = $this->bound('config')
                 ? $this->make('config')->get('app.env', 'testing')
                 : 'testing';
+
+            if ($environments === null) {
+                return $current;
+            }
 
             if (is_array($environments)) {
                 return in_array($current, $environments, true);

@@ -8,10 +8,16 @@ class SettingControllerQueueFake
 {
     public ?string $exceptionMessage = null;
 
+    public ?Throwable $exception = null;
+
     public array $pushedRaw = [];
 
     public function pushRaw(string $payload): mixed
     {
+        if ($this->exception) {
+            throw $this->exception;
+        }
+
         if ($this->exceptionMessage) {
             throw new RuntimeException($this->exceptionMessage);
         }
@@ -116,6 +122,26 @@ test('test queue config returns queue push exceptions as stable json errors', fu
         ->and($response->getData(true))->toBe([
             'status'  => 'error',
             'message' => 'SQS credentials rejected',
+        ])
+        ->and(config('queue.default'))->toBe('sqs')
+        ->and($queue->pushedRaw)->toBe([]);
+});
+
+test('test queue config returns sqs exceptions from the provider specific catch branch', function () {
+    $queue            = setting_controller_queue_fixtures();
+    $queue->exception = new Aws\Sqs\Exception\SqsException(
+        'SQS queue URL is invalid',
+        new Aws\Command('SendMessage')
+    );
+
+    $response = (new SettingController())->testQueueConfig(setting_controller_queue_request([
+        'queue' => 'sqs',
+    ]));
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($response->getData(true))->toBe([
+            'status'  => 'error',
+            'message' => 'SQS queue URL is invalid',
         ])
         ->and(config('queue.default'))->toBe('sqs')
         ->and($queue->pushedRaw)->toBe([]);

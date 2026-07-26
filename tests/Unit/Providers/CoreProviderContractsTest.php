@@ -309,8 +309,12 @@ namespace {
         {
         }
 
-        public function environment(array|string $environments): bool|string
+        public function environment(array|string|null $environments = null): bool|string
         {
+            if ($environments === null) {
+                return $this->environment;
+            }
+
             if (is_array($environments)) {
                 return in_array($this->environment, $environments, true);
             }

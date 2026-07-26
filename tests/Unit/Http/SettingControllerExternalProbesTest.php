@@ -4,6 +4,22 @@ use Fleetbase\Http\Controllers\Internal\v1\SettingController;
 use Fleetbase\Http\Requests\AdminRequest;
 use Illuminate\Support\Facades\Facade;
 
+class SettingControllerTwilioFake
+{
+    public array $messages = [];
+
+    public ?Throwable $exception = null;
+
+    public function message(string $phone, string $message): void
+    {
+        if ($this->exception) {
+            throw $this->exception;
+        }
+
+        $this->messages[] = [$phone, $message];
+    }
+}
+
 function setting_controller_external_probe_fixtures(array $config = []): void
 {
     bind_test_container(array_merge([
@@ -31,6 +47,7 @@ function setting_controller_external_probe_request(array $input = []): AdminRequ
 }
 
 afterEach(function () {
+    app()->forgetInstance('twilio');
     Facade::clearResolvedInstances();
 });
 
@@ -75,6 +92,34 @@ test('test twilio config applies request credentials before returning provider e
         ]);
 });
 
+test('test twilio config returns twilio rest exceptions as provider errors', function () {
+    setting_controller_external_probe_fixtures();
+    $twilio            = new SettingControllerTwilioFake();
+    $twilio->exception = new Twilio\Exceptions\RestException('Twilio rejected the destination phone number', 21614, 400);
+
+    app()->instance('twilio', $twilio);
+    Facade::clearResolvedInstance('twilio');
+
+    $response = (new SettingController())->testTwilioConfig(setting_controller_external_probe_request([
+        'sid'   => 'rest-sid',
+        'token' => 'rest-token',
+        'from'  => '+15555550999',
+        'phone' => '+15555550123',
+    ]));
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($response->getData(true))->toBe([
+            'status'  => 'error',
+            'message' => 'Twilio rejected the destination phone number',
+        ])
+        ->and($twilio->messages)->toBe([])
+        ->and(config('twilio.twilio.connections.twilio'))->toBe([
+            'sid'   => 'rest-sid',
+            'token' => 'rest-token',
+            'from'  => '+15555550999',
+        ]);
+});
+
 test('test socketcluster returns stable json when the configured socket cannot send', function () {
     setting_controller_external_probe_fixtures();
 
@@ -89,4 +134,19 @@ test('test socketcluster returns stable json when the configured socket cannot s
             'channel'  => 'settings-probe',
             'response' => null,
         ]);
+});
+
+test('test sentry config returns sdk builder errors for invalid dsns', function () {
+    setting_controller_external_probe_fixtures();
+
+    $response = (new SettingController())->testSentryConfig(setting_controller_external_probe_request([
+        'dsn' => 'not-a-dsn',
+    ]));
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($response->getData(true))->toBe([
+            'status'  => 'error',
+            'message' => 'The option "dsn" with value "not-a-dsn" is invalid.',
+        ])
+        ->and(config('sentry.dsn'))->toBe('not-a-dsn');
 });
