@@ -59,6 +59,13 @@ class InsertableTraitRecord extends Model
         return $row;
     }
 
+    public function fillSessionAttributes(?array $target = [], array $except = [], array $only = []): array
+    {
+        $target['company_uuid'] = session('company');
+
+        return $target;
+    }
+
     public function flushCache(): void
     {
         static::$flushes++;
@@ -180,6 +187,7 @@ test('insertable bulk insert enriches rows removes unsafe attributes applies hoo
         ->and($stored['uuid'])->toBe('uuid-1')
         ->and($stored['public_id'])->toBe('record_1')
         ->and($stored['internal_id'])->toBe('INT-1')
+        ->and($stored['company_uuid'])->toBe('company-1')
         ->and($stored['name'])->toBe('ALPHA')
         ->and($stored['created_at'])->toBe('2026-07-18 12:34:56')
         ->and($stored)->not->toHaveKey('unsafe_column')

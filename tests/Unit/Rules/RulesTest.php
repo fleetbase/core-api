@@ -150,10 +150,13 @@ test('required if creating follows the current request method contract', functio
 test('exists in any finds values across comma delimited tables and candidate columns', function () {
     exists_in_any_database();
 
-    $rule = new ExistsInAny('users,companies', ['uuid', 'public_id']);
+    $rule            = new ExistsInAny('users,companies', ['uuid', 'public_id']);
+    $singleTableRule = new ExistsInAny('users', 'uuid');
 
     expect($rule->tables)->toBe(['users', 'companies'])
         ->and($rule->column)->toBe(['uuid', 'public_id'])
+        ->and($singleTableRule->tables)->toBe(['users'])
+        ->and($singleTableRule->column)->toBe('uuid')
         ->and($rule->passes('subject', 'user-1'))->toBeTrue()
         ->and($rule->passes('subject', 'company_1234567'))->toBeTrue()
         ->and($rule->passes('subject', 'missing'))->toBeFalse()

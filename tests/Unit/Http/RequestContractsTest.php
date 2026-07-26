@@ -380,10 +380,12 @@ namespace {
         expect($loginRules['identity'])->toBe(['required'])
             ->and($loginRules['identity'])->not->toContain('exists:users,email')
             ->and($loginRules['password'])->toBe(['required'])
+            ->and((new Fleetbase\Http\Requests\LoginRequest())->authorize())->toBeTrue()
             ->and((new Fleetbase\Http\Requests\LoginRequest())->messages()['identity.required'])
             ->toBe('An email address or phone number is required.')
             ->and($twoFaRules['token'])->toBe('required')
             ->and($twoFaRules['identity'])->toBe('required|email|exists:users,email')
+            ->and((new TwoFaValidationRequest())->authorize())->toBeTrue()
             ->and((new TwoFaValidationRequest())->messages()['identity.exists'])->toBe('No user found by this email');
     });
 
