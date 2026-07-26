@@ -59,6 +59,27 @@ class SqlDumperInspectableTestDumper extends SqlDumper
     }
 }
 
+class SqlDumperMetadataConnection extends Illuminate\Database\Connection
+{
+    public array $queries = [];
+
+    public function __construct(private string $driverName, private array $rows)
+    {
+    }
+
+    public function getDriverName()
+    {
+        return $this->driverName;
+    }
+
+    public function select($query, $bindings = [], $useReadPdo = true)
+    {
+        $this->queries[] = compact('query', 'bindings', 'useReadPdo');
+
+        return $this->rows;
+    }
+}
+
 class SqlDumperStringTestDumper extends SqlDumper
 {
     public static string $path = '';
@@ -343,6 +364,27 @@ test('sql dumper constructor normalizes tiny chunk sizes and lists sqlite tables
         ->and($dumper->tables('ignored'))->toContain('orders')
         ->and($dumper->tables('ignored'))->toContain('order_notes')
         ->and($dumper->tables('ignored'))->toContain('global_settings');
+});
+
+test('sql dumper lists mysql and postgres tables through driver metadata queries', function () {
+    $mysql = new SqlDumperMetadataConnection('mysql', [
+        (object) ['TABLE_NAME' => 'orders'],
+        (object) ['TABLE_NAME' => 'order_notes'],
+    ]);
+    $pgsql = new SqlDumperMetadataConnection('pgsql', [
+        (object) ['TABLE_NAME' => 'orders'],
+        (object) ['TABLE_NAME' => 'order_notes'],
+    ]);
+
+    $mysqlTables = (new SqlDumperInspectableTestDumper($mysql, 100))->tables('fleetbase_test');
+    $pgsqlTables = (new SqlDumperInspectableTestDumper($pgsql, 100))->tables('ignored');
+
+    expect($mysqlTables)->toBe(['orders', 'order_notes'])
+        ->and($pgsqlTables)->toBe(['orders', 'order_notes'])
+        ->and($mysql->queries[0]['query'])->toContain('information_schema.tables')
+        ->and($mysql->queries[0]['bindings'])->toBe(['fleetbase_test'])
+        ->and($pgsql->queries[0]['query'])->toContain('pg_catalog.pg_tables')
+        ->and($pgsql->queries[0]['bindings'])->toBe([]);
 });
 
 test('sql dumper foreign set streaming writes matching dependent rows and skips empty batches', function () {
