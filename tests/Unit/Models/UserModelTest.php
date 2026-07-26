@@ -5,15 +5,21 @@ use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\File;
 use Fleetbase\Models\Group;
+use Fleetbase\Models\Invite;
+use Fleetbase\Models\Permission;
+use Fleetbase\Models\Policy;
+use Fleetbase\Models\Role;
 use Fleetbase\Models\User;
 use Fleetbase\Models\UserDevice;
 use Fleetbase\Models\VerificationCode;
+use Fleetbase\Support\Utils;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Facade;
 
 class UserModelSaveSpy extends User
@@ -67,6 +73,60 @@ class UserModelCompanyUserSpy extends CompanyUser
         $this->assignedRoles[] = $role;
 
         return $this;
+    }
+}
+
+class UserModelAuthorizationPivotFake
+{
+    public function __construct(private Collection $roles, private Collection $policies, private Collection $permissions)
+    {
+    }
+
+    public function roles(): object
+    {
+        return new class($this->roles) {
+            public function __construct(private Collection $roles)
+            {
+            }
+
+            public function first(): ?Role
+            {
+                return $this->roles->first();
+            }
+
+            public function get(): Collection
+            {
+                return $this->roles;
+            }
+        };
+    }
+
+    public function policies(): object
+    {
+        return new class($this->policies) {
+            public function __construct(private Collection $policies)
+            {
+            }
+
+            public function get(): Collection
+            {
+                return $this->policies;
+            }
+        };
+    }
+
+    public function permissions(): object
+    {
+        return new class($this->permissions) {
+            public function __construct(private Collection $permissions)
+            {
+            }
+
+            public function get(): Collection
+            {
+                return $this->permissions;
+            }
+        };
     }
 }
 
@@ -133,10 +193,67 @@ class UserModelHashFake
     }
 }
 
+class UserModelCacheFake
+{
+    public array $values = [];
+
+    public function tags(array|string $tags): self
+    {
+        return $this;
+    }
+
+    public function get(string $key, mixed $default = null): mixed
+    {
+        return $this->values[$key] ?? $default;
+    }
+
+    public function put(string $key, mixed $value, mixed $ttl = null): bool
+    {
+        $this->values[$key] = $value;
+
+        return true;
+    }
+
+    public function delete(string $key): bool
+    {
+        unset($this->values[$key]);
+
+        return true;
+    }
+
+    public function forget(string $key): bool
+    {
+        return $this->delete($key);
+    }
+
+    public function increment(string $key, int $value = 1): int
+    {
+        $this->values[$key] = (int) ($this->values[$key] ?? 0) + $value;
+
+        return $this->values[$key];
+    }
+
+    public function flush(): bool
+    {
+        $this->values = [];
+
+        return true;
+    }
+}
+
+class UserModelResponseCacheFake
+{
+    public function clear(): void
+    {
+    }
+}
+
 function user_model_container(): void
 {
     $container = bind_test_container();
     $container->instance('hash', new UserModelHashFake());
+    $container->instance('cache', new UserModelCacheFake());
+    $container->instance('responsecache', new UserModelResponseCacheFake());
     Facade::clearResolvedInstance('hash');
     Facade::clearResolvedInstance('cache');
     Facade::clearResolvedInstance('log');
@@ -343,6 +460,50 @@ it('updates last login and manual verification timestamps without requiring pers
     Carbon::setTestNow();
 });
 
+it('wraps locale lookup failures with a stable user-facing exception', function () {
+    user_model_container();
+
+    $user = new User(['uuid' => 'user-locale-failure']);
+
+    expect(fn () => $user->getLocale())
+        ->toThrow(Exception::class, 'Unable to retrieve user locale setting at this time.');
+});
+
+it('exposes date verified user type and presence accessors through stable helpers', function () {
+    user_model_container();
+    Carbon::setTestNow(Carbon::parse('2026-07-17 15:00:00', 'UTC'));
+
+    $cache = new UserModelCacheFake();
+    app()->instance('cache', $cache);
+    Cache::clearResolvedInstance('cache');
+
+    $emailVerified = new UserModelSaveSpy();
+    $emailVerified->setRawAttributes([
+        'uuid'              => 'user-email-verified',
+        'email_verified_at' => Carbon::parse('2026-07-17 12:00:00', 'UTC'),
+    ], true);
+
+    $phoneVerified = new UserModelSaveSpy();
+    $phoneVerified->setRawAttributes([
+        'uuid'              => 'user-phone-verified',
+        'phone_verified_at' => Carbon::parse('2026-07-17 13:00:00', 'UTC'),
+    ], true);
+
+    $present = new UserModelSaveSpy();
+    $present->setRawAttributes(['uuid' => 'user-present'], true);
+    $cache->put($present->getPresenceCacheKey(), Carbon::parse('2026-07-17 14:59:00', 'UTC'));
+
+    expect($emailVerified->getDateVerified()?->toDateTimeString())->toBe('2026-07-17 12:00:00')
+        ->and($phoneVerified->getDateVerified()?->toDateTimeString())->toBe('2026-07-17 13:00:00')
+        ->and($emailVerified->setUserType('admin'))->toBe($emailVerified)
+        ->and($emailVerified->type)->toBe('admin')
+        ->and($emailVerified->saves)->toBe(1)
+        ->and($present->last_seen_at?->toDateTimeString())->toBe('2026-07-17 14:59:00')
+        ->and($present->is_online)->toBeTrue();
+
+    Carbon::setTestNow();
+});
+
 it('activates and deactivates the user and loaded company-user session state together', function () {
     user_model_container();
 
@@ -497,12 +658,15 @@ it('resolves company user pivots from loaded relations explicit companies and em
     $user->setRawAttributes([
         'uuid' => 'user-3',
     ], true);
-    $company = Company::where('uuid', '33333333-3333-4333-8333-333333333333')->first();
+    $company        = Company::where('uuid', '33333333-3333-4333-8333-333333333333')->first();
+    $missingCompany = new Company();
+    $missingCompany->setRawAttributes(['uuid' => 'missing-company'], true);
 
     expect($preloaded->getCompanyUser())->toBe($preloadedPivot)
         ->and($unscoped->getCompanyUser())->toBeNull()
         ->and($user->getCompanyUser($company))->toBeInstanceOf(CompanyUser::class)
-        ->and($user->companyUser->uuid)->toBe('company-user-3');
+        ->and($user->companyUser->uuid)->toBe('company-user-3')
+        ->and((new User(['uuid' => 'user-3']))->getCompanyUser($missingCompany))->toBeNull();
 });
 
 it('falls back to database lookups for company and verification code helpers', function () {
@@ -529,6 +693,11 @@ it('falls back to database lookups for company and verification code helpers', f
         'uuid'         => 'user-2',
         'company_uuid' => '22222222-2222-4222-8222-222222222222',
     ], true);
+    $missingCompanyUser = new UserModelSaveSpy();
+    $missingCompanyUser->setRawAttributes([
+        'uuid'         => 'user-missing-company',
+        'company_uuid' => '33333333-3333-4333-8333-333333333333',
+    ], true);
 
     $company = $user->getCompany();
     $code    = $user->getVerificationCodeOrFail('123456', ['email_verification']);
@@ -538,11 +707,30 @@ it('falls back to database lookups for company and verification code helpers', f
         ->and($code)->toBeInstanceOf(VerificationCode::class)
         ->and($code->uuid)->toBe('verify-1')
         ->and($user->verify('123456'))->toBe($user)
-        ->and($user->email_verified_at)->toBeInstanceOf(Carbon::class);
+        ->and($user->email_verified_at)->toBeInstanceOf(Carbon::class)
+        ->and(fn () => $missingCompanyUser->getCompany())->toThrow(TypeError::class);
 });
 
 it('returns early from company invitations when required company or recipient context is missing', function () {
-    user_model_container();
+    user_model_schema();
+
+    app('db')->connection('mysql')->getSchemaBuilder()->create('invites', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('company_uuid')->nullable();
+        $table->string('created_by_uuid')->nullable();
+        $table->string('subject_uuid')->nullable();
+        $table->string('subject_type')->nullable();
+        $table->string('public_id')->nullable();
+        $table->string('uri')->nullable();
+        $table->string('code')->nullable();
+        $table->string('protocol')->nullable();
+        $table->text('recipients')->nullable();
+        $table->string('reason')->nullable();
+        $table->text('meta')->nullable();
+        $table->timestamp('expires_at')->nullable();
+        $table->timestamps();
+        $table->softDeletes();
+    });
 
     $company = new Company();
     $company->setRawAttributes(['uuid' => 'company-1'], true);
@@ -550,7 +738,91 @@ it('returns early from company invitations when required company or recipient co
     $user = new User();
     $user->setRawAttributes(['uuid' => 'user-1'], true);
 
-    expect($user->sendInviteFromCompany($company))->toBeFalse();
+    $alreadyInvited = new User();
+    $alreadyInvited->setRawAttributes([
+        'uuid'  => 'user-already-invited',
+        'email' => 'already@example.test',
+    ], true);
+    Invite::create([
+        'uuid'            => 'invite-already-sent',
+        'company_uuid'    => 'company-1',
+        'created_by_uuid' => 'user-already-invited',
+        'subject_uuid'    => 'company-1',
+        'subject_type'    => Utils::getMutationType($company),
+        'protocol'        => 'email',
+        'recipients'      => ['already@example.test'],
+        'reason'          => 'join_company',
+    ]);
+
+    $unscopedUser = new User();
+    $unscopedUser->setRawAttributes([
+        'uuid'         => 'user-without-company',
+        'company_uuid' => null,
+        'email'        => 'missing-company@example.test',
+    ], true);
+
+    expect($user->sendInviteFromCompany($company))->toBeFalse()
+        ->and($alreadyInvited->sendInviteFromCompany($company))->toBeFalse()
+        ->and($unscopedUser->sendInviteFromCompany())->toBeFalse();
+});
+
+it('returns empty authorization collections when no company-user pivot can be resolved', function () {
+    user_model_schema();
+
+    $user = new User();
+    $user->setRawAttributes([
+        'uuid'         => 'user-without-pivot',
+        'company_uuid' => null,
+    ], true);
+
+    expect($user->role)->toBeNull()
+        ->and($user->roles)->toBeInstanceOf(Collection::class)
+        ->and($user->roles)->toBeEmpty()
+        ->and($user->policies)->toBeInstanceOf(Collection::class)
+        ->and($user->policies)->toBeEmpty()
+        ->and($user->permissions)->toBeInstanceOf(Collection::class)
+        ->and($user->permissions)->toBeEmpty();
+});
+
+it('returns authorization roles policies and permissions from the resolved company-user pivot', function () {
+    user_model_container();
+    config([
+        'auth.defaults.guard' => 'web',
+        'auth.guards.web'     => [
+            'driver'   => 'session',
+            'provider' => 'users',
+        ],
+    ]);
+
+    $role = new Role();
+    $role->setRawAttributes(['name' => 'Dispatcher'], true);
+
+    $policy = new Policy();
+    $policy->setRawAttributes(['name' => 'Orders Read'], true);
+
+    $permission = new Permission();
+    $permission->setRawAttributes(['name' => 'orders.read'], true);
+
+    $user = new UserModelSaveSpy();
+    $user->setRelation('companyUser', new UserModelAuthorizationPivotFake(
+        collect([$role]),
+        collect([$policy]),
+        collect([$permission]),
+    ));
+    $userWithoutRoles = new UserModelSaveSpy();
+    $userWithoutRoles->setRelation('companyUser', new UserModelAuthorizationPivotFake(
+        collect(),
+        collect(),
+        collect(),
+    ));
+
+    expect($user->role)->toBe($role)
+        ->and($user->roles)->toEqual(collect([$role]))
+        ->and($user->policies)->toEqual(collect([$policy]))
+        ->and($user->permissions)->toEqual(collect([$permission]))
+        ->and($user->getRole())->toBe($role)
+        ->and($user->getRoleName())->toBe('Dispatcher')
+        ->and($userWithoutRoles->getRoleName())->toBeNull();
 });
 
 it('enriches new and existing users from request timezone data without calling missing helpers', function () {

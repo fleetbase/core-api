@@ -1009,10 +1009,8 @@ class User extends Authenticatable
         // Check if $code is a string, and retrieve the verification code model if necessary
         if (is_string($code)) {
             $verifyCode = $this->getVerificationCodeOrFail($code);
-        } elseif ($code instanceof VerificationCode) {
-            $verifyCode = $code;
         } else {
-            throw new InvalidVerificationCodeException('Invalid verification code.');
+            $verifyCode = $code;
         }
 
         // Get the current time

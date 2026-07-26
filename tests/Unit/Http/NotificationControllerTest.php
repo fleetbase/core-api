@@ -175,17 +175,21 @@ test('notification controller deletes scoped notifications and rejects missing i
     notification_controller_database();
     $controller = notification_controller();
 
-    $deleted = $controller->deleteNotification('notice-1');
-    $foreign = $controller->deleteNotification('notice-other-user');
-    $missing = $controller->deleteRecord('missing-notice', Request::create('/int/v1/notifications/missing', 'DELETE'));
+    $deleted      = $controller->deleteNotification('notice-1');
+    $foreign      = $controller->deleteNotification('notice-other-user');
+    $routeDeleted = $controller->deleteRecord('notice-2', Request::create('/int/v1/notifications/notice-2', 'DELETE'));
+    $missing      = $controller->deleteRecord('missing-notice', Request::create('/int/v1/notifications/missing', 'DELETE'));
 
     expect($deleted->getStatusCode())->toBe(200)
         ->and($deleted->getData(true))->toBe(['message' => 'Notification deleted successfully'])
+        ->and($routeDeleted->getStatusCode())->toBe(200)
+        ->and($routeDeleted->getData(true))->toBe(['message' => 'Notification deleted successfully'])
         ->and($foreign->getStatusCode())->toBe(404)
         ->and($foreign->getData(true))->toBe(['error' => 'Notification not found'])
         ->and($missing->getStatusCode())->toBe(404)
         ->and($missing->getData(true))->toBe(['error' => 'Notification not found'])
         ->and(Notification::where('id', 'notice-1')->exists())->toBeFalse()
+        ->and(Notification::where('id', 'notice-2')->exists())->toBeFalse()
         ->and(Notification::where('id', 'notice-other-user')->exists())->toBeTrue();
 });
 

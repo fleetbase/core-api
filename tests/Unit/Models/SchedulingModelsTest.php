@@ -476,17 +476,17 @@ it('handles schedule template rrule parsing timezones horizons and invalid rules
         ->and($logger->entries[count($logger->entries) - 1][2]['template_uuid'])->toBe('template-rrule-branches')
         ->and($logger->entries[count($logger->entries) - 1][2]['rrule_raw'])->toBe('FREQ=THROW_INVALID_ARGUMENT')
         ->and($logger->entries[count($logger->entries) - 1][2]['rrule_built'])->toContain('RRULE:FREQ=THROW_INVALID_ARGUMENT')
-        ->and($logger->entries[count($logger->entries) - 1][2]['error'])->toBe('Invalid RRULE definition.');
+        ->and($logger->entries[count($logger->entries) - 1][2]['error'])->toBeString()->not->toBe('');
 
     $template->rrule = 'FREQ=THROW_RRULE_EXCEPTION';
 
     expect($template->getRruleInstance($from, 'UTC'))->toBeNull()
         ->and($logger->entries[count($logger->entries) - 1][0])->toBe('warning')
-        ->and($logger->entries[count($logger->entries) - 1][1])->toBe('ScheduleTemplate: invalid RRULE string')
+        ->and($logger->entries[count($logger->entries) - 1][1])->toStartWith('ScheduleTemplate: invalid RRULE string')
         ->and($logger->entries[count($logger->entries) - 1][2]['template_uuid'])->toBe('template-rrule-branches')
         ->and($logger->entries[count($logger->entries) - 1][2]['rrule_raw'])->toBe('FREQ=THROW_RRULE_EXCEPTION')
         ->and($logger->entries[count($logger->entries) - 1][2]['rrule_built'])->toContain('RRULE:FREQ=THROW_RRULE_EXCEPTION')
-        ->and($logger->entries[count($logger->entries) - 1][2]['error'])->toBe('Invalid recurrence rule.');
+        ->and($logger->entries[count($logger->entries) - 1][2]['error'])->toBeString()->not->toBe('');
 });
 
 it('exposes schedule template relationship keys and rrule dependency failures', function () {

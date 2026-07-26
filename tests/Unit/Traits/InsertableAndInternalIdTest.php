@@ -1,5 +1,6 @@
 <?php
 
+use Fleetbase\Support\Utils;
 use Fleetbase\Traits\HasInternalId;
 use Fleetbase\Traits\HasSessionAttributes;
 use Fleetbase\Traits\Insertable;
@@ -163,7 +164,16 @@ test('has internal id generates ids from explicit prefixes and session company n
     $manualRecord = new InternalIdTraitRecord(['internal_id' => 'MANUAL-001']);
     $manualRecord->save();
 
+    mt_srand(24680);
+    $collidingId = 'JOB-' . Utils::randomNumber(6) . '-Z';
+    InternalIdTraitRecord::query()->create(['internal_id' => $collidingId]);
+    mt_srand(24680);
+    $retryId = InternalIdTraitRecord::makeInternalId('JOB-', '-Z');
+    mt_srand();
+
     expect($record->internal_id)->toStartWith('JOB-')->toEndWith('-Z')
+        ->and($retryId)->toStartWith('JOB-')->toEndWith('-Z')
+        ->and($retryId)->not->toBe($collidingId)
         ->and($manualRecord->internal_id)->toBe('MANUAL-001')
         ->and($capsule->getConnection('mysql')->table('internal_id_trait_records')->where('internal_id', $record->internal_id)->exists())->toBeTrue()
         ->and($capsule->getConnection('mysql')->table('internal_id_trait_records')->where('internal_id', 'MANUAL-001')->exists())->toBeTrue();

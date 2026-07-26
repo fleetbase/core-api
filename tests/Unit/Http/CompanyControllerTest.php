@@ -1,7 +1,10 @@
 <?php
 
+use Fleetbase\Exceptions\FleetbaseRequestValidationException;
+use Fleetbase\Exports\CompanyExport;
 use Fleetbase\Http\Controllers\Internal\v1\CompanyController;
 use Fleetbase\Http\Requests\AdminRequest;
+use Fleetbase\Http\Requests\ExportRequest;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\Extension;
 use Fleetbase\Models\Invite;
@@ -11,10 +14,13 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Database\QueryException;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Facade;
+use Maatwebsite\Excel\Facades\Excel;
 use Spatie\Activitylog\ActivityLogger;
 use Spatie\Activitylog\Contracts\Activity as ActivityContract;
 use Spatie\Activitylog\PendingActivityLog;
@@ -258,6 +264,33 @@ class CompanyControllerInvalidUpdateModel extends Company
     public function isInvalidUpdateParam(string $key): bool
     {
         return true;
+    }
+}
+
+class CompanyControllerThrowingUpdateModel extends Company
+{
+    public function __construct(private ?Throwable $throwable = null)
+    {
+        parent::__construct();
+    }
+
+    public function getApiPayloadFromRequest($request, array $only = [], array $except = []): array
+    {
+        throw $this->throwable ?? new RuntimeException('Company update failed.');
+    }
+}
+
+class CompanyControllerExcelFake
+{
+    public ?object $export   = null;
+    public ?string $filename = null;
+
+    public function download(object $export, string $filename): Response
+    {
+        $this->export   = $export;
+        $this->filename = $filename;
+
+        return new Response('company export');
     }
 }
 
@@ -768,6 +801,40 @@ test('company controller returns stable errors for hidden organization updates d
         ->and($invalidUpdate->getData(true))->toBe(['errors' => ['Invalid param "unexpected_field" in update request!']]);
 });
 
+test('company controller update formats database and validation failures as stable errors', function () {
+    company_controller_fixtures();
+
+    $queryController        = company_controller();
+    $queryController->model = new CompanyControllerThrowingUpdateModel(new QueryException('mysql', 'update companies', [], new RuntimeException('database rejected company update')));
+    $queryResponse          = $queryController->updateRecord(company_controller_request('PUT', [
+        'name' => 'Blocked',
+    ]), 'company_public_1');
+
+    $validationController        = company_controller();
+    $validationController->model = new CompanyControllerThrowingUpdateModel(new FleetbaseRequestValidationException(['name' => ['The organization name is invalid.']]));
+    $validationResponse          = $validationController->updateRecord(company_controller_request('PUT', [
+        'name' => '',
+    ]), 'company_public_1');
+
+    expect($queryResponse->getStatusCode())->toBe(400)
+        ->and($queryResponse->getData(true)['errors'][0])->toContain('database rejected company update')
+        ->and($validationResponse->getStatusCode())->toBe(400)
+        ->and($validationResponse->getData(true))->toBe(['errors' => ['name' => ['The organization name is invalid.']]]);
+});
+
+test('company controller generic visibility checks require a session organization', function () {
+    company_controller_fixtures();
+    session()->flush();
+
+    $find  = company_controller()->findRecord(company_controller_request(), 'company_public_1');
+    $users = company_controller()->users('company_public_1', company_controller_request('GET'));
+
+    expect($find->getStatusCode())->toBe(404)
+        ->and($find->getData(true))->toBe(['errors' => ['Organization not found.']])
+        ->and($users->getStatusCode())->toBe(404)
+        ->and($users->getData(true))->toBe(['error' => 'Organization not found.']);
+});
+
 test('company controller public lookup resolves organizations by public id and join invite uri', function () {
     company_controller_fixtures();
 
@@ -993,11 +1060,16 @@ test('company controller admin status updates validate status persist active sta
     $activity = company_controller_bind_activity();
     $admin    = company_controller_user('admin-1');
 
+    $missing = company_controller()->setAdminStatus('missing-company', company_controller_admin_request('POST', [
+        'status' => 'active',
+    ], $admin));
     $invalid = company_controller()->setAdminStatus('company_public_2', company_controller_admin_request('POST', [
         'status' => 'archived',
     ], $admin));
 
-    expect($invalid->getStatusCode())->toBe(422)
+    expect($missing->getStatusCode())->toBe(404)
+        ->and($missing->getData(true))->toBe(['error' => 'Organization not found.'])
+        ->and($invalid->getStatusCode())->toBe(422)
         ->and($invalid->getData(true))->toBe(['error' => 'Invalid organization status.']);
 
     $suspended = company_controller()->setAdminStatus('company_public_2', company_controller_admin_request('POST', [
@@ -1024,6 +1096,22 @@ test('company controller admin status updates validate status persist active sta
         ->and($activity->entries[0]['properties']['attributes'])->toBe(['status' => 'suspended'])
         ->and($activity->entries[1]['properties']['old'])->toBe(['status' => 'suspended'])
         ->and($activity->entries[1]['properties']['attributes'])->toBe(['status' => 'active']);
+});
+
+test('company controller export downloads selected organizations in requested format', function () {
+    company_controller_fixtures();
+    $excel = new CompanyControllerExcelFake();
+    Excel::swap($excel);
+
+    $response = company_controller()->export(ExportRequest::create('/int/v1/companies/export', 'GET', [
+        'format'     => 'csv',
+        'selections' => ['company-1', 'company-2'],
+    ]));
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($response->getContent())->toBe('company export')
+        ->and($excel->export)->toBeInstanceOf(CompanyExport::class)
+        ->and($excel->filename)->toEndWith('.csv');
 });
 
 test('company controller admin onboarding toggles completion metadata and handles missing organizations', function () {
@@ -1107,6 +1195,8 @@ test('company controller admin user lifecycle updates membership verification an
     $missingUser    = company_controller()->deactivateAdminUser('company_public_1', 'missing-user', company_controller_admin_request('POST', [], $admin));
     $notMember      = company_controller()->deactivateAdminUser('company_public_1', 'foreign-1', company_controller_admin_request('POST', [], $admin));
     $ownerBlocked   = company_controller()->deactivateAdminUser('company_public_1', 'owner-1', company_controller_admin_request('POST', [], $admin));
+    $verifyMissing  = company_controller()->verifyAdminUser('missing-company', 'member-1', company_controller_admin_request('POST', [], $admin));
+    $removeMissing  = company_controller()->removeAdminUser('missing-company', 'member-1', company_controller_admin_request('POST', [], $admin));
 
     expect($missingCompany->getStatusCode())->toBe(404)
         ->and($missingCompany->getData(true))->toBe(['error' => 'Organization not found.'])
@@ -1115,7 +1205,11 @@ test('company controller admin user lifecycle updates membership verification an
         ->and($notMember->getStatusCode())->toBe(404)
         ->and($notMember->getData(true))->toBe(['error' => 'User is not a member of this organization.'])
         ->and($ownerBlocked->getStatusCode())->toBe(422)
-        ->and($ownerBlocked->getData(true))->toBe(['error' => 'Transfer ownership before deactivating the organization owner.']);
+        ->and($ownerBlocked->getData(true))->toBe(['error' => 'Transfer ownership before deactivating the organization owner.'])
+        ->and($verifyMissing->getStatusCode())->toBe(404)
+        ->and($verifyMissing->getData(true))->toBe(['error' => 'Organization not found.'])
+        ->and($removeMissing->getStatusCode())->toBe(404)
+        ->and($removeMissing->getData(true))->toBe(['error' => 'Organization not found.']);
 
     $deactivated       = company_controller()->deactivateAdminUser('company_public_1', 'member-1', company_controller_admin_request('POST', [], $admin));
     $deactivatedStatus = $capsule->getConnection('mysql')->table('company_users')->where('uuid', 'pivot-member-1')->value('status');
@@ -1222,6 +1316,14 @@ test('company controller transfers ownership to another organization member and 
     $capsule->getConnection('mysql')->table('companies')->where('uuid', 'company-1')->update([
         'owner_uuid' => 'owner-1',
     ]);
+    $capsule->getConnection('mysql')->table('company_users')->insert([
+        'uuid'         => 'pivot-owner-3',
+        'company_uuid' => 'company-3',
+        'user_uuid'    => 'owner-1',
+        'status'       => 'active',
+        'created_at'   => '2026-07-18 00:00:00',
+        'updated_at'   => '2026-07-18 00:00:00',
+    ]);
     session(['company' => 'company-1', 'user' => 'owner-1']);
 
     $leave = company_controller()->transferOwnership(company_controller_request('POST', [
@@ -1234,7 +1336,8 @@ test('company controller transfers ownership to another organization member and 
         ->and($leave->getData(true)['status'])->toBe('ok')
         ->and($leave->getData(true)['currentUserLeft'])->toBeTrue()
         ->and($capsule->getConnection('mysql')->table('companies')->where('uuid', 'company-1')->value('owner_uuid'))->toBe('member-1')
-        ->and($capsule->getConnection('mysql')->table('company_users')->where('uuid', 'pivot-owner-1')->whereNull('deleted_at')->exists())->toBeFalse();
+        ->and($capsule->getConnection('mysql')->table('company_users')->where('uuid', 'pivot-owner-1')->whereNull('deleted_at')->exists())->toBeFalse()
+        ->and($capsule->getConnection('mysql')->table('users')->where('uuid', 'owner-1')->value('company_uuid'))->toBe('company-3');
 });
 
 test('company controller transfer ownership blocks non members and self-transfer leave requests', function () {

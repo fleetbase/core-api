@@ -120,6 +120,52 @@ test('test twilio config returns twilio rest exceptions as provider errors', fun
         ]);
 });
 
+test('test twilio config returns fatal provider errors as stable probe errors', function () {
+    setting_controller_external_probe_fixtures();
+    $twilio            = new SettingControllerTwilioFake();
+    $twilio->exception = new Error('Twilio facade failed to boot');
+
+    app()->instance('twilio', $twilio);
+    Facade::clearResolvedInstance('twilio');
+
+    $response = (new SettingController())->testTwilioConfig(setting_controller_external_probe_request([
+        'sid'   => 'error-sid',
+        'token' => 'error-token',
+        'from'  => '+15555550999',
+        'phone' => '+15555550123',
+    ]));
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($response->getData(true))->toBe([
+            'status'  => 'error',
+            'message' => 'Twilio facade failed to boot',
+        ])
+        ->and($twilio->messages)->toBe([]);
+});
+
+test('test twilio config returns php warning failures as stable probe errors', function () {
+    setting_controller_external_probe_fixtures();
+    $twilio            = new SettingControllerTwilioFake();
+    $twilio->exception = new ErrorException('Twilio transport emitted a warning');
+
+    app()->instance('twilio', $twilio);
+    Facade::clearResolvedInstance('twilio');
+
+    $response = (new SettingController())->testTwilioConfig(setting_controller_external_probe_request([
+        'sid'   => 'warning-sid',
+        'token' => 'warning-token',
+        'from'  => '+15555550999',
+        'phone' => '+15555550123',
+    ]));
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($response->getData(true))->toBe([
+            'status'  => 'error',
+            'message' => 'Twilio transport emitted a warning',
+        ])
+        ->and($twilio->messages)->toBe([]);
+});
+
 test('test socketcluster returns stable json when the configured socket cannot send', function () {
     setting_controller_external_probe_fixtures();
 
@@ -149,4 +195,19 @@ test('test sentry config returns sdk builder errors for invalid dsns', function 
             'message' => 'The option "dsn" with value "not-a-dsn" is invalid.',
         ])
         ->and(config('sentry.dsn'))->toBe('not-a-dsn');
+});
+
+test('test sentry config accepts an empty dsn as a local no op probe', function () {
+    setting_controller_external_probe_fixtures();
+
+    $response = (new SettingController())->testSentryConfig(setting_controller_external_probe_request([
+        'dsn' => null,
+    ]));
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($response->getData(true))->toBe([
+            'status'  => 'success',
+            'message' => 'Sentry configuration is successful, test Exception sent.',
+        ])
+        ->and(config('sentry.dsn'))->toBeNull();
 });

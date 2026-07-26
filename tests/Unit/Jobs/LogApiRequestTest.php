@@ -29,6 +29,48 @@ namespace {
     use Illuminate\Http\Request;
     use Illuminate\Support\Facades\Facade;
 
+    class LogApiRequestResponseCacheFake
+    {
+        public int $clears = 0;
+
+        public function clear(): void
+        {
+            $this->clears++;
+        }
+    }
+
+    class LogApiRequestCacheFake
+    {
+        private array $values = [];
+
+        public function tags(array|string $tags): self
+        {
+            return $this;
+        }
+
+        public function rememberForever(string $key, callable $callback): mixed
+        {
+            return $callback();
+        }
+
+        public function forget(string $key): bool
+        {
+            return true;
+        }
+
+        public function flush(): bool
+        {
+            return true;
+        }
+
+        public function increment(string $key, int $value = 1): int
+        {
+            $this->values[$key] = (int) ($this->values[$key] ?? 0) + $value;
+
+            return $this->values[$key];
+        }
+    }
+
     function log_api_request_database(): Capsule
     {
         EloquentModel::clearBootedModels();
@@ -77,6 +119,34 @@ namespace {
             $table->timestamp('last_used_at')->nullable();
             $table->timestamp('expires_at')->nullable();
             $table->timestamps();
+        });
+        $schema->create('api_request_logs', function ($table) {
+            $table->string('uuid')->primary();
+            $table->string('public_id')->nullable();
+            $table->string('_key')->nullable();
+            $table->string('company_uuid')->nullable();
+            $table->string('api_credential_uuid')->nullable();
+            $table->unsignedBigInteger('access_token_id')->nullable();
+            $table->string('method')->nullable();
+            $table->string('path')->nullable();
+            $table->string('full_url')->nullable();
+            $table->integer('status_code')->nullable();
+            $table->string('reason_phrase')->nullable();
+            $table->float('duration')->nullable();
+            $table->string('ip_address')->nullable();
+            $table->string('version')->nullable();
+            $table->string('source')->nullable();
+            $table->string('content_type')->nullable();
+            $table->json('related')->nullable();
+            $table->json('query_params')->nullable();
+            $table->json('request_headers')->nullable();
+            $table->json('request_body')->nullable();
+            $table->text('request_raw_body')->nullable();
+            $table->json('response_headers')->nullable();
+            $table->json('response_body')->nullable();
+            $table->text('response_raw_body')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
         });
 
         return $capsule;
@@ -152,6 +222,52 @@ namespace {
             ->and($payload['duration'])->toBeFloat()
             ->and($payload['duration'])->toBeGreaterThan(0)
             ->and($payload)->not->toHaveKeys(['api_credential_uuid', 'access_token_id']);
+    });
+
+    it('persists API request logs on the selected connection and clears response cache', function () {
+        $database = log_api_request_database();
+        $cache    = new LogApiRequestResponseCacheFake();
+        app()->instance('responsecache', $cache);
+        app()->instance('cache', new LogApiRequestCacheFake());
+        Facade::clearResolvedInstance('responsecache');
+        Facade::clearResolvedInstance('cache');
+
+        $payload = [
+            '_key'              => 'live_key',
+            'company_uuid'      => 'company-1',
+            'method'            => 'POST',
+            'path'              => 'v1/orders',
+            'full_url'          => 'http://localhost/v1/orders',
+            'status_code'       => 201,
+            'reason_phrase'     => 'Created',
+            'duration'          => 0.125,
+            'ip_address'        => '198.51.100.10',
+            'version'           => 'v1',
+            'source'            => 'Fleetbase SDK',
+            'content_type'      => 'application/json',
+            'related'           => ['order_1'],
+            'query_params'      => ['status' => 'created'],
+            'request_headers'   => ['X-Request-Id' => 'request-1'],
+            'request_body'      => ['name' => 'Order 1'],
+            'request_raw_body'  => '{"name":"Order 1"}',
+            'response_headers'  => ['Content-Type' => 'application/json'],
+            'response_body'     => ['id' => 'order_1'],
+            'response_raw_body' => '{"id":"order_1"}',
+        ];
+
+        (new LogApiRequest($payload, 'mysql'))->handle();
+
+        $log = $database->getConnection('mysql')->table('api_request_logs')->first();
+
+        expect($log)->not->toBeNull()
+            ->and($log->_key)->toBe('live_key')
+            ->and($log->company_uuid)->toBe('company-1')
+            ->and($log->method)->toBe('POST')
+            ->and($log->path)->toBe('v1/orders')
+            ->and($log->status_code)->toBe(201)
+            ->and(json_decode($log->related, true))->toBe(['order_1'])
+            ->and(json_decode($log->request_body, true))->toBe(['name' => 'Order 1'])
+            ->and($cache->clears)->toBe(2);
     });
 
     it('attributes payloads to valid API credentials and personal access tokens only', function () {

@@ -79,7 +79,10 @@ class Http extends HttpClient
                 $direction = $sd[1] ?? $direction;
                 $param     = $sd[0];
             } else {
+                // @codeCoverageIgnoreStart
+                // explode() always returns at least one element for string input.
                 $param = $sort;
+                // @codeCoverageIgnoreEnd
             }
         }
 

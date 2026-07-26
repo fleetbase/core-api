@@ -25,12 +25,27 @@ namespace Fleetbase\Tests\Fixtures\Models {
     {
         protected $table = 'missing_orphan_records';
     }
+
+    class OrphanNoPrimaryRecord extends Model
+    {
+        protected $table = 'orphan_no_primary_records';
+    }
+
+    class OrphanThrowingRecord extends Model
+    {
+        public function __construct(array $attributes = [])
+        {
+            throw new \RuntimeException('Cannot inspect this model.');
+        }
+    }
 }
 
 namespace {
     use Fleetbase\Console\Commands\PurgeOrphanedModelRecords;
     use Fleetbase\Tests\Fixtures\Models\OrphanIdRecord;
     use Fleetbase\Tests\Fixtures\Models\OrphanMissingTableRecord;
+    use Fleetbase\Tests\Fixtures\Models\OrphanNoPrimaryRecord;
+    use Fleetbase\Tests\Fixtures\Models\OrphanThrowingRecord;
     use Fleetbase\Tests\Fixtures\Models\OrphanUuidRecord;
     use Illuminate\Console\OutputStyle;
     use Illuminate\Database\Capsule\Manager as Capsule;
@@ -106,7 +121,7 @@ namespace {
         Facade::clearResolvedInstances();
 
         $schema = $capsule->getConnection('mysql')->getSchemaBuilder();
-        foreach (['model_has_roles', 'model_has_policies', 'model_has_permissions', 'orphan_uuid_records', 'orphan_id_records'] as $table) {
+        foreach (['model_has_roles', 'model_has_policies', 'model_has_permissions', 'orphan_uuid_records', 'orphan_id_records', 'orphan_no_primary_records'] as $table) {
             $schema->dropIfExists($table);
         }
 
@@ -130,6 +145,10 @@ namespace {
             $table->string('name')->nullable();
             $table->timestamps();
         });
+        $schema->create('orphan_no_primary_records', function ($table) {
+            $table->string('external_key')->nullable();
+            $table->string('name')->nullable();
+        });
 
         $db = $capsule->getConnection('mysql');
         $db->table('orphan_uuid_records')->insert([
@@ -147,6 +166,9 @@ namespace {
             ['model_type' => OrphanIdRecord::class, 'model_uuid' => '999'],
             ['model_type' => 'Fleetbase\\Tests\\Fixtures\\Models\\ClassDoesNotExist', 'model_uuid' => 'ghost'],
         ]);
+        $db->table('model_has_policies')->insert([
+            ['model_type' => OrphanNoPrimaryRecord::class, 'model_uuid' => 'external-1'],
+        ]);
 
         return $capsule;
     }
@@ -163,7 +185,9 @@ namespace {
 
         expect($command->getModelPrimaryKeyForTest(OrphanUuidRecord::class))->toBe('uuid')
             ->and($command->getModelPrimaryKeyForTest(OrphanIdRecord::class))->toBe('id')
+            ->and($command->getModelPrimaryKeyForTest(OrphanNoPrimaryRecord::class))->toBeNull()
             ->and($command->getModelPrimaryKeyForTest(OrphanMissingTableRecord::class))->toBeNull()
+            ->and($command->getModelPrimaryKeyForTest(OrphanThrowingRecord::class))->toBeNull()
             ->and($command->usesSoftDeletesForTest(OrphanUuidRecord::class))->toBeTrue()
             ->and($command->usesSoftDeletesForTest(OrphanIdRecord::class))->toBeFalse()
             ->and($command->usesSoftDeletesForTest('Fleetbase\\Tests\\Fixtures\\Models\\ClassDoesNotExist'))->toBeFalse();
@@ -198,14 +222,16 @@ namespace {
     it('handles missing pivot tables and completes the purge command', function () {
         $capsule = purge_orphaned_records_database();
         $db      = $capsule->getConnection('mysql');
-        $command = new PurgeOrphanedModelRecordsTestCommand(['model_has_roles', 'missing_model_pivot']);
+        $command = new PurgeOrphanedModelRecordsTestCommand(['model_has_roles', 'model_has_policies', 'missing_model_pivot']);
 
         $result = $command->handle();
         $output = $command->outputText();
 
         expect($result)->toBeNull()
             ->and($db->table('model_has_roles')->count())->toBe(3)
+            ->and($db->table('model_has_policies')->count())->toBe(1)
             ->and($output)->toContain('Starting orphaned model record purge...')
+            ->and($output)->toContain('Could not determine primary key for ' . OrphanNoPrimaryRecord::class . ', skipping...')
             ->and($output)->toContain('Table missing_model_pivot does not exist, skipping...')
             ->and($output)->toContain('Purge process completed.');
     });

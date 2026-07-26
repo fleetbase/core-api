@@ -283,6 +283,77 @@ test('report query converter groups and aggregates through nested auto join rela
         ]);
 });
 
+test('report query converter groups count all aggregates and skips incomplete aggregate definitions', function () {
+    $result = report_converter_execute([
+        'table'   => ['name' => 'orders'],
+        'columns' => [
+            ['name' => 'status'],
+        ],
+        'groupBy' => [
+            [
+                'groupBy'     => ['name' => 'status'],
+                'aggregateFn' => ['value' => 'count'],
+                'aggregateBy' => ['name' => '*'],
+            ],
+            [
+                'groupBy'     => ['name' => 'payload.pickup.city', 'alias' => 'pickup_city'],
+                'aggregateFn' => ['value' => ''],
+                'aggregateBy' => ['name' => 'payload.description'],
+            ],
+        ],
+        'sortBy' => [
+            [
+                'column'    => ['name' => 'count_all'],
+                'direction' => ['value' => 'desc'],
+            ],
+        ],
+    ]);
+
+    expect($result['success'])->toBeTrue()
+        ->and($result['data'])->toHaveCount(2)
+        ->and($result['data'][0]->count_all)->toBe(1)
+        ->and($result['meta']['query_sql'])->toContain('COUNT(*) as `count_all`')
+        ->and($result['meta']['query_sql'])->not->toContain('payload_description')
+        ->and($result['columns'])->toContainEqual([
+            'name'           => 'count_all',
+            'column_name'    => 'count_all',
+            'label'          => 'Count',
+            'type'           => 'integer',
+            'auto_join_path' => null,
+        ]);
+});
+
+test('report query converter applies manual join default keys aliases and types', function () {
+    $result = report_converter_execute([
+        'table'   => ['name' => 'orders'],
+        'columns' => [
+            ['name' => 'tracking_number'],
+            ['name' => 'payloads.description', 'alias' => 'default_join_description'],
+        ],
+        'joins' => [
+            [
+                'table'      => 'payloads',
+                'localTable' => 'orders',
+            ],
+        ],
+        'limit' => 1,
+    ]);
+
+    expect($result['success'])->toBeTrue()
+        ->and($result['data'])->toHaveCount(1)
+        ->and($result['data'][0]->default_join_description)->toBeNull()
+        ->and($result['meta']['manual_joins_used'])->toBe([
+            [
+                'table'       => 'payloads',
+                'alias'       => 'payloads',
+                'type'        => 'left',
+                'local_key'   => 'uuid',
+                'foreign_key' => 'uuid',
+            ],
+        ])
+        ->and($result['meta']['query_sql'])->toContain('"orders"."uuid" = "payloads"."uuid"');
+});
+
 test('report query converter helper contracts resolve aliases computed references and repeated auto joins', function () {
     report_converter_database_fixture();
 
@@ -316,12 +387,44 @@ test('report query converter helper contracts resolve aliases computed reference
         ['expression' => 'decorated_label'],
     ], &$paths, 'orders']);
 
+    $conditionPaths        = [];
+    $collectConditionPaths = new ReflectionMethod($converter, 'collectAutoJoinPathsFromConditions');
+    $collectConditionPaths->setAccessible(true);
+    $collectConditionPaths->invokeArgs($converter, [[
+        [
+            'conditions' => [
+                [
+                    'field' => [
+                        'name' => 'payload.pickup.city',
+                    ],
+                ],
+            ],
+        ],
+        [
+            'field' => [
+                'auto_join_path' => 'payload',
+            ],
+        ],
+    ], &$conditionPaths]);
+
     expect(report_converter_call($converter, 'resolveAliasAndColumn', 'orders', 'tracking_number'))->toBe(['orders', 'tracking_number'])
         ->and(report_converter_call($converter, 'resolveAliasAndColumn', 'orders', 'payload.pickup.city'))->toBe(['orders_payload_pickup', 'city'])
         ->and(report_converter_call($converter, 'resolveAliasAndColumn', 'orders', 'payload.unknown_label'))->toBe(['orders_payload', 'unknown_label'])
         ->and(report_converter_call($converter, 'resolveAliasAndColumn', 'orders', 'missing.path.city'))->toBe(['orders', 'missing.path.city'])
         ->and($paths)->toBe(['payload.pickup'])
+        ->and($conditionPaths)->toBe(['payload.pickup', 'payload'])
         ->and(report_converter_call($converter, 'extractRelationshipPathsFromExpression', 'decorated_label', 'orders'))->toBe(['payload.pickup']);
+
+    report_converter_property($converter, 'joinAliases', [
+        'payload' => 'orders_payload',
+    ], true);
+
+    expect(report_converter_call($converter, 'resolveAliasAndColumn', 'orders', 'payload.pickup.city'))->toBe(['orders_payload', 'city']);
+
+    report_converter_property($converter, 'joinAliases', [
+        'payload'        => 'orders_payload',
+        'payload.pickup' => 'orders_payload_pickup',
+    ], true);
 
     $resolved = report_converter_call($converter, 'resolveComputedColumnReferences', 'CASE WHEN decorated_label IS NULL THEN "literal.with.dot" ELSE CONCAT(decorated_label, \'x.y\') END', 'orders');
 
@@ -342,6 +445,101 @@ test('report query converter helper contracts resolve aliases computed reference
     expect($firstAutoJoins)->toHaveCount(2)
         ->and(array_column($firstAutoJoins, 'path'))->toBe(['payload', 'payload.pickup'])
         ->and(report_converter_property($converter, 'autoJoins'))->toHaveCount(2);
+
+    report_converter_property($converter, 'autoJoins', [], true);
+    report_converter_property($converter, 'joinAliases', [], true);
+    report_converter_call($converter, 'applyAutoJoin', DB::table('orders'), 'orders', 'payload');
+
+    expect(report_converter_property($converter, 'autoJoins'))->toBe([
+        [
+            'path'        => 'payload',
+            'table'       => 'payloads',
+            'alias'       => 'orders_payload',
+            'type'        => 'left',
+            'local_key'   => 'payload_uuid',
+            'foreign_key' => 'uuid',
+        ],
+    ]);
+
+    $manualOnlyRegistry = report_converter_registry_fixture();
+    $manualOnlyRegistry->registerTable(
+        Table::make('manual_orders')
+            ->columns([
+                Column::make('uuid'),
+                Column::make('manual_payload_uuid'),
+            ])
+            ->relationships([
+                Relationship::belongsTo('manual_payload', 'payloads')
+                    ->localKey('manual_payload_uuid')
+                    ->foreignKey('uuid'),
+            ])
+    );
+    $manualOnlyConverter = new ReportQueryConverter($manualOnlyRegistry, [
+        'table'   => ['name' => 'manual_orders'],
+        'columns' => [
+            ['name' => 'uuid'],
+        ],
+    ]);
+
+    report_converter_call($manualOnlyConverter, 'applyAutoJoin', DB::table('manual_orders'), 'manual_orders', 'manual_payload');
+
+    expect(report_converter_property($manualOnlyConverter, 'autoJoins'))->toBe([]);
+
+    $missingTableConverter = new ReportQueryConverter(report_converter_registry_fixture(), [
+        'table'   => ['name' => 'missing_reports'],
+        'columns' => [
+            ['name' => 'tracking_number'],
+        ],
+    ]);
+
+    expect(fn () => report_converter_call($missingTableConverter, 'buildQuery'))
+        ->toThrow(InvalidArgumentException::class, "Table 'missing_reports' not found in registry");
+
+    $invalidComputedColumnConverter = new ReportQueryConverter(report_converter_registry_fixture(), [
+        'table'            => ['name' => 'orders'],
+        'columns'          => [],
+        'computed_columns' => [
+            ['name' => 'missing_expression'],
+        ],
+    ]);
+    $selects              = [];
+    $buildComputedColumns = new ReflectionMethod($invalidComputedColumnConverter, 'buildComputedColumns');
+    $buildComputedColumns->setAccessible(true);
+
+    expect(fn () => $buildComputedColumns->invokeArgs($invalidComputedColumnConverter, [DB::table('orders'), &$selects]))
+        ->toThrow(InvalidArgumentException::class, 'Computed column must have both name and expression');
+});
+
+test('report query converter honors explicit auto join paths and malformed aggregate metadata defensively', function () {
+    $result = report_converter_execute([
+        'table'   => ['name' => 'orders'],
+        'columns' => [
+            [
+                'name'           => 'payload.pickup.city',
+                'label'          => 'Pickup City',
+                'auto_join_path' => 'payload.pickup',
+            ],
+        ],
+        'limit' => 1,
+    ]);
+
+    $converter = new ReportQueryConverter(report_converter_registry_fixture(), [
+        'table'   => ['name' => 'orders'],
+        'columns' => [
+            ['name' => 'status'],
+        ],
+        'groupBy' => [
+            [
+                'groupBy'     => ['name' => 'status'],
+                'aggregateBy' => null,
+            ],
+        ],
+    ]);
+
+    expect($result['success'])->toBeTrue()
+        ->and($result['data'][0]->payload_pickup_city)->toBe('Ulaanbaatar')
+        ->and($result['meta']['joined_tables'])->toHaveCount(2)
+        ->and(report_converter_property($converter, 'queryConfig')['computed_columns'])->toBe([]);
 });
 
 test('report query converter applies validator accepted operators and manual join aliases', function () {
@@ -623,6 +821,26 @@ test('report query converter analyzes structural complexity without executing sq
         ]);
 });
 
+test('report query converter covers protected compatibility helpers and unresolved aliases', function () {
+    report_converter_database_fixture();
+
+    $converter = new ReportQueryConverter(report_converter_registry_fixture(), [
+        'table'   => ['name' => 'orders'],
+        'columns' => [
+            ['name' => 'tracking_number'],
+        ],
+        'joins' => [
+            ['table' => 'payloads', 'alias' => 'payload_alias'],
+        ],
+    ]);
+
+    $query = DB::table('orders');
+
+    expect(report_converter_call($converter, 'isConfiguredColumnAllowed', 'orders', 'missing_alias.description'))->toBeFalse()
+        ->and(report_converter_call($converter, 'addForeignKeyColumns', $query, 'orders'))->toBeNull()
+        ->and(report_converter_call($converter, 'createJoinsForComputedColumn', $query, 'payload.description', 'orders'))->toBeNull();
+});
+
 test('report query converter resolves company scope from object and array session values', function () {
     $objectResult = report_converter_execute([
         'table'   => ['name' => 'orders'],
@@ -644,11 +862,20 @@ test('report query converter resolves company scope from object and array sessio
         ],
     ], ['id' => 'company-2']);
 
+    $invalidSessionValue = report_converter_execute([
+        'table'   => ['name' => 'orders'],
+        'columns' => [
+            ['name' => 'tracking_number'],
+        ],
+    ], 123);
+
     expect($objectResult['success'])->toBeTrue()
         ->and(array_map(fn ($row) => $row->tracking_number, $objectResult['data']))->toBe(['T-001', 'T-002'])
         ->and($arrayResult['success'])->toBeTrue()
         ->and($arrayResult['data'])->toHaveCount(1)
-        ->and($arrayResult['data'][0]->tracking_number)->toBe('T-003');
+        ->and($arrayResult['data'][0]->tracking_number)->toBe('T-003')
+        ->and($invalidSessionValue['success'])->toBeFalse()
+        ->and($invalidSessionValue['error'])->toBe('No active company in session; cannot scope report by company_uuid.');
 });
 
 test('report query converter applies remaining scalar condition operators and offsets', function () {
@@ -722,6 +949,48 @@ test('report query converter applies remaining scalar condition operators and of
         ],
     ]);
 
+    $greaterThan = report_converter_execute([
+        'table'   => ['name' => 'orders'],
+        'columns' => [
+            ['name' => 'tracking_number'],
+        ],
+        'conditions' => [
+            [
+                'field'    => ['name' => 'total'],
+                'operator' => ['value' => 'gt'],
+                'value'    => 100,
+            ],
+        ],
+    ]);
+
+    $lessThan = report_converter_execute([
+        'table'   => ['name' => 'orders'],
+        'columns' => [
+            ['name' => 'tracking_number'],
+        ],
+        'conditions' => [
+            [
+                'field'    => ['name' => 'total'],
+                'operator' => ['value' => 'lt'],
+                'value'    => 100,
+            ],
+        ],
+    ]);
+
+    $between = report_converter_execute([
+        'table'   => ['name' => 'orders'],
+        'columns' => [
+            ['name' => 'tracking_number'],
+        ],
+        'conditions' => [
+            [
+                'field'    => ['name' => 'total'],
+                'operator' => ['value' => 'between'],
+                'value'    => [70, 80],
+            ],
+        ],
+    ]);
+
     $nullPayload = report_converter_execute([
         'table'   => ['name' => 'orders'],
         'columns' => [
@@ -756,6 +1025,9 @@ test('report query converter applies remaining scalar condition operators and of
         ->and($notLike['data'][0]->tracking_number)->toBe('T-002')
         ->and($inArray['data'][0]->tracking_number)->toBe('T-002')
         ->and($notBetween['data'][0]->tracking_number)->toBe('T-002')
+        ->and($greaterThan['data'][0]->tracking_number)->toBe('T-001')
+        ->and($lessThan['data'][0]->tracking_number)->toBe('T-002')
+        ->and($between['data'][0]->tracking_number)->toBe('T-002')
         ->and($nullPayload['data'])->toBe([])
         ->and($offset['data'])->toHaveCount(1)
         ->and($offset['data'][0]->tracking_number)->toBe('T-002');

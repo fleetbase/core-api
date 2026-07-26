@@ -103,6 +103,32 @@ class TwoFaControllerCacheFake
     }
 }
 
+class TwoFaControllerMailerFake
+{
+    public array $recipients = [];
+
+    public array $sent = [];
+
+    public function to(mixed $recipient): self
+    {
+        $this->recipients[] = $recipient;
+
+        return $this;
+    }
+
+    public function send(mixed $mail): void
+    {
+        $this->sent[] = $mail;
+    }
+}
+
+class TwoFaControllerResponseCacheFake
+{
+    public function clear(): void
+    {
+    }
+}
+
 function two_fa_controller_database(): TwoFaControllerRedisFake
 {
     EloquentModel::clearBootedModels();
@@ -133,15 +159,19 @@ function two_fa_controller_database(): TwoFaControllerRedisFake
     $redis = new TwoFaControllerRedisFake();
     $container->instance('redis', $redis);
     $container->instance('cache', new TwoFaControllerCacheFake());
+    $container->instance('mail.manager', new TwoFaControllerMailerFake());
+    $container->instance('responsecache', new TwoFaControllerResponseCacheFake());
+    $container->instance(Illuminate\Contracts\Config\Repository::class, $container->make('config'));
     Facade::clearResolvedInstance('redis');
     Facade::clearResolvedInstance('cache');
+    Facade::clearResolvedInstance('mail.manager');
+    Facade::clearResolvedInstance('responsecache');
 
     $capsule = new Capsule($container);
     $capsule->addConnection($connection, 'mysql');
     $capsule->setEventDispatcher(new Dispatcher($container));
     $capsule->setAsGlobal();
     $capsule->bootEloquent();
-    EloquentModel::unsetEventDispatcher();
     $capsule->getDatabaseManager()->setDefaultConnection('mysql');
 
     $container->instance('db', $capsule->getDatabaseManager());
@@ -178,6 +208,17 @@ function two_fa_controller_database(): TwoFaControllerRedisFake
         $table->text('meta')->nullable();
         $table->string('status')->nullable();
         $table->timestamp('deleted_at')->nullable();
+        $table->timestamps();
+    });
+    $schema->create('personal_access_tokens', function ($table) {
+        $table->increments('id');
+        $table->morphs('tokenable');
+        $table->string('name');
+        $table->string('token', 64)->unique();
+        $table->text('abilities')->nullable();
+        $table->timestamp('last_used_at')->nullable();
+        $table->timestamp('expires_at')->nullable();
+        $table->timestamps();
     });
 
     $companyUuid = '22222222-2222-4222-8222-222222222222';
@@ -349,7 +390,21 @@ test('two fa controller verify resend and invalidate expose success and failure 
     $redis = two_fa_controller_database();
     $user  = two_fa_controller_user();
     TwoFactorAuth::saveTwoFaSettingsForUser($user, ['enabled' => true, 'method' => 'email']);
-    $token = TwoFactorAuth::start($user->email, 10);
+    $token            = TwoFactorAuth::start($user->email, 10);
+    $verificationCode = two_fa_controller_verification_code($user, Carbon::now()->addMinutes(5));
+    $clientToken      = TwoFactorAuth::createClientSessionToken($verificationCode);
+
+    $verifySuccess = two_fa_controller()->verifyCode(Request::create('/int/v1/two-fa/verify', 'POST', [
+        'code'        => '123456',
+        'token'       => $token,
+        'clientToken' => $clientToken,
+    ]));
+
+    $resendToken   = TwoFactorAuth::start($user->email, 10);
+    $resendSuccess = two_fa_controller()->resendCode(Request::create('/int/v1/two-fa/resend', 'POST', [
+        'identity' => $user->email,
+        'token'    => $resendToken,
+    ]));
 
     $verifyFailure = two_fa_controller()->verifyCode(Request::create('/int/v1/two-fa/verify', 'POST', [
         'code'        => '000000',
@@ -369,7 +424,11 @@ test('two fa controller verify resend and invalidate expose success and failure 
         'token'    => $token,
     ]));
 
-    expect($verifyFailure->getStatusCode())->toBe(400)
+    expect($verifySuccess->getData(true)['authToken'])->toContain('|')
+        ->and(app('db')->table('personal_access_tokens')->where('tokenable_id', $user->uuid)->count())->toBe(1)
+        ->and($resendSuccess->getData(true)['clientToken'])->toBeString()
+        ->and(app('db')->table('verification_codes')->count())->toBe(2)
+        ->and($verifyFailure->getStatusCode())->toBe(400)
         ->and($verifyFailure->getData(true))->toBe(['errors' => ['Verification code is invalid.']])
         ->and($resendFailure->getStatusCode())->toBe(400)
         ->and($resendFailure->getData(true))->toBe(['errors' => ['No user found using the provided identity']])

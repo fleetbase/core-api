@@ -433,6 +433,51 @@ test('iam metrics lifecycle and user type charts bucket tenant users by day', fu
         ->and(collect($types['datasets'])->pluck('label')->all())->toBe(['Admin', 'Dispatcher', 'Driver', 'User']);
 });
 
+test('iam metrics handles empty tenant charts and assignment coverage without division errors', function () {
+    $controller = iam_metrics_controller();
+    session(['company' => 'company-empty']);
+
+    $types      = $controller->usersByTypeCreated(iam_metrics_request(['period' => '7d']))->getData(true);
+    $access     = $controller->accessCoverage(iam_metrics_request())->getData(true);
+    $privileged = $controller->privilegedAccess(iam_metrics_request())->getData(true);
+
+    expect($types['labels'])->toBe(['Jul 12', 'Jul 13', 'Jul 14', 'Jul 15', 'Jul 16', 'Jul 17', 'Jul 18'])
+        ->and($types['totals'])->toBe(['User' => 0])
+        ->and($types['datasets'])->toHaveCount(1)
+        ->and($types['datasets'][0]['label'])->toBe('User')
+        ->and($types['datasets'][0]['data'])->toBe([0, 0, 0, 0, 0, 0, 0])
+        ->and($access)->toBe([
+            'total_users'             => 0,
+            'with_roles'              => 0,
+            'with_groups'             => 0,
+            'with_policies'           => 0,
+            'with_direct_permissions' => 0,
+            'without_assignments'     => 0,
+            'coverage'                => 0,
+        ])
+        ->and($privileged)->toMatchArray([
+            'privileged_roles_count'   => 1,
+            'wildcard_policies_count'  => 1,
+            'direct_privileged_grants' => 0,
+        ]);
+});
+
+test('iam metrics period selector supports long range and default windows', function () {
+    $controller = iam_metrics_controller();
+    $reflection = new ReflectionMethod(IamMetricsController::class, 'period');
+    $reflection->setAccessible(true);
+
+    [$ninetyStart]    = $reflection->invoke($controller, iam_metrics_request(['period' => '90d']));
+    [$oneEightyStart] = $reflection->invoke($controller, iam_metrics_request(['period' => '180d']));
+    [$yearStart]      = $reflection->invoke($controller, iam_metrics_request(['period' => '365d']));
+    [$defaultStart]   = $reflection->invoke($controller, iam_metrics_request(['period' => 'unexpected']));
+
+    expect($ninetyStart->toJSON())->toBe('2026-04-20T00:00:00.000000Z')
+        ->and($oneEightyStart->toJSON())->toBe('2026-01-20T00:00:00.000000Z')
+        ->and($yearStart->toJSON())->toBe('2025-07-19T00:00:00.000000Z')
+        ->and($defaultStart->toJSON())->toBe('2026-06-19T00:00:00.000000Z');
+});
+
 test('iam metrics activity limits allowed iam subject types', function () {
     $payload = iam_metrics_controller()->activity(iam_metrics_request(['limit' => 2]))->getData(true);
 

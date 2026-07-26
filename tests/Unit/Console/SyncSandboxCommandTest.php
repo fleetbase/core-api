@@ -118,13 +118,24 @@ it('syncs production records into sandbox and filters api credentials to test mo
     $sandbox = $capsule->getConnection('sandbox');
 
     $mysql->table('users')->insert([
-        'uuid'         => 'user-1',
-        'public_id'    => 'user_public',
-        'company_uuid' => 'company-1',
-        'name'         => 'Sandbox User',
-        'email'        => 'sandbox@example.test',
-        'created_at'   => '2026-07-17 08:00:00',
-        'updated_at'   => '2026-07-18 08:00:00',
+        [
+            'uuid'         => 'user-1',
+            'public_id'    => 'user_public',
+            'company_uuid' => 'company-1',
+            'name'         => 'Sandbox User',
+            'email'        => 'sandbox@example.test',
+            'created_at'   => '2026-07-17 08:00:00',
+            'updated_at'   => '2026-07-18 08:00:00',
+        ],
+        [
+            'uuid'         => null,
+            'public_id'    => 'user_without_uuid',
+            'company_uuid' => 'company-1',
+            'name'         => 'Missing UUID User',
+            'email'        => 'missing-uuid@example.test',
+            'created_at'   => '2026-07-17 08:00:00',
+            'updated_at'   => '2026-07-18 08:00:00',
+        ],
     ]);
     $mysql->table('companies')->insert([
         'uuid'       => 'company-1',

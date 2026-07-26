@@ -224,6 +224,38 @@ it('derives chat channel titles from explicit names loaded participants and empt
         ->and($untitled->title)->toBe('Untitled Chat');
 });
 
+it('derives chat channel title fallbacks from database backed participants when relation is not loaded', function () {
+    $capsule    = chat_models_database();
+    $testing    = $capsule->getConnection('testing');
+    $timestamps = ['created_at' => now(), 'updated_at' => now()];
+
+    $testing->getSchemaBuilder()->create('users', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('name')->nullable();
+        $table->timestamp('last_seen_at')->nullable();
+        $table->timestamps();
+        $table->softDeletes();
+    });
+    $testing->table('users')->insert([
+        ['uuid' => 'user-db-1', 'name' => 'Katherine', ...$timestamps],
+        ['uuid' => 'user-db-2', 'name' => 'Dorothy', ...$timestamps],
+    ]);
+    $testing->table('chat_channels')->insert([
+        'uuid' => 'channel-db-title',
+        'name' => null,
+        ...$timestamps,
+    ]);
+    $testing->table('chat_participants')->insert([
+        ['uuid' => 'participant-db-1', 'chat_channel_uuid' => 'channel-db-title', 'user_uuid' => 'user-db-1', ...$timestamps],
+        ['uuid' => 'participant-db-2', 'chat_channel_uuid' => 'channel-db-title', 'user_uuid' => 'user-db-2', ...$timestamps],
+    ]);
+
+    $channel = ChatChannel::query()->whereKey('channel-db-title')->firstOrFail();
+
+    expect($channel->relationLoaded('participants'))->toBeFalse()
+        ->and($channel->title)->toBe('Untitled Chat');
+});
+
 it('counts unread chat messages by participant receipts and ignores sender messages', function () {
     $capsule    = chat_models_database();
     $connection = $capsule->getConnection('testing');

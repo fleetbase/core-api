@@ -2,10 +2,13 @@
 
 use Fleetbase\Models\Template;
 use Fleetbase\Services\TemplateRenderService;
+use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Events\Dispatcher;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Facade;
+use Spatie\LaravelPdf\Facades\Pdf;
 
 class TemplateRenderServiceSessionFake
 {
@@ -17,9 +20,11 @@ class TemplateRenderServiceSessionFake
 
 class TemplateRenderServiceAuthFake
 {
+    public static mixed $user = null;
+
     public function user(): mixed
     {
-        return null;
+        return self::$user;
     }
 }
 
@@ -79,6 +84,27 @@ class TemplateRenderServiceQueryFake
     }
 }
 
+class TemplateRenderServiceLazyTemplate extends Template
+{
+    public bool $loadMissingCalled = false;
+
+    public function loadMissing($relations)
+    {
+        if ($relations === 'queries') {
+            $this->loadMissingCalled = true;
+            $this->setRelation('queries', new Collection([
+                new TemplateRenderServiceQueryFake('lazy_items', new Collection([
+                    new TemplateRenderServiceLineItem(['name' => 'Lazy Freight', 'amount' => 44]),
+                ])),
+            ]));
+
+            return $this;
+        }
+
+        return parent::loadMissing($relations);
+    }
+}
+
 class TemplateRenderServiceArithmeticFailure extends TemplateRenderService
 {
     public function evaluateForTest(string $expression): string
@@ -92,6 +118,14 @@ class TemplateRenderServiceArithmeticFailure extends TemplateRenderService
     }
 }
 
+class TemplateRenderServiceParserProbe extends TemplateRenderService
+{
+    public function parseForTest(string $expression): float
+    {
+        return $this->parseExpression($expression);
+    }
+}
+
 function template_render_service_container(): void
 {
     $container = bind_test_container([
@@ -100,6 +134,7 @@ function template_render_service_container(): void
     ]);
 
     session()->flush();
+    TemplateRenderServiceAuthFake::$user = null;
     $container->instance('session', new TemplateRenderServiceSessionFake());
     $container->instance('auth', new TemplateRenderServiceAuthFake());
     Facade::clearResolvedInstance('session');
@@ -119,6 +154,41 @@ function template_render_service_template(array $content): Template
     $template->setRelation('queries', new Collection());
 
     return $template;
+}
+
+function template_render_service_database(): Capsule
+{
+    $connection = [
+        'driver'   => 'sqlite',
+        'database' => ':memory:',
+        'prefix'   => '',
+    ];
+
+    $container = app();
+    $container['config']->set('database.default', 'mysql');
+    $container['config']->set('database.connections.mysql', $connection);
+    $container['config']->set('fleetbase.connection.db', 'mysql');
+
+    $capsule = new Capsule($container);
+    $capsule->addConnection($connection, 'mysql');
+    $capsule->setEventDispatcher(new Dispatcher($container));
+    $capsule->setAsGlobal();
+    $capsule->bootEloquent();
+    $capsule->getDatabaseManager()->setDefaultConnection('mysql');
+    $container->instance('db', $capsule->getDatabaseManager());
+    Facade::clearResolvedInstance('db');
+
+    $capsule->getConnection('mysql')->getSchemaBuilder()->create('companies', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('public_id')->nullable();
+        $table->string('name')->nullable();
+        $table->string('logo_uuid')->nullable();
+        $table->string('backdrop_uuid')->nullable();
+        $table->softDeletes();
+        $table->timestamps();
+    });
+
+    return $capsule;
 }
 
 test('template render service registers context schemas and query model allowlists', function () {
@@ -231,6 +301,43 @@ test('template render service renders variables formulas loops tables and docume
     Carbon::setTestNow();
 });
 
+test('template render service renders pdf builder with template dimensions and margins', function () {
+    template_render_service_container();
+    Pdf::fake();
+
+    $template          = template_render_service_template([
+        [
+            'type'    => 'paragraph',
+            'content' => 'PDF order {order.number}',
+        ],
+    ]);
+    $template->width   = 8.5;
+    $template->height  = 11;
+    $template->unit    = 'in';
+    $template->margins = [
+        'top'    => 0.25,
+        'right'  => 0.5,
+        'bottom' => 0.75,
+        'left'   => 1.0,
+    ];
+
+    $pdf = (new TemplateRenderService())->renderToPdf($template, new TemplateRenderServiceOrder());
+
+    expect($pdf->html)->toContain('PDF order T-001')
+        ->and($pdf->paperSize)->toBe([
+            'width'  => 8.5,
+            'height' => 11.0,
+            'unit'   => 'in',
+        ])
+        ->and($pdf->margins)->toBe([
+            'top'    => 0.25,
+            'right'  => 0.5,
+            'bottom' => 0.75,
+            'left'   => 1.0,
+            'unit'   => 'in',
+        ]);
+});
+
 test('template render service renders alternate elements static tables and defensive template branches', function () {
     template_render_service_container();
 
@@ -323,7 +430,7 @@ test('template render service renders alternate elements static tables and defen
         ->and($html)->toContain('Empty loop:')
         ->and($html)->not->toContain('should disappear')
         ->and($html)->toContain('Array variable suppressed: ')
-        ->and($html)->toContain('Fallback arithmetic: -2')
+        ->and($html)->toContain('Fallback arithmetic: #ERR')
         ->and($html)->toContain('<th>Item</th>')
         ->and($html)->toContain('<td>Accessorial</td>')
         ->and($html)->toContain('<td>35</td>');
@@ -351,8 +458,67 @@ test('template render service guesses generic subject keys and renders query res
     expect($html)->toContain('T-001|Query Freight:75;Query Handling:25;');
 });
 
+test('template render service lazy loads query collections and resolves session company context', function () {
+    template_render_service_container();
+    $capsule = template_render_service_database();
+    $capsule->getConnection('mysql')->table('companies')->insert([
+        'uuid'       => 'company-render',
+        'public_id'  => 'company_render',
+        'name'       => 'Render Company',
+        'created_at' => '2026-07-26 00:00:00',
+        'updated_at' => '2026-07-26 00:00:00',
+    ]);
+    session(['company' => 'company-render']);
+
+    $template = new TemplateRenderServiceLazyTemplate([
+        'context_type' => 'generic',
+        'width'        => 210,
+        'height'       => 297,
+        'unit'         => 'mm',
+        'content'      => [
+            [
+                'type'    => 'paragraph',
+                'content' => '{company.name}|{{#each lazy_items}}{this.name}:{this.amount};{{/each}}',
+            ],
+        ],
+    ]);
+
+    $html = (new TemplateRenderService())->renderToHtml($template);
+
+    expect($template->loadMissingCalled)->toBeTrue()
+        ->and($html)->toContain('Render Company|Lazy Freight:44;');
+});
+
+test('template render service includes authenticated user context when available', function () {
+    template_render_service_container();
+
+    TemplateRenderServiceAuthFake::$user = new TemplateRenderServiceUser();
+
+    $template = template_render_service_template([
+        [
+            'type'    => 'paragraph',
+            'content' => 'Rendered for {user.name} at {user.email}',
+        ],
+    ]);
+
+    $html = (new TemplateRenderService())->renderToHtml($template);
+
+    expect($html)->toContain('Rendered for Render User at render@example.test');
+});
+
 test('template render service returns formula errors when arithmetic fallback parsing fails', function () {
     template_render_service_container();
 
-    expect((new TemplateRenderServiceArithmeticFailure())->evaluateForTest('1 + 2'))->toBe('#ERR');
+    expect((new TemplateRenderServiceArithmeticFailure())->evaluateForTest('1 + 2'))->toBe('3')
+        ->and((new TemplateRenderServiceArithmeticFailure())->evaluateForTest('1 + unknown'))->toBe('#ERR');
+});
+
+test('template render service fallback arithmetic parser handles precedence unary values and defensive literals', function () {
+    $parser = new TemplateRenderServiceParserProbe();
+
+    expect($parser->parseForTest(' 1 + 2 * 3 '))->toBe(7.0)
+        ->and($parser->parseForTest('(10 - 4) / 3'))->toBe(2.0)
+        ->and($parser->parseForTest('-5 + 2'))->toBe(-3.0)
+        ->and($parser->parseForTest('8 / 0'))->toBe(0.0)
+        ->and($parser->parseForTest('missing'))->toBe(0.0);
 });

@@ -92,6 +92,29 @@ class RecordingSocketClusterService extends SocketClusterService
     }
 }
 
+class StaticRecordingSocketClusterService extends SocketClusterService
+{
+    public static ?self $lastInstance = null;
+
+    public array $sentMessages = [];
+
+    public function __construct(public array|string $capturedOptions = [])
+    {
+    }
+
+    public function send($channel, array $data = []): bool
+    {
+        $this->sentMessages[] = [$channel, $data];
+
+        return true;
+    }
+
+    public static function instance($options = []): SocketClusterService
+    {
+        return static::$lastInstance = new static($options);
+    }
+}
+
 function decode_socket_cluster_payload(string $payload): array
 {
     return json_decode($payload, true, flags: JSON_THROW_ON_ERROR);
@@ -212,8 +235,34 @@ it('merges configured options and normalizes socket cluster uris', function () {
             'host'   => 'socket.test',
             'query'  => ['tenant' => 'acme'],
         ]))->toBe('ws://socket.test/?tenant=acme')
+        ->and($probe->getOption('nested'))->toBe(['trimmed' => ' value '])
         ->and($probe->getOption('nested.trimmed'))->toBe('value')
         ->and($probe->getOption('missing', 'fallback'))->toBe('fallback');
+});
+
+it('creates socket cluster service instances and publishes through the static service contract', function () {
+    $probe = SocketClusterServiceProbe::instance(['host' => 'socket.test']);
+
+    expect($probe)->toBeInstanceOf(SocketClusterServiceProbe::class);
+
+    expect(StaticRecordingSocketClusterService::publish('company.1', ['event' => 'updated'], ['host' => 'socket.test']))->toBeTrue()
+        ->and(StaticRecordingSocketClusterService::$lastInstance)->toBeInstanceOf(StaticRecordingSocketClusterService::class)
+        ->and(StaticRecordingSocketClusterService::$lastInstance->capturedOptions)->toBe(['host' => 'socket.test'])
+        ->and(StaticRecordingSocketClusterService::$lastInstance->sentMessages)->toBe([
+            ['company.1', ['event' => 'updated']],
+        ]);
+});
+
+it('constructs socket cluster clients from normalized connection options without connecting immediately', function () {
+    $service = new SocketClusterService([
+        'secure' => false,
+        'host'   => 'socket.test',
+        'path'   => '/socketcluster/',
+        'query'  => ['tenant' => 'acme'],
+    ]);
+
+    expect($service->getUri())->toBe('ws://socket.test:8000/socketcluster/?tenant=acme')
+        ->and($service->getClient())->toBeInstanceOf(Client::class);
 });
 
 it('broadcasts payloads to every channel through the socket cluster service', function () {

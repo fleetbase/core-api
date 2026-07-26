@@ -394,11 +394,13 @@ it('normalizes permission names and reports invalid permission helper entries', 
         'fleetops list orders',
         'delete',
         'fleetops missing orders',
+        'fleetops view orders',
     ]);
 
     expect($subject->assignedPermissions)->toBe([
         'fleetops view orders',
         'fleetops list orders',
+        'fleetops view orders',
     ])
         ->and($command->errors[0])->toContain('Invalid permission provided by role (Dispatcher)')
         ->and($command->errors[0])->toContain('fleetops delete')
@@ -414,10 +416,28 @@ it('assigns existing policies by name through the helper', function () {
     ]);
     $subject->exists = true;
 
-    $command->assignPolicies($subject, 'sanctum', ['FleetOpsReadOnly']);
+    $command->assignPolicies($subject, 'sanctum', ['FleetOpsReadOnly', 'MissingPolicy']);
 
     expect($subject->assignedPolicies)->toBe(['FleetOpsReadOnly'])
-        ->and($command->errors)->toBe([]);
+        ->and($command->errors)->toHaveCount(1)
+        ->and($command->errors[0])->toContain('There is no policy named `MissingPolicy`');
+});
+
+it('reports policy lookup exceptions without aborting assignment', function () {
+    create_permissions_database();
+    $command = new CreatePermissionsCommandSpy();
+    $subject = new CreatePermissionsSubjectFake([
+        'id'   => 'role-dispatcher',
+        'name' => 'Dispatcher',
+    ]);
+    $subject->exists = true;
+
+    app('db')->connection('mysql')->getSchemaBuilder()->drop('policies');
+    $command->assignPolicies($subject, 'sanctum', ['FleetOpsReadOnly']);
+
+    expect($subject->assignedPolicies)->toBe([])
+        ->and($command->errors)->toHaveCount(1)
+        ->and($command->errors[0])->toContain('no such table: policies');
 });
 
 it('creates directives for valid permissions and skips invalid directive definitions', function () {
@@ -430,20 +450,27 @@ it('creates directives for valid permissions and skips invalid directive definit
     $subject->exists = true;
 
     $directives = $command->createDirectives($subject, 'fleetops', 'sanctum', [
-        'view orders' => ['company_uuid', '=', '{session.company}'],
-        'delete'      => ['company_uuid', '=', '{session.company}'],
-        'edit orders' => ['company_uuid', '=', '{session.company}'],
+        'view orders'          => ['company_uuid', '=', '{session.company}'],
+        'fleetops list orders' => ['status', '=', 'active'],
+        'delete'               => ['company_uuid', '=', '{session.company}'],
+        'edit orders'          => ['company_uuid', '=', '{session.company}'],
     ]);
 
-    $row = $capsule->getConnection('mysql')->table('directives')->first();
+    $rows = $capsule->getConnection('mysql')->table('directives')->orderBy('permission_uuid')->get();
 
-    expect($directives)->toHaveCount(1)
-        ->and($row->permission_uuid)->toBe('permission-orders-view')
-        ->and($row->subject_type)->toBe(CreatePermissionsSubjectFake::class)
-        ->and($row->subject_uuid)->toBe('role-dispatcher')
-        ->and($row->key)->toBe(Directive::createKey(['company_uuid', '=', '{session.company}']))
-        ->and(json_decode($row->rules, true))->toBe(['company_uuid', '=', '{session.company}'])
+    expect($directives)->toHaveCount(2)
+        ->and($rows[0]->permission_uuid)->toBe('permission-orders-list')
+        ->and($rows[0]->subject_type)->toBe(CreatePermissionsSubjectFake::class)
+        ->and($rows[0]->subject_uuid)->toBe('role-dispatcher')
+        ->and($rows[0]->key)->toBe(Directive::createKey(['status', '=', 'active']))
+        ->and(json_decode($rows[0]->rules, true))->toBe(['status', '=', 'active'])
+        ->and($rows[1]->permission_uuid)->toBe('permission-orders-view')
+        ->and($rows[1]->subject_type)->toBe(CreatePermissionsSubjectFake::class)
+        ->and($rows[1]->subject_uuid)->toBe('role-dispatcher')
+        ->and($rows[1]->key)->toBe(Directive::createKey(['company_uuid', '=', '{session.company}']))
+        ->and(json_decode($rows[1]->rules, true))->toBe(['company_uuid', '=', '{session.company}'])
         ->and($command->messages)->toContain('Created directive for role (Dispatcher) as ' . Directive::createKey(['company_uuid', '=', '{session.company}']))
+        ->and($command->messages)->toContain('Created directive for role (Dispatcher) as ' . Directive::createKey(['status', '=', 'active']))
         ->and($command->errors[0])->toContain('Invalid directive provided by role (Dispatcher)')
         ->and($command->errors[1])->toContain('There is no permission named `fleetops edit orders`');
 });

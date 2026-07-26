@@ -13,12 +13,18 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Facade;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str as SupportStr;
 
 if (!function_exists('base_path')) {
     function base_path(string $path = ''): string
     {
         return getcwd() . ($path ? DIRECTORY_SEPARATOR . $path : '');
     }
+}
+
+if (!function_exists('Fleetbase\\Http\\Controllers\\Internal\\v1\\event')) {
+    eval('namespace Fleetbase\\Http\\Controllers\\Internal\\v1; function event($event = null) { return $event; }');
 }
 
 class AuthControllerLoginBootstrapCacheFake
@@ -98,6 +104,24 @@ class AuthControllerLoginBootstrapResponseCacheFake
     }
 }
 
+class AuthControllerLoginBootstrapMailFake
+{
+    public array $sent       = [];
+    private mixed $recipient = null;
+
+    public function to(mixed $recipient): self
+    {
+        $this->recipient = $recipient;
+
+        return $this;
+    }
+
+    public function send(mixed $mailable): void
+    {
+        $this->sent[] = [$this->recipient, $mailable::class];
+    }
+}
+
 class AuthControllerLoginBootstrapRedisFake
 {
     public array $values = [];
@@ -165,6 +189,10 @@ function auth_controller_login_bootstrap_database(): Capsule
 {
     EloquentModel::unsetConnectionResolver();
     EloquentModel::clearBootedModels();
+
+    if (!SupportStr::hasMacro('humanize')) {
+        SupportStr::macro('humanize', (new Fleetbase\Expansions\Str())->humanize());
+    }
 
     $connection = [
         'driver'   => 'sqlite',
@@ -267,6 +295,7 @@ function auth_controller_login_bootstrap_database(): Capsule
         $table->string('type')->nullable();
         $table->string('slug')->nullable();
         $table->timestamp('onboarding_completed_at')->nullable();
+        $table->string('onboarding_completed_by_uuid')->nullable();
         $table->timestamps();
         $table->timestamp('deleted_at')->nullable();
     });
@@ -426,6 +455,37 @@ function auth_controller_insert_company(Capsule $capsule, array $attributes = []
         'updated_at'              => '2026-07-18 10:00:00',
         'deleted_at'              => null,
     ], $attributes));
+}
+
+function auth_controller_insert_administrator_role(Capsule $capsule, ?string $companyUuid = null): void
+{
+    $capsule->getConnection('mysql')->table('roles')->insert([
+        'id'           => 'role-' . ($companyUuid ?: 'global') . '-administrator',
+        'company_uuid' => $companyUuid,
+        'name'         => 'Administrator',
+        'guard_name'   => 'sanctum',
+        'created_at'   => '2026-07-18 10:00:00',
+        'updated_at'   => '2026-07-18 10:00:00',
+        'deleted_at'   => null,
+    ]);
+}
+
+function auth_controller_insert_join_invite(Capsule $capsule, string $companyUuid, string $email): void
+{
+    $capsule->getConnection('mysql')->table('invites')->insert([
+        'uuid'            => 'invite-' . $companyUuid,
+        'company_uuid'    => $companyUuid,
+        'subject_uuid'    => $companyUuid,
+        'subject_type'    => Fleetbase\Models\Company::class,
+        'created_by_uuid' => 'owner-user',
+        'protocol'        => 'email',
+        'reason'          => 'join_company',
+        'recipients'      => json_encode([$email]),
+        'expires_at'      => Carbon::now()->addDay()->toDateTimeString(),
+        'deleted_at'      => null,
+        'created_at'      => '2026-07-18 10:00:00',
+        'updated_at'      => '2026-07-18 10:00:00',
+    ]);
 }
 
 afterEach(function () {
@@ -754,6 +814,21 @@ test('get user organizations returns active membership organizations with cache 
         ->and($payload['data'][0]['onboarding_completed'])->toBeTrue();
 });
 
+test('clear user organizations cache forgets legacy and current organization cache keys', function () {
+    auth_controller_login_bootstrap_database();
+
+    $cache = app('cache');
+    $cache->put('user_organizations_member-user', ['legacy' => true]);
+    $cache->put('user_organizations_v2_member-user', ['current' => true]);
+    $cache->put('unrelated-member-user', ['keep' => true]);
+
+    AuthController::clearUserOrganizationsCache('member-user');
+
+    expect($cache->get('user_organizations_member-user'))->toBeNull()
+        ->and($cache->get('user_organizations_v2_member-user'))->toBeNull()
+        ->and($cache->get('unrelated-member-user'))->toBe(['keep' => true]);
+});
+
 test('join organization requires an invite before modifying membership or session', function () {
     $capsule = auth_controller_login_bootstrap_database();
     auth_controller_login_insert_user($capsule, [
@@ -779,6 +854,111 @@ test('join organization requires an invite before modifying membership or sessio
         ->and(session('company'))->toBe('company-current');
 });
 
+test('join organization rejects current organization invites and accepts valid invited memberships', function () {
+    $capsule = auth_controller_login_bootstrap_database();
+    auth_controller_insert_administrator_role($capsule, 'company-current');
+    auth_controller_insert_administrator_role($capsule, 'company-join');
+    auth_controller_login_insert_user($capsule, [
+        'uuid'         => 'joining-user',
+        'email'        => 'joining@example.test',
+        'company_uuid' => 'company-current',
+        'type'         => 'admin',
+    ]);
+    auth_controller_insert_company($capsule, [
+        'uuid'      => 'company-current',
+        'public_id' => 'company_current_public',
+    ]);
+    auth_controller_insert_company($capsule, [
+        'uuid'      => 'company-join',
+        'public_id' => 'company_join_public',
+    ]);
+    auth_controller_insert_join_invite($capsule, 'company-current', 'joining@example.test');
+    auth_controller_insert_join_invite($capsule, 'company-join', 'joining@example.test');
+
+    $alreadyMember = (new AuthController())->joinOrganization(
+        auth_controller_join_organization_request(User::find('joining-user'), 'company_current_public')
+    );
+    $joined = (new AuthController())->joinOrganization(
+        auth_controller_join_organization_request(User::find('joining-user'), 'company_join_public')
+    );
+
+    $membership = $capsule->getConnection('mysql')->table('company_users')
+        ->where('user_uuid', 'joining-user')
+        ->where('company_uuid', 'company-join')
+        ->first();
+
+    expect($alreadyMember->getStatusCode())->toBe(400)
+        ->and($alreadyMember->getData(true))->toBe([
+            'errors' => ['User is already a member of this organization.'],
+        ])
+        ->and($joined->getStatusCode())->toBe(200)
+        ->and($joined->getData(true))->toBe(['status' => 'ok'])
+        ->and($membership)->not->toBeNull()
+        ->and($membership->status)->toBe('active')
+        ->and(User::find('joining-user')->company_uuid)->toBe('company-join')
+        ->and(session('company'))->toBe('company-join');
+});
+
+test('create organization assigns owner membership role onboarding flags and returns organization resource', function () {
+    Carbon::setTestNow(Carbon::parse('2026-07-18 16:00:00', 'UTC'));
+    $capsule = auth_controller_login_bootstrap_database();
+    auth_controller_insert_administrator_role($capsule, 'company-created');
+    auth_controller_login_insert_user($capsule, [
+        'uuid'         => 'creator-user',
+        'email'        => 'creator@example.test',
+        'company_uuid' => 'company-origin',
+        'type'         => 'admin',
+    ]);
+
+    $resource = (new AuthController())->createOrganization(auth_controller_authenticated_request('POST', [
+        'uuid'        => 'company-created',
+        'name'        => 'Created Company',
+        'description' => 'Created through auth controller',
+        'phone'       => '+15555550000',
+        'email'       => 'created@example.test',
+        'currency'    => 'USD',
+        'country'     => 'US',
+        'timezone'    => 'UTC',
+    ], User::find('creator-user'), '/int/v1/organizations'));
+
+    $company    = $capsule->getConnection('mysql')->table('companies')->where('name', 'Created Company')->first();
+    $membership = $capsule->getConnection('mysql')->table('company_users')
+        ->where('user_uuid', 'creator-user')
+        ->where('company_uuid', $company->uuid)
+        ->first();
+
+    expect($resource)->toBeInstanceOf(Fleetbase\Http\Resources\Organization::class)
+        ->and($company->owner_uuid)->toBe('creator-user')
+        ->and($company->name)->toBe('Created Company')
+        ->and($company->onboarding_completed_at)->toBe('2026-07-18 16:00:00')
+        ->and($company->onboarding_completed_by_uuid)->toBe('creator-user')
+        ->and($membership)->not->toBeNull()
+        ->and($membership->status)->toBe('active')
+        ->and(User::find('creator-user')->company_uuid)->toBe($company->uuid)
+        ->and(session('company'))->toBe($company->uuid);
+});
+
+test('create organization reports persistence failures without replacing the active session', function () {
+    $capsule = auth_controller_login_bootstrap_database();
+    auth_controller_login_insert_user($capsule, [
+        'uuid'         => 'creator-user',
+        'email'        => 'creator@example.test',
+        'company_uuid' => 'company-origin',
+        'type'         => 'admin',
+    ]);
+
+    $capsule->getConnection('mysql')->getSchemaBuilder()->drop('companies');
+
+    $response = (new AuthController())->createOrganization(auth_controller_authenticated_request('POST', [
+        'uuid' => 'company-created',
+        'name' => 'Created Company',
+    ], User::find('creator-user'), '/int/v1/organizations'));
+
+    expect($response->getStatusCode())->toBe(400)
+        ->and($response->getData(true)['errors'][0])->toContain('companies')
+        ->and(session('company'))->toBe('company-origin');
+});
+
 test('auth services response returns unique configured authorization schema names', function () {
     auth_controller_login_bootstrap_database();
 
@@ -792,6 +972,8 @@ test('auth services response returns unique configured authorization schema name
 
 test('admin password change enforces authorization target and confirmation contracts', function () {
     $capsule = auth_controller_login_bootstrap_database();
+    $mail    = new AuthControllerLoginBootstrapMailFake();
+    Mail::swap($mail);
     auth_controller_login_insert_user($capsule, [
         'uuid'  => 'admin-user',
         'email' => 'admin@example.test',
@@ -848,6 +1030,7 @@ test('admin password change enforces authorization target and confirmation contr
         'user'                  => 'target-user',
         'password'              => 'New-password1!',
         'password_confirmation' => 'New-password1!',
+        'send_credentials'      => true,
     ], User::find('admin-user'), '/int/v1/auth/change-password', ChangePasswordRequest::class));
 
     expect($missingActor->getStatusCode())->toBe(401)
@@ -862,7 +1045,10 @@ test('admin password change enforces authorization target and confirmation contr
         ->and($foreignTarget->getData(true))->toBe(['errors' => ['User not found to change password for.']])
         ->and($success->getStatusCode())->toBe(200)
         ->and($success->getData(true))->toBe(['status' => 'ok'])
-        ->and(password_verify('New-password1!', User::find('target-user')->password))->toBeTrue();
+        ->and(password_verify('New-password1!', User::find('target-user')->password))->toBeTrue()
+        ->and($mail->sent)->toHaveCount(1)
+        ->and($mail->sent[0][0]->uuid)->toBe('target-user')
+        ->and($mail->sent[0][1])->toBe(Fleetbase\Mail\UserCredentialsMail::class);
 });
 
 test('admin impersonation protects role target and session token contracts', function () {
@@ -903,6 +1089,31 @@ test('admin impersonation protects role target and session token contracts', fun
         ->and($capsule->getConnection('mysql')->table('personal_access_tokens')->where('tokenable_id', 'regular-user')->count())->toBe(1);
 });
 
+test('admin impersonation reports token creation failures after successful authorization', function () {
+    $capsule = auth_controller_login_bootstrap_database();
+    auth_controller_login_insert_user($capsule, [
+        'uuid'  => 'admin-user',
+        'email' => 'admin@example.test',
+        'type'  => 'admin',
+    ]);
+    auth_controller_login_insert_user($capsule, [
+        'uuid'  => 'regular-user',
+        'email' => 'regular@example.test',
+        'type'  => 'user',
+    ]);
+
+    $capsule->getConnection('mysql')->getSchemaBuilder()->drop('personal_access_tokens');
+
+    $response = (new AuthController())->impersonate(auth_controller_authenticated_request('POST', [
+        'user' => 'regular-user',
+    ], User::find('admin-user'), '/int/v1/auth/impersonate', AdminRequest::class));
+
+    expect($response->getStatusCode())->toBe(400)
+        ->and($response->getData(true)['errors'][0])->toContain('personal_access_tokens')
+        ->and(session('user'))->toBe('regular-user')
+        ->and(session('impersonator'))->toBe('admin-user');
+});
+
 test('end impersonation validates impersonator session and restores admin access token', function () {
     $capsule = auth_controller_login_bootstrap_database();
     auth_controller_login_insert_user($capsule, [
@@ -941,4 +1152,28 @@ test('end impersonation validates impersonator session and restores admin access
         ->and(session('user'))->toBe('admin-user')
         ->and(session('impersonator'))->toBeNull()
         ->and($capsule->getConnection('mysql')->table('personal_access_tokens')->where('tokenable_id', 'admin-user')->count())->toBe(1);
+});
+
+test('end impersonation reports token creation failures after restoring the impersonator session', function () {
+    $capsule = auth_controller_login_bootstrap_database();
+    auth_controller_login_insert_user($capsule, [
+        'uuid'  => 'admin-user',
+        'email' => 'admin@example.test',
+        'type'  => 'admin',
+    ]);
+    auth_controller_login_insert_user($capsule, [
+        'uuid'  => 'regular-user',
+        'email' => 'regular@example.test',
+        'type'  => 'user',
+    ]);
+
+    $capsule->getConnection('mysql')->getSchemaBuilder()->drop('personal_access_tokens');
+
+    session(['impersonator' => 'admin-user', 'user' => 'regular-user']);
+    $response = (new AuthController())->endImpersonation();
+
+    expect($response->getStatusCode())->toBe(400)
+        ->and($response->getData(true)['errors'][0])->toContain('personal_access_tokens')
+        ->and(session('user'))->toBe('admin-user')
+        ->and(session('impersonator'))->toBeNull();
 });

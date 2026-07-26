@@ -49,7 +49,10 @@ class CustomHttpSmsService
         $response = match ($method) {
             'GET'   => $request->get($url, $queryParams),
             'POST'  => $request->asJson()->post($this->appendQueryParams($url, $queryParams), $body),
+            // validateParameters() rejects unsupported methods before the request is built.
+            // @codeCoverageIgnoreStart
             default => throw new \InvalidArgumentException("Unsupported custom HTTP SMS method: {$method}"),
+            // @codeCoverageIgnoreEnd
         };
         $payload  = $response->json();
 

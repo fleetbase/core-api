@@ -85,6 +85,9 @@ class S3BackupTrimmer
 
     protected function makeS3Client(array $config)
     {
+        // Real AWS client construction is covered at the command seam with injected fakes.
+        // @codeCoverageIgnoreStart
         return new S3Client($config);
+        // @codeCoverageIgnoreEnd
     }
 }

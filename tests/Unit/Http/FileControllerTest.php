@@ -167,6 +167,27 @@ class FileControllerBase64ImageServiceFake extends ImageService
     }
 }
 
+class FileControllerFailingUploadedFile extends UploadedFile
+{
+    public function storeAs($path, $name = null, $options = [])
+    {
+        return false;
+    }
+}
+
+class FileControllerFailingFilesystemManager
+{
+    public function disk(?string $name = null): object
+    {
+        return new class {
+            public function put(string $path, string $contents): bool
+            {
+                return false;
+            }
+        };
+    }
+}
+
 class PublicFileControllerRoute
 {
     public object $controller;
@@ -398,6 +419,15 @@ function public_file_controller_upload_request(array $input = [], string $conten
     return UploadFileRequest::create('/v1/files', 'POST', $input, [], ['file' => $file]);
 }
 
+function public_file_controller_failing_upload_request(array $input = []): UploadFileRequest
+{
+    $path = tempnam(sys_get_temp_dir(), 'fleetbase-upload-');
+    file_put_contents($path, 'uploaded body');
+    $file = new FileControllerFailingUploadedFile($path, 'manifest.txt', 'text/plain', null, true);
+
+    return UploadFileRequest::create('/v1/files', 'POST', $input, [], ['file' => $file]);
+}
+
 function file_controller_upload_request(array $input = [], string $contents = 'uploaded body'): UploadFileRequest
 {
     $path = tempnam(sys_get_temp_dir(), 'fleetbase-upload-');
@@ -519,6 +549,15 @@ test('file controller upload reports storage failures before creating records', 
 
     expect($response->getStatusCode())->toBe(400)
         ->and($response->getData(true)['errors'][0])->toContain('Disk [missing-disk] does not have a configured driver')
+        ->and($capsule->getConnection('mysql')->table('files')->count())->toBe(0);
+
+    $falseStorageFailure = file_controller()->upload(public_file_controller_failing_upload_request([
+        'path' => 'uploads/documents',
+        'type' => 'document',
+    ]));
+
+    expect($falseStorageFailure->getStatusCode())->toBe(400)
+        ->and($falseStorageFailure->getData(true))->toBe(['errors' => ['File upload failed.']])
         ->and($capsule->getConnection('mysql')->table('files')->count())->toBe(0);
 });
 
@@ -679,6 +718,38 @@ test('file controller returns stable errors when multipart image resizing fails'
         ->and($capsule->getConnection('mysql')->table('files')->count())->toBe(0);
 });
 
+test('file controller reports resized multipart storage false before creating records', function () {
+    $capsule = file_controller_fixtures();
+    $service = new class extends ImageService {
+        public function __construct()
+        {
+        }
+
+        public function isImage(UploadedFile $file): bool
+        {
+            return true;
+        }
+
+        public function resize(UploadedFile $file, ?int $width = null, ?int $height = null, string $mode = 'fit', ?int $quality = null, ?string $format = null, ?bool $allowUpscale = null): string
+        {
+            return 'resized body';
+        }
+    };
+
+    app()->instance('filesystem', new FileControllerFailingFilesystemManager());
+    Facade::clearResolvedInstance('filesystem');
+
+    $response = file_controller_with_image_service($service)->upload(file_controller_upload_request([
+        'path'          => 'uploads/images',
+        'resize_width'  => 120,
+        'resize_height' => 90,
+    ]));
+
+    expect($response->getStatusCode())->toBe(400)
+        ->and($response->getData(true))->toBe(['errors' => ['Failed to upload resized image.']])
+        ->and($capsule->getConnection('mysql')->table('files')->count())->toBe(0);
+});
+
 test('file controller upload base64 reports missing data and storage failures consistently', function () {
     file_controller_fixtures();
 
@@ -702,6 +773,18 @@ test('file controller upload base64 reports missing data and storage failures co
 
     expect($failure->getStatusCode())->toBe(400)
         ->and($failure->getData(true)['errors'][0])->toContain('Disk [missing-disk] does not have a configured driver');
+
+    app()->instance('filesystem', new FileControllerFailingFilesystemManager());
+    Facade::clearResolvedInstance('filesystem');
+
+    $falseStorageFailure = file_controller()->uploadBase64(file_controller_upload_base64_request([
+        'data'      => base64_encode('body'),
+        'path'      => 'uploads/documents',
+        'file_name' => 'failed.txt',
+    ]));
+
+    expect($falseStorageFailure->getStatusCode())->toBe(400)
+        ->and($falseStorageFailure->getData(true))->toBe(['errors' => ['File upload failed.']]);
 });
 
 test('file controller upload base64 resizes preset images and normalizes uploads disk paths', function () {
@@ -811,6 +894,59 @@ test('file controller upload base64 resizes explicit fit images without upscalin
         ])
         ->and($payload['file']['path'])->toBe('uploads/images/fit.png')
         ->and(Storage::disk('testing')->get('uploads/images/fit.png'))->toBe('encoded-85');
+});
+
+test('file controller upload base64 covers remaining resize operation branches', function () {
+    file_controller_fixtures();
+
+    $presetWithoutUpscale = new FileControllerBase64ImageServiceFake();
+    $presetResponse       = file_controller_with_image_service($presetWithoutUpscale)->uploadBase64(file_controller_upload_base64_request([
+        'data'           => base64_encode('raw image body'),
+        'path'           => 'uploads/images',
+        'file_name'      => 'preset.png',
+        'content_type'   => 'image/png',
+        'resize'         => 'thumb',
+        'resize_upscale' => 'false',
+    ]));
+
+    $cropWithUpscale = new FileControllerBase64ImageServiceFake();
+    $cropResponse    = file_controller_with_image_service($cropWithUpscale)->uploadBase64(file_controller_upload_base64_request([
+        'data'           => base64_encode('raw image body'),
+        'path'           => 'uploads/images',
+        'file_name'      => 'crop-upscale.png',
+        'content_type'   => 'image/png',
+        'resize_width'   => 320,
+        'resize_height'  => 180,
+        'resize_mode'    => 'crop',
+        'resize_upscale' => 'true',
+    ]));
+
+    $fitWithUpscale = new FileControllerBase64ImageServiceFake();
+    $fitResponse    = file_controller_with_image_service($fitWithUpscale)->uploadBase64(file_controller_upload_base64_request([
+        'data'           => base64_encode('raw image body'),
+        'path'           => 'uploads/images',
+        'file_name'      => 'fit-upscale.png',
+        'content_type'   => 'image/png',
+        'resize_width'   => 240,
+        'resize_height'  => 160,
+        'resize_upscale' => 'true',
+    ]));
+
+    expect($presetResponse->getStatusCode())->toBe(200)
+        ->and($presetWithoutUpscale->image->operations)->toBe([
+            ['scaleDown', 150, 150],
+            ['encode', 85],
+        ])
+        ->and($cropResponse->getStatusCode())->toBe(200)
+        ->and($cropWithUpscale->image->operations)->toBe([
+            ['cover', 320, 180],
+            ['encode', 85],
+        ])
+        ->and($fitResponse->getStatusCode())->toBe(200)
+        ->and($fitWithUpscale->image->operations)->toBe([
+            ['scale', 240, 160],
+            ['encode', 85],
+        ]);
 });
 
 test('file controller upload base64 reports resize and record creation failures', function () {
@@ -931,6 +1067,15 @@ test('public file controller uploads multipart files with session ownership and 
 test('public file controller reports multipart storage and record creation failures', function () {
     $capsule = file_controller_fixtures();
 
+    $falseStorageFailure = public_file_controller()->create(public_file_controller_failing_upload_request([
+        'path' => 'uploads/documents',
+        'type' => 'document',
+    ]));
+
+    expect($falseStorageFailure->getStatusCode())->toBe(400)
+        ->and($falseStorageFailure->getData(true))->toBe(['error' => 'File upload failed.'])
+        ->and($capsule->getConnection('mysql')->table('files')->count())->toBe(0);
+
     $storageFailure = public_file_controller()->create(public_file_controller_upload_request([
         'disk' => 'missing-disk',
         'path' => 'uploads/documents',
@@ -1009,6 +1154,23 @@ test('public file controller normalizes uploads disk base64 paths and reports fa
 
     expect($storageFailure->getStatusCode())->toBe(400)
         ->and($storageFailure->getData(true)['error'])->toContain('Disk [missing-disk] does not have a configured driver');
+
+    app()->instance('filesystem', new FileControllerFailingFilesystemManager());
+    Facade::clearResolvedInstance('filesystem');
+
+    $falseStorageFailure = public_file_controller()->createFromBase64(public_file_controller_upload_base64_request([
+        'data'      => base64_encode('body'),
+        'path'      => 'uploads/documents',
+        'file_name' => 'failed.txt',
+    ]));
+
+    expect($falseStorageFailure->getStatusCode())->toBe(400)
+        ->and($falseStorageFailure->getData(true))->toBe(['error' => 'File upload failed.']);
+
+    $filesystem = new FilesystemManager(app());
+    app()->instance('filesystem', $filesystem);
+    app()->instance(FilesystemFactory::class, $filesystem);
+    Facade::clearResolvedInstance('filesystem');
 
     $capsule->getConnection('mysql')->getSchemaBuilder()->drop('files');
 

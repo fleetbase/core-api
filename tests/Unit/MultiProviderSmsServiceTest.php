@@ -30,6 +30,16 @@ class SmsServiceRoutingProbe extends SmsService
 {
     public array $dispatches = [];
 
+    public function exposeParentAwsSns(string $to, string $text, array $options = []): array
+    {
+        return parent::sendViaAwsSns($to, $text, $options);
+    }
+
+    public function exposeParentSmpp(string $to, string $text, array $options = []): array
+    {
+        return parent::sendViaSmpp($to, $text, $options);
+    }
+
     protected function sendViaAwsSns(string $to, string $text, array $options = []): array
     {
         $this->dispatches[] = ['provider' => self::PROVIDER_AWS_SNS, 'to' => $to, 'text' => $text, 'options' => $options];
@@ -800,6 +810,84 @@ test('smpp gateway client reports command-aware submit failures', function () {
     fclose($serverSocket);
 });
 
+test('smpp gateway client reports connection failures with endpoint context', function () {
+    $client = new SmppGatewayClient([
+        'host'    => '127.0.0.1',
+        'port'    => 1,
+        'timeout' => 0.01,
+    ]);
+
+    set_error_handler(fn () => true);
+
+    try {
+        expect(fn () => $client->connect())
+            ->toThrow(RuntimeException::class, 'Unable to connect to SMPP gateway tcp://127.0.0.1:1');
+    } finally {
+        restore_error_handler();
+    }
+});
+
+test('smpp gateway client connects over tcp and binds against a reachable gateway', function () {
+    if (!function_exists('pcntl_fork')) {
+        $this->markTestSkipped('pcntl is required to exercise the blocking SMPP connect/bind path.');
+    }
+
+    $server = stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr);
+    if ($server === false) {
+        $this->markTestSkipped('Loopback server sockets are unavailable: ' . ($errstr ?: 'unknown error'));
+    }
+
+    $serverName = stream_socket_get_name($server, false);
+    $port       = (int) substr(strrchr($serverName, ':'), 1);
+    $pid        = pcntl_fork();
+
+    if ($pid === 0) {
+        $connection = stream_socket_accept($server, 5);
+        if ($connection) {
+            for ($i = 0; $i < 2; $i++) {
+                $header = fread($connection, 16);
+                if (strlen($header) !== 16) {
+                    break;
+                }
+
+                $parts      = unpack('Nlength/Ncommand/Nstatus/Nsequence', $header);
+                $bodyLength = max(0, $parts['length'] - 16);
+                if ($bodyLength > 0) {
+                    fread($connection, $bodyLength);
+                }
+
+                fwrite($connection, pack('NNNN', 16, $parts['command'] | 0x80000000, 0, $parts['sequence']));
+            }
+
+            fclose($connection);
+        }
+
+        fclose($server);
+        exit(0);
+    }
+
+    fclose($server);
+
+    try {
+        $client = new SmppGatewayClient([
+            'host'      => '127.0.0.1',
+            'port'      => $port,
+            'timeout'   => 2,
+            'system_id' => 'fleetbase-system',
+            'password'  => 'secret',
+        ]);
+
+        $client->connect();
+        $client->close();
+
+        expect($pid)->toBeGreaterThan(0);
+    } finally {
+        if ($pid > 0) {
+            pcntl_waitpid($pid, $status);
+        }
+    }
+});
+
 test('smpp gateway client binds with configured mode and credentials', function (string $bindType, int $expectedCommand) {
     $sockets = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
     expect($sockets)->not->toBeFalse();
@@ -953,6 +1041,37 @@ test('sms service routes explicit provider and prefix rules to new providers', f
     ]);
 });
 
+test('sms service dispatches through the configured custom http provider', function () {
+    Http::fake([
+        'https://sms-gateway.test/send' => Http::response([
+            'message_id' => 'custom-http-message-id',
+            'status'     => 'accepted',
+        ], 200),
+    ]);
+
+    $result = (new SmsService())->send('+1 (555) 123-4567', 'Gateway hello', [
+        'from'      => 'Ops',
+        'unique_id' => 'verification-456',
+    ], SmsService::PROVIDER_CUSTOM_HTTP);
+
+    expect($result)->toMatchArray([
+        'success'    => true,
+        'message_id' => 'custom-http-message-id',
+        'status'     => 'accepted',
+        'provider'   => SmsService::PROVIDER_CUSTOM_HTTP,
+    ]);
+
+    Http::assertSent(function ($request) {
+        return $request->url() === 'https://sms-gateway.test/send'
+            && $request->method() === 'POST'
+            && $request->hasHeader('Authorization', 'Bearer token')
+            && $request['recipient'] === '+15551234567'
+            && $request['message'] === 'Gateway hello'
+            && $request['sender'] === 'Ops'
+            && $request['reference'] === 'verification-456';
+    });
+});
+
 test('sms service routes aws smpp and custom http providers without leaking formatting', function () {
     config()->set('sms.default_provider', SmsService::PROVIDER_AWS_SNS);
     config()->set('sms.routing_rules', [
@@ -1001,6 +1120,18 @@ test('sms service routes aws smpp and custom http providers without leaking form
             '+66' => SmsService::PROVIDER_CUSTOM_HTTP,
         ])
         ->and($service->getDefaultProvider())->toBe(SmsService::PROVIDER_SMPP);
+});
+
+test('sms service parent provider wiring delegates to concrete providers before validation failures', function () {
+    config()->set('services.sms.providers.aws_sns.key', '');
+    config()->set('services.sms.providers.smpp.host', '');
+
+    $service = new SmsServiceRoutingProbe();
+
+    expect(fn () => $service->exposeParentAwsSns('+15551234567', 'Default AWS', ['sender_id' => 'Fleetbase']))
+        ->toThrow(InvalidArgumentException::class, 'AWS SNS SMS provider is not configured')
+        ->and(fn () => $service->exposeParentSmpp('+15551234567', 'Default SMPP', ['source_addr' => 'Fleetbase']))
+        ->toThrow(InvalidArgumentException::class, 'SMPP SMS gateway is not configured');
 });
 
 test('aws sns sms service can construct a configured client lazily', function () {

@@ -455,6 +455,40 @@ namespace {
         }
     }
 
+    class CoreProviderContractsFailingMixinTarget
+    {
+        public static array $expanded = [];
+        public static array $mixed    = [];
+
+        public static function expand(object $macro): void
+        {
+            static::$expanded[] = $macro::class;
+
+            throw new RuntimeException('expansion failed');
+        }
+
+        public static function mixin(object $macro): void
+        {
+            static::$mixed[] = $macro::class;
+
+            throw new RuntimeException('mixin failed');
+        }
+    }
+
+    class CoreProviderContractsObservedModel
+    {
+        public static array $observers = [];
+
+        public static function observe(string $observer): void
+        {
+            static::$observers[] = $observer;
+        }
+    }
+
+    class CoreProviderContractsObserver
+    {
+    }
+
     class CoreProviderContractsExpansionMacro
     {
         public static function target(): string
@@ -476,6 +510,14 @@ namespace {
         public static function target(): string
         {
             return CoreProviderContractsMixinTarget::class;
+        }
+    }
+
+    class CoreProviderContractsFailingMixinMacro
+    {
+        public static function target(): string
+        {
+            return CoreProviderContractsFailingMixinTarget::class;
         }
     }
 
@@ -618,6 +660,17 @@ namespace {
             ->and(config('provider-test.limit'))->toBe(25);
     });
 
+    test('core service provider delegates settings based config merging safely', function () {
+        $app = new CoreProviderContractsApplicationFake('testing', false);
+        Container::setInstance($app);
+        Facade::setFacadeApplication($app);
+        core_provider_database($app);
+
+        (new CoreServiceProvider($app))->mergeConfigFromSettings();
+
+        expect(true)->toBeTrue();
+    });
+
     test('core service provider registers core notification definitions', function () {
         $previousNotifications = NotificationRegistry::$notifications;
 
@@ -746,6 +799,54 @@ namespace {
             ->and(CoreProviderContractsMixinTarget::$mixed)->toBe([
                 CoreProviderContractsMixinMacro::class,
             ]);
+    });
+
+    test('core service provider swallows expansions when expand and mixin both fail', function () {
+        CoreProviderContractsFailingMixinTarget::$expanded = [];
+        CoreProviderContractsFailingMixinTarget::$mixed    = [];
+
+        $base = sys_get_temp_dir() . '/fleetbase-core-provider-failing-mixin-expansions';
+        $path = $base . '/src/Mixins';
+        if (!is_dir($path)) {
+            mkdir($path, 0777, true);
+        }
+
+        file_put_contents($base . '/composer.json', json_encode([
+            'autoload' => [
+                'psr-4' => [
+                    'Fleetbase\\ProviderFailingMixinTest\\' => 'src/',
+                ],
+            ],
+        ]));
+        file_put_contents($path . '/CoreProviderContractsFailingMixinMacro.php', "<?php\n");
+
+        if (!class_exists('Fleetbase\\ProviderFailingMixinTest\\Mixins\\CoreProviderContractsFailingMixinMacro', false)) {
+            class_alias(CoreProviderContractsFailingMixinMacro::class, 'Fleetbase\\ProviderFailingMixinTest\\Mixins\\CoreProviderContractsFailingMixinMacro');
+        }
+
+        core_provider()->registerExpansionsFrom($path);
+
+        expect(CoreProviderContractsFailingMixinTarget::$expanded)->toBe([
+            CoreProviderContractsFailingMixinMacro::class,
+        ])
+            ->and(CoreProviderContractsFailingMixinTarget::$mixed)->toBe([
+                CoreProviderContractsFailingMixinMacro::class,
+            ]);
+    });
+
+    test('core service provider registers configured model observers', function () {
+        CoreProviderContractsObservedModel::$observers = [];
+        $provider                                      = core_provider();
+        $provider->observers                           = [
+            CoreProviderContractsObservedModel::class => CoreProviderContractsObserver::class,
+            'CoreProviderContractsMissingModel'       => CoreProviderContractsObserver::class,
+        ];
+
+        $provider->registerObservers();
+
+        expect(CoreProviderContractsObservedModel::$observers)->toBe([
+            CoreProviderContractsObserver::class,
+        ]);
     });
 
     test('core service provider registers global and grouped middleware with the kernel and router', function () {

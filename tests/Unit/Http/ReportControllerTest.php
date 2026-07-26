@@ -806,6 +806,30 @@ test('report controller recommends query changes for complex broad or warning-he
         ->and($recommendations[3]['suggestions'])->toBe(['No limit specified']);
 });
 
+test('report controller wraps export format and computed column registry failures', function () {
+    report_controller_bind();
+    $controller = new ReportController();
+
+    app()->bind(ReportSchemaRegistry::class, function () {
+        throw new RuntimeException('registry unavailable');
+    });
+
+    $formats  = $controller->getExportFormats(Request::create('/int/v1/reports/export-formats'));
+    $computed = $controller->validateComputedColumn(Request::create('/int/v1/reports/validate-computed-column', 'POST', [
+        'expression' => 'status',
+        'table_name' => 'orders',
+    ]));
+
+    expect($formats->getStatusCode())->toBe(500)
+        ->and(report_controller_payload($formats)['success'])->toBeFalse()
+        ->and(report_controller_payload($formats)['error']['code'])->toBe('QUERY_EXECUTION_FAILED')
+        ->and(report_controller_payload($formats)['error']['message'])->toBe('The query could not be executed. Please try simplifying your request.')
+        ->and($computed->getStatusCode())->toBe(500)
+        ->and(report_controller_payload($computed)['success'])->toBeFalse()
+        ->and(report_controller_payload($computed)['error']['code'])->toBe('QUERY_EXECUTION_FAILED')
+        ->and(report_controller_payload($computed)['error']['message'])->toBe('The query could not be executed. Please try simplifying your request.');
+});
+
 test('report controller rejects missing and unsafe export download filenames before file access', function () {
     report_controller_bind();
     $controller = new ReportController();
@@ -844,6 +868,36 @@ test('report controller downloads existing export files with stable cache and co
         ->and($response->headers->get('pragma'))->toBe('no-cache')
         ->and($response->headers->get('expires'))->toBe('0')
         ->and($response->headers->get('content-disposition'))->toContain($filename);
+});
+
+test('report controller wraps download response failures for existing non-file export paths', function () {
+    report_controller_bind();
+    $controller = new ReportController();
+
+    $exportDir = storage_path('app/exports');
+    if (!is_dir($exportDir)) {
+        mkdir($exportDir, 0755, true);
+    }
+
+    $filename = 'report-orders-directory.csv';
+    $filepath = $exportDir . DIRECTORY_SEPARATOR . $filename;
+    if (is_file($filepath)) {
+        unlink($filepath);
+    }
+    if (!is_dir($filepath)) {
+        mkdir($filepath, 0755);
+    }
+
+    $response = $controller->download(Request::create('/int/v1/reports/download/' . $filename), $filename);
+    $payload  = report_controller_payload($response);
+
+    expect($response->getStatusCode())->toBe(500)
+        ->and($payload['success'])->toBeFalse()
+        ->and($payload['error']['code'])->toBe('QUERY_EXECUTION_FAILED')
+        ->and($payload['error']['message'])->toBe('The query could not be executed. Please try simplifying your request.')
+        ->and($payload['meta']['company_id'])->toBe('company-1');
+
+    rmdir($filepath);
 });
 
 test('report controller report query scopes custom actions to the active company', function () {

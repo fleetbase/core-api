@@ -9,6 +9,14 @@ use Fleetbase\Support\Reporting\Schema\Relationship;
 use Fleetbase\Support\Reporting\Schema\Table;
 use PHPUnit\Framework\TestCase;
 
+class ThrowingComputedColumnRegistry extends ReportSchemaRegistry
+{
+    public function getTable(string $name): ?Table
+    {
+        throw new \RuntimeException('registry unavailable');
+    }
+}
+
 class ComputedColumnValidatorTest extends TestCase
 {
     protected ComputedColumnValidator $validator;
@@ -116,6 +124,22 @@ class ComputedColumnValidatorTest extends TestCase
     }
 
     /** @test */
+    public function itValidatesComputedColumnAndNestedRelationshipReferences()
+    {
+        $computedColumns = [
+            ['name' => 'gross_total'],
+        ];
+
+        $computedResult = $this->validator->validate('ROUND(gross_total / quantity, 2)', 'test_table', $computedColumns);
+        $nestedResult   = $this->validator->validate('related.account.owner_name', 'test_table');
+
+        $this->assertTrue($computedResult['valid']);
+        $this->assertEmpty($computedResult['errors']);
+        $this->assertTrue($nestedResult['valid']);
+        $this->assertEmpty($nestedResult['errors']);
+    }
+
+    /** @test */
     public function itRejectsForbiddenKeywords()
     {
         $expressions = [
@@ -166,12 +190,25 @@ class ComputedColumnValidatorTest extends TestCase
     /** @test */
     public function itRejectsInvalidColumnReferences()
     {
-        $expression = 'DATEDIFF(invalid_column, start_date)';
-        $result     = $this->validator->validate($expression, 'test_table');
+        $simpleResult       = $this->validator->validate('DATEDIFF(invalid_column, start_date)', 'test_table');
+        $relationshipResult = $this->validator->validate('missing_relation.value', 'test_table');
+
+        $this->assertFalse($simpleResult['valid']);
+        $this->assertNotEmpty($simpleResult['errors']);
+        $this->assertStringContainsString('invalid_column', $simpleResult['errors'][0]);
+        $this->assertFalse($relationshipResult['valid']);
+        $this->assertNotEmpty($relationshipResult['errors']);
+        $this->assertStringContainsString('missing_relation.value', $relationshipResult['errors'][0]);
+    }
+
+    /** @test */
+    public function itReportsRegistryFailuresWhileValidatingColumnReferences()
+    {
+        $validator = new ComputedColumnValidator(new ThrowingComputedColumnRegistry());
+        $result    = $validator->validate('amount + quantity', 'test_table');
 
         $this->assertFalse($result['valid']);
-        $this->assertNotEmpty($result['errors']);
-        $this->assertStringContainsString('invalid_column', $result['errors'][0]);
+        $this->assertSame(['Error validating column references: registry unavailable'], $result['errors']);
     }
 
     /** @test */

@@ -361,6 +361,46 @@ test('verification email endpoints reject invalid sessions with stable error con
         ]);
 });
 
+test('verification sessions reject malformed redis payloads and missing user records', function () {
+    [, $redis]                             = auth_controller_verification_database();
+    $redis->values['malformed-session']    = '{not-json';
+    $redis->values['missing-user-session'] = json_encode([
+        'email'     => 'missing@example.test',
+        'user_uuid' => 'missing-user',
+    ]);
+
+    $malformed = (new AuthController())->validateVerificationSession(auth_controller_verification_request([
+        'email' => 'verify@example.test',
+        'token' => 'malformed-session',
+    ]));
+    $missingUser = (new AuthController())->sendVerificationEmail(auth_controller_verification_request([
+        'email' => 'missing@example.test',
+        'token' => 'missing-user-session',
+    ]));
+
+    expect($malformed->getStatusCode())->toBe(200)
+        ->and($malformed->getData(true))->toBe(['valid' => false])
+        ->and($missingUser->getStatusCode())->toBe(400)
+        ->and($missingUser->getData(true))->toBe([
+            'errors' => ['Invalid verification session.'],
+        ]);
+});
+
+test('verification session creation rejects unknown email addresses without writing redis state', function () {
+    [, $redis] = auth_controller_verification_database();
+
+    $response = (new AuthController())->createVerificationSession(auth_controller_verification_request([
+        'email' => 'missing@example.test',
+        'send'  => true,
+    ]));
+
+    expect($response->getStatusCode())->toBe(400)
+        ->and($response->getData(true))->toBe([
+            'errors' => ['No user found with provided email address.'],
+        ])
+        ->and($redis->values)->toBe([]);
+});
+
 test('verification session creation stores a redis session and optionally sends email verification', function () {
     [$capsule, $redis, $mailer] = auth_controller_verification_database();
     auth_controller_verification_insert_user($capsule);
@@ -415,6 +455,46 @@ test('verification email resend accepts valid sessions and persists a new verifi
         ->and($codes->first()->meta)->toBe(['email' => 'verify@example.test'])
         ->and($mailer->recipients)->toHaveCount(1)
         ->and($mailer->sent)->toHaveCount(1);
+});
+
+test('verify email rejects already verified users and invalid active code attempts', function () {
+    [$capsule, $redis] = auth_controller_verification_database();
+    auth_controller_verification_insert_user($capsule, [
+        'email_verified_at' => '2026-07-17 14:00:00',
+        'status'            => 'active',
+    ]);
+    $redis->values['verified-session'] = json_encode([
+        'email'     => 'verify@example.test',
+        'user_uuid' => 'verification-user',
+    ]);
+
+    $alreadyVerified = (new AuthController())->verifyEmail(auth_controller_verification_request([
+        'email' => 'verify@example.test',
+        'token' => 'verified-session',
+        'code'  => '123456',
+    ]));
+
+    $capsule = auth_controller_verification_database()[0];
+    auth_controller_verification_insert_user($capsule);
+    app('redis')->values['pending-session'] = json_encode([
+        'email'     => 'verify@example.test',
+        'user_uuid' => 'verification-user',
+    ]);
+
+    $invalidCode = (new AuthController())->verifyEmail(auth_controller_verification_request([
+        'email' => 'verify@example.test',
+        'token' => 'pending-session',
+        'code'  => '000000',
+    ]));
+
+    expect($alreadyVerified->getStatusCode())->toBe(400)
+        ->and($alreadyVerified->getData(true))->toBe([
+            'errors' => ['User is already verified.'],
+        ])
+        ->and($invalidCode->getStatusCode())->toBe(400)
+        ->and($invalidCode->getData(true))->toBe([
+            'errors' => ['Invalid verification code.'],
+        ]);
 });
 
 test('verify email consumes the session and returns token only when authentication is requested', function (bool $authenticate) {
@@ -590,6 +670,29 @@ test('authenticate sms code logs in matching users and consumes one time codes',
         ->and($payload['token'])->toContain('|')
         ->and($payload['user']['uuid'])->toBe('verification-user')
         ->and($auth->loggedIn)->toBe(['verification-user'])
+        ->and($redis->deleted)->toBe([$key])
+        ->and($redis->values)->not->toHaveKey($key);
+});
+
+test('authenticate sms code reports token creation failures after consuming a valid otp', function () {
+    [$capsule, $redis] = auth_controller_verification_database();
+    auth_controller_verification_insert_user($capsule, [
+        'status' => 'active',
+    ]);
+    Illuminate\Support\Facades\Auth::swap(new AuthControllerVerificationAuthFake());
+
+    $key                 = auth_controller_verification_phone_key('+15555550123');
+    $redis->values[$key] = '135790';
+    $capsule->getConnection('mysql')->getSchemaBuilder()->drop('personal_access_tokens');
+
+    $response = (new AuthController())->authenticateSmsCode(auth_controller_verification_request([
+        'phone'       => '5555550123',
+        'countryCode' => '1',
+        'code'        => '135790',
+    ]));
+
+    expect($response->getStatusCode())->toBe(400)
+        ->and($response->getData(true)['errors'][0])->toContain('personal_access_tokens')
         ->and($redis->deleted)->toBe([$key])
         ->and($redis->values)->not->toHaveKey($key);
 });

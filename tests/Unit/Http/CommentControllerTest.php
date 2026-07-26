@@ -390,6 +390,19 @@ test('public comment controller returns stable errors when updates fail', functi
         ->and($response->getData(true))->toBe(['error' => 'Uknown error attempting to update comment.']);
 });
 
+test('public comment controller returns stable errors when find or delete lookups fail unexpectedly', function () {
+    $capsule = comment_controller_database();
+    $capsule->getConnection('mysql')->getSchemaBuilder()->drop('comments');
+
+    $findFailure   = comment_controller()->find('comment_root');
+    $deleteFailure = comment_controller()->delete('comment_root');
+
+    expect($findFailure->getStatusCode())->toBe(404)
+        ->and($findFailure->getData(true))->toBe(['error' => 'Uknown error occured trying to find the comment.'])
+        ->and($deleteFailure->getStatusCode())->toBe(404)
+        ->and($deleteFailure->getData(true))->toBe(['error' => 'Uknown error occured trying to find the comment.']);
+});
+
 test('public comment controller query applies subject parent and active company filters', function () {
     $capsule = comment_controller_database();
     $now     = '2026-07-18 00:05:00';

@@ -57,6 +57,7 @@ class TemplateSearchFixture extends Model
     protected $searchableColumns = [
         'name',
         'meta->code',
+        'meta->ignored->path',
         'searchRelation.label',
     ];
 
@@ -374,6 +375,7 @@ it('builds searchable query branches for custom search json relations and additi
 
     expect($sql)->toContain('lower(name)')
         ->and($sql)->toContain('json_extract(meta')
+        ->and($sql)->not->toContain('ignored')
         ->and($sql)->toContain('exists')
         ->and($sql)->toContain('template_search_relation_fixtures')
         ->and($query->getBindings())->toContain('%alpha%001%');

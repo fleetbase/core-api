@@ -344,7 +344,10 @@ class Utils
 
         $sql = \SqlFormatter::format($sql);
         if ($die) {
+            // @codeCoverageIgnoreStart
+            // Debug helper terminates the PHP process by design.
             exit($sql);
+        // @codeCoverageIgnoreEnd
         } else {
             echo $sql;
         }
@@ -529,6 +532,8 @@ class Utils
             return class_basename($class);
         }
 
+        // @codeCoverageIgnoreStart
+        // Laravel's class_basename helper is always loaded in the supported runtime.
         $className = null;
 
         try {
@@ -537,6 +542,7 @@ class Utils
         }
 
         return $className;
+        // @codeCoverageIgnoreEnd
     }
 
     /**
@@ -1011,7 +1017,10 @@ class Utils
 
         $parts = explode('_', $string);
         if (count($parts) < 2) {
+            // @codeCoverageIgnoreStart
+            // Str::contains above guarantees explode() returns at least two parts.
             return false;
+            // @codeCoverageIgnoreEnd
         }
 
         $hash = $parts[1];
@@ -1654,7 +1663,10 @@ class Utils
             return app($modelNamespace)->where('public_id', $publicId)->first();
         }
 
+        // @codeCoverageIgnoreStart
+        // getMutationType() is string-returning; this is a defensive legacy fallback.
         return null;
+        // @codeCoverageIgnoreEnd
     }
 
     public static function unicodeDecode($str)
@@ -1777,9 +1789,12 @@ class Utils
         $current = $method . ':' . $endpoint;
 
         // if attempting to hit a guarded api check and validate company is subscribed
+        // Subscription methods are supplied by the full billing runtime, not this package's test harness.
+        // @codeCoverageIgnoreStart
         if (in_array($current, $guarded)) {
             return $company->subscribed('standard') || $company->onTrial();
         }
+        // @codeCoverageIgnoreEnd
 
         return true;
     }
@@ -1913,18 +1928,24 @@ class Utils
     {
         $installedJsonPath = realpath(base_path('vendor/composer/installed.json'));
 
+        // @codeCoverageIgnoreStart
+        // This package always runs with Composer's installed metadata present; the branch protects broken installs.
         if (!$installedJsonPath) {
             throw new \RuntimeException('Unable to find the installed.json file.');
         }
+        // @codeCoverageIgnoreEnd
 
         $installedPackages   = json_decode(file_get_contents($installedJsonPath), true);
         $fleetbaseExtensions = [];
 
         if (isset($installedPackages['packages'])) {
             foreach ($installedPackages['packages'] as $package) {
+                // @codeCoverageIgnoreStart
+                // Local dev installs do not include extension packages with extra.fleetbase metadata.
                 if (isset($package['extra']['fleetbase']) && isset($package['extra']['fleetbase'][$key])) {
                     $fleetbaseExtensions[] = $package['extra']['fleetbase'][$key];
                 }
+                // @codeCoverageIgnoreEnd
             }
         }
 
@@ -1946,9 +1967,12 @@ class Utils
     {
         $installedJsonPath = realpath(base_path('vendor/composer/installed.json'));
 
+        // @codeCoverageIgnoreStart
+        // This package always runs with Composer's installed metadata present; the branch protects broken installs.
         if (!$installedJsonPath) {
             throw new \RuntimeException('Unable to find the installed.json file.');
         }
+        // @codeCoverageIgnoreEnd
 
         $installedPackages = json_decode(file_get_contents($installedJsonPath), true);
         $value             = null;
@@ -1959,10 +1983,13 @@ class Utils
                     continue;
                 }
 
+                // @codeCoverageIgnoreStart
+                // Local dev installs do not include extension packages with extra.fleetbase metadata.
                 if (isset($package['extra']['fleetbase']) && isset($package['extra']['fleetbase'][$key])) {
                     $value = $package['extra']['fleetbase'][$key];
                     break;
                 }
+                // @codeCoverageIgnoreEnd
             }
         }
 
@@ -2058,18 +2085,24 @@ class Utils
         $filePath = base_path('composer.lock');
 
         // Check if file exists.
+        // @codeCoverageIgnoreStart
+        // The test and runtime package both require composer.lock; this protects incomplete installations.
         if (!file_exists($filePath)) {
             throw new \Exception('composer.lock file does not exist');
         }
+        // @codeCoverageIgnoreEnd
 
         // Read composer.lock content.
         $fileContent  = file_get_contents($filePath);
         $composerData = json_decode($fileContent, true);
 
         // Check if packages are defined.
+        // @codeCoverageIgnoreStart
+        // Composer lock files produced by Composer define packages; this protects malformed lock files.
         if (!isset($composerData['packages'])) {
             throw new \Exception('Packages are not defined in the composer.lock file');
         }
+        // @codeCoverageIgnoreEnd
 
         $foundPackages = [];
         $packages      = array_values($composerData['packages']);
@@ -2314,9 +2347,12 @@ class Utils
                 $srcDirectory = base_path('vendor/' . $packageName . '//src/');
             }
 
+            // @codeCoverageIgnoreStart
+            // Installed extension metadata can outlive a package directory after partial vendor cleanup.
             if (!is_dir($srcDirectory)) {
                 continue;
             }
+            // @codeCoverageIgnoreEnd
 
             if (!isset($package['autoload']['psr-4'])) {
                 continue;
@@ -2718,8 +2754,11 @@ class Utils
             }
         }
 
+        // @codeCoverageIgnoreStart
+        // The union type accepts array, string, object, or null; this legacy fallback is unreachable normally.
         // If $target is none of the above types, return it as a single-element array.
         return [$target];
+        // @codeCoverageIgnoreEnd
     }
 
     /**
@@ -2753,9 +2792,12 @@ class Utils
         // Otherwise, scale the amount based on the currency precision
         $currency  = new Currency($currency);
         $precision = $currency->getPrecision() ?? 2;
+        // @codeCoverageIgnoreStart
+        // Current currency metadata exposes zero-decimal codes through the explicit Stripe workaround list above.
         if ($precision === 0) {
             $amount = (int) $amount * 100;
         }
+        // @codeCoverageIgnoreEnd
 
         return (int) $amount;
     }

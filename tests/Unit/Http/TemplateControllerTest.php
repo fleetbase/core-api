@@ -425,6 +425,49 @@ test('template controller previews and renders only active company templates', f
         ->and($foreignTemplate)->toBeNull();
 });
 
+test('template controller exposes context schemas from the render service', function () {
+    template_controller_database();
+    $controller = template_controller(template_controller_service());
+
+    $response = $controller->contextSchemas();
+
+    expect($response)->toBeInstanceOf(JsonResponse::class)
+        ->and(template_controller_payload($response))->toBe([
+            'schemas' => [
+                'coverage_subject' => [
+                    'label'     => 'Coverage Subject',
+                    'model'     => TemplateControllerSubject::class,
+                    'variables' => [],
+                ],
+            ],
+        ]);
+});
+
+test('template controller create hook syncs nested queries and reloads the relation', function () {
+    template_controller_database();
+    $controller = template_controller(template_controller_service());
+    $template   = Template::where('uuid', 'template-1')->firstOrFail();
+
+    $controller->onAfterCreate(Request::create('/int/v1/templates', 'POST', [
+        'queries' => [
+            [
+                'label'         => 'Created On Hook',
+                'variable_name' => 'created_on_hook',
+                'model_type'    => TemplateControllerSubject::class,
+                'conditions'    => [],
+                'sort'          => [],
+                'limit'         => 4,
+                'with'          => [],
+            ],
+        ],
+    ]), $template, []);
+
+    expect($template->relationLoaded('queries'))->toBeTrue()
+        ->and($template->queries)->toHaveCount(1)
+        ->and($template->queries->first()->variable_name)->toBe('created_on_hook')
+        ->and($template->queries->first()->company_uuid)->toBe('company-1');
+});
+
 test('template controller syncs nested queries by updating keeping creating and soft deleting removed queries', function () {
     template_controller_database();
     $service    = template_controller_service();

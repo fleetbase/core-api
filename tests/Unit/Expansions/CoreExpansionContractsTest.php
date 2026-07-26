@@ -529,6 +529,14 @@ test('builder expansion applies request sort aliases and explicit directions', f
         ->pluck('name')
         ->all();
 
+    $nestedDescendingQuery = CoreExpansionBuilderModel::query();
+    $nestedDescending      = $applySort
+        ->call($nestedDescendingQuery, HttpRequest::create('/int/v1/test', 'GET', [
+            'nestedSort' => [['-name', 'status:asc']],
+        ]))
+        ->pluck('name')
+        ->all();
+
     $arrayDescendingQuery = CoreExpansionBuilderModel::query();
     $arrayDescendingSql   = $applySort
         ->call($arrayDescendingQuery, HttpRequest::create('/int/v1/test', 'GET', [
@@ -543,6 +551,7 @@ test('builder expansion applies request sort aliases and explicit directions', f
         ->and($unsortedQuery->getQuery()->orders)->toBeNull()
         ->and($default)->toBe(['Gamma Fleet', 'Beta Dispatch', 'Alpha Fleet'])
         ->and($arraySort)->toBe(['Beta Dispatch', 'Alpha Fleet', 'Gamma Fleet'])
+        ->and($nestedDescending)->toBe(['Gamma Fleet', 'Beta Dispatch', 'Alpha Fleet'])
         ->and($arrayDescendingSql)->toContain('order by "name" desc');
 });
 

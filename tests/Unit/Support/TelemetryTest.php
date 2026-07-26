@@ -8,6 +8,7 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Facade;
+use Illuminate\Support\Facades\File as FileFacade;
 use Illuminate\Support\Facades\Http;
 use Psr\Log\NullLogger;
 
@@ -56,6 +57,23 @@ class TelemetryThrowsOnSend extends Telemetry
     public static function send(array $payload = []): bool
     {
         throw new RuntimeException('telemetry send failed');
+    }
+}
+
+class TelemetryFilesystemFake
+{
+    public function __construct(private array $files = [])
+    {
+    }
+
+    public function exists(string $path): bool
+    {
+        return array_key_exists($path, $this->files);
+    }
+
+    public function get(string $path): string
+    {
+        return $this->files[$path] ?? '';
     }
 }
 
@@ -316,6 +334,16 @@ test('telemetry source lookup handles client exceptions and continues sending', 
         return in_array('source.modified:false', $request['tags'], true)
             && in_array('source.main_hash:', $request['tags'], true);
     });
+});
+
+test('telemetry installation type detects docker host markers', function () {
+    telemetry_fixtures();
+
+    FileFacade::swap(new TelemetryFilesystemFake([
+        '/.dockerenv' => '',
+    ]));
+
+    expect(Telemetry::getInstallationType())->toBe('docker');
 });
 
 test('telemetry caches ip metadata between sends', function () {

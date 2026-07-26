@@ -2,6 +2,8 @@
 
 use Aws\Exception\MultipartUploadException;
 use Aws\Multipart\UploadState;
+use Aws\S3\MultipartUploader;
+use Aws\S3\S3Client;
 use Fleetbase\Console\Commands\BackupDatabase\MysqlS3Backup;
 use Fleetbase\Console\Commands\BackupDatabase\S3BackupTrimmer;
 use Illuminate\Container\Container;
@@ -9,6 +11,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Facade;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Tester\CommandTester;
+use Symfony\Component\Process\Process;
 
 class BackupDatabaseCommandContainer extends FleetbaseTestContainer
 {
@@ -193,9 +196,62 @@ function backup_database_container(array $overrides = []): void
     Facade::clearResolvedInstances();
 }
 
+function backup_database_call(object $target, string $method, mixed ...$arguments): mixed
+{
+    $reflection = new ReflectionMethod($target, $method);
+    $reflection->setAccessible(true);
+
+    return $reflection->invoke($target, ...$arguments);
+}
+
 afterEach(function () {
     Carbon::setTestNow();
     Facade::clearResolvedInstances();
+});
+
+it('creates s3 backup trimmers through the static factory', function () {
+    Carbon::setTestNow(Carbon::parse('2026-07-18 09:30:45'));
+
+    $trimmer = S3BackupTrimmer::make(14, 'fleetbase-backups');
+
+    expect($trimmer)->toBeInstanceOf(S3BackupTrimmer::class)
+        ->and($trimmer->days)->toBe(14)
+        ->and($trimmer->bucket)->toBe('fleetbase-backups')
+        ->and($trimmer->when->toDateTimeString())->toBe('2026-07-04 00:00:00');
+});
+
+it('builds real backup helper collaborators without invoking external services', function () {
+    backup_database_container();
+    $command = new MysqlS3Backup();
+
+    $process = backup_database_call($command, 'makeProcess', 'echo fleetbase');
+    $s3      = backup_database_call($command, 'makeS3Client', [
+        'region'      => 'ap-southeast-1',
+        'version'     => 'latest',
+        'credentials' => [
+            'key'    => 'test-key',
+            'secret' => 'test-secret',
+        ],
+    ]);
+    $fileName = tempnam(sys_get_temp_dir(), 'fleetbase-backup-helper-');
+    file_put_contents($fileName, 'sql dump');
+
+    $uploader = backup_database_call($command, 'makeMultipartUploader', $s3, $fileName, [
+        'bucket' => 'fleetbase-backups',
+        'key'    => 'daily/' . basename($fileName),
+    ]);
+    $trimmer = backup_database_call($command, 'makeBackupTrimmer', 3, 'fleetbase-backups');
+
+    expect($process)->toBeInstanceOf(Process::class)
+        ->and($process->getCommandLine())->toBe('echo fleetbase')
+        ->and($s3)->toBeInstanceOf(S3Client::class)
+        ->and($uploader)->toBeInstanceOf(MultipartUploader::class)
+        ->and($trimmer)->toBeInstanceOf(S3BackupTrimmer::class)
+        ->and(file_exists($fileName))->toBeTrue();
+
+    backup_database_call($command, 'deleteLocalFile', $fileName);
+
+    expect(file_exists($fileName))->toBeFalse();
 });
 
 it('builds mysql and sandbox dump commands uploads to configured s3 folder and trims rolling backups', function () {

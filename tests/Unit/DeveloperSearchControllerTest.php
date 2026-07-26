@@ -2,11 +2,13 @@
 
 use Fleetbase\Http\Controllers\Internal\v1\DeveloperSearchController;
 use Fleetbase\Models\User as FleetbaseUser;
+use Illuminate\Cache\CacheManager;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Facade;
+use Spatie\Permission\PermissionRegistrar;
 
 class DeveloperSearchAdminUser extends FleetbaseUser
 {
@@ -27,11 +29,29 @@ function developer_search_database(): Capsule
     ];
 
     $container = bind_test_container([
-        'api.cache.enabled'            => false,
-        'database.default'             => 'testing',
-        'database.connections.testing' => $connection,
-        'fleetbase.connection.db'      => 'testing',
+        'api.cache.enabled'                           => false,
+        'auth.defaults.guard'                         => 'sanctum',
+        'cache.default'                               => 'array',
+        'cache.stores.array.driver'                   => 'array',
+        'database.default'                            => 'mysql',
+        'database.connections.mysql'                  => $connection,
+        'database.connections.testing'                => $connection,
+        'fleetbase.connection.db'                     => 'mysql',
+        'permission.cache.expiration_time'            => DateInterval::createFromDateString('24 hours'),
+        'permission.cache.key'                        => 'spatie.permission.cache',
+        'permission.column_names.model_morph_key'     => 'model_uuid',
+        'permission.models.permission'                => Fleetbase\Models\Permission::class,
+        'permission.models.role'                      => Fleetbase\Models\Role::class,
+        'permission.table_names.model_has_permissions'=> 'model_has_permissions',
+        'permission.table_names.model_has_roles'      => 'model_has_roles',
+        'permission.table_names.permissions'          => 'permissions',
+        'permission.table_names.role_has_permissions' => 'role_has_permissions',
+        'permission.table_names.roles'                => 'roles',
     ]);
+    $container->instance('cache', new CacheManager($container));
+    $container->forgetInstance(PermissionRegistrar::class);
+    $container->singleton(PermissionRegistrar::class, fn ($app) => new PermissionRegistrar($app['cache']));
+    Facade::clearResolvedInstance('cache');
 
     session()->flush();
     session([
@@ -41,16 +61,87 @@ function developer_search_database(): Capsule
 
     $capsule = new Capsule($container);
     $capsule->addConnection($connection, 'testing');
+    $capsule->addConnection($connection, 'mysql');
     $capsule->setEventDispatcher(new Dispatcher($container));
     $capsule->setAsGlobal();
     $capsule->bootEloquent();
 
     $databaseManager = $capsule->getDatabaseManager();
-    $databaseManager->setDefaultConnection('testing');
+    $databaseManager->setDefaultConnection('mysql');
     $container->instance('db', $databaseManager);
     Facade::clearResolvedInstance('db');
 
-    $schema = $capsule->getConnection('testing')->getSchemaBuilder();
+    $schema = $capsule->getConnection('mysql')->getSchemaBuilder();
+
+    $schema->create('companies', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('public_id')->nullable();
+        $table->string('name')->nullable();
+        $table->timestamp('deleted_at')->nullable();
+        $table->timestamps();
+    });
+
+    $schema->create('users', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('public_id')->nullable();
+        $table->string('company_uuid')->nullable();
+        $table->string('email')->nullable();
+        $table->string('phone')->nullable();
+        $table->string('username')->nullable();
+        $table->string('name')->nullable();
+        $table->string('type')->nullable();
+        $table->string('status')->nullable();
+        $table->timestamp('deleted_at')->nullable();
+        $table->timestamps();
+    });
+
+    $schema->create('company_users', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('company_uuid')->index();
+        $table->string('user_uuid')->index();
+        $table->string('status')->nullable();
+        $table->timestamp('deleted_at')->nullable();
+        $table->timestamps();
+    });
+
+    $schema->create('permissions', function ($table) {
+        $table->string('id')->primary();
+        $table->string('name')->nullable();
+        $table->string('guard_name')->nullable();
+        $table->string('service')->nullable();
+        $table->timestamps();
+    });
+
+    $schema->create('roles', function ($table) {
+        $table->string('id')->primary();
+        $table->string('company_uuid')->nullable();
+        $table->string('name')->nullable();
+        $table->string('guard_name')->nullable();
+        $table->timestamps();
+    });
+
+    $schema->create('role_has_permissions', function ($table) {
+        $table->string('permission_id');
+        $table->string('role_id');
+    });
+
+    $schema->create('model_has_permissions', function ($table) {
+        $table->string('permission_id');
+        $table->string('model_type');
+        $table->string('model_uuid');
+    });
+
+    $schema->create('model_has_roles', function ($table) {
+        $table->string('role_id');
+        $table->string('model_type');
+        $table->string('model_uuid');
+    });
+
+    $schema->create('model_has_policies', function ($table) {
+        $table->string('policy_id');
+        $table->string('model_type');
+        $table->string('model_uuid');
+    });
 
     $schema->create('api_credentials', function ($table) {
         $table->string('uuid')->primary();
@@ -114,7 +205,26 @@ function developer_search_database(): Capsule
 
 function developer_search_seed(Capsule $capsule): void
 {
-    $db = $capsule->getConnection('testing');
+    $db  = $capsule->getConnection('mysql');
+    $now = '2026-07-26 00:00:00';
+
+    $db->table('companies')->insert([
+        ['uuid' => 'company-1', 'public_id' => 'company_developer_1', 'name' => 'Developer Company', 'created_at' => $now, 'updated_at' => $now],
+    ]);
+    $db->table('users')->insert([
+        ['uuid' => 'developer-1', 'public_id' => 'user_developer_1', 'company_uuid' => 'company-1', 'email' => 'developer@example.test', 'name' => 'Developer User', 'type' => 'user', 'status' => 'active', 'created_at' => $now, 'updated_at' => $now],
+    ]);
+    $db->table('company_users')->insert([
+        ['uuid' => 'company-user-developer', 'company_uuid' => 'company-1', 'user_uuid' => 'developer-1', 'status' => 'active', 'created_at' => $now, 'updated_at' => $now],
+    ]);
+    $db->table('permissions')->insert([
+        ['id' => 'permission-developers-see-log', 'name' => 'developers see log', 'guard_name' => 'sanctum', 'service' => 'developers', 'created_at' => $now, 'updated_at' => $now],
+    ]);
+    $db->table('model_has_permissions')->insert([
+        'permission_id' => 'permission-developers-see-log',
+        'model_type'    => Fleetbase\Models\CompanyUser::class,
+        'model_uuid'    => 'company-user-developer',
+    ]);
 
     $db->table('api_credentials')->insert([
         ['uuid' => 'credential-live', 'company_uuid' => 'company-1', 'name' => 'Live Orders', 'key' => 'flb_live_orders', '_key' => 'live_orders_hash', 'test_mode' => 0, 'expires_at' => null],
@@ -267,4 +377,40 @@ test('developer search honors requested types fallback labels q aliases and hard
             'breadcrumb'  => 'Developers > Events',
         ],
     ]);
+});
+
+test('developer search falls back to all result types for malformed types input', function () {
+    $response = developer_search_controller()->search(Request::create('/developers/search', 'GET', [
+        'query' => 'orders',
+        'types' => 123,
+        'limit' => 8,
+    ]));
+
+    $types = array_column($response->getData(true)['results'], 'type');
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($types)->toContain('API Key', 'Webhook', 'Request Log', 'Event');
+});
+
+test('developer search skips unauthorized result types for non admin users', function () {
+    $controller = developer_search_controller();
+    session(['user' => 'developer-1']);
+
+    $response = $controller->search(Request::create('/developers/search', 'GET', [
+        'query' => 'orders',
+        'types' => ['api_keys', 'logs'],
+        'limit' => 8,
+    ]));
+
+    $results = $response->getData(true)['results'];
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and(array_unique(array_column($results, 'type')))->toBe(['Request Log'])
+        ->and(array_column($results, 'type'))->not->toContain('API Key')
+        ->and(collect($results)->contains(fn (array $result) => $result['label'] === 'req_orders_1' && $result['description'] === 'GET /v1/orders 200 OK'))->toBeTrue()
+        ->and($results[0])->toMatchArray([
+            'label'       => 'req_orders_1',
+            'description' => 'GET /v1/orders 200 OK',
+            'models'      => ['req_orders_1'],
+        ]);
 });

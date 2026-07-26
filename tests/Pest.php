@@ -383,6 +383,11 @@ namespace {
                 : false);
         }
 
+        public function isProduction(): bool
+        {
+            return $this->environment('production');
+        }
+
         public function runningInConsole(): bool
         {
             return true;

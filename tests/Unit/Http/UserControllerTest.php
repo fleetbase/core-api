@@ -1,5 +1,6 @@
 <?php
 
+use Fleetbase\Exceptions\FleetbaseRequestValidationException;
 use Fleetbase\Exports\UserExport;
 use Fleetbase\Http\Controllers\Internal\v1\UserController;
 use Fleetbase\Http\Requests\ExportRequest;
@@ -10,6 +11,7 @@ use Fleetbase\Http\Requests\Internal\InviteUserRequest;
 use Fleetbase\Http\Requests\Internal\ResendUserInvite;
 use Fleetbase\Http\Requests\Internal\UpdatePasswordRequest;
 use Fleetbase\Http\Requests\Internal\ValidatePasswordRequest;
+use Fleetbase\Models\Role;
 use Fleetbase\Models\User;
 use Illuminate\Container\Container;
 use Illuminate\Database\Capsule\Manager as Capsule;
@@ -104,7 +106,7 @@ class UserControllerPermissionRegistrarFake
 
     public function getRoleClass(): string
     {
-        return Fleetbase\Models\Role::class;
+        return Role::class;
     }
 
     public function getPermissionClass(): string
@@ -207,10 +209,124 @@ class UserControllerWithoutRequestValidation extends UserController
     }
 }
 
+class UserControllerThrowingModel
+{
+    public function __construct(private Throwable $exception)
+    {
+    }
+
+    public function createRecordFromRequest(Request $request, ?callable $onBefore = null, ?callable $onAfter = null, array $options = []): never
+    {
+        throw $this->exception;
+    }
+
+    public function getApiPayloadFromRequest(Request $request): array
+    {
+        throw $this->exception;
+    }
+
+    public function withCounts(Request $request, mixed $query): mixed
+    {
+        return $query;
+    }
+
+    public function withRelationships(Request $request, mixed $query): mixed
+    {
+        return $query;
+    }
+
+    public function applyDirectivesToQuery(Request $request, mixed $query): mixed
+    {
+        return $query;
+    }
+
+    public function getSingularName(): string
+    {
+        return 'user';
+    }
+}
+
+class UserControllerInvalidParamModel
+{
+    public function getApiPayloadFromRequest(Request $request): array
+    {
+        return ['created_at' => '2026-07-18 10:00:00'];
+    }
+
+    public function fillSessionAttributes(?array $target = [], array $except = [], array $only = []): array
+    {
+        return $target ?? [];
+    }
+
+    public function isColumn(string $key): bool
+    {
+        return false;
+    }
+
+    public function isInvalidUpdateParam(string $key): bool
+    {
+        return $key === 'created_at';
+    }
+
+    public function withCounts(Request $request, mixed $query): mixed
+    {
+        return $query;
+    }
+
+    public function withRelationships(Request $request, mixed $query): mixed
+    {
+        return $query;
+    }
+
+    public function applyDirectivesToQuery(Request $request, mixed $query): mixed
+    {
+        return $query;
+    }
+
+    public function getSingularName(): string
+    {
+        return 'user';
+    }
+}
+
+class UserControllerFillSessionFailureModel extends UserControllerInvalidParamModel
+{
+    public function __construct(private Throwable $exception)
+    {
+    }
+
+    public function getApiPayloadFromRequest(Request $request): array
+    {
+        return ['name' => 'Changed Name'];
+    }
+
+    public function fillSessionAttributes(?array $target = [], array $except = [], array $only = []): array
+    {
+        throw $this->exception;
+    }
+}
+
+class UserControllerCamelPayloadModel extends UserControllerInvalidParamModel
+{
+    public function getApiPayloadFromRequest(Request $request): array
+    {
+        return [
+            'email' => 'MEMBER@example.test',
+            'name'  => 'Camel Payload',
+        ];
+    }
+
+    public function getSingularName(): string
+    {
+        return 'user-profile';
+    }
+}
+
 function user_controller_database(): Capsule
 {
     EloquentModel::clearBootedModels();
     EloquentModel::unsetEventDispatcher();
+    Request::flushMacros();
     Carbon::setTestNow(Carbon::parse('2026-07-18 10:00:00', 'UTC'));
 
     $connection = [
@@ -228,7 +344,7 @@ function user_controller_database(): Capsule
         'database.connections.mysql'                   => $connection,
         'fleetbase.connection.db'                      => 'mysql',
         'permission.models.permission'                 => Fleetbase\Models\Permission::class,
-        'permission.models.role'                       => Fleetbase\Models\Role::class,
+        'permission.models.role'                       => Role::class,
         'permission.table_names.permissions'           => 'permissions',
         'permission.table_names.roles'                 => 'roles',
         'permission.table_names.model_has_permissions' => 'model_has_permissions',
@@ -514,6 +630,7 @@ function user_controller_user(string $uuid): User
 afterEach(function () {
     session()->flush();
     Carbon::setTestNow();
+    Illuminate\Http\Resources\Json\JsonResource::wrap('data');
     config([
         'database.default'        => null,
         'database.connections'    => [],
@@ -618,6 +735,23 @@ test('user controller blocks generic deletes and identity mutations for organiza
         ->and(User::where('uuid', 'member-1')->value('email'))->toBe('member@example.test');
 });
 
+test('user controller visible user resolution requires company session for organization scoped callers', function () {
+    user_controller_database();
+
+    session()->flush();
+
+    $resolver = new ReflectionMethod(UserController::class, 'resolveVisibleUser');
+    $resolver->setAccessible(true);
+
+    $resolved = $resolver->invoke(
+        user_controller(),
+        'user_member_1',
+        user_controller_request('GET', [], user_controller_user('owner-1'), 'findRecord')
+    );
+
+    expect($resolved)->toBeNull();
+});
+
 test('user controller creates users through the generic record endpoint with scoped assignments', function () {
     $capsule = user_controller_database();
     EloquentModel::setEventDispatcher(new Dispatcher(app()));
@@ -696,6 +830,101 @@ test('user controller create record rejects duplicate active-company members and
         ->and($duplicateMember->getData(true))->toBe(['errors' => ['This user is already a member of your organisation.']])
         ->and($invalidRole->getStatusCode())->toBe(404)
         ->and($invalidRole->getData(true))->toBe(['errors' => ['The selected role is not available for this organisation.']]);
+});
+
+test('user controller create record invites existing users from another organization', function () {
+    $capsule = user_controller_database();
+    EloquentModel::setEventDispatcher(new Dispatcher(app()));
+
+    $invite = user_controller_without_request_validation()->createRecord(user_controller_request('POST', [
+        'user' => [
+            'email'     => 'foreign@example.test',
+            'role_uuid' => 'Administrator',
+        ],
+    ], user_controller_user('owner-1'), 'createRecord'));
+
+    expect($invite->getStatusCode())->toBe(200)
+        ->and($invite->getData(true)['invited'])->toBeTrue()
+        ->and($invite->getData(true)['user']['uuid'])->toBe('foreign-1')
+        ->and(User::where('email', 'foreign@example.test')->count())->toBe(1)
+        ->and($capsule->getConnection('mysql')->table('company_users')->where('company_uuid', 'company-1')->where('user_uuid', 'foreign-1')->exists())->toBeFalse()
+        ->and($capsule->getConnection('mysql')->table('invites')->where('company_uuid', 'company-1')->where('reason', 'join_company')->count())->toBe(1);
+});
+
+test('user controller create record reports existing-user invite precondition failures', function () {
+    user_controller_database();
+
+    session()->flush();
+    $missingCompany = user_controller_without_request_validation()->createRecord(user_controller_request('POST', [
+        'user' => [
+            'email' => 'foreign@example.test',
+        ],
+    ], user_controller_user('owner-1'), 'createRecord'));
+
+    session(['company' => 'company-1', 'user' => 'owner-1']);
+    $invalidRole = user_controller_without_request_validation()->createRecord(user_controller_request('POST', [
+        'user' => [
+            'email' => 'foreign@example.test',
+            'role'  => 'missing-role',
+        ],
+    ], user_controller_user('owner-1'), 'createRecord'));
+
+    expect($missingCompany->getStatusCode())->toBe(400)
+        ->and($missingCompany->getData(true))->toBe(['errors' => ['Unable to determine the current organisation.']])
+        ->and($invalidRole->getStatusCode())->toBe(404)
+        ->and($invalidRole->getData(true))->toBe(['errors' => ['The selected role is not available for this organisation.']]);
+});
+
+test('user controller role resolution accepts only global and active-company role instances', function () {
+    $capsule = user_controller_database();
+    $db      = $capsule->getConnection('mysql');
+    $db->table('roles')->insert([
+        ['id' => 'CompanyOneOperator', 'company_uuid' => 'company-1', 'name' => 'Company One Operator', 'guard_name' => 'sanctum', 'created_at' => '2026-07-18 10:00:00', 'updated_at' => '2026-07-18 10:00:00'],
+        ['id' => 'CompanyTwoOperator', 'company_uuid' => 'company-2', 'name' => 'Company Two Operator', 'guard_name' => 'sanctum', 'created_at' => '2026-07-18 10:00:00', 'updated_at' => '2026-07-18 10:00:00'],
+    ]);
+
+    $resolver = new ReflectionMethod(UserController::class, 'resolveAssignableRole');
+    $resolver->setAccessible(true);
+
+    expect($resolver->invoke(user_controller(), Role::find('Administrator'))?->id)->toBe('Administrator')
+        ->and($resolver->invoke(user_controller(), Role::find('CompanyOneOperator'))?->id)->toBe('CompanyOneOperator')
+        ->and($resolver->invoke(user_controller(), Role::find('CompanyTwoOperator')))->toBeNull()
+        ->and($resolver->invoke(user_controller(), null))->toBeNull();
+});
+
+test('user controller strips unchanged identity fields from flat update payloads and compares timestamp identities', function () {
+    user_controller_database();
+
+    $request = user_controller_request('PATCH', [
+        'email' => 'MEMBER@example.test',
+        'name'  => 'Member Renamed',
+    ], user_controller_user('owner-1'), 'updateRecord');
+    $stripper = new ReflectionMethod(UserController::class, 'stripUnchangedIdentityFields');
+    $stripper->setAccessible(true);
+    $identityMatcher = new ReflectionMethod(UserController::class, 'identityValueMatches');
+    $identityMatcher->setAccessible(true);
+    $controller = user_controller();
+
+    expect($stripper->invoke($controller, $request, user_controller_user('member-1')))->toBeTrue()
+        ->and($request->all())->toBe(['name' => 'Member Renamed'])
+        ->and($identityMatcher->invoke($controller, 'phone_verified_at', null, null))->toBeTrue()
+        ->and($identityMatcher->invoke($controller, 'phone_verified_at', null, '2026-07-18 10:00:00'))->toBeFalse();
+
+    $camelRequest = user_controller_request('PATCH', [
+        'userProfile' => [
+            'email' => 'MEMBER@example.test',
+            'name'  => 'Camel Payload',
+        ],
+    ], user_controller_user('owner-1'), 'updateRecord');
+    $camelController        = user_controller();
+    $camelController->model = new UserControllerCamelPayloadModel();
+
+    expect($stripper->invoke($camelController, $camelRequest, user_controller_user('member-1')))->toBeTrue()
+        ->and($camelRequest->all())->toBe([
+            'userProfile' => [
+                'name' => 'Camel Payload',
+            ],
+        ]);
 });
 
 test('user controller updates mutable user fields while preserving unchanged identity fields', function () {
@@ -781,7 +1010,6 @@ test('user controller rejects update edge cases before mutating scoped users', f
             'role' => 'missing-role',
         ],
     ], user_controller_user('owner-1'), 'updateRecord'), 'member-1');
-
     expect($missingUser->getStatusCode())->toBe(404)
         ->and($missingUser->getData(true))->toBe(['errors' => ['User not found.']])
         ->and($invalidDateIdentity->getStatusCode())->toBe(422)
@@ -789,6 +1017,86 @@ test('user controller rejects update edge cases before mutating scoped users', f
         ->and($invalidRole->getStatusCode())->toBe(404)
         ->and($invalidRole->getData(true))->toBe(['errors' => ['The selected role is not available for this organisation.']])
         ->and($db->table('users')->where('uuid', 'member-1')->value('name'))->toBe('Member One');
+});
+
+test('user controller formats create and update exception responses by exception type', function () {
+    user_controller_database();
+
+    $queryException = new Illuminate\Database\QueryException(
+        'mysql',
+        'insert into users',
+        [],
+        new RuntimeException('database failure')
+    );
+
+    $createDatabaseFailure        = user_controller_without_request_validation();
+    $createDatabaseFailure->model = new UserControllerThrowingModel($queryException);
+    $createDatabaseResponse       = $createDatabaseFailure->createRecord(user_controller_request('POST', [
+        'user' => [
+            'email' => 'database-failure@example.test',
+            'name'  => 'Database Failure',
+        ],
+    ], user_controller_user('owner-1'), 'createRecord'));
+
+    $createValidationFailure        = user_controller_without_request_validation();
+    $createValidationFailure->model = new UserControllerThrowingModel(new FleetbaseRequestValidationException([
+        'Email must be unique.',
+    ]));
+    $createValidationResponse       = $createValidationFailure->createRecord(user_controller_request('POST', [
+        'user' => [
+            'email' => 'validation-failure@example.test',
+            'name'  => 'Validation Failure',
+        ],
+    ], user_controller_user('owner-1'), 'createRecord'));
+
+    $createGenericFailure        = user_controller_without_request_validation();
+    $createGenericFailure->model = new UserControllerThrowingModel(new RuntimeException('generic create failure'));
+    $createGenericResponse       = $createGenericFailure->createRecord(user_controller_request('POST', [
+        'user' => [
+            'email' => 'generic-failure@example.test',
+            'name'  => 'Generic Failure',
+        ],
+    ], user_controller_user('owner-1'), 'createRecord'));
+
+    $updateDatabaseFailure        = user_controller_without_request_validation();
+    $updateDatabaseFailure->model = new UserControllerFillSessionFailureModel($queryException);
+    $updateDatabaseResponse       = $updateDatabaseFailure->updateRecord(user_controller_request('PATCH', [
+        'user' => [
+            'name' => 'Database Failure',
+        ],
+    ], user_controller_user('owner-1'), 'updateRecord'), 'member-1');
+
+    $updateValidationFailure        = user_controller_without_request_validation();
+    $updateValidationFailure->model = new UserControllerFillSessionFailureModel(new FleetbaseRequestValidationException([
+        'User payload is invalid.',
+    ]));
+    $updateValidationResponse       = $updateValidationFailure->updateRecord(user_controller_request('PATCH', [
+        'user' => [
+            'name' => 'Validation Failure',
+        ],
+    ], user_controller_user('owner-1'), 'updateRecord'), 'member-1');
+
+    $invalidParam         = user_controller_without_request_validation();
+    $invalidParam->model  = new UserControllerInvalidParamModel();
+    $invalidParamResponse = $invalidParam->updateRecord(user_controller_request('PATCH', [
+        'user' => [
+            'created_at' => '2026-07-18 10:00:00',
+        ],
+    ], user_controller_user('owner-1'), 'updateRecord'), 'member-1');
+
+    expect($createDatabaseResponse->getStatusCode())->toBe(400)
+        ->and($createDatabaseResponse->getData(true)['errors'][0])->toContain('database failure')
+        ->and($createValidationResponse->getStatusCode())->toBe(400)
+        ->and($createValidationResponse->getData(true))->toBe(['errors' => ['Email must be unique.']])
+        ->and($createGenericResponse->getStatusCode())->toBe(400)
+        ->and($createGenericResponse->getData(true))->toBe(['errors' => ['generic create failure']])
+        ->and($updateDatabaseResponse->getStatusCode())->toBe(400)
+        ->and($updateDatabaseResponse->getData(true)['errors'][0])->toContain('database failure')
+        ->and($updateValidationResponse->getStatusCode())->toBe(400)
+        ->and($updateValidationResponse->getData(true))->toBe(['errors' => ['User payload is invalid.']])
+        ->and($invalidParamResponse->getStatusCode())->toBe(400)
+        ->and($invalidParamResponse->getData(true))->toBe(['errors' => ['Invalid param "created_at" in update request!']])
+        ->and(User::where('uuid', 'member-1')->value('name'))->toBe('Member One');
 });
 
 test('user controller activates deactivates verifies and removes users only through company scoped membership', function () {
@@ -823,6 +1131,12 @@ test('user controller activates deactivates verifies and removes users only thro
 
     user_controller_request('POST', [], user_controller_user('owner-1'), 'deactivate');
     $selfDeactivate = user_controller()->deactivate('owner-1');
+    $capsule->getConnection('mysql')->table('model_has_roles')->insert([
+        'role_id'    => 'Administrator',
+        'model_type' => Fleetbase\Models\CompanyUser::class,
+        'model_uuid' => 'pivot-member-1',
+    ]);
+    $administratorRoleDeactivate = user_controller()->deactivate('member-1');
     user_controller_request('POST', [], user_controller_user('owner-1'), 'activate');
     $foreignActivate = user_controller()->activate('foreign-1');
     user_controller_request('POST', [], user_controller_user('owner-1'), 'removeFromCompany');
@@ -830,6 +1144,8 @@ test('user controller activates deactivates verifies and removes users only thro
 
     expect($selfDeactivate->getStatusCode())->toBe(403)
         ->and($selfDeactivate->getData(true))->toBe(['errors' => ['You cannot deactivate your own account.']])
+        ->and($administratorRoleDeactivate->getStatusCode())->toBe(403)
+        ->and($administratorRoleDeactivate->getData(true))->toBe(['errors' => ['Insufficient permissions to deactivate this user.']])
         ->and($foreignActivate->getStatusCode())->toBe(404)
         ->and($foreignActivate->getData(true))->toBe(['errors' => ['No user found']])
         ->and($singleRemoval->getStatusCode())->toBe(200)
@@ -853,6 +1169,7 @@ test('user controller reports activation and removal authorization edge cases wi
     user_controller_request('POST', [], user_controller_user('owner-1'), 'deactivate');
     $missingDeactivateId = user_controller()->deactivate(null);
     $adminDeactivate     = user_controller()->deactivate('admin-1');
+    $foreignDeactivate   = user_controller()->deactivate('foreign-1');
 
     user_controller_request('POST', [], user_controller_user('owner-1'), 'activate');
     $missingActivateId = user_controller()->activate(null);
@@ -874,6 +1191,8 @@ test('user controller reports activation and removal authorization edge cases wi
         ->and($missingDeactivateId->getData(true))->toBe(['errors' => ['No user to deactivate']])
         ->and($adminDeactivate->getStatusCode())->toBe(403)
         ->and($adminDeactivate->getData(true))->toBe(['errors' => ['Insufficient permissions to deactivate this user.']])
+        ->and($foreignDeactivate->getStatusCode())->toBe(404)
+        ->and($foreignDeactivate->getData(true))->toBe(['errors' => ['No user found']])
         ->and($missingActivateId->getStatusCode())->toBe(401)
         ->and($missingActivateId->getData(true))->toBe(['errors' => ['No user to activate']])
         ->and($missingVerifyId->getStatusCode())->toBe(401)

@@ -1,11 +1,13 @@
 <?php
 
+use Fleetbase\Http\Filter\Filter;
 use Fleetbase\Models\Model;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasApiModelCache;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -220,6 +222,24 @@ class HasApiModelBehaviorFilterParamRecord extends HasApiModelBehaviorRecord
     protected $filterParams = ['virtual_filter'];
 }
 
+class HasApiModelBehaviorFilteredRecord extends HasApiModelBehaviorRecord
+{
+    public function getFilter(): string
+    {
+        return HasApiModelBehaviorTestFilter::class;
+    }
+}
+
+class HasApiModelBehaviorTestFilter extends Filter
+{
+    public function status(?string $status): void
+    {
+        if ($status) {
+            $this->builder->where('status', $status);
+        }
+    }
+}
+
 class HasApiModelBehaviorAppendedRecord extends HasApiModelBehaviorRecord
 {
     protected $appends = ['computed_label'];
@@ -233,6 +253,30 @@ class HasApiModelBehaviorAppendedRecord extends HasApiModelBehaviorRecord
 class HasApiModelBehaviorCachedRecord extends HasApiModelBehaviorRecord
 {
     use HasApiModelCache;
+
+    public function shouldUseCacheForTest(): bool
+    {
+        return $this->shouldUseCache();
+    }
+}
+
+class HasApiModelBehaviorSoftDeletingCachedRecord extends HasApiModelBehaviorRecord
+{
+    use HasApiModelCache;
+    use SoftDeletes;
+}
+
+class HasApiModelBehaviorDisabledCachedRecord extends HasApiModelBehaviorCachedRecord
+{
+    public bool $disableApiCache = true;
+}
+
+class HasApiModelBehaviorProbeRecord extends HasApiModelBehaviorRecord
+{
+    public function applyOptimizedFiltersForTest(Request $request, $builder)
+    {
+        return $this->applyOptimizedFilters($request, $builder);
+    }
 }
 
 class HasApiModelBehaviorCustomCreationRecord extends HasApiModelBehaviorRecord
@@ -244,6 +288,37 @@ class HasApiModelBehaviorCustomCreationRecord extends HasApiModelBehaviorRecord
         $input['status'] = 'custom-created';
 
         return static::create($input);
+    }
+}
+
+class HasApiModelBehaviorFailingUpdateRecord extends HasApiModelBehaviorRecord
+{
+    public function update(array $attributes = [], array $options = [])
+    {
+        throw new RuntimeException('database update exploded');
+    }
+}
+
+class HasApiModelBehaviorFailingBulkDeleteRecord extends HasApiModelBehaviorRecord
+{
+    public function where($column, $operator = null, $value = null, $boolean = 'and')
+    {
+        return new class {
+            public function where($column, $operator = null, $value = null, $boolean = 'and'): self
+            {
+                return $this;
+            }
+
+            public function count(): int
+            {
+                return 1;
+            }
+
+            public function delete(): void
+            {
+                throw new RuntimeException('bulk delete exploded');
+            }
+        };
     }
 }
 
@@ -614,29 +689,45 @@ test('api model behavior scopes reads updates and bulk deletion to the session c
     has_api_model_behavior_seed_records($capsule);
     session(['user' => 'session-user', 'company' => 'company-a']);
 
-    $model         = new HasApiModelBehaviorRecord();
-    $request       = has_api_model_behavior_request();
-    $foundByUuid   = $model->getById('record-1', null, $request);
-    $blockedByUuid = $model->getById('record-3', null, $request);
-    $foundByPublic = $model->getById('record_beta', null, $request);
+    $model           = new HasApiModelBehaviorRecord();
+    $request         = has_api_model_behavior_request();
+    $foundByUuid     = $model->getById('record-1', null, $request);
+    $blockedByUuid   = $model->getById('record-3', null, $request);
+    $foundByPublic   = $model->getById('record_beta', null, $request);
+    $callbackSeen    = false;
+    $foundByCallback = $model->getById('record_alpha', function ($builder, Request $callbackRequest) use (&$callbackSeen) {
+        $callbackSeen = $callbackRequest->is('api/v1/records');
+        $builder->where('status', 'active');
+    }, $request);
     $update        = $model->updateRecordFromRequest(has_api_model_behavior_request([
         'name'         => 'Updated Alpha',
         'slug'         => 'malicious-slug',
         'company_uuid' => 'company-b',
         'updated_at'   => '2020-01-01 00:00:00',
     ], method: 'PATCH'), 'record_alpha', options: ['return_object' => true]);
-    $deleteCount = $model->bulkRemove(['record-2', 'record-3']);
+    $deleteCount   = $model->bulkRemove(['record-2', 'record-3']);
+    $missingUpdate = null;
+
+    try {
+        $model->updateRecordFromRequest(has_api_model_behavior_request(['name' => 'Hidden'], method: 'PATCH'), 'record_gamma');
+    } catch (Exception $exception) {
+        $missingUpdate = $exception;
+    }
 
     expect($foundByUuid?->uuid)->toBe('record-1')
         ->and($blockedByUuid)->toBeNull()
         ->and($foundByPublic?->uuid)->toBe('record-2')
+        ->and($callbackSeen)->toBeTrue()
+        ->and($foundByCallback?->uuid)->toBe('record-1')
         ->and($update->name)->toBe('Updated Alpha')
         ->and($update->slug)->toBe('alpha')
         ->and($update->company_uuid)->toBe('company-a')
         ->and($update->updated_by_uuid)->toBe('session-user')
         ->and($deleteCount)->toBe(1)
         ->and($capsule->getConnection('mysql')->table('api_model_behavior_records')->where('uuid', 'record-2')->whereNotNull('deleted_at')->exists())->toBeTrue()
-        ->and($capsule->getConnection('mysql')->table('api_model_behavior_records')->where('uuid', 'record-3')->whereNull('deleted_at')->exists())->toBeTrue();
+        ->and($capsule->getConnection('mysql')->table('api_model_behavior_records')->where('uuid', 'record-3')->whereNull('deleted_at')->exists())->toBeTrue()
+        ->and($missingUpdate)->toBeInstanceOf(Exception::class)
+        ->and($missingUpdate->getMessage())->toBe('API Model Behavior Records not found');
 });
 
 test('api model behavior create and update callbacks can return response contracts', function () {
@@ -715,14 +806,21 @@ test('api model behavior validates update parameters and find record scoping con
     ]);
     session(['company' => 'company-a']);
 
-    $model       = new HasApiModelBehaviorRecord();
-    $found       = HasApiModelBehaviorRecord::findRecordOrFail('record_alpha');
-    $safeMissing = null;
+    $model         = new HasApiModelBehaviorRecord();
+    $found         = HasApiModelBehaviorRecord::findRecordOrFail('record_alpha');
+    $safeMissing   = null;
+    $invalidUpdate = null;
 
     try {
         HasApiModelBehaviorRecord::findRecordOrFail('record_beta');
     } catch (Illuminate\Database\Eloquent\ModelNotFoundException $exception) {
         $safeMissing = $exception;
+    }
+
+    try {
+        $model->updateRecordFromRequest(has_api_model_behavior_request(['unexpected' => 'blocked'], method: 'PATCH'), 'record_alpha');
+    } catch (Exception $exception) {
+        $invalidUpdate = $exception;
     }
 
     expect($model->isColumn('company_uuid'))->toBeTrue()
@@ -735,7 +833,54 @@ test('api model behavior validates update parameters and find record scoping con
         ->and($model->getApiHumanReadableName())->toBe('API Model Behavior Records')
         ->and($found->uuid)->toBe('record-1')
         ->and($safeMissing)->toBeInstanceOf(Illuminate\Database\Eloquent\ModelNotFoundException::class)
-        ->and($safeMissing->getModel())->toBe(HasApiModelBehaviorRecord::class);
+        ->and($safeMissing->getModel())->toBe(HasApiModelBehaviorRecord::class)
+        ->and($invalidUpdate)->toBeInstanceOf(Exception::class)
+        ->and($invalidUpdate->getMessage())->toBe('Invalid param "unexpected" in update request!');
+});
+
+test('api model behavior reports update persistence failures and propagates delete failures', function () {
+    $capsule = has_api_model_behavior_database();
+    has_api_model_behavior_seed_records($capsule);
+    session(['company' => 'company-a']);
+
+    config(['app.debug' => true]);
+    $debugFailure = null;
+    try {
+        (new HasApiModelBehaviorFailingUpdateRecord())->updateRecordFromRequest(
+            has_api_model_behavior_request(['name' => 'Failed update'], method: 'PATCH'),
+            'record_alpha'
+        );
+    } catch (Exception $exception) {
+        $debugFailure = $exception;
+    }
+
+    config(['app.debug' => false]);
+    $productionFailure = null;
+    try {
+        (new HasApiModelBehaviorFailingUpdateRecord())->updateRecordFromRequest(
+            has_api_model_behavior_request(['name' => 'Failed update'], method: 'PATCH'),
+            'record_alpha'
+        );
+    } catch (Exception $exception) {
+        $productionFailure = $exception;
+    }
+
+    $capsule->getConnection('mysql')->getSchemaBuilder()->drop('api_model_behavior_records');
+
+    $bulkDeleteFailure = null;
+    try {
+        (new HasApiModelBehaviorFailingBulkDeleteRecord())->bulkRemove(['record_alpha']);
+    } catch (Exception $exception) {
+        $bulkDeleteFailure = $exception;
+    }
+
+    expect($debugFailure)->toBeInstanceOf(Exception::class)
+        ->and($debugFailure->getMessage())->toBe('database update exploded')
+        ->and($productionFailure)->toBeInstanceOf(Exception::class)
+        ->and($productionFailure->getMessage())->toBe('Failed to update API Model Behavior Records')
+        ->and($bulkDeleteFailure)->toBeInstanceOf(Exception::class)
+        ->and($bulkDeleteFailure->getMessage())->toBe('bulk delete exploded')
+        ->and(fn () => (new HasApiModelBehaviorRecord())->remove('record_alpha'))->toThrow(Exception::class);
 });
 
 test('api model behavior exposes default searchable fields options and no-op query branches', function () {
@@ -805,6 +950,16 @@ test('api model behavior applies explicit filter operators and relation normaliz
         HasApiModelBehaviorRecord::query()
     )->pluck('uuid')->sort()->values()->all();
 
+    $directStatus = $model->applyFilters(
+        has_api_model_behavior_request(['filters' => ['status' => 'active', 'unknown' => 'ignored']]),
+        HasApiModelBehaviorRecord::query()
+    )->pluck('uuid')->sort()->values()->all();
+
+    $qualifiedUuid = $model->applyFilters(
+        has_api_model_behavior_request(['filters' => ['uuid' => 'record-1']]),
+        HasApiModelBehaviorRecord::query()
+    )->pluck('uuid')->all();
+
     $nullStatuses = $model->buildSearchParams(
         has_api_model_behavior_request(['status_isNull' => '1', 'name' => '', 'unknown' => 'ignored']),
         HasApiModelBehaviorRecord::query()
@@ -841,6 +996,8 @@ test('api model behavior applies explicit filter operators and relation normaliz
     expect($notInactive)->toBe(['record-1'])
         ->and($inAmounts)->toBe(['record-1', 'record-3'])
         ->and($notInAmounts)->toBe(['record-1'])
+        ->and($directStatus)->toBe(['record-1'])
+        ->and($qualifiedUuid)->toBe(['record-1'])
         ->and($nullStatuses)->toBe(['record-3'])
         ->and($notNullStatuses)->toBe(['record-1', 'record-2'])
         ->and($likeNames)->toBe(['record-1'])
@@ -949,4 +1106,123 @@ test('api model behavior covers search remove internal id and validation branch 
             ['count(name)', 'asc'],
             ['custom alias', 'asc'],
         ]);
+});
+
+test('api model behavior covers cache gating direct counts and optimized filter edge contracts', function () {
+    $capsule = has_api_model_behavior_database();
+    has_api_model_behavior_seed_records($capsule);
+    $capsule->getConnection('mysql')->table('api_model_behavior_records')->where('uuid', 'record-3')->update(['status' => null]);
+    config(['api.cache.enabled' => true]);
+
+    $model          = new HasApiModelBehaviorRecord();
+    $cachedModel    = new HasApiModelBehaviorCachedRecord();
+    $disabledCached = new HasApiModelBehaviorDisabledCachedRecord();
+    $probe          = new HasApiModelBehaviorProbeRecord();
+
+    $noFilterBuilder = $probe->applyOptimizedFiltersForTest(
+        has_api_model_behavior_request([]),
+        HasApiModelBehaviorRecord::query()
+    );
+    $optimized = $probe->applyOptimizedFiltersForTest(
+        has_api_model_behavior_request([
+            'name'       => '',
+            'status'     => '',
+            'amount_gte' => '30',
+            'unknown'    => 'ignored',
+        ]),
+        HasApiModelBehaviorRecord::query()
+    )->pluck('uuid')->all();
+    $directSearch = $model->buildSearchParams(
+        has_api_model_behavior_request(['name' => 'Beta Dispatch']),
+        HasApiModelBehaviorRecord::query()
+    )->pluck('uuid')->all();
+    $filteredCount           = $model->count(has_api_model_behavior_request(['status' => 'active']));
+    $relationStrippedBuilder = $model->applyCustomFilters(
+        has_api_model_behavior_request([
+            'with'    => ['child_items'],
+            'without' => ['child_items'],
+        ]),
+        HasApiModelBehaviorRecord::query()
+    );
+
+    expect($cachedModel->shouldUseCacheForTest())->toBeTrue()
+        ->and($disabledCached->shouldUseCacheForTest())->toBeFalse()
+        ->and($noFilterBuilder->toSql())->toBe(HasApiModelBehaviorRecord::query()->toSql())
+        ->and($optimized)->toBe(['record-3'])
+        ->and($directSearch)->toBe(['record-2'])
+        ->and($filteredCount)->toBe(1)
+        ->and($relationStrippedBuilder->getEagerLoads())->toBe([]);
+
+    expect(fn () => $model->applyCustomFilters(
+        has_api_model_behavior_request(['without_relations' => true]),
+        HasApiModelBehaviorRecord::query()
+    ))->toThrow(BadMethodCallException::class);
+});
+
+test('api model behavior invalidates tagged cache when soft deleted records are restored', function () {
+    has_api_model_behavior_database();
+    config(['api.cache.enabled' => true]);
+
+    $cache  = app('cache');
+    $record = HasApiModelBehaviorSoftDeletingCachedRecord::query()->create([
+        'uuid'         => 'record-soft-delete-cache',
+        'public_id'    => 'record_soft_delete_cache',
+        'company_uuid' => 'company-1',
+        'name'         => 'Soft delete cache',
+    ]);
+
+    $cache->put('api_model_behavior_records:model:record-soft-delete-cache', 'cached');
+
+    $record->delete();
+    $cache->put('api_model_behavior_records:model:record-soft-delete-cache', 'cached-again');
+    $record->restore();
+
+    expect($cache->has('api_model_behavior_records:model:record-soft-delete-cache'))->toBeFalse();
+});
+
+test('api model behavior covers custom filter precedence count and distance sort hooks', function () {
+    $capsule = has_api_model_behavior_database();
+    has_api_model_behavior_seed_records($capsule);
+
+    EloquentBuilder::macro('filter', function (Filter $filter) {
+        return $filter->apply($this);
+    });
+    EloquentBuilder::macro('orderByDistance', function () {
+        return $this->orderBy('amount', 'desc');
+    });
+
+    $model      = new HasApiModelBehaviorRecord();
+    $filtered   = (new HasApiModelBehaviorFilteredRecord())->applyCustomFilters(
+        has_api_model_behavior_request(['status' => 'inactive']),
+        HasApiModelBehaviorFilteredRecord::query()
+    )->pluck('uuid')->all();
+    $prioritized = (new HasApiModelBehaviorFilteredRecord())->prioritizedCustomColumnFilter(
+        has_api_model_behavior_request(['status' => 'active']),
+        HasApiModelBehaviorFilteredRecord::query(),
+        'status'
+    );
+    $prioritizedFilterResult = (new HasApiModelBehaviorFilteredRecord())->applyFilters(
+        has_api_model_behavior_request(['filters' => ['status' => 'active']]),
+        HasApiModelBehaviorFilteredRecord::query()
+    )->pluck('uuid')->all();
+    $countBuilder = $model->withCounts(
+        has_api_model_behavior_request(['with_count' => 'childItems']),
+        HasApiModelBehaviorRecord::query()
+    );
+    $optimizedBuilder = $model->optimizeQuery(
+        HasApiModelBehaviorRecord::query()
+            ->where('status', 'active')
+            ->where('status', 'active')
+    );
+    $distanceSort = $model->applySorts(
+        has_api_model_behavior_request(['sort' => ['distance']]),
+        HasApiModelBehaviorRecord::query()
+    )->pluck('uuid')->all();
+
+    expect($filtered)->toBe(['record-2'])
+        ->and($prioritized)->toBeTrue()
+        ->and($prioritizedFilterResult)->toBe(['record-1', 'record-2', 'record-3'])
+        ->and($countBuilder->toSql())->toContain('child_items_count')
+        ->and(substr_count($optimizedBuilder->toSql(), '"status" = ?'))->toBe(1)
+        ->and($distanceSort)->toBe(['record-3', 'record-2', 'record-1']);
 });

@@ -151,10 +151,13 @@ trait PurgeCommand
             // stream rows to file in chunks
             (clone $baseQuery)->orderBy($this->detectPrimaryKey($tableName, $model) ?? 'created_at')->chunk(1000, function ($chunk) use (&$buffer, $tableName, $localTmp) {
                 $buffer = $buffer->concat($chunk->map(fn ($m) => $m->getAttributes()));
+                // Large purge streaming flushes intermediate buffers before the final write.
+                // @codeCoverageIgnoreStart
                 if ($buffer->count() >= 5000) {
                     $this->writeSqlDump($tableName, $buffer, $localTmp);
                     $buffer = collect();
                 }
+                // @codeCoverageIgnoreEnd
             });
             if ($buffer->count() > 0) {
                 $this->writeSqlDump($tableName, $buffer, $localTmp);

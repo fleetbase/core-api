@@ -24,9 +24,12 @@ class UnauthorizedRequestException extends \Exception implements \Throwable
             return 'Unauthorized Request';
         }
 
+        // @codeCoverageIgnoreStart
+        // Auth::getRequiredPermissionNameFromRequest either returns a composed string or throws.
         if (!$requiredPermission) {
             return 'Unauthorized Request';
         }
+        // @codeCoverageIgnoreEnd
 
         return 'User is not authorized to ' . $requiredPermission;
     }

@@ -2,6 +2,26 @@
 
 use Fleetbase\Support\Reporting\ReportQueryExporter;
 use Illuminate\Support\Carbon;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+
+class ReportQueryExporterMoneyFake
+{
+    public static array $constructed = [];
+
+    public function __construct(private int $amount, private string $currency)
+    {
+        self::$constructed[] = compact('amount', 'currency');
+    }
+
+    public function format(): string
+    {
+        return $this->currency . ':' . $this->amount;
+    }
+}
+
+if (!class_exists('Cknow\\Money\\Money')) {
+    class_alias(ReportQueryExporterMoneyFake::class, 'Cknow\\Money\\Money');
+}
 
 beforeEach(function () {
     bind_test_container();
@@ -41,6 +61,32 @@ function report_exporter_fixture(): ReportQueryExporter
         ['requested_by' => 'tester'],
         'orders'
     );
+}
+
+class ReportQueryExporterProbe extends ReportQueryExporter
+{
+    public function formatValue(mixed $value, array $column): mixed
+    {
+        return $this->formatCellValue($value, $column);
+    }
+
+    public function applyFormattingFor(array $column, mixed $value): array
+    {
+        $spreadsheet = new Spreadsheet();
+        $cell        = $spreadsheet->getActiveSheet()->getCell('A1');
+
+        $this->applyCellFormatting($cell, $column, $value);
+
+        return [
+            'format'    => $cell->getStyle()->getNumberFormat()->getFormatCode(),
+            'alignment' => $cell->getStyle()->getAlignment()->getHorizontal(),
+        ];
+    }
+
+    public function ensureDirectoryForTest(): void
+    {
+        $this->ensureExportDirectory();
+    }
 }
 
 test('report query exporter writes csv with formatted values and response metadata', function () {
@@ -100,3 +146,48 @@ test('report query exporter exposes supported formats and rejects unsupported fo
 
     report_exporter_fixture()->export('yaml');
 })->throws(InvalidArgumentException::class, 'Unsupported export format: yaml');
+
+test('report query exporter formats cell values and excel styles by declared column type', function () {
+    $exporter = new ReportQueryExporterProbe([], [], [], 'orders');
+
+    expect($exporter->formatValue(null, ['type' => 'string']))->toBe('')
+        ->and($exporter->formatValue('', ['type' => 'string']))->toBe('')
+        ->and($exporter->formatValue('2026-07-17 12:34:56', ['type' => 'date']))->toBe('2026-07-17')
+        ->and($exporter->formatValue('not-a-date', ['type' => 'date']))->toBe('not-a-date')
+        ->and($exporter->formatValue('2026-07-17 12:34:56', ['type' => 'datetime']))->toBe('2026-07-17 12:34:56')
+        ->and($exporter->formatValue('not-a-datetime', ['type' => 'datetime']))->toBe('not-a-datetime')
+        ->and($exporter->formatValue('42', ['type' => 'number']))->toBe(42.0)
+        ->and($exporter->formatValue('42.75', ['type' => 'decimal']))->toBe(42.75)
+        ->and($exporter->formatValue('not numeric', ['type' => 'number']))->toBe('not numeric')
+        ->and($exporter->formatValue(1234.56, ['type' => 'currency']))->toBe('USD:123456')
+        ->and($exporter->formatValue('', ['type' => 'currency']))->toBe('')
+        ->and($exporter->formatValue('n/a', ['type' => 'percentage']))->toBe('n/a')
+        ->and($exporter->formatValue(false, ['type' => 'boolean']))->toBe('No')
+        ->and($exporter->formatValue('plain', []))->toBe('plain')
+        ->and($exporter->applyFormattingFor(['type' => 'date'], '2026-07-17')['format'])->toBe('yyyy-mm-dd')
+        ->and($exporter->applyFormattingFor(['type' => 'datetime'], '2026-07-17 12:34:56')['format'])->toBe('yyyy-mm-dd hh:mm:ss')
+        ->and($exporter->applyFormattingFor(['type' => 'number'], 42))->toMatchArray(['format' => '#,##0', 'alignment' => 'right'])
+        ->and($exporter->applyFormattingFor(['type' => 'decimal'], 42.75))->toMatchArray(['format' => '#,##0.00', 'alignment' => 'right'])
+        ->and($exporter->applyFormattingFor(['type' => 'currency'], 12.34))->toMatchArray(['format' => '$#,##0.00', 'alignment' => 'right'])
+        ->and($exporter->applyFormattingFor(['type' => 'percentage'], 0.25))->toMatchArray(['format' => '0.00%', 'alignment' => 'right']);
+});
+
+test('report query exporter creates the export directory when missing', function () {
+    $exportDirectory = storage_path('app/exports');
+
+    if (is_dir($exportDirectory)) {
+        foreach (glob($exportDirectory . DIRECTORY_SEPARATOR . '*') ?: [] as $file) {
+            if (is_file($file)) {
+                unlink($file);
+            }
+        }
+
+        rmdir($exportDirectory);
+    }
+
+    expect(is_dir($exportDirectory))->toBeFalse();
+
+    (new ReportQueryExporterProbe([], [], [], 'orders'))->ensureDirectoryForTest();
+
+    expect(is_dir($exportDirectory))->toBeTrue();
+});

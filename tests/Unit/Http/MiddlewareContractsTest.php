@@ -706,6 +706,22 @@ namespace {
             ->and(app('log')->errors)->toHaveCount(1)
             ->and(app('log')->errors[0][0])->toContain('API request logging failed: queue unavailable');
 
+        $sqsBus         = new MiddlewareContractsBusFake();
+        $sqsBus->throws = new Aws\Sqs\Exception\SqsException('SQS dispatch unavailable', new Aws\Command('SendMessage'));
+        app()->instance('bus', $sqsBus);
+        app()->instance(BusDispatcher::class, $sqsBus);
+        Facade::clearResolvedInstance('bus');
+        Facade::clearResolvedInstance(BusDispatcher::class);
+
+        $sqsResponse = middleware_contracts_log_middleware()->handle(
+            middleware_contracts_mutation_request('/v1/orders', 'v1/orders'),
+            fn () => new JsonResponse(['id' => 'order_2'], 201)
+        );
+
+        expect($sqsResponse->getStatusCode())->toBe(201)
+            ->and(app('log')->errors)->toHaveCount(2)
+            ->and(app('log')->errors[1][0])->toContain('SQS dispatch failed: SQS dispatch unavailable');
+
         middleware_contracts_fixture();
         Facade::clearResolvedInstance(BusDispatcher::class);
     });

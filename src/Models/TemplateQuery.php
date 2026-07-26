@@ -110,9 +110,12 @@ class TemplateQuery extends Model
         }
 
         $model = new $modelClass();
+        // @codeCoverageIgnoreStart
+        // Allowed template query models are configured as Eloquent models.
         if (!$model instanceof EloquentModel) {
             return collect();
         }
+        // @codeCoverageIgnoreEnd
 
         $query = $modelClass::query();
 

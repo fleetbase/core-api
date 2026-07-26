@@ -273,13 +273,17 @@ test('unauthorized request exception falls back cleanly and includes resolved pe
             return null;
         }
     });
-    $withoutResolvedPermission = new UnauthorizedRequestException($missingActionRequest);
+    $withoutResolvedPermission     = new UnauthorizedRequestException($missingActionRequest);
+    $unresolvableControllerRequest = Illuminate\Http\Request::create('/int/v1/api-keys', 'POST');
+    $unresolvableControllerRequest->attributes->set('_controller', new stdClass());
+    $withResolutionFailure = new UnauthorizedRequestException($unresolvableControllerRequest);
 
     expect($withPermission->getMessage())->toBe('User is not authorized to create api-key')
         ->and($withPermission->getCode())->toBe(403)
         ->and($withPermission->getPrevious()->getMessage())->toBe('previous')
         ->and($withoutPermission->getMessage())->toBe('Unauthorized Request')
-        ->and($withoutResolvedPermission->getMessage())->toBe('Unauthorized Request');
+        ->and($withoutResolvedPermission->getMessage())->toBe('Unauthorized Request')
+        ->and($withResolutionFailure->getMessage())->toBe('Unauthorized Request');
 });
 
 test('broadcast notification event merges notification and notifiable channels', function () {

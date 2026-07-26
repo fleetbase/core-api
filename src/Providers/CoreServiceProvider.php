@@ -415,6 +415,9 @@ class CoreServiceProvider extends ServiceProvider
     private function __hotfixCommonmarkDeprecation(): void
     {
         if (!function_exists('trigger_deprecation')) {
+            // Composer normally provides this function; this fallback only
+            // exists for installs without symfony/deprecation-contracts.
+            // @codeCoverageIgnoreStart
             /**
              * Custom implementation of trigger_deprecation.
              *
@@ -433,6 +436,7 @@ class CoreServiceProvider extends ServiceProvider
                 // Otherwise, trigger the deprecation as usual
                 @trigger_error(($package || $version ? "Since $package $version: " : '') . ($args ? vsprintf($message, $args) : $message), \E_USER_DEPRECATED);
             }
+            // @codeCoverageIgnoreEnd
         }
     }
 

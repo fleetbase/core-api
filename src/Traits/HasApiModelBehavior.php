@@ -469,9 +469,12 @@ trait HasApiModelBehavior
             }
         });
 
+        // Eloquent where() always returns a Builder instance.
+        // @codeCoverageIgnoreStart
         if (!$record) {
             return false;
         }
+        // @codeCoverageIgnoreEnd
 
         try {
             return $record->delete();
@@ -507,9 +510,12 @@ trait HasApiModelBehavior
             $records->where($this->qualifyColumn('company_uuid'), $companyUuid);
         }
 
+        // Eloquent where() always returns a Builder instance.
+        // @codeCoverageIgnoreStart
         if (!$records) {
             return false;
         }
+        // @codeCoverageIgnoreEnd
 
         $count = $records->count();
 

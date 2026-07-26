@@ -43,6 +43,7 @@ test('country exposes iso metadata and serializes consistently', function () {
                 'currency_code' => 'USD',
                 'region'        => 'Americas',
             ])
+            ->and($country->toArray())->toHaveKey('cca2', 'US')
             ->and(json_decode($country->toJson(), true)['cca2'])->toBe('US')
             ->and($country->missingAccessor())->toBeNull();
     });
@@ -62,6 +63,7 @@ test('country supports lookup search filtering and currency matching', function 
             ->and(Country::fromCurrency('MNT')->getCode())->toBe('MNG')
             ->and(Country::first(fn (Country $country) => $country->getCca2() === 'US')->getCurrency())->toBe('USD')
             ->and(Country::filter(fn (Country $country) => $country->getCurrency() === 'USD'))->toBeInstanceOf(Collection::class)
+            ->and(Country::search('')->count())->toBeGreaterThan(200)
             ->and(Country::search('mnt')->map(fn (Country $country) => $country->getCca2()))->toContain('MN')
             ->and(Country::search('u.s')->map(fn (Country $country) => $country->getCca2()))->toContain('US');
     });
@@ -87,6 +89,7 @@ test('country supports array construction and rejects unknown iso2 codes', funct
                 'country_name' => 'Testland',
                 'region'       => 'Test Region',
             ])
+            ->and($country->__call('toArray', []))->toHaveKey('cca2', 'ZZ')
             ->and($country->only(['cca2', 123, ['missing' => 'missing_alias']]))->toBe([
                 'cca2' => 'ZZ',
             ]);

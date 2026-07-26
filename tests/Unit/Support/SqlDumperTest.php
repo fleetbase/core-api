@@ -80,6 +80,56 @@ class SqlDumperMetadataConnection extends Illuminate\Database\Connection
     }
 }
 
+class SqlDumperThrowingSchemaConnection
+{
+    public function getDoctrineSchemaManager(): never
+    {
+        throw new RuntimeException('Doctrine metadata unavailable');
+    }
+}
+
+class SqlDumperFallbackSchemaBuilder
+{
+    public function getConnection(): SqlDumperThrowingSchemaConnection
+    {
+        return new SqlDumperThrowingSchemaConnection();
+    }
+
+    public function getAllTables(): array
+    {
+        return [
+            (object) ['name' => 'orders'],
+            (object) ['TABLE_NAME' => 'order_notes'],
+            ['name'       => 'api_events'],
+            ['TABLE_NAME' => 'audit_logs'],
+            'global_settings',
+            '',
+        ];
+    }
+}
+
+class SqlDumperEmptyColumnSchemaBuilder
+{
+    public array $columnLookups = [];
+
+    public function hasTable(string $table): bool
+    {
+        return in_array($table, ['empty_primary', 'empty_dependent'], true);
+    }
+
+    public function hasColumn(string $table, string $column): bool
+    {
+        return $table === 'empty_primary' && $column === 'company_uuid';
+    }
+
+    public function getColumnListing(string $table): array
+    {
+        $this->columnLookups[] = $table;
+
+        return [];
+    }
+}
+
 class SqlDumperStringTestDumper extends SqlDumper
 {
     public static string $path = '';
@@ -258,6 +308,24 @@ test('sql dumper guesses and merges foreign key parent sets', function () {
     ]);
 });
 
+test('sql dumper skips dependent foreign keys when no related primary keys exist', function () {
+    $capsule = sql_dumper_database();
+    $path    = tempnam(sys_get_temp_dir(), 'fleetbase-sql-empty-parent-');
+
+    try {
+        $dumper = new SqlDumperTestDumper($capsule->getConnection('mysql'), 1, [
+            'orders',
+            'order_notes',
+        ]);
+
+        $dumper->dumpTenant('missing-company', $path);
+
+        expect(file_get_contents($path))->not->toContain('INSERT INTO `order_notes`');
+    } finally {
+        @unlink($path);
+    }
+});
+
 test('sql dumper streams tenant rows and dependent records without dumping unrelated tables', function () {
     $capsule = sql_dumper_database();
     $path    = tempnam(sys_get_temp_dir(), 'fleetbase-sql-dump-');
@@ -385,6 +453,48 @@ test('sql dumper lists mysql and postgres tables through driver metadata queries
         ->and($mysql->queries[0]['bindings'])->toBe(['fleetbase_test'])
         ->and($pgsql->queries[0]['query'])->toContain('pg_catalog.pg_tables')
         ->and($pgsql->queries[0]['bindings'])->toBe([]);
+});
+
+test('sql dumper falls back to schema table listings when doctrine metadata fails', function () {
+    $container = bind_test_container();
+    $container->instance('db.schema', new SqlDumperFallbackSchemaBuilder());
+    Facade::clearResolvedInstance('db.schema');
+
+    $connection = new SqlDumperMetadataConnection('sqlite', []);
+
+    expect((new SqlDumperInspectableTestDumper($connection, 100))->tables('ignored'))->toBe([
+        'orders',
+        'order_notes',
+        'api_events',
+        'audit_logs',
+        'global_settings',
+    ]);
+});
+
+test('sql dumper skips primary and dependent tables when column metadata is empty', function () {
+    $capsule   = sql_dumper_database();
+    $schema    = new SqlDumperEmptyColumnSchemaBuilder();
+    $container = bind_test_container();
+    $container->instance('db.schema', $schema);
+    Facade::clearResolvedInstance('db.schema');
+
+    $dumper = new SqlDumperTestDumper($capsule->getConnection('mysql'), 100, [
+        'empty_primary',
+        'empty_dependent',
+    ]);
+    $path = tempnam(sys_get_temp_dir(), 'fleetbase-empty-column-sql-dump-');
+
+    try {
+        $dumper->dumpTenant('company-1', $path);
+
+        expect(file_get_contents($path))->toBe('')
+            ->and($schema->columnLookups)->toBe([
+                'empty_primary',
+                'empty_dependent',
+            ]);
+    } finally {
+        @unlink($path);
+    }
 });
 
 test('sql dumper foreign set streaming writes matching dependent rows and skips empty batches', function () {

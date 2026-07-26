@@ -1,6 +1,7 @@
 <?php
 
 use Fleetbase\Attributes\SkipAuthorizationCheck;
+use Fleetbase\Expansions\Builder as BuilderExpansion;
 use Fleetbase\Expansions\Str as StrExpansion;
 use Fleetbase\Models\ApiCredential;
 use Fleetbase\Models\Company;
@@ -10,10 +11,12 @@ use Fleetbase\Models\Policy;
 use Fleetbase\Models\Role;
 use Fleetbase\Models\User;
 use Fleetbase\Support\Auth;
+use Fleetbase\Traits\HasApiModelBehavior;
 use Illuminate\Auth\AuthManager;
 use Illuminate\Contracts\Auth\Factory as AuthFactory;
 use Illuminate\Contracts\Hashing\Hasher as HasherContract;
 use Illuminate\Database\Capsule\Manager as Capsule;
+use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Http\Request;
@@ -247,6 +250,8 @@ class AuthSupportRouteFake
 
 function auth_support_fixtures(): array
 {
+    Request::flushMacros();
+
     if (!function_exists('Fleetbase\\Observers\\event')) {
         eval('namespace Fleetbase\\Observers; function event($event = null) { return $event; }');
     }
@@ -800,6 +805,48 @@ test('auth support filters and applies directives for assigned role and policy s
         ->and($query->toSql())->toContain('"type" = ?')
         ->and($query->getBindings())->toBe(['admin', 'admin'])
         ->and(Directive::decodeKey(Directive::createKey(['where', 'type', 'admin'])))->toBe(['where', 'type', 'admin']);
+});
+
+test('builder permission directive macro applies eligible directive rules to the builder', function () {
+    [$admin] = auth_support_fixtures();
+    session(['user' => $admin->uuid]);
+
+    EloquentBuilder::macro('applyDirectivesForPermissions', (new BuilderExpansion())->applyDirectivesForPermissions());
+
+    app('db')->table('permissions')->insert([
+        ['id' => 'permission-list-user', 'name' => 'iam list user', 'guard_name' => 'sanctum', 'service' => 'iam', 'created_at' => now(), 'updated_at' => now()],
+    ]);
+    app('db')->table('roles')->insert([
+        ['id' => 'role-builder-directive', 'company_uuid' => $admin->company_uuid, 'name' => 'Builder Directive', 'guard_name' => 'sanctum', 'created_at' => now(), 'updated_at' => now()],
+    ]);
+    app('db')->table('model_has_roles')->insert([
+        'role_id'    => 'role-builder-directive',
+        'model_type' => Fleetbase\Models\CompanyUser::class,
+        'model_uuid' => '88888888-8888-4888-8888-888888888888',
+    ]);
+    app('db')->table('directives')->insert([
+        'uuid'            => 'directive-builder',
+        'company_uuid'    => $admin->company_uuid,
+        'permission_uuid' => 'permission-list-user',
+        'subject_type'    => Role::class,
+        'subject_uuid'    => 'role-builder-directive',
+        'key'             => 'builder',
+        'rules'           => json_encode(['where', 'type', '=', 'admin']),
+        'created_at'      => now(),
+        'updated_at'      => now(),
+    ]);
+
+    $query      = User::query()->applyDirectivesForPermissions('iam list user');
+    $traitQuery = User::query();
+    (new class {
+        use HasApiModelBehavior;
+    })->applyDirectivesToQuery(auth_support_request(), $traitQuery);
+
+    expect($query->toSql())->toContain('"type" = ?')
+        ->and($query->getBindings())->toBe(['admin'])
+        ->and($query->pluck('uuid')->all())->toBe(['11111111-1111-4111-8111-111111111111'])
+        ->and($traitQuery->toSql())->toContain('"type" = ?')
+        ->and($traitQuery->getBindings())->toBe(['admin']);
 });
 
 test('auth support resolves user timezone before company and app fallbacks', function () {

@@ -5,6 +5,7 @@ use Fleetbase\Traits\HasApiModelCache;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Http\Request;
 use Illuminate\Session\Store;
@@ -72,6 +73,11 @@ class ApiModelCacheTraitTestModel extends Model
 class ApiModelCacheTraitDisabledModel extends ApiModelCacheTraitTestModel
 {
     public bool $disableApiCache = true;
+}
+
+class ApiModelCacheSoftDeletingTraitTestModel extends ApiModelCacheTraitTestModel
+{
+    use SoftDeletes;
 }
 
 class ApiModelCacheTestLock
@@ -217,6 +223,20 @@ class ApiModelCacheUserResolver
     }
 }
 
+class ApiModelCacheTestLogger
+{
+    public array $errors = [];
+
+    public function error(string $message, array $context = []): void
+    {
+        $this->errors[] = compact('message', 'context');
+    }
+
+    public function warning(string $message, array $context = []): void
+    {
+    }
+}
+
 function api_model_cache_fixture(array $config = []): ApiModelCacheTestStore
 {
     $store = new ApiModelCacheTestStore();
@@ -317,6 +337,7 @@ function api_model_cache_trait_database(): Capsule
         $table->string('public_id')->nullable();
         $table->string('company_uuid')->nullable();
         $table->string('status')->nullable();
+        $table->timestamp('deleted_at')->nullable();
         $table->timestamp('created_at')->nullable();
         $table->timestamp('updated_at')->nullable();
     });
@@ -612,6 +633,34 @@ test('api model cache falls back to callbacks when tagged cache operations fail'
     expect($modelResult)->toBe(['fallback' => true])
         ->and(ApiModelCache::getCacheStatus())->toBe('ERROR')
         ->and(ApiModelCache::getCacheKey())->toBe('{api_model}:orders:order-1');
+
+    $relationshipResult = ApiModelCache::cacheRelationship($model, 'payload', fn () => ['relationship' => true]);
+
+    expect($relationshipResult)->toBe(['relationship' => true])
+        ->and(ApiModelCache::getCacheStatus())->toBe('ERROR')
+        ->and(ApiModelCache::getCacheKey())->toBe('{api_relation}:orders:order-1:payload');
+});
+
+test('api model cache warmup logs failures without leaking exceptions', function () {
+    api_model_cache_fixture();
+    $logger = new ApiModelCacheTestLogger();
+    app()->instance('log', $logger);
+    Facade::clearResolvedInstance('log');
+
+    $model = api_model_cache_model();
+
+    ApiModelCache::warmCache($model, api_model_cache_request(['status' => 'active']), function () {
+        throw new RuntimeException('warmup failed');
+    });
+
+    expect($logger->errors)->toHaveCount(1)
+        ->and($logger->errors[0])->toBe([
+            'message' => 'Failed to warm up cache',
+            'context' => [
+                'model' => ApiModelCacheTestModel::class,
+                'error' => 'warmup failed',
+            ],
+        ]);
 });
 
 test('has api model cache caches request queries with callback markers page offsets and mutation hooks', function () {
@@ -643,6 +692,21 @@ test('has api model cache caches request queries with callback markers page offs
             'status' => 'active',
             'limit'  => 1,
             'page'   => 2,
+        ]);
+});
+
+test('has api model cache preserves explicit unlimited limits for public collection queries', function () {
+    api_model_cache_trait_database();
+
+    $result = (new ApiModelCacheTraitTestModel())->queryFromRequestCached(api_model_cache_request([
+        'status' => 'active',
+        'limit'  => -1,
+    ]));
+
+    expect($result->pluck('uuid')->all())->toBe(['order-1', 'order-2'])
+        ->and(ApiModelCacheTraitTestModel::$mutatedRequestQueries[0])->toMatchArray([
+            'status' => 'active',
+            'limit'  => -1,
         ]);
 });
 
@@ -730,6 +794,15 @@ test('has api model cache boot hooks invalidate cache on model lifecycle events'
     $model->save();
     $model->delete();
 
+    $softDeletingModel = ApiModelCacheSoftDeletingTraitTestModel::create([
+        'uuid'         => 'order-restored-event',
+        'public_id'    => 'order_public_restored_event',
+        'company_uuid' => 'company-1',
+        'status'       => 'active',
+    ]);
+    $softDeletingModel->delete();
+    $softDeletingModel->restore();
+
     expect($store->flushedTags)->toContain(['api_cache', 'api_model:orders', 'company:company-1'])
         ->and($store->flushedTags)->toContain(['api_cache', 'api_model:orders', 'api_query:orders', 'company:company-1']);
 
@@ -740,11 +813,13 @@ test('has api model cache wraps id public id relationship invalidation and stats
     $capsule = api_model_cache_trait_database();
     $store   = app('cache');
 
-    $byId = ApiModelCacheTraitTestModel::findCached('order-1');
+    $byIdWithRelation = ApiModelCacheTraitTestModel::findCached('order-1', ['cached_payload']);
+    $byId             = ApiModelCacheTraitTestModel::findCached('order-1');
     $capsule->getConnection('mysql')->table('orders')->where('uuid', 'order-1')->delete();
     $cachedById = ApiModelCacheTraitTestModel::findCached('order-1');
 
-    $byPublicId = ApiModelCacheTraitTestModel::findByPublicIdCached('order_public_2');
+    $byPublicIdWithRelation = ApiModelCacheTraitTestModel::findByPublicIdCached('order_public_2', ['cached_payload']);
+    $byPublicId             = ApiModelCacheTraitTestModel::findByPublicIdCached('order_public_2');
     $capsule->getConnection('mysql')->table('orders')->where('uuid', 'order-2')->delete();
     $cachedByPublicId = ApiModelCacheTraitTestModel::findByPublicIdCached('order_public_2');
 
@@ -763,8 +838,10 @@ test('has api model cache wraps id public id relationship invalidation and stats
     ApiModelCacheTraitTestModel::invalidateApiCacheManually('company-1');
     ApiModelCacheTraitTestModel::warmUpCache(api_model_cache_request(['status' => 'inactive']));
 
-    expect($byId?->uuid)->toBe('order-1')
+    expect($byIdWithRelation?->loaded_relations)->toBe(['cached_payload'])
+        ->and($byId?->uuid)->toBe('order-1')
         ->and($cachedById?->uuid)->toBe('order-1')
+        ->and($byPublicIdWithRelation?->loaded_relations)->toBe(['cached_payload'])
         ->and($byPublicId?->uuid)->toBe('order-2')
         ->and($cachedByPublicId?->uuid)->toBe('order-2')
         ->and($firstRelation)->toBe([

@@ -204,6 +204,19 @@ class DataPurgerSchemaFallback
     }
 }
 
+class DataPurgerThrowingDoctrineSchemaFallback extends DataPurgerSchemaFallback
+{
+    public function getConnection(): object
+    {
+        return new class {
+            public function getDoctrineSchemaManager(): never
+            {
+                throw new RuntimeException('Doctrine table discovery unavailable');
+            }
+        };
+    }
+}
+
 function data_purger_database(): Capsule
 {
     EloquentModel::clearBootedModels();
@@ -447,7 +460,7 @@ test('data purger discovers allowed tenant tables and detects safe key columns',
 
 test('data purger falls back to driver metadata when doctrine table discovery is unavailable', function () {
     bind_test_container();
-    app()->instance('db.schema', new DataPurgerSchemaFallback());
+    app()->instance('db.schema', new DataPurgerThrowingDoctrineSchemaFallback());
     Facade::clearResolvedInstance('db.schema');
 
     $mysql = new DataPurgerMetadataConnection('mysql', [

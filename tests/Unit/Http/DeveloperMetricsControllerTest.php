@@ -188,6 +188,13 @@ test('developer metrics kpis compare current and previous periods with tenant sc
         ->and($payload['metrics']['events_emitted'])->toMatchArray(['value' => 2, 'delta_percent' => 100.0]);
 });
 
+test('developer metrics period selector supports long range and default windows', function () {
+    expect(developer_metrics_controller()->kpis(developer_metrics_request(['period' => '90d']))->getData(true)['period']['start'])->toBe('2026-04-20T00:00:00.000000Z')
+        ->and(developer_metrics_controller()->kpis(developer_metrics_request(['period' => '180d']))->getData(true)['period']['start'])->toBe('2026-01-20T00:00:00.000000Z')
+        ->and(developer_metrics_controller()->kpis(developer_metrics_request(['period' => '365d']))->getData(true)['period']['start'])->toBe('2025-07-19T00:00:00.000000Z')
+        ->and(developer_metrics_controller()->kpis(developer_metrics_request(['period' => 'unexpected']))->getData(true)['period']['start'])->toBe('2026-06-19T00:00:00.000000Z');
+});
+
 test('developer metrics api traffic buckets requests errors methods and success counts by day', function () {
     $payload = developer_metrics_controller()->apiTraffic(developer_metrics_request(['period' => '7d']))->getData(true);
 

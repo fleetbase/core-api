@@ -235,3 +235,44 @@ it('searches organization and global iam roles and policies without leaking othe
         ->and(collect($results)->pluck('label')->contains('Foreign Dispatch Role'))->toBeFalse()
         ->and(collect($results)->pluck('label')->contains('Foreign Dispatch Policy'))->toBeFalse();
 });
+
+it('returns empty iam user results when the active company has no memberships', function () {
+    $capsule = iam_search_database();
+    $capsule->getConnection('mysql')->table('company_users')->delete();
+
+    $response = (new IamSearchController())->search(iam_search_request([
+        'query' => 'Dispatcher',
+        'types' => ['users'],
+    ]));
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($response->getData(true))->toBe(['results' => []]);
+});
+
+it('skips iam result types when the current user lacks search permissions', function () {
+    iam_search_database();
+    session(['user' => 'dispatcher-1']);
+
+    $response = (new IamSearchController())->search(iam_search_request([
+        'query' => 'Dispatch',
+        'types' => ['roles'],
+    ]));
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($response->getData(true))->toBe(['results' => []]);
+});
+
+it('falls back to all iam result types for malformed types input', function () {
+    iam_search_database();
+
+    $response = (new IamSearchController())->search(iam_search_request([
+        'query' => 'Dispatch',
+        'types' => 123,
+        'limit' => 8,
+    ]));
+
+    $types = array_column($response->getData(true)['results'], 'type');
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($types)->toContain('User', 'Group', 'Role', 'Policy');
+});

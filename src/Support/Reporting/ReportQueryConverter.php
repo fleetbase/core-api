@@ -1194,10 +1194,13 @@ class ReportQueryConverter
                     [$tblAlias, $col] = $this->resolveAliasAndColumn($rootTable, $columnRef);
 
                     return "{$tblAlias}.{$col}";
+                    // resolveAliasAndColumn() falls back instead of throwing for unknown references; this is defensive only.
+                    // @codeCoverageIgnoreStart
                 } catch (\Exception $e) {
                     // If resolution fails, return as-is (might be a literal or string)
                     return $columnRef;
                 }
+                // @codeCoverageIgnoreEnd
             },
             $protectedExpression
         );

@@ -584,6 +584,22 @@ test('internal chat channel create scopes initial participants to active company
         ->and($capsule->getConnection('mysql')->table('chat_participants')->where('chat_channel_uuid', $channel->uuid)->where('user_uuid', 'user-other-company')->exists())->toBeFalse();
 });
 
+test('internal chat channel create returns stable error response when persistence fails', function () {
+    $capsule = chat_channel_controller_database();
+    $capsule->getConnection('mysql')->getSchemaBuilder()->drop('chat_channels');
+
+    $response = chat_channel_controller()->createRecord(Request::create('/int/v1/chat-channels', 'POST', [
+        'chatChannel' => [
+            'name'         => 'Dispatch Coordination',
+            'participants' => ['user_active'],
+        ],
+    ]));
+
+    expect($response->getStatusCode())->toBe(400)
+        ->and($response->getData(true))->toHaveKey('errors')
+        ->and($response->getData(true)['errors'][0])->toContain('no such table: chat_channels');
+});
+
 test('internal chat channel available participants excludes self existing participants and other companies', function () {
     chat_channel_controller_database();
 

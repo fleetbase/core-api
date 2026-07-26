@@ -446,6 +446,51 @@ test('onboard controller validates verification resend session identity before c
         ->and($capsule->getConnection('mysql')->table('verification_codes')->count())->toBe(0);
 });
 
+test('onboard controller resends email and sms verification codes for matching sessions', function () {
+    $capsule = onboard_controller_database();
+    onboard_controller_seed_user($capsule, [
+        'email' => null,
+        'phone' => null,
+    ]);
+
+    $emailResponse = onboard_controller()->sendVerificationEmail(onboard_request([
+        'session' => base64_encode('11111111-1111-4111-8111-111111111111'),
+        'email'   => null,
+    ]));
+    $smsResponse = onboard_controller()->sendVerificationSms(onboard_request([
+        'session' => base64_encode('11111111-1111-4111-8111-111111111111'),
+        'phone'   => null,
+    ]));
+
+    $codes = $capsule->getConnection('mysql')
+        ->table('verification_codes')
+        ->orderBy('for')
+        ->get()
+        ->map(fn ($code) => [
+            'subject_uuid' => $code->subject_uuid,
+            'for'          => $code->for,
+            'status'       => $code->status,
+        ])
+        ->all();
+
+    expect($emailResponse->getStatusCode())->toBe(200)
+        ->and($emailResponse->getData(true))->toBe(['status' => 'ok'])
+        ->and($smsResponse->getStatusCode())->toBe(200)
+        ->and($smsResponse->getData(true))->toBe(['status' => 'ok'])
+        ->and($codes)->toBe([
+            [
+                'subject_uuid' => '11111111-1111-4111-8111-111111111111',
+                'for'          => 'email_verification',
+                'status'       => 'active',
+            ],
+            [
+                'subject_uuid' => '11111111-1111-4111-8111-111111111111',
+                'for'          => 'phone_verification',
+                'status'       => 'pending',
+            ],
+        ]);
+});
+
 test('onboard controller rejects missing sessions invalid codes and missing users during verification', function () {
     $capsule = onboard_controller_database();
     onboard_controller_seed_user($capsule);
@@ -459,8 +504,13 @@ test('onboard controller rejects missing sessions invalid codes and missing user
         'session' => base64_encode('11111111-1111-4111-8111-111111111111'),
         'code'    => '000000',
     ]));
+    $capsule->getConnection('mysql')
+        ->table('verification_codes')
+        ->where('uuid', 'verification-code-1')
+        ->update(['expires_at' => '2099-07-18 12:00:00']);
+    $capsule->getConnection('mysql')->table('users')->delete();
     $missingUser = onboard_controller()->verifyEmail(onboard_request([
-        'session' => base64_encode('99999999-9999-4999-8999-999999999999'),
+        'session' => base64_encode('11111111-1111-4111-8111-111111111111'),
         'code'    => '123456',
     ]));
 
@@ -469,7 +519,7 @@ test('onboard controller rejects missing sessions invalid codes and missing user
         ->and($invalidCode->getStatusCode())->toBe(400)
         ->and($invalidCode->getData(true))->toBe(['errors' => ['Invalid verification code.']])
         ->and($missingUser->getStatusCode())->toBe(400)
-        ->and($missingUser->getData(true))->toBe(['errors' => ['Invalid verification code.']]);
+        ->and($missingUser->getData(true))->toBe(['errors' => ['No user found using this email.']]);
 });
 
 test('onboard controller verifies email creates token updates login and completes onboarding', function () {

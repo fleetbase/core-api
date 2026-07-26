@@ -13,9 +13,11 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
+// @codeCoverageIgnoreStart
 if (env('APP_DEBUG') === true) {
     Route::get('test', 'Fleetbase\Http\Controllers\Controller@test');
 }
+// @codeCoverageIgnoreEnd
 
 Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase\Http\Controllers')->group(
     function ($router) {

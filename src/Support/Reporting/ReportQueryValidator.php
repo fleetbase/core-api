@@ -98,7 +98,8 @@ class ReportQueryValidator
 
         // Check max rows limit
         if (isset($queryConfig['limit'])) {
-            $maxRows = $tableSchema['max_rows'] ?? 50000;
+            $tableSchema = $this->registry->getTableSchema($tableName);
+            $maxRows     = $tableSchema['table']['max_rows'] ?? 50000;
             if ($queryConfig['limit'] > $maxRows) {
                 $this->warnings[] = "Requested limit ({$queryConfig['limit']}) exceeds maximum allowed ({$maxRows}) for table '{$tableName}'";
             }

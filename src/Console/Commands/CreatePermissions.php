@@ -116,8 +116,11 @@ class CreatePermissions extends Command
             // Add wildcard permissions to administrator access policy
             try {
                 $administratorPolicy->givePermissionTo($permission);
+                // @codeCoverageIgnoreStart
+                // The command creates both policies and permissions with the fixed sanctum guard.
             } catch (GuardDoesNotMatch $e) {
                 return $this->error($e->getMessage());
+                // @codeCoverageIgnoreEnd
             }
 
             // Output message for permissions creation
@@ -141,8 +144,11 @@ class CreatePermissions extends Command
                     // Add wildcard permissions to administrator access policy
                     try {
                         $administratorPolicy->givePermissionTo($permission);
+                        // @codeCoverageIgnoreStart
+                        // The command creates both policies and permissions with the fixed sanctum guard.
                     } catch (GuardDoesNotMatch $e) {
                         return $this->error($e->getMessage());
+                        // @codeCoverageIgnoreEnd
                     }
 
                     // output message for permissions creation
@@ -201,8 +207,11 @@ class CreatePermissions extends Command
                 // Add wildcard permissions to full access policy
                 try {
                     $fullAccessPolicy->givePermissionTo($permission);
+                    // @codeCoverageIgnoreStart
+                    // The command creates both policies and permissions with the fixed sanctum guard.
                 } catch (GuardDoesNotMatch $e) {
                     return $this->error($e->getMessage());
+                    // @codeCoverageIgnoreEnd
                 }
 
                 // Output message for permissions creation
@@ -238,16 +247,22 @@ class CreatePermissions extends Command
                     if ($action === 'view' || $action === 'list') {
                         try {
                             $readOnlyPolicy->givePermissionTo($permission);
+                            // @codeCoverageIgnoreStart
+                            // The command creates both policies and permissions with the fixed sanctum guard.
                         } catch (GuardDoesNotMatch $e) {
                             return $this->error($e->getMessage());
+                            // @codeCoverageIgnoreEnd
                         }
                     }
 
                     // Add resource specific action permission to administrator policy
                     try {
                         $administratorPolicy->givePermissionTo($permission);
+                        // @codeCoverageIgnoreStart
+                        // The command creates both policies and permissions with the fixed sanctum guard.
                     } catch (GuardDoesNotMatch $e) {
                         return $this->error($e->getMessage());
+                        // @codeCoverageIgnoreEnd
                     }
 
                     // Output message for permissions creation
@@ -458,6 +473,10 @@ class CreatePermissions extends Command
                 $policyRecord = Policy::findByName($policyName, $guard);
             } catch (\Exception $e) {
                 $this->error($e->getMessage());
+                continue;
+            }
+            if (!$policyRecord) {
+                $this->error('There is no policy named `' . $policyName . '` for guard `' . $guard . '`.');
                 continue;
             }
             // apply the policy to the role

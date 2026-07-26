@@ -157,6 +157,14 @@ class TwoFactorAuthResponseCacheFake
     }
 }
 
+class TwoFactorAuthMissingSystemSettings extends TwoFactorAuth
+{
+    public static function getTwoFaConfiguration(): ?Setting
+    {
+        return null;
+    }
+}
+
 function two_factor_auth_fixtures(): array
 {
     $container = bind_test_container([
@@ -361,6 +369,10 @@ test('two factor auth evaluates user company and system enforcement settings', f
         ->and(TwoFactorAuth::shouldEnforce($user))->toBeFalse();
 });
 
+test('two factor auth treats unavailable system settings as not enforced', function () {
+    expect(TwoFactorAuthMissingSystemSettings::isSystemEnforced())->toBeFalse();
+});
+
 test('two factor auth starts encrypted redis backed sessions and validates identities', function () {
     [$user, , $redis] = two_factor_auth_fixtures();
     TwoFactorAuth::saveTwoFaSettingsForUser($user, ['enabled' => true, 'method' => 'email']);
@@ -462,6 +474,15 @@ test('two factor auth issues and reuses client tokens for valid active sessions'
         ->and($redis->deleted)->toBe([]);
 });
 
+test('two factor auth refuses client token issuance when user settings disable two factor auth', function () {
+    [$user] = two_factor_auth_fixtures();
+    TwoFactorAuth::saveTwoFaSettingsForUser($user, ['enabled' => false, 'method' => 'email']);
+
+    expect(fn () => TwoFactorAuth::getClientSessionTokenFromTwoFaSession('unused-token', $user->email))
+        ->toThrow(Exception::class, '2FA Authentication is not enabled.')
+        ->and(TwoFactorAuth::createTwoFaSessionIfEnabled($user->email))->toBeNull();
+});
+
 test('two factor auth rejects expired client tokens and invalid session keys for client token issuance', function () {
     [$user, , $redis] = two_factor_auth_fixtures();
     TwoFactorAuth::saveTwoFaSettingsForUser($user, ['enabled' => true, 'method' => 'email']);
@@ -480,6 +501,38 @@ test('two factor auth rejects expired client tokens and invalid session keys for
         ->toThrow(Exception::class, '2FA Authentication session is invalid');
 });
 
+test('two factor auth rejects truncated and non compressed encrypted session payloads', function () {
+    $decrypt = new ReflectionMethod(TwoFactorAuth::class, 'decryptSessionKey');
+    $decrypt->setAccessible(true);
+
+    $key       = '11111111-1111-4111-8111-111111111111';
+    $ivLength  = openssl_cipher_iv_length('aes-256-cbc');
+    $iv        = str_repeat('a', $ivLength);
+    $encrypted = openssl_encrypt('plain-not-compressed', 'aes-256-cbc', $key, 0, $iv);
+
+    expect($decrypt->invoke(null, base64_encode('short'), $key))->toBeNull();
+
+    set_error_handler(fn () => true);
+
+    try {
+        expect($decrypt->invoke(null, base64_encode($iv . $encrypted), $key))->toBeNull();
+    } finally {
+        restore_error_handler();
+    }
+});
+
+test('two factor auth validation forgets sessions backed by expired verification codes', function () {
+    [$user, , $redis] = two_factor_auth_fixtures();
+    TwoFactorAuth::saveTwoFaSettingsForUser($user, ['enabled' => true, 'method' => 'email']);
+
+    $token            = TwoFactorAuth::start($user->email, 10);
+    $verificationCode = two_factor_auth_verification_code($user, Carbon::now()->subMinutes(5));
+    $clientToken      = TwoFactorAuth::createClientSessionToken($verificationCode);
+
+    expect(TwoFactorAuth::validateSessionToken($token, $user->email, $clientToken))->toBeFalse()
+        ->and($redis->deleted)->toBe([$redis->sets[0]['key']]);
+});
+
 test('two factor auth rejects invalid client tokens and missing identities with stable errors', function () {
     [$user, , $redis] = two_factor_auth_fixtures();
     TwoFactorAuth::saveTwoFaSettingsForUser($user, ['enabled' => true, 'method' => 'email']);
@@ -488,6 +541,7 @@ test('two factor auth rejects invalid client tokens and missing identities with 
 
     expect(fn () => TwoFactorAuth::getClientSessionTokenFromTwoFaSession($token, 'missing@example.com'))->toThrow(Exception::class, 'No user found for the identity provided.')
         ->and(fn () => TwoFactorAuth::getClientSessionTokenFromTwoFaSession($token, $user->email, base64_encode('expires|missing-code|nonce')))->toThrow(Exception::class, '2FA Verification code is invalid or has expired.')
+        ->and(fn () => TwoFactorAuth::forgetTwoFaSession($token, 'missing@example.com'))->toThrow(Exception::class, 'No user found for the identity provided.')
         ->and($redis->deleted)->toContain($redis->sets[0]['key']);
 });
 

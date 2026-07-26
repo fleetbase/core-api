@@ -249,6 +249,11 @@ test('has policies parses quoted pipe strings and resolves stored policies by uu
             '"Dispatch Manager',
             'Billing Manager',
         ])
+        ->and($subject->convertPipeToArray('a|middle|a'))->toBe([
+            'a',
+            'middle',
+            'a',
+        ])
         ->and($subject->resolveStoredPolicy($uuid)->id)->toBe($uuid)
         ->and($subject->resolveStoredPolicy('Dispatch Manager')->name)->toBe('Dispatch Manager')
         ->and($subject->resolveStoredPolicy(has_policies_policy('policy-direct', 'Direct Policy'))->id)->toBe('policy-direct')
@@ -271,10 +276,17 @@ test('has policies scope resolves policy objects identifiers and names before ap
         '99',
         'Named Policy',
     ]), 'web');
+    $scalarQuery           = new HasPoliciesBuilderFake();
+    $scalarQuery->subQuery = new HasPoliciesBuilderFake();
+    $scalarResult          = $subject->scopePolicy($scalarQuery, 'Solo Policy', 'web');
 
     expect($result)->toBe($query)
+        ->and($scalarResult)->toBe($scalarQuery)
         ->and($query->whereHasCalls)->toBe([
             ['relation' => 'policies', 'operator' => '>=', 'count' => 1],
+        ])
+        ->and($scalarQuery->subQuery->whereInCalls)->toBe([
+            ['column' => 'policies.id', 'values' => ['policy-resolved-name'], 'boolean' => 'and', 'not' => false],
         ])
         ->and($query->subQuery->whereInCalls)->toBe([
             ['column' => 'policies.id', 'values' => ['policy-direct', '99', 'policy-resolved-name'], 'boolean' => 'and', 'not' => false],
@@ -282,6 +294,7 @@ test('has policies scope resolves policy objects identifiers and names before ap
         ->and($repository->calls)->toBe([
             ['findByIdentifier', '99', 'web'],
             ['findByName', 'Named Policy', 'web'],
+            ['findByName', 'Solo Policy', 'web'],
         ]);
 });
 

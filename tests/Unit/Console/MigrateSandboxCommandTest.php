@@ -11,6 +11,7 @@ namespace Fleetbase\Support {
 
 namespace {
     use Fleetbase\Console\Commands\MigrateSandbox;
+    use Fleetbase\Support\Utils;
     use Illuminate\Support\Facades\Facade;
 
     class MigrateSandboxCommandSpy extends MigrateSandbox
@@ -55,6 +56,24 @@ namespace {
         protected function getMigrationDirectoryForExtension(string $packageName): ?string
         {
             return $this->migrationDirectories[$packageName] ?? null;
+        }
+    }
+
+    class MigrateSandboxCommandProbe extends MigrateSandbox
+    {
+        public function installedExtensions(): array
+        {
+            return $this->getInstalledFleetbaseExtensions();
+        }
+
+        public function extensionProperty(string $packageName, string $key)
+        {
+            return $this->getFleetbaseExtensionProperty($packageName, $key);
+        }
+
+        public function migrationDirectory(string $packageName): ?string
+        {
+            return $this->getMigrationDirectoryForExtension($packageName);
         }
     }
 
@@ -159,5 +178,13 @@ namespace {
                 'vendor/fleetbase/core-api/migrations',
                 'vendor/fleetbase/fleetops/migrations/sandbox',
             ]);
+    });
+
+    it('delegates extension metadata lookups to support utilities', function () {
+        $command = new MigrateSandboxCommandProbe();
+
+        expect($command->installedExtensions())->toBe(Utils::getInstalledFleetbaseExtensions())
+            ->and($command->extensionProperty('fleetbase/missing-extension', 'sandbox-migrations'))->toBeNull()
+            ->and($command->migrationDirectory('fleetbase/missing-extension'))->toBeNull();
     });
 }

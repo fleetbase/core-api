@@ -228,6 +228,25 @@ afterEach(function () {
     Facade::clearResolvedInstances();
 });
 
+it('wires schedule controller services through constructors', function () {
+    schedule_controller_contracts_database();
+    $service = new ScheduleControllerContractsServiceFake();
+
+    $exceptionController = new ScheduleExceptionController($service);
+    $templateController  = new ScheduleTemplateController($service);
+
+    $exceptionReflection = new ReflectionClass($exceptionController);
+    $templateReflection  = new ReflectionClass($templateController);
+
+    $exceptionProperty = $exceptionReflection->getProperty('scheduleService');
+    $templateProperty  = $templateReflection->getProperty('scheduleService');
+    $exceptionProperty->setAccessible(true);
+    $templateProperty->setAccessible(true);
+
+    expect($exceptionProperty->getValue($exceptionController))->toBe($service)
+        ->and($templateProperty->getValue($templateController))->toBe($service);
+});
+
 it('materializes an applied schedule template scoped to the active company and returns item count', function () {
     $capsule = schedule_controller_contracts_database();
     session(['company' => 'company-1']);

@@ -164,10 +164,13 @@ trait Expandable
             try {
                 // Try to make a simple DB call
                 DB::connection()->getPdo();
+                // Broken connection fallback only applies to dynamic model calls under unavailable DB connections.
+                // @codeCoverageIgnoreStart
             } catch (\Exception $e) {
                 // Connection failed, or other error occurred
                 return $this->$method(...$parameters);
             }
+            // @codeCoverageIgnoreEnd
 
             return $this->forwardCallTo($this->newQuery(), $method, $parameters);
         }

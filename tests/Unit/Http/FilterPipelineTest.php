@@ -196,6 +196,7 @@ namespace {
         $uuids = filter_pipeline_uuids([
             'created_after'  => '2026-01-01 00:00:00',
             'created_before' => '2026-01-31 23:59:59',
+            '_after'         => '2026-01-01 00:00:00',
         ]);
 
         expect($uuids)->toBe(['widget-1']);

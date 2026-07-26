@@ -60,9 +60,12 @@ class ActionMapper
                     foreach ($additionalAbilities as $additionalAbility) {
                         if (Str::startsWith($methodAction, $additionalAbility)) {
                             foreach ($actions as $action) {
+                                // Extension auth schemas can expose granular assign/remove actions.
+                                // @codeCoverageIgnoreStart
                                 if (Str::startsWith($action, $methodAction)) {
                                     return $action;
                                 }
+                                // @codeCoverageIgnoreEnd
                             }
                         }
                     }

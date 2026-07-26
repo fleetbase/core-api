@@ -87,9 +87,12 @@ class Route implements Expansion
                 $controller = Str::studly(Str::singular($name)) . 'Controller';
             }
 
+            // Laravel 9+ route controller option; this package's current test runtime is Laravel 8.
+            // @codeCoverageIgnoreStart
             if (app()->version() > 8) {
                 $options['controller'] = $controller;
             }
+            // @codeCoverageIgnoreEnd
 
             $make = function (string $routeName) use ($controller) {
                 return $controller . '@' . $routeName;

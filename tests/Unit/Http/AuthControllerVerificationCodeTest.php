@@ -449,6 +449,55 @@ test('confirm email change rejects invalid links before mutating users', functio
         ]);
 });
 
+test('confirm email change rejects missing metadata and stale current email contracts', function () {
+    $capsule = auth_controller_verification_code_database();
+    auth_controller_verification_code_insert_user($capsule, [
+        'uuid'  => 'user-email-change',
+        'email' => 'current@example.test',
+    ]);
+    auth_controller_verification_code_insert($capsule, [
+        'uuid'         => 'missing-meta-code',
+        'subject_uuid' => 'user-email-change',
+        'subject_type' => User::class,
+        'code'         => '111111',
+        'for'          => 'email_change',
+        'meta'         => json_encode(['old_email' => 'current@example.test']),
+        'status'       => 'active',
+    ]);
+    auth_controller_verification_code_insert($capsule, [
+        'uuid'         => 'stale-email-code',
+        'subject_uuid' => 'user-email-change',
+        'subject_type' => User::class,
+        'code'         => '222222',
+        'for'          => 'email_change',
+        'meta'         => json_encode([
+            'old_email' => 'previous@example.test',
+            'new_email' => 'new@example.test',
+        ]),
+        'status' => 'active',
+    ]);
+
+    $missingMeta = (new AuthController())->confirmEmailChange(auth_controller_verification_code_request([
+        'link' => 'missing-meta-code',
+        'code' => '111111',
+    ]));
+    $staleCurrentEmail = (new AuthController())->confirmEmailChange(auth_controller_verification_code_request([
+        'link' => 'stale-email-code',
+        'code' => '222222',
+    ]));
+
+    expect($missingMeta->getStatusCode())->toBe(400)
+        ->and($missingMeta->getData(true))->toBe([
+            'errors' => ['Invalid email change request!'],
+        ])
+        ->and($staleCurrentEmail->getStatusCode())->toBe(400)
+        ->and($staleCurrentEmail->getData(true))->toBe([
+            'errors' => ['This email change request is no longer valid.'],
+        ])
+        ->and(User::find('user-email-change')->email)->toBe('current@example.test')
+        ->and(VerificationCode::whereIn('uuid', ['missing-meta-code', 'stale-email-code'])->count())->toBe(2);
+});
+
 test('confirm email change updates verified email and clears active verification codes', function () {
     $capsule = auth_controller_verification_code_database();
     auth_controller_verification_code_insert_user($capsule, [

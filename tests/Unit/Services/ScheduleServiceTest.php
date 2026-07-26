@@ -821,6 +821,47 @@ it('filters schedules and exceptions for subjects with status type and date wind
             'updated_at'   => now(),
         ],
     ]);
+    $capsule->getConnection()->table('schedule_items')->insert([
+        [
+            'uuid'          => 'item-match',
+            'company_uuid'  => 'company-1',
+            'schedule_uuid' => 'schedule-active-window',
+            'assignee_type' => Schedule::class,
+            'assignee_uuid' => 'schedule-active-window',
+            'start_at'      => '2026-08-05 09:00:00',
+            'end_at'        => '2026-08-05 17:00:00',
+            'status'        => 'scheduled',
+            'is_exception'  => false,
+            'created_at'    => now(),
+            'updated_at'    => now(),
+        ],
+        [
+            'uuid'          => 'item-wrong-status',
+            'company_uuid'  => 'company-1',
+            'schedule_uuid' => 'schedule-active-window',
+            'assignee_type' => Schedule::class,
+            'assignee_uuid' => 'schedule-active-window',
+            'start_at'      => '2026-08-06 09:00:00',
+            'end_at'        => '2026-08-06 17:00:00',
+            'status'        => 'cancelled',
+            'is_exception'  => false,
+            'created_at'    => now(),
+            'updated_at'    => now(),
+        ],
+        [
+            'uuid'          => 'item-outside-window',
+            'company_uuid'  => 'company-1',
+            'schedule_uuid' => 'schedule-active-window',
+            'assignee_type' => Schedule::class,
+            'assignee_uuid' => 'schedule-active-window',
+            'start_at'      => '2026-09-05 09:00:00',
+            'end_at'        => '2026-09-05 17:00:00',
+            'status'        => 'scheduled',
+            'is_exception'  => false,
+            'created_at'    => now(),
+            'updated_at'    => now(),
+        ],
+    ]);
 
     $schedules = $service->getSchedulesForSubject('driver', 'driver-1', [
         'status'     => 'active',
@@ -833,12 +874,20 @@ it('filters schedules and exceptions for subjects with status type and date wind
         'start_at' => '2026-08-01 00:00:00',
         'end_at'   => '2026-08-31 23:59:59',
     ]);
+    $items = $service->getScheduleItemsForAssignee(Schedule::class, 'schedule-active-window', [
+        'status'   => 'scheduled',
+        'start_at' => '2026-08-01 00:00:00',
+        'end_at'   => '2026-08-31 23:59:59',
+    ]);
 
     expect($schedules->pluck('uuid')->all())->toBe(['schedule-active-window'])
         ->and($schedules->first()->relationLoaded('items'))->toBeTrue()
         ->and($schedules->first()->relationLoaded('templates'))->toBeTrue()
         ->and($schedules->first()->relationLoaded('exceptions'))->toBeTrue()
-        ->and($exceptions->pluck('uuid')->all())->toBe(['exception-match']);
+        ->and($exceptions->pluck('uuid')->all())->toBe(['exception-match'])
+        ->and($items->pluck('uuid')->all())->toBe(['item-match'])
+        ->and($items->first()->relationLoaded('schedule'))->toBeTrue()
+        ->and($items->first()->relationLoaded('template'))->toBeTrue();
 });
 
 it('updates materialization horizon even when a schedule has no applied recurring templates', function () {
@@ -882,6 +931,42 @@ it('skips template materialization when the template has no rrule', function () 
     ], true);
 
     expect((new ScheduleService())->materializeTemplate($template, $schedule, Carbon::parse('2026-10-01', 'UTC')))->toBe(0);
+});
+
+it('skips template materialization when recurrence produces no occurrences', function () {
+    $capsule = schedule_service_database();
+    Carbon::setTestNow(Carbon::parse('2026-07-01 00:00:00', 'UTC'));
+
+    $capsule->getConnection()->table('schedules')->insert([
+        'uuid'         => 'schedule-1',
+        'company_uuid' => 'company-1',
+        'subject_type' => 'driver',
+        'subject_uuid' => 'driver-1',
+        'name'         => 'Driver schedule',
+        'timezone'     => 'UTC',
+        'status'       => 'active',
+        'created_at'   => now(),
+        'updated_at'   => now(),
+    ]);
+    $capsule->getConnection()->table('schedule_templates')->insert([
+        'uuid'          => 'template-empty',
+        'company_uuid'  => 'company-1',
+        'schedule_uuid' => 'schedule-1',
+        'subject_type'  => 'driver',
+        'subject_uuid'  => 'driver-1',
+        'name'          => 'No occurrences',
+        'start_time'    => '09:00',
+        'duration'      => 480,
+        'rrule'         => 'FREQ=DAILY;COUNT=1',
+        'created_at'    => now(),
+        'updated_at'    => now(),
+    ]);
+
+    $schedule = Schedule::find('schedule-1');
+    $template = ScheduleTemplate::find('template-empty');
+
+    expect((new ScheduleService())->materializeTemplate($template, $schedule, Carbon::parse('2026-06-30', 'UTC')))->toBe(0)
+        ->and(ScheduleItem::query()->count())->toBe(0);
 });
 
 it('applies a library template to a draft schedule and immediately materializes shifts', function () {

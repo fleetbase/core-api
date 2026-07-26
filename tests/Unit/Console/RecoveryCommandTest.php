@@ -4,6 +4,7 @@ use Fleetbase\Console\Commands\Recovery;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\User;
+use Illuminate\Cache\CacheManager;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Events\Dispatcher;
@@ -79,6 +80,22 @@ class RecoveryTestCommand extends Recovery
     public function choice($question, array $choices, $default = null, $attempts = null, $multiple = false)
     {
         return array_shift($this->choiceAnswers) ?? $default ?? $choices[0];
+    }
+}
+
+class RecoveryAutocompleteTestCommand extends RecoveryTestCommand
+{
+    public array $anticipatedChoices = [];
+
+    public function anticipate($question, $choices, $default = null)
+    {
+        $answer = array_shift($this->anticipateAnswers) ?? $default;
+
+        if (is_callable($choices)) {
+            $this->anticipatedChoices[] = $choices((string) $answer);
+        }
+
+        return $answer;
     }
 }
 
@@ -182,6 +199,16 @@ function recovery_company_user(): CompanyUser
     };
 }
 
+function recovery_failing_company_user(): CompanyUser
+{
+    return new class extends CompanyUser {
+        public function assignSingleRole($role): CompanyUser
+        {
+            throw new RuntimeException('role assignment failed');
+        }
+    };
+}
+
 class RecoveryDispatchTestCommand extends RecoveryTestCommand
 {
     public array $calledActions = [];
@@ -277,8 +304,26 @@ function recovery_prompt_database(): Capsule
     ];
 
     $container = bind_test_container([
-        'database.default'           => 'mysql',
-        'database.connections.mysql' => $connection,
+        'database.default'                  => 'mysql',
+        'database.connections.mysql'        => $connection,
+        'cache.default'                     => 'array',
+        'cache.stores.array.driver'         => 'array',
+        'auth.defaults.guard'               => 'sanctum',
+        'auth.guards.sanctum'               => [
+            'driver'   => 'session',
+            'provider' => 'users',
+        ],
+        'permission.models.permission'                 => Fleetbase\Models\Permission::class,
+        'permission.models.role'                       => Fleetbase\Models\Role::class,
+        'permission.cache.key'                         => 'spatie.permission.cache',
+        'permission.cache.expiration_time'             => DateInterval::createFromDateString('24 hours'),
+        'permission.column_names.team_foreign_key'     => 'team_id',
+        'permission.column_names.model_morph_key'      => 'model_uuid',
+        'permission.table_names.permissions'           => 'permissions',
+        'permission.table_names.roles'                 => 'roles',
+        'permission.table_names.role_has_permissions'  => 'role_has_permissions',
+        'permission.table_names.model_has_roles'       => 'model_has_roles',
+        'permission.table_names.model_has_permissions' => 'model_has_permissions',
     ]);
 
     $capsule = new Capsule($container);
@@ -289,8 +334,12 @@ function recovery_prompt_database(): Capsule
 
     $databaseManager = $capsule->getDatabaseManager();
     $databaseManager->setDefaultConnection('mysql');
+    $cache = new CacheManager($container);
     $container->instance('db', $databaseManager);
+    $container->instance('cache', $cache);
+    $container->instance(CacheManager::class, $cache);
     Facade::clearResolvedInstance('db');
+    Facade::clearResolvedInstance('cache');
 
     $schema = $capsule->getConnection('mysql')->getSchemaBuilder();
     $schema->create('users', function ($table) {
@@ -321,6 +370,33 @@ function recovery_prompt_database(): Capsule
         $table->timestamps();
         $table->softDeletes();
     });
+    $schema->create('roles', function ($table) {
+        $table->string('id')->primary();
+        $table->string('name')->nullable();
+        $table->string('guard_name')->nullable();
+        $table->string('company_uuid')->nullable();
+        $table->timestamps();
+        $table->softDeletes();
+    });
+    $schema->create('permissions', function ($table) {
+        $table->string('id')->primary();
+        $table->string('name')->nullable();
+        $table->string('guard_name')->nullable();
+    });
+    $schema->create('role_has_permissions', function ($table) {
+        $table->string('permission_id')->nullable();
+        $table->string('role_id')->nullable();
+    });
+    $schema->create('model_has_roles', function ($table) {
+        $table->string('role_id')->nullable();
+        $table->string('model_type')->nullable();
+        $table->string('model_uuid')->nullable();
+    });
+    $schema->create('model_has_permissions', function ($table) {
+        $table->string('permission_id')->nullable();
+        $table->string('model_type')->nullable();
+        $table->string('model_uuid')->nullable();
+    });
 
     return $capsule;
 }
@@ -339,6 +415,9 @@ afterEach(function () {
 it('stops recovery actions when required user or company input is missing', function () {
     $missingUser = new RecoveryTestCommand();
     $missingUser->setUserAsSystemAdmin();
+
+    $missingAssignmentUser = new RecoveryTestCommand();
+    $missingAssignmentUser->assignUserToCompany();
 
     $missingCompany = new RecoveryTestCommand(promptedUser: recovery_user());
     $missingCompany->assignUserToCompany();
@@ -363,6 +442,9 @@ it('stops recovery actions when required user or company input is missing', func
     ])
         ->and($missingCompany->messages)->toBe([
             ['error', 'No company selected to assign user to.'],
+        ])
+        ->and($missingAssignmentUser->messages)->toBe([
+            ['error', 'No user selected to assign to a company.'],
         ])
         ->and($missingRoleUser->messages)->toBe([
             ['error', 'No user selected to set role for.'],
@@ -697,6 +779,74 @@ it('leaves an existing role unchanged when assignment confirmation is declined',
         ->and($command->messages)->toBe([
             ['info', 'Done'],
         ]);
+});
+
+it('reports existing membership role assignment failures', function () {
+    $pivot   = recovery_failing_company_user();
+    $user    = recovery_user();
+    $company = recovery_company(pivot: $pivot);
+    $command = new RecoveryTestCommand(
+        anticipateAnswers: ['Manager'],
+        confirmAnswers: [true],
+    );
+
+    $command->setRoleForUser($user, $company);
+
+    expect($command->messages)->toBe([
+        ['error', 'role assignment failed'],
+        ['info', 'Done'],
+    ]);
+});
+
+it('builds role autocomplete suggestions for role recovery prompts', function () {
+    $capsule = recovery_prompt_database();
+    $db      = $capsule->getConnection('mysql');
+    $db->table('roles')->insert([
+        [
+            'id'           => 'role-manager',
+            'name'         => 'Manager',
+            'guard_name'   => 'sanctum',
+            'company_uuid' => null,
+            'created_at'   => '2026-07-26 10:00:00',
+            'updated_at'   => '2026-07-26 10:00:00',
+        ],
+        [
+            'id'           => 'role-fleet-manager',
+            'name'         => 'Fleet Manager',
+            'guard_name'   => 'sanctum',
+            'company_uuid' => null,
+            'created_at'   => '2026-07-26 10:00:00',
+            'updated_at'   => '2026-07-26 10:00:00',
+        ],
+        [
+            'id'           => 'role-company-manager',
+            'name'         => 'Company Manager',
+            'guard_name'   => 'sanctum',
+            'company_uuid' => 'company-uuid-1',
+            'created_at'   => '2026-07-26 10:00:00',
+            'updated_at'   => '2026-07-26 10:00:00',
+        ],
+    ]);
+
+    $pivot          = recovery_company_user();
+    $user           = recovery_user();
+    $company        = recovery_company(pivot: $pivot);
+    $setRoleCommand = new RecoveryAutocompleteTestCommand(
+        anticipateAnswers: ['manager'],
+        confirmAnswers: [false],
+    );
+    $assignCommand = new RecoveryAutocompleteTestCommand(
+        anticipateAnswers: ['manager'],
+        confirmAnswers: [false],
+    );
+
+    $setRoleCommand->setRoleForUser($user, $company);
+    $assignCommand->assignUserToCompany($user, $company);
+
+    expect($setRoleCommand->anticipatedChoices)->toBe([['Manager', 'Fleet Manager']])
+        ->and($assignCommand->anticipatedChoices)->toBe([['Manager', 'Fleet Manager']])
+        ->and($pivot->calls)->toBe([])
+        ->and($user->calls)->toBe([]);
 });
 
 it('prompts for users by name username public id email and returns the selected record', function () {

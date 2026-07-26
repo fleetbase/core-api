@@ -262,6 +262,22 @@ it('loads apn key content from stored files and configures a sandbox client', fu
         ->and($authProvider->generateApnsTopic('voip'))->toBe('com.fleetbase.test.voip');
 });
 
+it('defaults apn production mode from the application environment when config omits it', function () {
+    bind_test_container([
+        'app.env'                      => 'production',
+        'broadcasting.connections.apn' => [
+            'key_id'              => 'ABC123DEFG',
+            'team_id'             => 'TEAM123456',
+            'app_bundle_id'       => 'com.fleetbase.test',
+            'private_key_content' => push_notification_apn_private_key(),
+        ],
+    ]);
+
+    $client = PushNotification::getApnClient();
+
+    expect(push_notification_reflect_property($client, 'isProductionEnv'))->toBeTrue();
+});
+
 it('creates apn messages with title body custom data action and configured client', function () {
     bind_test_container([
         'broadcasting.connections.apn' => [

@@ -340,6 +340,13 @@ namespace {
             ->and(WebhookCall::create()->dispatchUnless(true))->toBeNull();
     });
 
+    test('webhook call async conditional dispatch helper validates when conditions pass', function () {
+        webhook_test_container();
+
+        expect(fn () => WebhookCall::create()->dispatchIf(true))
+            ->toThrow(CouldNotCallWebhook::class, 'Could not call the webhook because the url has not been set.');
+    });
+
     test('webhook call sync dispatch helpers prepare jobs only when conditions pass', function () {
         webhook_test_container();
 

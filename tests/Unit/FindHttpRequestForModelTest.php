@@ -19,6 +19,10 @@ namespace Fleetbase\Support {
 }
 
 namespace Fleetbase\Tests\Fixtures\Models {
+    class InternalRequestResolutionRecord extends \Illuminate\Database\Eloquent\Model
+    {
+    }
+
     class ResourceResolutionRecord extends \Illuminate\Database\Eloquent\Model
     {
     }
@@ -64,6 +68,12 @@ namespace Fleetbase\Tests\Fixtures\Http\Filter {
     }
 }
 
+namespace Fleetbase\Tests\Fixtures\Http\Requests\Internal\v1 {
+    class InternalRequestResolutionRecord
+    {
+    }
+}
+
 namespace Fleetbase\Storefront\Models {
     class PackageResolutionRecord extends \Illuminate\Database\Eloquent\Model
     {
@@ -75,6 +85,7 @@ namespace {
     use Fleetbase\Support\Find;
     use Fleetbase\Tests\Fixtures\Http\Filter\FilterResolutionRecordFilter;
     use Fleetbase\Tests\Fixtures\Http\Requests\CreateAssetValidationRecordRequest;
+    use Fleetbase\Tests\Fixtures\Http\Requests\Internal\v1\InternalRequestResolutionRecord as InternalRequestResolutionRecordRequest;
     use Fleetbase\Tests\Fixtures\Http\Requests\UpdateAssetValidationRecordRequest;
     use Fleetbase\Tests\Fixtures\Http\Resources\ExplicitResource;
     use Fleetbase\Tests\Fixtures\Http\Resources\Internal\v1\InternalResourceResolutionRecord as InternalResourceResolutionRecordResource;
@@ -82,6 +93,7 @@ namespace {
     use Fleetbase\Tests\Fixtures\Models\AssetValidationRecord;
     use Fleetbase\Tests\Fixtures\Models\ExplicitResourceResolutionRecord;
     use Fleetbase\Tests\Fixtures\Models\FilterResolutionRecord;
+    use Fleetbase\Tests\Fixtures\Models\InternalRequestResolutionRecord;
     use Fleetbase\Tests\Fixtures\Models\InternalResourceResolutionRecord;
     use Fleetbase\Tests\Fixtures\Models\MissingRequestRecord;
     use Fleetbase\Tests\Fixtures\Models\ResourceResolutionRecord;
@@ -141,6 +153,14 @@ namespace {
 
         expect(Find::httpRequestForModel(new MissingRequestRecord(), '\Fleetbase\Tests\Fixtures'))
             ->toBe('\\' . FleetbaseRequest::class);
+    });
+
+    test('resolves internal request classes for internal routes', function () {
+        $_SERVER['REQUEST_METHOD'] = 'POST';
+        app()->instance('request', find_test_request('/int/v1/resources', 'int/v1/resources'));
+
+        expect(Find::httpRequestForModel(new InternalRequestResolutionRecord(), '\Fleetbase\Tests\Fixtures'))
+            ->toBe('\\' . InternalRequestResolutionRecordRequest::class);
     });
 
     test('resolves public internal explicit and fallback resource classes for models', function () {

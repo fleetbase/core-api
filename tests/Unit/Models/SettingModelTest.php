@@ -332,6 +332,25 @@ it('exposes JSON value helpers and database connection checks', function () {
         ->and(Setting::doesntHaveConnection())->toBeTrue();
 });
 
+it('treats database connection exceptions as an unavailable settings connection', function () {
+    bind_test_container();
+    app()->instance('db', new class {
+        public function connection()
+        {
+            return new class {
+                public function getPdo(): void
+                {
+                    throw new RuntimeException('connection unavailable');
+                }
+            };
+        }
+    });
+    Facade::clearResolvedInstance('db');
+
+    expect(Setting::hasConnection())->toBeFalse()
+        ->and(Setting::doesntHaveConnection())->toBeTrue();
+});
+
 it('resolves branding logo and icon urls from files with default fallbacks', function () {
     [$capsule] = setting_model_database();
 

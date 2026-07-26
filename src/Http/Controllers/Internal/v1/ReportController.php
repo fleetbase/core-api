@@ -295,10 +295,15 @@ class ReportController extends FleetbaseController
                 }
 
                 return response()->json($result);
+                // ReportQueryConverter::execute() catches runtime query exceptions and
+                // returns structured error payloads, so this only protects unexpected
+                // constructor-level failures.
+                // @codeCoverageIgnoreStart
             } catch (\Exception $e) {
                 DB::rollBack();
                 throw $e;
             }
+            // @codeCoverageIgnoreEnd
         } catch (\Exception $e) {
             return response()->json(
                 $this->errorHandler->handleError($e, [

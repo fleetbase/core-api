@@ -84,6 +84,18 @@ function notification_apn_private_key(): string
     return trim($privateKey);
 }
 
+function notification_firebase_private_key(): string
+{
+    $key = openssl_pkey_new([
+        'private_key_bits' => 2048,
+        'private_key_type' => OPENSSL_KEYTYPE_RSA,
+    ]);
+
+    openssl_pkey_export($key, $privateKey);
+
+    return $privateKey;
+}
+
 function notification_chat_participant(array $attributes = [], ?User $user = null): ChatParticipant
 {
     $participant = new ChatParticipant();
@@ -325,8 +337,90 @@ test('test push notification builds apn messages with configured action payload'
         ]);
 });
 
+test('test push notification builds fcm messages with configured metadata payload', function () {
+    bind_test_container([
+        'firebase.projects.app' => [
+            'project_id'  => 'fleetbase-test',
+            'credentials' => [
+                'type'                        => 'service_account',
+                'project_id'                  => 'fleetbase-test',
+                'private_key_id'              => 'test-key-id',
+                'private_key'                 => notification_firebase_private_key(),
+                'client_email'                => 'firebase@test.invalid',
+                'client_id'                   => '1234567890',
+                'auth_uri'                    => 'https://accounts.google.com/o/oauth2/auth',
+                'token_uri'                   => 'https://oauth2.googleapis.com/token',
+                'auth_provider_x509_cert_url' => 'https://www.googleapis.com/oauth2/v1/certs',
+                'client_x509_cert_url'        => 'https://www.googleapis.com/robot/v1/metadata/x509/firebase%40test.invalid',
+            ],
+            'credentials_file' => '/tmp/unused-firebase.json',
+        ],
+    ]);
+    Carbon::setTestNow(Carbon::parse('2026-07-17 18:22:10'));
+
+    $message = (new TestPushNotification('Test title', 'Test body'))->toFcm(notification_user());
+
+    expect($message)->toBeInstanceOf(NotificationChannels\Fcm\FcmMessage::class)
+        ->and($message->notification->title)->toBe('Test title')
+        ->and($message->notification->body)->toBe('Test body')
+        ->and($message->data)->toMatchArray([
+            'message' => 'Test Push Notification',
+            'type'    => 'test',
+            'date'    => '2026-07-17 18:22:10',
+        ])
+        ->and($message->data['id'])->toBeString()->not->toBe('')
+        ->and($message->toArray())->toMatchArray([
+            'notification' => [
+                'title' => 'Test title',
+                'body'  => 'Test body',
+            ],
+            'android' => [
+                'notification' => [
+                    'color' => '#4391EA',
+                    'sound' => 'default',
+                ],
+                'fcm_options' => [
+                    'analytics_label' => 'analytics',
+                ],
+            ],
+            'apns' => [
+                'payload' => [
+                    'aps' => [
+                        'sound' => 'default',
+                    ],
+                ],
+                'fcm_options' => [
+                    'analytics_label' => 'analytics',
+                ],
+            ],
+        ])
+        ->and(config('firebase.projects.app'))->not->toHaveKey('credentials_file');
+});
+
 test('chat message received notification exposes broadcast channels and stable payload shape', function () {
     notification_mail_container();
+    config()->set('broadcasting.connections.apn', [
+        'key_id'              => 'ABC123DEFG',
+        'team_id'             => 'TEAM123456',
+        'app_bundle_id'       => 'com.fleetbase.test',
+        'private_key_content' => notification_apn_private_key(),
+        'production'          => false,
+    ]);
+    config()->set('firebase.projects.app', [
+        'project_id'  => 'fleetbase-test',
+        'credentials' => [
+            'type'                        => 'service_account',
+            'project_id'                  => 'fleetbase-test',
+            'private_key_id'              => 'test-key-id',
+            'private_key'                 => notification_firebase_private_key(),
+            'client_email'                => 'firebase@test.invalid',
+            'client_id'                   => '1234567890',
+            'auth_uri'                    => 'https://accounts.google.com/o/oauth2/auth',
+            'token_uri'                   => 'https://oauth2.googleapis.com/token',
+            'auth_provider_x509_cert_url' => 'https://www.googleapis.com/oauth2/v1/certs',
+            'client_x509_cert_url'        => 'https://www.googleapis.com/robot/v1/metadata/x509/firebase%40test.invalid',
+        ],
+    ]);
     $senderUser = notification_user([
         'uuid'  => 'sender-user-1',
         'name'  => 'Dispatcher Dana',
@@ -364,6 +458,8 @@ test('chat message received notification exposes broadcast channels and stable p
     $notification = new ChatMessageReceived($message, $recipient);
     $channels     = $notification->broadcastOn();
     $array        = $notification->toArray();
+    $fcmMessage   = $notification->toFcm($recipient->user);
+    $apnMessage   = $notification->toApn($recipient->user);
 
     expect($notification->via($recipient->user))->toBe([
         'broadcast',
@@ -393,5 +489,27 @@ test('chat message received notification exposes broadcast channels and stable p
             'content'   => 'Package is loaded.',
         ])
         ->and($array['data']['message']['sent_at'])->toBeInstanceOf(Carbon::class)
-        ->and($array['data']['message']['sent_at']->toDateTimeString())->toBe('2026-07-17 18:30:00');
+        ->and($array['data']['message']['sent_at']->toDateTimeString())->toBe('2026-07-17 18:30:00')
+        ->and($fcmMessage)->toBeInstanceOf(NotificationChannels\Fcm\FcmMessage::class)
+        ->and($fcmMessage->notification->title)->toBe('Message from Dispatcher Dana')
+        ->and($fcmMessage->notification->body)->toBe('Package is loaded.')
+        ->and($fcmMessage->data)->toMatchArray([
+            'type'      => 'chat_message_received',
+            'recipient' => 'chat_participant_recipient',
+            'channel'   => 'chat_channel_public_1',
+        ])
+        ->and($apnMessage)->toBeInstanceOf(NotificationChannels\Apn\ApnMessage::class)
+        ->and($apnMessage->title)->toBe('Message from Dispatcher Dana')
+        ->and($apnMessage->body)->toBe('Package is loaded.')
+        ->and($apnMessage->custom)->toMatchArray([
+            'type'      => 'chat_message_received',
+            'recipient' => 'chat_participant_recipient',
+            'channel'   => 'chat_channel_public_1',
+        ])
+        ->and($apnMessage->custom['action']['action'])->toBe('chat_message_received')
+        ->and($apnMessage->custom['action']['params'])->toMatchArray([
+            'type'      => 'chat_message_received',
+            'recipient' => 'chat_participant_recipient',
+            'channel'   => 'chat_channel_public_1',
+        ]);
 });

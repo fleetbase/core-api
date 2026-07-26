@@ -41,6 +41,22 @@ class LookupControllerContractsCacheFake
     }
 }
 
+class LookupControllerContractsLogFake
+{
+    public array $warnings = [];
+    public array $errors   = [];
+
+    public function warning(string $message, array $context = []): void
+    {
+        $this->warnings[] = compact('message', 'context');
+    }
+
+    public function error(string $message, array $context = []): void
+    {
+        $this->errors[] = compact('message', 'context');
+    }
+}
+
 class LookupControllerContractsController extends LookupController
 {
     public array $fetchedLimits = [];
@@ -440,15 +456,44 @@ XML, 1);
 
 test('lookup blog fetch returns empty payload when upstream rss fails', function () {
     lookup_controller_boot();
+    $logger = new LookupControllerContractsLogFake();
+    app()->instance('log', $logger);
+    Facade::clearResolvedInstance('log');
     Http::fake([
-        'https://feeds.example.test/fleetbase.xml' => Http::response('not found', 404),
+        '*' => Http::response('not found', 404),
     ]);
 
-    $response = (new LookupControllerContractsController())->fleetbaseBlog(lookup_controller_request(['limit' => 3]));
+    $response = (new LookupControllerContractsRssController('https://feeds.example.test/fleetbase-missing.xml'))->fleetbaseBlog(lookup_controller_request(['limit' => 3]));
 
     expect($response->getStatusCode())->toBe(200)
         ->and($response->getData(true))->toBe([])
-        ->and($response->headers->get('X-Cache-Status'))->toBe('HIT');
+        ->and($response->headers->get('X-Cache-Status'))->toBe('HIT')
+        ->and($logger->errors[0]['message'])->toBe('[Blog] Exception fetching RSS feed')
+        ->and($logger->errors[0]['context']['error'])->toBeString()->not->toBe('')
+        ->and($logger->errors[0]['context'])->toMatchArray([
+            'url'    => 'https://feeds.example.test/fleetbase-missing.xml',
+        ]);
+});
+
+test('lookup blog fetch returns empty payload when upstream rss throws', function () {
+    lookup_controller_boot();
+    $logger = new LookupControllerContractsLogFake();
+    app()->instance('log', $logger);
+    Facade::clearResolvedInstance('log');
+    Http::fake(function () {
+        throw new Illuminate\Http\Client\ConnectionException('rss connection refused');
+    });
+
+    $response = (new LookupControllerContractsRssController('https://feeds.example.test/fleetbase-throws.xml'))->fleetbaseBlog(lookup_controller_request(['limit' => 3]));
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($response->getData(true))->toBe([])
+        ->and($response->headers->get('X-Cache-Status'))->toBe('HIT')
+        ->and($logger->errors[0]['message'])->toBe('[Blog] Exception fetching RSS feed')
+        ->and($logger->errors[0]['context'])->toMatchArray([
+            'error' => 'rss connection refused',
+            'url'   => 'https://feeds.example.test/fleetbase-throws.xml',
+        ]);
 });
 
 test('lookup blog exposes default URL helpers and canonical link normalization', function () {

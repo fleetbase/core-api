@@ -172,9 +172,13 @@ class Telemetry
             return 'docker';
         }
 
+        // Host marker detection depends on the real server filesystem and native
+        // file_get_contents(), which should not be spoofed in unit coverage.
+        // @codeCoverageIgnoreStart
         if (File::exists('/etc/lsb-release') && str_contains(file_get_contents('/etc/lsb-release'), 'Ubuntu')) {
             return 'linux-baremetal';
         }
+        // @codeCoverageIgnoreEnd
 
         return 'unknown';
     }
@@ -220,7 +224,10 @@ class Telemetry
             return false;
         }
 
+        // getCurrentCommitHash() is still a TODO and always returns null.
+        // @codeCoverageIgnoreStart
         return $officialHash !== $currentHash;
+        // @codeCoverageIgnoreEnd
     }
 
     /**

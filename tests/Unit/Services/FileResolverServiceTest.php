@@ -205,6 +205,15 @@ test('file resolver downloads remote urls and stores response metadata', functio
     Http::assertSent(fn ($request) => $request->url() === 'https://cdn.fleetbase.test/assets/invoice.pdf');
 });
 
+test('file resolver url extension guesser preserves explicit extensions and binary fallback', function () {
+    $resolver = new FileResolverService();
+    $method   = new ReflectionMethod($resolver, 'guessExtensionFromUrl');
+    $method->setAccessible(true);
+
+    expect($method->invoke($resolver, 'https://cdn.fleetbase.test/assets/archive.tar.gz'))->toBe('gz')
+        ->and($method->invoke($resolver, 'https://cdn.fleetbase.test/assets/download'))->toBe('bin');
+});
+
 test('file resolver returns null for failed urls unsupported inputs and filters many results', function () {
     file_resolver_fixtures();
     Http::fake([

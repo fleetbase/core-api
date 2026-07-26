@@ -138,6 +138,10 @@ class HasApiControllerBehaviorModel extends Model
     }
 }
 
+if (!class_exists('Fleetbase\\Models\\HasApiControllerBehaviorModel')) {
+    class_alias(HasApiControllerBehaviorModel::class, 'Fleetbase\\Models\\HasApiControllerBehaviorModel');
+}
+
 class HasApiControllerBehaviorBuilder
 {
     public array $wheres;
@@ -369,6 +373,20 @@ test('api controller behavior maps http verbs and exposes configured names', fun
     expect($controller->getApiServiceFromNamespace('\\Fleetbase\\FleetOps\\Http\\Controllers'))->toBe('fleet-ops')
         ->and($controller->getApiServiceFromNamespace('\\Standalone'))->toBe('standalone')
         ->and($controller->getHumanReadableResourceName())->toBe('Widget');
+
+    $controller->resource = null;
+    $controller->setApiResource(new HasApiControllerBehaviorResource(new HasApiControllerBehaviorModel()), '\\Fleetbase');
+    $controller->setApiFormRequest(new HasApiControllerBehaviorConfiguredRequest());
+
+    expect($controller->resource)->toBe(HasApiControllerBehaviorResource::class)
+        ->and($controller->request)->toBe(HasApiControllerBehaviorConfiguredRequest::class);
+
+    $controller->resource = '\\' . HasApiControllerBehaviorResource::class;
+    $controller->request  = HasApiControllerBehaviorConfiguredRequest::class;
+    $controller->filter   = (object) ['scope' => 'active'];
+    $controller->setApiModel(new HasApiControllerBehaviorModel(), '\\Fleetbase');
+
+    expect($controller->model->filter)->toEqual((object) ['scope' => 'active']);
 });
 
 test('api controller behavior returns single list find search count and bulk delete contracts', function () {
@@ -387,10 +405,12 @@ test('api controller behavior returns single list find search count and bulk del
     $controller->indexResource = HasApiControllerBehaviorIndexResource::class;
 
     $single                     = $controller->queryRecord(has_api_controller_behavior_request('/v1/widgets', 'GET', ['single' => true]));
+    $internalSingle             = $controller->queryRecord(has_api_controller_behavior_request('/int/v1/widgets', 'GET', ['single' => true]));
     $missingModel               = new HasApiControllerBehaviorModel();
     $missingModel->queryResults = collect();
     $missing                    = (new HasApiControllerBehaviorController($missingModel))->queryRecord(has_api_controller_behavior_request('/v1/widgets', 'GET', ['single' => true]));
     $list                       = $controller->queryRecord(has_api_controller_behavior_request('/v1/widgets', 'GET'));
+    $internalList               = $controller->queryRecord(has_api_controller_behavior_request('/int/v1/widgets', 'GET'));
     $found                      = $controller->findRecord(has_api_controller_behavior_request('/v1/widgets/widget_found'), 'widget_found');
     $notFound                   = (new HasApiControllerBehaviorController(new HasApiControllerBehaviorModel()))->findRecord(has_api_controller_behavior_request('/v1/widgets/missing'), 'missing');
     $search                     = $controller->search(has_api_controller_behavior_request('/v1/widgets/search', 'GET', ['query' => 'Search']));
@@ -408,9 +428,11 @@ test('api controller behavior returns single list find search count and bulk del
     );
 
     expect($single->resolve())->toMatchArray(['uuid' => 'widget-1', 'name' => 'Primary'])
+        ->and($internalSingle->resolve())->toMatchArray(['uuid' => 'widget-1', 'name' => 'Primary'])
         ->and($missing->getStatusCode())->toBe(404)
         ->and($missing->getData(true))->toBe(['errors' => ['Widget not found']])
         ->and($list->collects)->toBe(HasApiControllerBehaviorIndexResource::class)
+        ->and($internalList->collects)->toBe(HasApiControllerBehaviorIndexResource::class)
         ->and($found['widget']->resolve())->toMatchArray(['uuid' => 'widget-found', 'name' => 'Found'])
         ->and($notFound->getStatusCode())->toBe(404)
         ->and($notFound->getData(true))->toBe(['errors' => ['Widget not found']])
@@ -429,8 +451,10 @@ test('api controller behavior returns single list find search count and bulk del
 test('api controller behavior creates updates and formats exception responses', function () {
     $controller = new HasApiControllerBehaviorController();
 
-    $created = $controller->createRecord(has_api_controller_behavior_request('/v1/widgets', 'POST', ['name' => 'Created']));
-    $updated = $controller->updateRecord(has_api_controller_behavior_request('/v1/widgets/widget-1', 'PATCH', ['name' => 'Updated']), 'widget-1');
+    $created         = $controller->createRecord(has_api_controller_behavior_request('/v1/widgets', 'POST', ['name' => 'Created']));
+    $updated         = $controller->updateRecord(has_api_controller_behavior_request('/v1/widgets/widget-1', 'PATCH', ['name' => 'Updated']), 'widget-1');
+    $internalCreated = $controller->createRecord(has_api_controller_behavior_request('/int/v1/widgets', 'POST', ['name' => 'Internal Created']));
+    $internalUpdated = $controller->updateRecord(has_api_controller_behavior_request('/int/v1/widgets/widget-1', 'PATCH', ['name' => 'Internal Updated']), 'widget-1');
 
     $failingModel = new class extends HasApiControllerBehaviorModel {
         public string $failureType = 'runtime';
@@ -464,7 +488,18 @@ test('api controller behavior creates updates and formats exception responses', 
 
     expect($created->resolve())->toMatchArray(['uuid' => 'created-widget', 'name' => 'Created'])
         ->and($updated->resolve())->toMatchArray(['uuid' => 'widget-1', 'name' => 'Updated'])
-        ->and(array_column($controller->hookCalls, 0))->toBe(['onBeforeCreate', 'onAfterCreate', 'onBeforeUpdate', 'onAfterUpdate'])
+        ->and($internalCreated->resolve())->toMatchArray(['uuid' => 'created-widget', 'name' => 'Internal Created'])
+        ->and($internalUpdated->resolve())->toMatchArray(['uuid' => 'widget-1', 'name' => 'Internal Updated'])
+        ->and(array_column($controller->hookCalls, 0))->toBe([
+            'onBeforeCreate',
+            'onAfterCreate',
+            'onBeforeUpdate',
+            'onAfterUpdate',
+            'onBeforeCreate',
+            'onAfterCreate',
+            'onBeforeUpdate',
+            'onAfterUpdate',
+        ])
         ->and($createFailure->getData(true))->toBe(['errors' => ['Error occurred while trying to create a Widget']])
         ->and($updateFailure->getData(true))->toBe(['errors' => ['Error occurred while trying to update a Widget']])
         ->and($createQueryFailure->getData(true))->toBe(['errors' => ['Error occurred while trying to create a Widget']])

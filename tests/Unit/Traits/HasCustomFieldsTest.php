@@ -423,3 +423,28 @@ test('has custom fields syncs unchanged and missing-value payloads without unnec
         ->and($subject->getCustomFieldValueByKey('priority'))->toBe('normal')
         ->and($subject->getCustomFieldValueByKey('stale', 'deleted'))->toBe('deleted');
 });
+
+test('has custom fields updates existing values by custom field uuid when value uuid is absent', function () {
+    $subject = has_custom_fields_database();
+    $status  = has_custom_fields_field($subject, 'field-status', 'status', 'Status');
+    has_custom_fields_value($subject, $status, 'pending', 'value-status');
+
+    $result = $subject->syncCustomFieldValues([
+        [
+            'custom_field_uuid' => $status->uuid,
+            'value'             => 'complete',
+            'value_type'        => 'text',
+        ],
+    ]);
+
+    $subject->unsetRelation('customFieldValues');
+
+    expect($result)->toBe([
+        'created' => 0,
+        'updated' => 1,
+        'deleted' => 0,
+        'skipped' => 0,
+    ])
+        ->and($subject->getCustomFieldValueByKey('status'))->toBe('complete')
+        ->and(CustomFieldValue::where('uuid', 'value-status')->first()?->value_type)->toBe('text');
+});

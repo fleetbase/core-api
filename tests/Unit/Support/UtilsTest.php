@@ -163,7 +163,7 @@ class UtilsConvertDbDatabaseFake
 {
     public array $queries = [];
 
-    public function __construct(public int $longIndexedCount = 0)
+    public function __construct(public int $longIndexedCount = 0, public array $varcharRows = [])
     {
     }
 
@@ -184,7 +184,7 @@ class UtilsConvertDbDatabaseFake
             public function select(string $query): array
             {
                 if (str_contains($query, "DATA_TYPE = 'varchar'")) {
-                    return [
+                    return $this->database->varcharRows ?: [
                         (object) [
                             'TABLE_NAME'               => 'customers',
                             'COLUMN_NAME'              => 'name',
@@ -276,6 +276,14 @@ class UtilsInstalledExtensionsFake extends Utils
     public static function getInstalledFleetbaseExtensions()
     {
         return static::$packages;
+    }
+}
+
+class UtilsAutoloadFake extends Utils
+{
+    public static function namespaceFromAutoload(array $psr4, string $directory): ?string
+    {
+        return static::getNamespaceFromAutoload($psr4, $directory);
     }
 }
 
@@ -469,6 +477,7 @@ test('utils validates identifiers base64 and numeric strings across edge cases',
         ->and(Utils::isPublicId('order_abcdefghij'))->toBeTrue()
         ->and(Utils::isPublicId('order_abcdefghijklmnop'))->toBeFalse()
         ->and(Utils::isPublicId('order_abc-1234'))->toBeFalse()
+        ->and(Utils::isPublicId('order_'))->toBeFalse()
         ->and(Utils::isPublicId('order'))->toBeFalse()
         ->and(Utils::isPublicId(null))->toBeFalse()
         ->and(Utils::isBase64String(base64_encode('fleetbase')))->toBeTrue()
@@ -491,6 +500,7 @@ test('utils resolves model class mutation and ember resource type contracts', fu
 
     bind_test_container();
     app()->instance('Fleetbase\FleetOps\Models\Order', $subjectQuery);
+    app()->instance('Fleetbase\Storefront\Models\Store', new UtilsSubjectQueryFake((object) []));
 
     expect(Utils::getModelClassName('users'))->toBe('\Fleetbase\Models\User')
         ->and(Utils::getModelClassName($user))->toBe('\Fleetbase\Models\User')
@@ -508,6 +518,7 @@ test('utils resolves model class mutation and ember resource type contracts', fu
         ->and(Utils::toEmberResourceType('SimpleClass'))->toBe('simple-class')
         ->and(Utils::toEmberResourceType(null))->toBeNull()
         ->and(Utils::resolveSubject('order_1234567'))->toBe($order)
+        ->and(Utils::resolveSubject('store_1234567'))->toEqual((object) [])
         ->and($subjectQuery->constraints)->toBe([
             [
                 'column' => 'public_id',
@@ -712,6 +723,7 @@ test('utils converts arrays from nullable strings objects and iterables', functi
         ->and(Utils::arrayFrom('ready, done, cancelled'))->toBe(['ready', 'done', 'cancelled'])
         ->and(Utils::arrayFrom('ready|done|cancelled'))->toBe(['ready', 'done', 'cancelled'])
         ->and(Utils::arrayFrom('ready'))->toBe(['ready'])
+        ->and(Utils::arrayFrom(7))->toBe(['7'])
         ->and(Utils::arrayFrom($iterator))->toBe(['first' => 'alpha', 'second' => 'beta'])
         ->and(Utils::arrayFrom($object))->toBe(['status' => 'active', 'type' => 'order']);
 });
@@ -884,15 +896,23 @@ test('utils converts storefront urls into stored file records with owner metadat
     stream_wrapper_register('http', UtilsHttpStreamFake::class);
     UtilsHttpStreamFake::$responses = [
         'http://images.example.test/catalog/Logo%20Mark' => $png,
+        'http://images.example.test/catalog/empty.png'   => '',
     ];
 
     try {
         $file = Utils::urlToStorefrontFile('http://images.example.test/catalog/Logo%20Mark', 'Hero Image', $owner);
 
+        set_error_handler(function (int $severity, string $message, string $file, int $line): bool {
+            throw new ErrorException($message, 0, $severity, $file, $line);
+        });
+        $missingFile = Utils::urlToStorefrontFile('http://images.example.test/missing.png', 'Hero Image', $owner);
+        restore_error_handler();
+
         expect(Utils::urlToStorefrontFile(null, 'Hero Image', $owner))->toBeNull()
             ->and(Utils::urlToStorefrontFile('', 'Hero Image', $owner))->toBeNull()
             ->and(Utils::urlToStorefrontFile('ftp://images.example.test/logo.png', 'Hero Image', $owner))->toBeNull()
-            ->and(Utils::urlToStorefrontFile('http://images.example.test/missing.png', 'Hero Image', $owner))->toBeNull()
+            ->and($missingFile)->toBeNull()
+            ->and(Utils::urlToStorefrontFile('http://images.example.test/catalog/empty.png', 'Hero Image', $owner))->toBeNull()
             ->and($file)->toBeInstanceOf(File::class)
             ->and($file->company_uuid)->toBe('company-owner')
             ->and($file->uploader_uuid)->toBe('user-owner')
@@ -907,6 +927,7 @@ test('utils converts storefront urls into stored file records with owner metadat
             ->and(Storage::disk('s3')->exists($file->path))->toBeTrue()
             ->and(Storage::disk('s3')->get($file->path))->toBe($png);
     } finally {
+        restore_error_handler();
         UtilsHttpStreamFake::$responses = [];
         stream_wrapper_restore('http');
         Utils::deleteDirectory($root);
@@ -1011,6 +1032,23 @@ test('utils database conversion dry run emits charset ddl and protects indexed l
     expect($failure)->toBeInstanceOf(Exception::class)
         ->and($failure->getMessage())->toBe('Aborting due to data truncation')
         ->and($failureOutput)->toContain('-- DATA TRUNCATION: customers.name(255) => 2');
+
+    $database = new UtilsConvertDbDatabaseFake(varcharRows: [
+        (object) [
+            'TABLE_NAME'               => 'customers',
+            'COLUMN_NAME'              => 'legacy_name',
+            'CHARACTER_MAXIMUM_LENGTH' => 191,
+        ],
+    ]);
+    app()->instance('db', $database);
+    DB::clearResolvedInstance('db');
+
+    ob_start();
+    Utils::convertDb('mysql', 'utf8', 'utf8_unicode_ci', true);
+    $utf8Output = ob_get_clean();
+
+    expect($utf8Output)->toContain('-- Expanding: customers.legacy_name(191)')
+        ->and($utf8Output)->toContain('CHANGE `legacy_name` `legacy_name` VARCHAR(255) CHARACTER SET utf8 COLLATE utf8_unicode_ci');
 });
 
 test('utils resolves package namespaces from root and server composer layouts', function () {
@@ -1038,27 +1076,43 @@ test('utils resolves package namespaces from root and server composer layouts', 
         expect(Utils::findPackageNamespace(null))->toBeNull()
             ->and(Utils::findPackageNamespace($rootPackage . '/src/Models/Thing.php'))->toBe('Fleetbase\\RootPackage')
             ->and(Utils::findPackageNamespace($serverPackage . '/server/src/Models/Thing.php'))->toBe('Fleetbase\\ServerPackage')
-            ->and(Utils::findPackageNamespace(sys_get_temp_dir() . '/missing-package/server/src/Models/Thing.php'))->toBeNull();
+            ->and(Utils::findPackageNamespace(sys_get_temp_dir() . '/missing-package/server/src/Models/Thing.php'))->toBeNull()
+            ->and(UtilsAutoloadFake::namespaceFromAutoload([
+                'Fleetbase\\RootPackage\\' => 'src/',
+            ], 'server/src'))->toBeNull();
     } finally {
         Utils::deleteDirectory($rootPackage);
         Utils::deleteDirectory($serverPackage);
     }
 });
 
+test('utils reads composer package keyword metadata from the lock file', function () {
+    $packages = Utils::findComposerPackagesWithKeyword('amazon');
+
+    expect($packages)->toHaveKey('aws/aws-sdk-php')
+        ->and($packages['aws/aws-sdk-php']['keywords'])->toContain('amazon');
+});
+
 test('utils discovers extension seeders migrations and auth schemas from installed package metadata', function () {
     $demoRoot     = base_path('vendor/acme/fleetbase-demo');
+    $emptyRoot    = base_path('vendor/acme/fleetbase-empty');
     $fallbackRoot = base_path('vendor/acme/fleetbase-root-only');
+    $noPsrRoot    = base_path('vendor/acme/fleetbase-no-psr');
 
     Utils::deleteDirectory($demoRoot);
+    Utils::deleteDirectory($emptyRoot);
     Utils::deleteDirectory($fallbackRoot);
+    Utils::deleteDirectory($noPsrRoot);
 
     mkdir($demoRoot . '/server/seeders', 0777, true);
     mkdir($demoRoot . '/server/migrations', 0777, true);
     mkdir($demoRoot . '/migrations', 0777, true);
     mkdir($demoRoot . '/server/src/Auth/Schemas', 0777, true);
+    mkdir($emptyRoot . '/server/src', 0777, true);
     mkdir($fallbackRoot . '/seeders', 0777, true);
     mkdir($fallbackRoot . '/migrations', 0777, true);
     mkdir($fallbackRoot . '/src/Acme/Fallback/Auth/Schemas', 0777, true);
+    mkdir($noPsrRoot . '/server/src', 0777, true);
 
     file_put_contents($demoRoot . '/server/seeders/DemoSeeder.php', '<?php');
     file_put_contents($demoRoot . '/server/migrations/2026_07_25_000000_create_demo_table.php', '<?php');
@@ -1103,6 +1157,14 @@ test('utils discovers extension seeders migrations and auth schemas from install
                 ],
             ],
         ],
+        'acme/fleetbase-no-psr'    => [
+            'name'     => 'acme/fleetbase-no-psr',
+            'autoload' => [
+                'classmap' => [
+                    'server/src/',
+                ],
+            ],
+        ],
     ];
 
     try {
@@ -1128,10 +1190,14 @@ test('utils discovers extension seeders migrations and auth schemas from install
             ->and(UtilsInstalledExtensionsFake::getMigrationDirectoryForExtension('acme/fleetbase-root-only'))->toBe($fallbackRoot . '//migrations/')
             ->and(UtilsInstalledExtensionsFake::getMigrationDirectoryForExtension('acme/missing'))->toBeNull()
             ->and($authSchemas)->toContain('Acme\\Demo\\Auth\\Schemas\\Demo')
-            ->and($authSchemas)->toContain('Acme\\Fallback\\Auth\\Schemas\\Fallback');
+            ->and($authSchemas)->toContain('Acme\\Fallback\\Auth\\Schemas\\Fallback')
+            ->and($authSchemas)->not->toContain('Acme\\Empty\\Auth\\Schemas\\Missing')
+            ->and($authSchemas)->not->toContain('Acme\\NoPsr\\Auth\\Schemas\\Missing');
     } finally {
         UtilsInstalledExtensionsFake::$packages = [];
         Utils::deleteDirectory($demoRoot);
+        Utils::deleteDirectory($emptyRoot);
         Utils::deleteDirectory($fallbackRoot);
+        Utils::deleteDirectory($noPsrRoot);
     }
 });

@@ -841,13 +841,13 @@ class SettingController extends Controller
         } catch (\Twilio\Exceptions\RestException $e) {
             $message = $e->getMessage();
             $status  = 'error';
+        } catch (\ErrorException $e) {
+            $message = $e->getMessage();
+            $status  = 'error';
         } catch (\Exception $e) {
             $message = $e->getMessage();
             $status  = 'error';
         } catch (\Error $e) {
-            $message = $e->getMessage();
-            $status  = 'error';
-        } catch (\ErrorException $e) {
             $message = $e->getMessage();
             $status  = 'error';
         }
@@ -947,10 +947,13 @@ class SettingController extends Controller
             try {
                 // Capture test exception
                 $hub->captureException($testException);
+                // @codeCoverageIgnoreStart
+                // Sentry capture failures depend on the external SDK transport after the client is built.
             } catch (\Exception $e) {
                 $message = $e->getMessage();
                 $status  = 'error';
             }
+            // @codeCoverageIgnoreEnd
         }
 
         return response()->json(['status' => $status, 'message' => $message]);
@@ -980,6 +983,8 @@ class SettingController extends Controller
                 'sender'  => 'Fleetbase',
             ]);
             $response = $socketClusterClient->response();
+            // @codeCoverageIgnoreStart
+            // SocketClusterService::send() catches these transport failures internally and returns false.
         } catch (\WebSocket\ConnectionException $e) {
             $message = $e->getMessage();
         } catch (\WebSocket\TimeoutException $e) {
@@ -987,6 +992,7 @@ class SettingController extends Controller
         } catch (\Throwable $e) {
             $message = $e->getMessage();
         }
+        // @codeCoverageIgnoreEnd
 
         if (!$sent) {
             $status = 'error';

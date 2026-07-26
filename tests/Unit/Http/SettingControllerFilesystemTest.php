@@ -80,6 +80,8 @@ namespace Dotenv\Repository\Adapter {
 }
 
 namespace {
+    use Aws\Command;
+    use Aws\S3\Exception\S3Exception;
     use Fleetbase\Http\Controllers\Internal\v1\SettingController;
     use Fleetbase\Http\Requests\AdminRequest;
     use Illuminate\Support\Facades\Facade;
@@ -100,13 +102,17 @@ namespace {
 
         public bool $existsResult = true;
 
-        public ?string $putException = null;
+        public string|Throwable|null $putException = null;
 
         public array $puts = [];
 
         public function put(string $path, string $contents): bool
         {
             if ($this->putException) {
+                if ($this->putException instanceof Throwable) {
+                    throw $this->putException;
+                }
+
                 throw new RuntimeException($this->putException);
             }
 
@@ -229,6 +235,23 @@ namespace {
             ->and($response->getData(true))->toBe([
                 'status'   => 'error',
                 'message'  => 'Access denied for bucket fleetbase-media',
+                'uploaded' => true,
+            ])
+            ->and($filesystem->disk('s3')->puts)->toBe([]);
+    });
+
+    test('test filesystem config handles s3 provider exceptions separately from generic storage failures', function () {
+        $filesystem                           = setting_controller_filesystem_fixtures();
+        $filesystem->disk('s3')->putException = new S3Exception('S3 rejected the probe upload', new Command('PutObject'));
+
+        $response = (new SettingController())->testFilesystemConfig(setting_controller_admin_request([
+            'disk' => 's3',
+        ]));
+
+        expect($response->getStatusCode())->toBe(200)
+            ->and($response->getData(true))->toBe([
+                'status'   => 'error',
+                'message'  => 'S3 rejected the probe upload',
                 'uploaded' => true,
             ])
             ->and($filesystem->disk('s3')->puts)->toBe([]);
