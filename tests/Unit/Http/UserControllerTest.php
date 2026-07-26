@@ -460,6 +460,8 @@ function user_controller_database(): Capsule
         $table->string('type')->nullable();
         $table->string('status')->nullable();
         $table->string('timezone')->nullable();
+        $table->string('country')->nullable();
+        $table->text('meta')->nullable();
         $table->timestamp('email_verified_at')->nullable();
         $table->timestamp('phone_verified_at')->nullable();
         $table->timestamp('last_login')->nullable();
