@@ -617,7 +617,7 @@ test('company filter ignores blank controls and supports subscription billing st
     concrete_filter_database();
 
     if (!class_exists('\\Fleetbase\\Billing\\Models\\Subscription', false)) {
-        eval('namespace Fleetbase\\Billing\\Models; class Subscription { public static function where(...$arguments) { return new class { public function latest(...$arguments) { return $this; } public function first() { return null; } }; } }');
+        eval('namespace Fleetbase\\Billing\\Models; class Subscription extends \Illuminate\Database\Eloquent\Model { public static function where(...$arguments) { return new class { public function latest(...$arguments) { return $this; } public function first() { return null; } }; } }');
     }
 
     $filter = concrete_filter_with_any_builder(

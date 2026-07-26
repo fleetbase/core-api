@@ -274,6 +274,13 @@ test('route expansion accepts fleetbase route options and controller-slot callba
 
     $router->fleetbaseRoutes('service-tools', ['middleware' => ['fleetbase.tools']]);
 
+    $router->fleetbaseRoutes('service-zones', null, function (Router $router, callable $make, string $controller) {
+        expect($controller)->toBe('ServiceZoneController')
+            ->and($make('coverage'))->toBe('ServiceZoneController@coverage');
+
+        $router->get('coverage', $make('coverage'));
+    });
+
     $router->fleetbaseRoutes('audits', null, [], function (Router $router, callable $make, string $controller) {
         expect($controller)->toBe('AuditController')
             ->and($make('timeline'))->toBe('AuditController@timeline');
@@ -287,6 +294,10 @@ test('route expansion accepts fleetbase route options and controller-slot callba
         ->toContain('fleetbase.tools')
         ->and(route_expansion_find($routes, 'GET', 'service-tools')['action'])
         ->toBe('ServiceToolController@queryRecord')
+        ->and(route_expansion_find($routes, 'GET', 'service-zones/coverage')['action'])
+        ->toBe('ServiceZoneController@coverage')
+        ->and(route_expansion_find($routes, 'GET', 'service-zones')['action'])
+        ->toBe('ServiceZoneController@queryRecord')
         ->and(route_expansion_find($routes, 'GET', 'audits/timeline')['action'])
         ->toBe('AuditController@timeline')
         ->and(route_expansion_find($routes, 'GET', 'audits')['action'])

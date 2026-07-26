@@ -117,6 +117,7 @@ function company_model_create_users_table(): void
         $table->string('uuid')->primary();
         $table->string('email')->nullable();
         $table->string('name')->nullable();
+        $table->timestamp('last_login')->nullable();
         $table->timestamp('deleted_at')->nullable();
         $table->timestamps();
     });
@@ -206,16 +207,82 @@ it('resolves company owner from the database only for valid owner uuids', functi
 it('exposes company relation contracts with stable keys and related models', function () {
     company_model_container();
 
+    if (!class_exists(Fleetbase\Billing\Models\Subscription::class)) {
+        eval('namespace Fleetbase\Billing\Models; class Subscription extends \Illuminate\Database\Eloquent\Model {}');
+    }
+    if (!class_exists(Fleetbase\FleetOps\Models\Driver::class)) {
+        eval('namespace Fleetbase\FleetOps\Models; class Driver extends \Illuminate\Database\Eloquent\Model {}');
+    }
+
     $company = new Company();
     $company->setRawAttributes(['uuid' => 'company-1'], true);
 
     expect($company->creator()->getRelated())->toBeInstanceOf(User::class)
         ->and($company->owner()->getRelated())->toBeInstanceOf(User::class)
+        ->and($company->billingSubscriptions()->getRelated())->toBeInstanceOf(Fleetbase\Billing\Models\Subscription::class)
         ->and($company->users()->getRelated())->toBeInstanceOf(User::class)
         ->and($company->companyUsers()->getRelated())->toBeInstanceOf(User::class)
         ->and($company->logo()->getRelated())->toBeInstanceOf(Fleetbase\Models\File::class)
         ->and($company->backdrop()->getRelated())->toBeInstanceOf(Fleetbase\Models\File::class)
+        ->and($company->drivers()->getRelated())->toBeInstanceOf(Fleetbase\FleetOps\Models\Driver::class)
         ->and($company->apiCredentials()->getRelated())->toBeInstanceOf(Fleetbase\Models\ApiCredential::class);
+});
+
+it('reports the latest user login across company users', function () {
+    company_model_container();
+    company_model_create_users_table();
+
+    app('db')->connection('mysql')->getSchemaBuilder()->create('company_users', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('company_uuid');
+        $table->string('user_uuid');
+        $table->timestamp('deleted_at')->nullable();
+        $table->timestamps();
+    });
+
+    app('db')->table('users')->insert([
+        [
+            'uuid'       => 'user-1',
+            'email'      => 'first@example.test',
+            'name'       => 'First User',
+            'last_login' => '2026-07-17 10:00:00',
+            'deleted_at' => null,
+            'created_at' => '2026-07-17 00:00:00',
+            'updated_at' => '2026-07-17 00:00:00',
+        ],
+        [
+            'uuid'       => 'user-2',
+            'email'      => 'second@example.test',
+            'name'       => 'Second User',
+            'last_login' => '2026-07-18 11:30:00',
+            'deleted_at' => null,
+            'created_at' => '2026-07-17 00:00:00',
+            'updated_at' => '2026-07-17 00:00:00',
+        ],
+    ]);
+    app('db')->table('company_users')->insert([
+        [
+            'uuid'         => 'company-user-1',
+            'company_uuid' => 'company-1',
+            'user_uuid'    => 'user-1',
+            'deleted_at'   => null,
+            'created_at'   => '2026-07-17 00:00:00',
+            'updated_at'   => '2026-07-17 00:00:00',
+        ],
+        [
+            'uuid'         => 'company-user-2',
+            'company_uuid' => 'company-1',
+            'user_uuid'    => 'user-2',
+            'deleted_at'   => null,
+            'created_at'   => '2026-07-17 00:00:00',
+            'updated_at'   => '2026-07-17 00:00:00',
+        ],
+    ]);
+
+    $company = new Company();
+    $company->setRawAttributes(['uuid' => 'company-1'], true);
+
+    expect($company->getLastUserLogin())->toBe('2026-07-18 11:30:00');
 });
 
 it('exposes stable logo backdrop ownership and notification response values', function () {

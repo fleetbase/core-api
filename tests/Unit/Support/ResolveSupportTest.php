@@ -160,6 +160,7 @@ namespace {
 
     test('resolve creates resources for morph references and returns null for empty or missing targets', function () {
         resolve_support_fixtures();
+        app()->bind('resolve.container-widget', fn () => new ResolveWidget(['uuid' => 'container-widget']));
 
         $resource     = Resolve::resourceForMorph(ResolveWidget::class, 'widget-1', ResolveWidgetResource::class);
         $autoResource = Resolve::resourceForMorph(ResolveWidget::class, 'widget-1');
@@ -172,6 +173,8 @@ namespace {
             ->and(Resolve::resourceForMorph('', 'widget-1'))->toBeNull()
             ->and(Resolve::resourceForMorph(ResolveWidget::class, 'missing'))->toBeNull()
             ->and(Resolve::instance([]))->toBeNull()
-            ->and(Resolve::instance(new ResolveWidget(['uuid' => 'widget-2'])))->toBeInstanceOf(ResolveWidget::class);
+            ->and(Resolve::instance(new ResolveWidget(['uuid' => 'widget-2'])))->toBeInstanceOf(ResolveWidget::class)
+            ->and(Resolve::instance('resolve.container-widget'))->toBeInstanceOf(ResolveWidget::class)
+            ->and(Resolve::instance('resolve.container-widget')->uuid)->toBe('container-widget');
     });
 }

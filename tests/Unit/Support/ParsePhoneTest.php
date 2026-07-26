@@ -127,6 +127,24 @@ test('parse phone resolves country from currency and timezone metadata', functio
         ->and(ParsePhone::fromModel($withTimezone))->toBe('+97699112233');
 });
 
+test('parse phone returns original value when currency or timezone metadata cannot produce a valid number', function () {
+    bind_test_container([
+        'countries.cache.enabled' => false,
+    ]);
+
+    $withCurrency = new ParsePhoneRecord([
+        'phone'    => 'not-a-number',
+        'currency' => 'GBP',
+    ]);
+    $withTimezone = new ParsePhoneRecord([
+        'phone'    => 'not-a-number',
+        'timezone' => 'Asia/Ulaanbaatar',
+    ]);
+
+    expect(ParsePhone::fromModel($withCurrency))->toBe('not-a-number')
+        ->and(ParsePhone::fromModel($withTimezone))->toBe('not-a-number');
+});
+
 test('parse phone wrappers preserve company and user parsing contracts', function () {
     bind_test_container();
 
