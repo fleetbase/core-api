@@ -112,6 +112,22 @@ class UserControllerPermissionRegistrarFake
         return Fleetbase\Models\Permission::class;
     }
 
+    public function setPermissionClass(string $permissionClass): self
+    {
+        return $this;
+    }
+
+    public function getPermissions(array $params = [], bool $onlyOne = false): Illuminate\Database\Eloquent\Collection
+    {
+        $query = Fleetbase\Models\Permission::query();
+
+        foreach ($params as $field => $value) {
+            $query->where($field, $value);
+        }
+
+        return $query->get();
+    }
+
     public function forgetWildcardPermissionIndex(mixed $record = null): void
     {
     }
@@ -217,6 +233,7 @@ function user_controller_database(): Capsule
         'permission.table_names.roles'                 => 'roles',
         'permission.table_names.model_has_permissions' => 'model_has_permissions',
         'permission.table_names.model_has_roles'       => 'model_has_roles',
+        'permission.table_names.role_has_permissions'  => 'role_has_permissions',
         'permission.column_names.model_morph_key'      => 'model_uuid',
         'activitylog.enabled'                          => false,
     ]);
@@ -279,6 +296,12 @@ function user_controller_database(): Capsule
     $capsule->setEventDispatcher(new Dispatcher($container));
     $capsule->setAsGlobal();
     $capsule->bootEloquent();
+    $capsule->getConnection('mysql')->getPdo()->sqliteCreateFunction('JSON_CONTAINS', function (?string $json, ?string $needle): int {
+        $values = json_decode((string) $json, true) ?: [];
+        $needle = json_decode((string) $needle, true) ?? trim((string) $needle, '"');
+
+        return in_array($needle, $values, true) ? 1 : 0;
+    }, 2);
     EloquentModel::unsetEventDispatcher();
     $capsule->getDatabaseManager()->setDefaultConnection('mysql');
 
@@ -527,6 +550,22 @@ test('user controller scopes query and lookup to the active company unless reque
     expect($visible['user']->resource->uuid)->toBe('member-1')
         ->and($foreign->getStatusCode())->toBe(404)
         ->and($foreign->getData(true))->toBe(['errors' => ['User not found']]);
+});
+
+test('user controller restores sandbox connection settings after generic user queries', function () {
+    user_controller_database();
+    config([
+        'database.default'             => 'sandbox',
+        'database.connections.sandbox' => config('database.connections.mysql'),
+        'fleetbase.connection.db'      => 'sandbox',
+    ]);
+
+    $response = user_controller()->queryRecord(user_controller_request('GET', [], user_controller_user('owner-1'), 'queryRecord'));
+
+    expect(config('database.default'))->toBe('sandbox')
+        ->and(config('fleetbase.connection.db'))->toBe('sandbox')
+        ->and($response)->toHaveProperty('collection')
+        ->and($response->collection->pluck('uuid')->sort()->values()->all())->toBe(['member-1', 'owner-1', 'single-1']);
 });
 
 test('user controller search and export endpoints expose compact response and download contracts', function () {
@@ -908,6 +947,25 @@ test('user controller rejects email change requests without an authorized actor 
         'email' => 'new@example.test',
     ], user_controller_user('admin-1'), 'changeEmail', ChangeUserEmailRequest::class), 'foreign-1');
 
+    Illuminate\Support\Facades\DB::connection('mysql')->table('permissions')->insert([
+        'id'          => 'permission-change-user-email',
+        'name'        => 'iam change-email-for user',
+        'guard_name'  => 'sanctum',
+        'description' => 'Change user email',
+        'created_at'  => '2026-07-18 10:00:00',
+        'updated_at'  => '2026-07-18 10:00:00',
+    ]);
+
+    session()->flush();
+    $missingManagedActor = user_controller()->changeEmail(user_controller_request('POST', [
+        'email' => 'managed-new@example.test',
+    ], null, 'changeEmail', ChangeUserEmailRequest::class), 'member-1');
+
+    session(['company' => 'company-1', 'user' => 'member-1']);
+    $unauthorizedManagedActor = user_controller()->changeEmail(user_controller_request('POST', [
+        'email' => 'managed-new@example.test',
+    ], user_controller_user('member-1'), 'changeEmail', ChangeUserEmailRequest::class), 'member-1');
+
     expect($missingActor->getStatusCode())->toBe(401)
         ->and($missingActor->getData(true))->toBe(['errors' => ['No user session found']])
         ->and($sameCurrentEmail->getStatusCode())->toBe(400)
@@ -915,7 +973,11 @@ test('user controller rejects email change requests without an authorized actor 
         ->and($sameManagedEmail->getStatusCode())->toBe(400)
         ->and($sameManagedEmail->getData(true))->toBe(['errors' => ['The new email address must be different from the current email address.']])
         ->and($missingTarget->getStatusCode())->toBe(404)
-        ->and($missingTarget->getData(true))->toBe(['errors' => ['User not found to change email for.']]);
+        ->and($missingTarget->getData(true))->toBe(['errors' => ['User not found to change email for.']])
+        ->and($missingManagedActor->getStatusCode())->toBe(401)
+        ->and($missingManagedActor->getData(true))->toBe(['errors' => ['Not authorized to change user email.']])
+        ->and($unauthorizedManagedActor->getStatusCode())->toBe(401)
+        ->and($unauthorizedManagedActor->getData(true))->toBe(['errors' => ['Not authorized to change user email.']]);
 });
 
 test('user controller creates fresh email change verification records for current and managed users', function () {
@@ -1157,6 +1219,8 @@ test('user controller invites a brand new user and prevents duplicate organizati
     ], user_controller_user('owner-1'), 'inviteUser', InviteUserRequest::class));
 
     $freshUser = User::where('email', 'fresh@example.test')->first();
+    $inviteRow = $capsule->getConnection('mysql')->table('invites')->where('company_uuid', 'company-1')->where('reason', 'join_company')->first();
+    $notifier  = app(Illuminate\Contracts\Notifications\Dispatcher::class);
 
     expect($invite->getStatusCode())->toBe(200)
         ->and($invite->getData(true)['user']['email'])->toBe('fresh@example.test')
@@ -1164,7 +1228,11 @@ test('user controller invites a brand new user and prevents duplicate organizati
         ->and($freshUser)->not->toBeNull()
         ->and($freshUser->company_uuid)->toBe('company-1')
         ->and($capsule->getConnection('mysql')->table('company_users')->where('company_uuid', 'company-1')->where('user_uuid', $freshUser->uuid)->exists())->toBeTrue()
-        ->and($capsule->getConnection('mysql')->table('invites')->where('company_uuid', 'company-1')->where('reason', 'join_company')->count())->toBe(1)
+        ->and($inviteRow)->not->toBeNull()
+        ->and(json_decode($inviteRow->recipients, true))->toBe(['fresh@example.test'])
+        ->and($inviteRow->subject_uuid)->toBe('company-1')
+        ->and($notifier->sent)->toHaveCount(1)
+        ->and($notifier->sent[0][0]->uuid)->toBe($freshUser->uuid)
         ->and($duplicate->getStatusCode())->toBe(400)
         ->and($duplicate->getData(true))->toBe(['errors' => ['This user is already a member of your organisation.']]);
 });
@@ -1207,6 +1275,28 @@ test('user controller removes multi organization users from only the active comp
         ->and($capsule->getConnection('mysql')->table('company_users')->where('uuid', 'pivot-member-2')->whereNull('deleted_at')->exists())->toBeTrue()
         ->and($capsule->getConnection('mysql')->table('users')->where('uuid', 'member-1')->value('company_uuid'))->toBe('company-2')
         ->and($capsule->getConnection('mysql')->table('users')->where('uuid', 'member-1')->whereNull('deleted_at')->exists())->toBeTrue();
+});
+
+test('user controller deletes users when duplicate active company pivots leave no next company', function () {
+    $capsule = user_controller_database();
+    $db      = $capsule->getConnection('mysql');
+
+    $db->table('company_users')->insert([
+        'uuid'         => 'pivot-single-duplicate',
+        'company_uuid' => 'company-1',
+        'user_uuid'    => 'single-1',
+        'status'       => 'active',
+        'created_at'   => '2026-07-18 10:00:00',
+        'updated_at'   => '2026-07-18 10:00:00',
+    ]);
+
+    user_controller_request('POST', [], user_controller_user('owner-1'), 'removeFromCompany');
+    $removed = user_controller()->removeFromCompany('single-1');
+
+    expect($removed->getStatusCode())->toBe(200)
+        ->and($removed->getData(true))->toBe(['message' => 'User removed'])
+        ->and($db->table('company_users')->where('user_uuid', 'single-1')->where('company_uuid', 'company-1')->whereNotNull('deleted_at')->count())->toBe(2)
+        ->and($db->table('users')->where('uuid', 'single-1')->whereNotNull('deleted_at')->exists())->toBeTrue();
 });
 
 test('user controller accepts company invitations and activates pending users with a token', function () {
