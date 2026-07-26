@@ -38,6 +38,7 @@ namespace {
     use Illuminate\Routing\Route;
     use Illuminate\Session\ArraySessionHandler;
     use Illuminate\Session\Store;
+    use Illuminate\Support\Carbon;
     use Illuminate\Support\Facades\Facade;
 
     function organization_controller_database(): Capsule
@@ -301,6 +302,11 @@ namespace {
             ->and($payload['billing_status'])->toBe('legacy')
             ->and($payload['onboarding_completed'])->toBeTrue()
             ->and((string) $payload['joined_at'])->toContain('2026-07-03');
+
+        $company->joined_at  = Carbon::parse('2026-07-09 12:30:00');
+        $directJoinPayload   = (new Organization($company))->resolve($request);
+
+        expect((string) $directJoinPayload['joined_at'])->toContain('2026-07-09');
     });
 
     test('auth organization resource returns authenticated organization response contract', function () {

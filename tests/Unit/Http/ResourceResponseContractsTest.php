@@ -302,6 +302,14 @@ test('category resource exposes internal identifiers and can suppress nested rel
         ->and($payload['owner_uuid'])->toBe('owner-1')
         ->and($payload['owner_type'])->toBe('company')
         ->and($payload)->not->toHaveKeys(['parent', 'subcategories']);
+
+    $withParent = (new CategoryResource($category))->resolve(resource_contract_request('/int/v1/categories/category-1', [
+        'with_parent' => true,
+    ]));
+
+    expect($withParent['parent']['id'])->toBe(10)
+        ->and($withParent['parent']['uuid'])->toBe('category-parent')
+        ->and($withParent['parent']['public_id'])->toBe('cat_parent');
 });
 
 test('role resource serializes policies permissions and organization managed metadata', function () {
@@ -486,6 +494,51 @@ test('paginated resource response keeps fleetbase pagination metadata compact wi
         ->and($pagination['meta']['from'])->toBe(11)
         ->and($pagination['meta']['to'])->toBe(20)
         ->and($pagination['meta']['time'])->toBeGreaterThanOrEqual(0);
+
+    $customResource = new class {
+        public object $resource;
+
+        public function __construct()
+        {
+            $this->resource = new class {
+                public function toArray(): array
+                {
+                    return [
+                        'current_page' => 1,
+                        'data'         => [],
+                        'from'         => null,
+                        'last_page'    => 1,
+                        'per_page'     => 10,
+                        'to'           => null,
+                        'total'        => 0,
+                    ];
+                }
+            };
+        }
+
+        public function paginationInformation(Request $request, array $paginated, array $default): array
+        {
+            return [
+                'meta' => $default['meta'] + [
+                    'custom' => $request->query('custom'),
+                    'empty'  => $paginated['total'] === 0,
+                ],
+            ];
+        }
+    };
+
+    $customRequest = resource_contract_request('/int/v1/resources', ['custom' => 'enabled']);
+    $customRequest->attributes->set('request_start_time', microtime(true));
+
+    $customResponse = new FleetbasePaginatedResourceResponse($customResource);
+    $customMethod   = new ReflectionMethod($customResponse, 'paginationInformation');
+    $customMethod->setAccessible(true);
+
+    $customPagination = $customMethod->invoke($customResponse, $customRequest);
+
+    expect($customPagination['meta']['custom'])->toBe('enabled')
+        ->and($customPagination['meta']['empty'])->toBeTrue()
+        ->and($customPagination['meta']['total'])->toBe(0);
 });
 
 test('author resource hides internal identifiers from public responses', function () {

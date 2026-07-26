@@ -262,13 +262,24 @@ test('unauthorized request exception falls back cleanly and includes resolved pe
         }
     });
 
-    $withPermission    = new UnauthorizedRequestException($permissionRequest, 403, new RuntimeException('previous'));
-    $withoutPermission = new UnauthorizedRequestException(Illuminate\Http\Request::create('/int/v1/unknown', 'GET'));
+    $withPermission       = new UnauthorizedRequestException($permissionRequest, 403, new RuntimeException('previous'));
+    $unknownRouteRequest  = Illuminate\Http\Request::create('/int/v1/unknown', 'GET');
+    $withoutPermission    = new UnauthorizedRequestException($unknownRouteRequest);
+    $missingActionRequest = Illuminate\Http\Request::create('/int/v1/api-keys', 'POST');
+    $missingActionRequest->attributes->set('_controller', new EventsAndExceptionsPermissionController());
+    $missingActionRequest->setRouteResolver(fn () => new class {
+        public function getAction(string $key): ?string
+        {
+            return null;
+        }
+    });
+    $withoutResolvedPermission = new UnauthorizedRequestException($missingActionRequest);
 
     expect($withPermission->getMessage())->toBe('User is not authorized to create api-key')
         ->and($withPermission->getCode())->toBe(403)
         ->and($withPermission->getPrevious()->getMessage())->toBe('previous')
-        ->and($withoutPermission->getMessage())->toBe('Unauthorized Request');
+        ->and($withoutPermission->getMessage())->toBe('Unauthorized Request')
+        ->and($withoutResolvedPermission->getMessage())->toBe('Unauthorized Request');
 });
 
 test('broadcast notification event merges notification and notifiable channels', function () {
