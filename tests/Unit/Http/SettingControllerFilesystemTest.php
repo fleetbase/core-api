@@ -233,4 +233,24 @@ namespace {
             ])
             ->and($filesystem->disk('s3')->puts)->toBe([]);
     });
+
+    test('test filesystem config reports exists probe exceptions after writing the test file', function () {
+        $filesystem                              = setting_controller_filesystem_fixtures();
+        $filesystem->disk('s3')->existsException = 'Unable to verify uploaded test file';
+
+        $response = (new SettingController())->testFilesystemConfig(setting_controller_admin_request([
+            'disk' => 's3',
+        ]));
+
+        expect($response->getStatusCode())->toBe(200)
+            ->and($response->getData(true))->toBe([
+                'status'   => 'error',
+                'message'  => 'Configuration is working, but test file upload failed for uknown reasons.',
+                'uploaded' => false,
+            ])
+            ->and(config('filesystems.default'))->toBe('s3')
+            ->and($filesystem->disk('s3')->puts)->toBe([
+                ['testfile.txt', 'Hello World'],
+            ]);
+    });
 }

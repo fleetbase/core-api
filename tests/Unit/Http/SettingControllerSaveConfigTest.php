@@ -469,6 +469,77 @@ test('save filesystem config persists merged disk settings and resolves gcs cred
         ->and($cache->forgotten)->toContain('system_settings.system.previous');
 });
 
+test('save filesystem config clears stored gcs credentials when no credential file id is provided', function () {
+    [$capsule, $cache, $artisan] = setting_controller_save_config_database();
+
+    $response = (new SettingController())->saveFilesystemConfig(setting_controller_save_config_request('/int/v1/settings/filesystem', [
+        'driver'    => 'gcs',
+        'gcsBucket' => 'cleared-gcs-bucket',
+    ]));
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($response->getData(true))->toBe(['status' => 'OK'])
+        ->and(setting_controller_saved_value('system.filesystem.gcs'))->toMatchArray([
+            'driver'   => 'gcs',
+            'bucket'   => 'cleared-gcs-bucket',
+            'key_file' => [],
+        ])
+        ->and(setting_controller_saved_value('system.filesystem.gcs'))->not->toHaveKey('key_file_id')
+        ->and(setting_controller_saved_value('system.filesystem.gcs'))->toHaveKey('project_id', 'old-project')
+        ->and(setting_controller_artisan_commands($artisan))->toBe(['config:clear', 'config:cache'])
+        ->and($cache->forgotten)->toContain('system_settings.system.previous');
+});
+
+test('save filesystem config keeps requested gcs credential id with empty key file when the file is unavailable', function () {
+    setting_controller_save_config_database();
+
+    $response = (new SettingController())->saveFilesystemConfig(setting_controller_save_config_request('/int/v1/settings/filesystem', [
+        'driver'               => 'gcs',
+        'gcsBucket'            => 'missing-file-bucket',
+        'gcsCredentialsFileId' => '22222222-2222-4222-8222-222222222222',
+    ]));
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($response->getData(true))->toBe(['status' => 'OK'])
+        ->and(setting_controller_saved_value('system.filesystem.gcs'))->toMatchArray([
+            'driver'      => 'gcs',
+            'bucket'      => 'missing-file-bucket',
+            'key_file_id' => '22222222-2222-4222-8222-222222222222',
+            'key_file'    => [],
+            'project_id'  => 'old-project',
+        ]);
+});
+
+test('save filesystem config stores empty gcs key file for malformed credential ids without reading storage', function () {
+    [$capsule, $cache, $artisan, $filesystem] = setting_controller_save_config_database();
+    $capsule->getConnection('mysql')->table('files')->insert([
+        'uuid' => '33333333-3333-4333-8333-333333333333',
+        'disk' => 'local',
+        'path' => 'gcs-service-account.json',
+    ]);
+    $filesystem->disk('local')->files['gcs-service-account.json'] = json_encode([
+        'project_id' => 'should-not-be-read',
+    ]);
+
+    $response = (new SettingController())->saveFilesystemConfig(setting_controller_save_config_request('/int/v1/settings/filesystem', [
+        'driver'               => 'gcs',
+        'gcsBucket'            => 'invalid-id-bucket',
+        'gcsCredentialsFileId' => 'not-a-valid-uuid',
+    ]));
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($response->getData(true))->toBe(['status' => 'OK'])
+        ->and(setting_controller_saved_value('system.filesystem.gcs'))->toMatchArray([
+            'driver'      => 'gcs',
+            'bucket'      => 'invalid-id-bucket',
+            'key_file_id' => 'not-a-valid-uuid',
+            'key_file'    => [],
+            'project_id'  => 'old-project',
+        ])
+        ->and(setting_controller_artisan_commands($artisan))->toBe(['config:clear', 'config:cache'])
+        ->and($cache->forgotten)->toContain('system_settings.system.previous');
+});
+
 test('filesystem config response includes resolved gcs credential file metadata', function () {
     [$capsule] = setting_controller_save_config_database([
         'filesystems.disks.gcs.key_file_id' => '11111111-1111-4111-8111-111111111111',
