@@ -159,6 +159,79 @@ class UtilsRecordingDatabaseFake
     }
 }
 
+class UtilsConvertDbDatabaseFake
+{
+    public array $queries = [];
+
+    public function __construct(public int $longIndexedCount = 0)
+    {
+    }
+
+    public function raw(string $query): string
+    {
+        $this->queries[] = $query;
+
+        return $query;
+    }
+
+    public function connection(string $name): object
+    {
+        return new class($this) {
+            public function __construct(private UtilsConvertDbDatabaseFake $database)
+            {
+            }
+
+            public function select(string $query): array
+            {
+                if (str_contains($query, "DATA_TYPE = 'varchar'")) {
+                    return [
+                        (object) [
+                            'TABLE_NAME'               => 'customers',
+                            'COLUMN_NAME'              => 'name',
+                            'CHARACTER_MAXIMUM_LENGTH' => 255,
+                        ],
+                        (object) [
+                            'TABLE_NAME'               => 'orders',
+                            'COLUMN_NAME'              => 'code',
+                            'CHARACTER_MAXIMUM_LENGTH' => 100,
+                        ],
+                    ];
+                }
+
+                if (str_contains($query, 'SHOW INDEX FROM `customers`')) {
+                    return [(object) ['Column_name' => 'name']];
+                }
+
+                if (str_contains($query, 'SHOW INDEX FROM `orders`')) {
+                    return [];
+                }
+
+                if (str_contains($query, 'length(`name`) > 191')) {
+                    return [(object) ['count' => $this->database->longIndexedCount]];
+                }
+
+                if (str_contains($query, "DATA_TYPE like '%text%'")) {
+                    return [
+                        (object) [
+                            'TABLE_NAME'  => 'customers',
+                            'COLUMN_NAME' => 'notes',
+                            'DATA_TYPE'   => 'text',
+                        ],
+                    ];
+                }
+
+                if (str_contains($query, 'INFORMATION_SCHEMA.TABLES')) {
+                    return [
+                        (object) ['TABLE_NAME' => 'customers'],
+                    ];
+                }
+
+                return [];
+            }
+        };
+    }
+}
+
 class UtilsHttpStreamFake
 {
     public static array $responses = [];
@@ -896,6 +969,48 @@ test('utils generates public ids and emits dry run database statements without e
 
     expect($output)->toBe("ALTER TABLE `orders` CONVERT TO CHARACTER SET utf8mb4;\n")
         ->and($database->queries)->toBe(['SET FOREIGN_KEY_CHECKS = 0']);
+});
+
+test('utils database conversion dry run emits charset ddl and protects indexed long varchar data', function () {
+    bind_test_container([
+        'database.connections.mysql.database' => 'fleetbase_testing',
+    ]);
+
+    $database = new UtilsConvertDbDatabaseFake();
+    app()->instance('db', $database);
+    DB::clearResolvedInstance('db');
+
+    ob_start();
+    Utils::convertDb('mysql', 'utf8mb4', 'utf8mb4_unicode_ci', true);
+    $output = ob_get_clean();
+
+    expect($output)->toContain('SET FOREIGN_KEY_CHECKS = 0;')
+        ->and($output)->toContain('ALTER SCHEMA fleetbase_testing DEFAULT CHARACTER SET utf8mb4 DEFAULT COLLATE utf8mb4_unicode_ci;')
+        ->and($output)->toContain('-- Shrinking: customers.name(255)')
+        ->and($output)->toContain('CHANGE `name` `name` VARCHAR(191) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci')
+        ->and($output)->toContain('CHANGE `code` `code` VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci')
+        ->and($output)->toContain('CHANGE `notes` `notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci')
+        ->and($output)->toContain('CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci')
+        ->and($output)->toContain('DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci')
+        ->and($output)->toContain('SET FOREIGN_KEY_CHECKS = 1;')
+        ->and($output)->toContain('-- fleetbase_testing CONVERTED TO utf8mb4-utf8mb4_unicode_ci');
+
+    $database = new UtilsConvertDbDatabaseFake(longIndexedCount: 2);
+    app()->instance('db', $database);
+    DB::clearResolvedInstance('db');
+
+    ob_start();
+    $failure = null;
+    try {
+        Utils::convertDb('mysql', 'utf8mb4', 'utf8mb4_unicode_ci', true);
+    } catch (Throwable $exception) {
+        $failure = $exception;
+    }
+    $failureOutput = ob_get_clean();
+
+    expect($failure)->toBeInstanceOf(Exception::class)
+        ->and($failure->getMessage())->toBe('Aborting due to data truncation')
+        ->and($failureOutput)->toContain('-- DATA TRUNCATION: customers.name(255) => 2');
 });
 
 test('utils resolves package namespaces from root and server composer layouts', function () {
