@@ -18,10 +18,12 @@ use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Events\Dispatcher;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Facade;
+use PHPUnit\Framework\Assert;
 
 if (!function_exists('base_path')) {
     function base_path(string $path = ''): string
@@ -627,6 +629,26 @@ function user_controller_user(string $uuid): User
     return User::where('uuid', $uuid)->firstOrFail();
 }
 
+function user_controller_assert_created_user_response(mixed $response): object|array
+{
+    if ($response instanceof JsonResponse) {
+        $payload = $response->getData(true);
+
+        Assert::assertArrayHasKey(
+            'user',
+            $payload,
+            'Expected user creation to return a user payload, got JSON response: ' . json_encode($payload)
+        );
+
+        return $payload['user'];
+    }
+
+    Assert::assertIsArray($response, 'Expected user creation to return an array payload.');
+    Assert::assertArrayHasKey('user', $response);
+
+    return $response['user'];
+}
+
 afterEach(function () {
     session()->flush();
     Carbon::setTestNow();
@@ -799,10 +821,13 @@ test('user controller creates users through the generic record endpoint with sco
     $createdUser = User::where('email', 'new-person@fleetbase.io')->first();
     $companyUser = $db->table('company_users')->where('company_uuid', 'company-1')->where('user_uuid', $createdUser?->uuid)->first();
 
-    expect($created['user']->resource->email)->toBe('new-person@fleetbase.io')
-        ->and($created['user']->resource->company_uuid)->toBe('company-1')
-        ->and($created['user']->resource->timezone)->toBe('Asia/Ulaanbaatar')
-        ->and($created['user']->resource->type)->toBe('user')
+    $createdUserPayload  = user_controller_assert_created_user_response($created);
+    $createdUserResource = is_array($createdUserPayload) ? (object) $createdUserPayload : $createdUserPayload->resource;
+
+    expect($createdUserResource->email)->toBe('new-person@fleetbase.io')
+        ->and($createdUserResource->company_uuid)->toBe('company-1')
+        ->and($createdUserResource->timezone)->toBe('Asia/Ulaanbaatar')
+        ->and($createdUserResource->type)->toBe('user')
         ->and($companyUser)->not->toBeNull()
         ->and($db->table('model_has_roles')->where('model_type', Fleetbase\Models\CompanyUser::class)->where('model_uuid', $companyUser->uuid)->where('role_id', 'Dispatcher')->exists())->toBeTrue()
         ->and($db->table('model_has_permissions')->where('model_type', Fleetbase\Models\CompanyUser::class)->where('model_uuid', $companyUser->uuid)->where('permission_id', 'permission-create-user')->exists())->toBeTrue()
