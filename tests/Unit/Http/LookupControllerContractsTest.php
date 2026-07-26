@@ -69,6 +69,15 @@ class LookupControllerContractsController extends LookupController
 
 class LookupControllerContractsRssController extends LookupController
 {
+    public function __construct(private string $feedUrl = 'https://feeds.example.test/fleetbase.xml')
+    {
+    }
+
+    public function fetchFixturePosts(int $limit): array
+    {
+        return $this->fetchBlogPosts($limit);
+    }
+
     public function parseFixtureRss(string $rssXml, int $limit): array
     {
         return $this->parseBlogPostsFromRss($rssXml, $limit);
@@ -76,12 +85,30 @@ class LookupControllerContractsRssController extends LookupController
 
     protected function getFleetbaseBlogFeedUrl(): string
     {
-        return 'https://feeds.example.test/fleetbase.xml';
+        return $this->feedUrl;
     }
 
     protected function getFleetbaseBlogUrl(): string
     {
         return 'https://www.example.test/blog';
+    }
+}
+
+class LookupControllerContractsBlogProbe extends LookupController
+{
+    public function feedUrl(): string
+    {
+        return $this->getFleetbaseBlogFeedUrl();
+    }
+
+    public function blogUrl(): string
+    {
+        return $this->getFleetbaseBlogUrl();
+    }
+
+    public function normalizedLink(?string $link): string
+    {
+        return $this->normalizeFleetbaseBlogLink($link);
     }
 }
 
@@ -212,8 +239,9 @@ test('lookup currencies filters by code or title and preserves currency response
 
     $controller = new LookupController();
 
-    $byCode  = $controller->currencies(lookup_controller_request(['query' => 'mnt']))->getData(true);
-    $byTitle = $controller->currencies(lookup_controller_request(['query' => 'dollar']))->getData(true);
+    $byCode   = $controller->currencies(lookup_controller_request(['query' => 'mnt']))->getData(true);
+    $byTitle  = $controller->currencies(lookup_controller_request(['query' => 'dollar']))->getData(true);
+    $all      = $controller->currencies(lookup_controller_request(['query' => '']))->getData(true);
 
     expect($byCode)->toHaveCount(1)
         ->and($byCode[0])->toMatchArray([
@@ -225,7 +253,8 @@ test('lookup currencies filters by code or title and preserves currency response
             'decimalSeparator'  => '',
             'symbolPlacement'   => 'before',
         ])
-        ->and(collect($byTitle)->pluck('code'))->toContain('USD');
+        ->and(collect($byTitle)->pluck('code'))->toContain('USD')
+        ->and(collect($all)->pluck('code'))->toContain('MNT', 'USD');
 });
 
 test('lookup blog endpoint clamps limits caches responses and reports cache status', function () {
@@ -420,4 +449,14 @@ test('lookup blog fetch returns empty payload when upstream rss fails', function
     expect($response->getStatusCode())->toBe(200)
         ->and($response->getData(true))->toBe([])
         ->and($response->headers->get('X-Cache-Status'))->toBe('HIT');
+});
+
+test('lookup blog exposes default URL helpers and canonical link normalization', function () {
+    lookup_controller_boot();
+
+    $controller = new LookupControllerContractsBlogProbe();
+
+    expect($controller->feedUrl())->toBe('https://blog.fleetbase.io/rss/')
+        ->and($controller->blogUrl())->toBe('https://www.fleetbase.io/blog')
+        ->and($controller->normalizedLink('https://fleetbase.ghost.io/release-notes/'))->toBe('https://www.fleetbase.io/blog/release-notes');
 });
