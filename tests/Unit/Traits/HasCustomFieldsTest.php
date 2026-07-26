@@ -259,6 +259,38 @@ test('has custom fields exposes values with snake or label keys and inserts resp
     ]);
 });
 
+test('has custom fields handles empty lookups cached values and positional response insertion', function () {
+    $subject = has_custom_fields_database('int/v1/subjects');
+    $field   = has_custom_fields_field($subject, 'field-1', 'order-number', 'Order Number');
+    has_custom_fields_value($subject, $field, 'SO-1001', 'value-1');
+
+    expect($subject->hasAnyCustomFields(['missing', 'absent']))->toBeFalse()
+        ->and($subject->getRawCustomFieldValueByKey('missing', 'raw-default'))->toBe('raw-default');
+
+    $emptyField = has_custom_fields_field($subject, 'field-empty', 'empty-value', 'Empty Value');
+
+    expect($subject->getRawCustomFieldValueByKey('empty-value', 'empty-default'))->toBe('empty-default')
+        ->and($subject->getCustomFieldValueByKey('order-number'))->toBe('SO-1001');
+
+    CustomFieldValue::where('uuid', 'value-1')->update(['value' => 'SO-CHANGED']);
+
+    expect($subject->getCustomFieldValueByKey('order-number'))->toBe('SO-1001')
+        ->and($subject->getCustomFieldValue($emptyField))->toBeNull()
+        ->and($subject->withCustomFields(['uuid' => 'subject-1', 'name' => 'Subject One', 'status' => 'active'], 1))->toMatchArray([
+            'uuid'          => 'subject-1',
+            'order_number'  => 'SO-1001',
+            'name'          => 'Subject One',
+            'status'        => 'active',
+        ])
+        ->and($subject->withCustomFields(['uuid' => 'subject-1', 'name' => 'Subject One', 'status' => 'active']))->toMatchArray([
+            'uuid'          => 'subject-1',
+            'order_number'  => 'SO-1001',
+            'name'          => 'Subject One',
+            'status'        => 'active',
+        ])
+        ->and($subject->forgetCustomField('does-not-exist'))->toBeFalse();
+});
+
 test('has custom fields writes creates syncs forgets and clears field values', function () {
     $subject     = has_custom_fields_database();
     $orderNumber = has_custom_fields_field($subject, 'field-1', 'order-number', 'Order Number');
@@ -341,4 +373,53 @@ test('has custom fields syncs value payloads with dry run update delete and dele
         ->and($subject->getCustomFieldValueByKey('status'))->toBe('complete')
         ->and($subject->getCustomFieldValueByKey('priority'))->toBe(['level' => 'high'])
         ->and($subject->getCustomFieldValueByKey('legacy', 'deleted'))->toBe('deleted');
+});
+
+test('has custom fields syncs unchanged and missing-value payloads without unnecessary writes', function () {
+    $subject  = has_custom_fields_database();
+    $status   = has_custom_fields_field($subject, 'field-status', 'status', 'Status');
+    $priority = has_custom_fields_field($subject, 'field-priority', 'priority', 'Priority');
+    $legacy   = has_custom_fields_field($subject, 'field-legacy', 'legacy', 'Legacy');
+    $stale    = has_custom_fields_field($subject, 'field-stale', 'stale', 'Stale');
+
+    $statusValue = has_custom_fields_value($subject, $status, 'pending', 'value-status');
+    has_custom_fields_value($subject, $priority, 'normal', 'value-priority');
+    has_custom_fields_value($subject, $legacy, 'old', 'value-legacy');
+    has_custom_fields_value($subject, $stale, 'remove-me', 'value-stale');
+
+    $result = $subject->syncCustomFieldValues([
+        [
+            'uuid'              => 'missing-value',
+            'custom_field_uuid' => $priority->uuid,
+            'value'             => null,
+            'value_type'        => 'text',
+        ],
+        [
+            'uuid'              => $statusValue->uuid,
+            'custom_field_uuid' => $status->uuid,
+            'value'             => 'pending',
+            'value_type'        => 'text',
+        ],
+        [
+            'custom_field_uuid' => $legacy->uuid,
+            'value'             => 'old',
+            'value_type'        => 'text',
+        ],
+    ], [
+        'treat_null_as_delete' => true,
+        'delete_missing'       => true,
+    ]);
+
+    $subject->unsetRelation('customFieldValues');
+
+    expect($result)->toBe([
+        'created' => 0,
+        'updated' => 0,
+        'deleted' => 1,
+        'skipped' => 3,
+    ])
+        ->and($subject->getCustomFieldValueByKey('status'))->toBe('pending')
+        ->and($subject->getCustomFieldValueByKey('legacy'))->toBe('old')
+        ->and($subject->getCustomFieldValueByKey('priority'))->toBe('normal')
+        ->and($subject->getCustomFieldValueByKey('stale', 'deleted'))->toBe('deleted');
 });
