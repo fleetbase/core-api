@@ -2,6 +2,7 @@
 
 use Fleetbase\Models\Model;
 use Fleetbase\Traits\HasApiModelBehavior;
+use Fleetbase\Traits\HasApiModelCache;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
@@ -9,33 +10,81 @@ use Illuminate\Events\Dispatcher;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
+use Illuminate\Session\ArraySessionHandler;
+use Illuminate\Session\Store;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Facade;
 
 class HasApiModelBehaviorCacheFake
 {
+    public array $store = [];
+
     public function tags(array|string $tags): self
     {
         return $this;
     }
 
+    public function lock(string $name, int $seconds): object
+    {
+        return new class {
+            public function block(int $seconds, callable $callback): mixed
+            {
+                return $callback();
+            }
+        };
+    }
+
+    public function remember(string $key, mixed $ttl, callable $callback): mixed
+    {
+        if (!array_key_exists($key, $this->store)) {
+            $this->store[$key] = $callback();
+        }
+
+        return $this->store[$key];
+    }
+
     public function flush(): bool
     {
+        $this->store = [];
+
         return true;
     }
 
     public function get(string $key, mixed $default = null): mixed
     {
-        return $default;
+        return $this->store[$key] ?? $default;
     }
 
     public function put(string $key, mixed $value, mixed $ttl = null): bool
     {
+        $this->store[$key] = $value;
+
         return true;
     }
 
     public function forget(string $key): bool
     {
+        unset($this->store[$key]);
+
+        return true;
+    }
+
+    public function has(string $key): bool
+    {
+        return array_key_exists($key, $this->store);
+    }
+
+    public function increment(string $key): int
+    {
+        $this->store[$key] = ($this->store[$key] ?? 0) + 1;
+
+        return $this->store[$key];
+    }
+
+    public function forever(string $key, mixed $value): bool
+    {
+        $this->store[$key] = $value;
+
         return true;
     }
 }
@@ -155,6 +204,37 @@ class HasApiModelBehaviorOptionRecord extends HasApiModelBehaviorRecord
     protected $option_label = 'name';
 }
 
+class HasApiModelBehaviorInternalIdRecord extends HasApiModelBehaviorRecord
+{
+    protected $fillable = [
+        'uuid',
+        'public_id',
+        'internal_id',
+        'company_uuid',
+        'name',
+    ];
+}
+
+class HasApiModelBehaviorFilterParamRecord extends HasApiModelBehaviorRecord
+{
+    protected $filterParams = ['virtual_filter'];
+}
+
+class HasApiModelBehaviorAppendedRecord extends HasApiModelBehaviorRecord
+{
+    protected $appends = ['computed_label'];
+
+    public function getComputedLabelAttribute(): string
+    {
+        return 'computed';
+    }
+}
+
+class HasApiModelBehaviorCachedRecord extends HasApiModelBehaviorRecord
+{
+    use HasApiModelCache;
+}
+
 class HasApiModelBehaviorCustomCreationRecord extends HasApiModelBehaviorRecord
 {
     protected $creationMethod = 'createFromContract';
@@ -233,6 +313,7 @@ function has_api_model_behavior_database(): Capsule
     $schema->create('api_model_behavior_records', function ($table) {
         $table->string('uuid')->primary();
         $table->string('public_id')->nullable()->index();
+        $table->string('internal_id')->nullable()->index();
         $table->string('company_uuid')->nullable()->index();
         $table->string('user_uuid')->nullable();
         $table->string('created_by_uuid')->nullable();
@@ -341,6 +422,7 @@ function has_api_model_behavior_seed_records(Capsule $capsule): void
         [
             'uuid'            => 'record-1',
             'public_id'       => 'record_alpha',
+            'internal_id'     => 'internal_alpha',
             'company_uuid'    => 'company-a',
             'user_uuid'       => 'user-a',
             'created_by_uuid' => 'creator-a',
@@ -356,6 +438,7 @@ function has_api_model_behavior_seed_records(Capsule $capsule): void
         [
             'uuid'            => 'record-2',
             'public_id'       => 'record_beta',
+            'internal_id'     => 'internal_beta',
             'company_uuid'    => 'company-a',
             'user_uuid'       => 'user-b',
             'created_by_uuid' => 'creator-a',
@@ -371,6 +454,7 @@ function has_api_model_behavior_seed_records(Capsule $capsule): void
         [
             'uuid'            => 'record-3',
             'public_id'       => 'record_gamma',
+            'internal_id'     => 'internal_gamma',
             'company_uuid'    => 'company-b',
             'user_uuid'       => 'user-c',
             'created_by_uuid' => 'creator-b',
@@ -764,4 +848,105 @@ test('api model behavior applies explicit filter operators and relation normaliz
         ->and($relationshipBuilder->getQuery()->columns)->toBeNull()
         ->and(array_keys($snakeRelationBuilder->getEagerLoads()))->toBe(['child_items'])
         ->and($countBuilder->toSql())->toContain('api_model_behavior_children', 'child_items_count');
+});
+
+test('api model behavior covers cached queries and create update response relation loading', function () {
+    $capsule = has_api_model_behavior_database();
+    has_api_model_behavior_seed_records($capsule);
+    config(['api.cache.enabled' => true]);
+    session(['user' => 'session-user', 'company' => 'company-a']);
+
+    $cachedRequest = has_api_model_behavior_request([
+        'company_uuid' => 'company-a',
+        'limit'        => 1,
+    ]);
+    $cachedRequest->setLaravelSession(new Store('api-model-cache', new ArraySessionHandler(120)));
+    $cachedRequest->session()->put('company', 'company-a');
+
+    $cachedResults = (new HasApiModelBehaviorCachedRecord())->queryFromRequest($cachedRequest);
+
+    $created = (new HasApiModelBehaviorRecord())->createRecordFromRequest(has_api_model_behavior_request([
+        'api_model_behavior_record' => [
+            'uuid'      => 'record-created',
+            'public_id' => 'record_created',
+            'name'      => 'Created with relations',
+        ],
+        'with'                      => 'child_items',
+        'with_count'                => ['childItems'],
+    ], method: 'POST'));
+
+    $updated = (new HasApiModelBehaviorRecord())->updateRecordFromRequest(has_api_model_behavior_request([
+        'api_model_behavior_record' => [
+            'name' => 'Updated with relations',
+            'slug' => 'updated-slug',
+        ],
+        'with'                      => 'child_items',
+        'with_count'                => ['childItems'],
+    ], method: 'PATCH'), 'record_alpha', options: ['allow_slug_update' => true]);
+
+    expect($cachedResults->pluck('uuid')->all())->toBe(['record-1'])
+        ->and($created->uuid)->toBe('record-created')
+        ->and($created->relationLoaded('childItems'))->toBeTrue()
+        ->and($created->child_items_count)->toBe(0)
+        ->and($updated->name)->toBe('Updated with relations')
+        ->and($updated->slug)->toBe('updated-slug')
+        ->and($updated->relationLoaded('childItems'))->toBeTrue()
+        ->and($updated->child_items_count)->toBe(2);
+});
+
+test('api model behavior covers search remove internal id and validation branch contracts', function () {
+    $capsule = has_api_model_behavior_database();
+    has_api_model_behavior_seed_records($capsule);
+
+    EloquentBuilder::macro('fastPaginate', function (int $perPage = 15, array $columns = ['*']) {
+        $total = $this->count();
+        $items = $this->limit($perPage)->get($columns)->all();
+
+        return new class($items, $total) {
+            public function __construct(private array $items, private int $total)
+            {
+            }
+
+            public function items(): array
+            {
+                return $this->items;
+            }
+
+            public function total(): int
+            {
+                return $this->total;
+            }
+        };
+    });
+
+    $model          = new HasApiModelBehaviorRecord();
+    $searchResponse = $model->searchRecordFromRequest(has_api_model_behavior_request([
+        'company_uuid' => 'company-a',
+        'limit'        => 2,
+    ]));
+    $deleteCount    = $model->remove('record_alpha');
+    $foundInternal  = HasApiModelBehaviorInternalIdRecord::findRecordOrFail('internal_beta', [], null, function ($query) {
+        $query->where('company_uuid', 'company-a');
+    });
+    $emptyColumnFound = HasApiModelBehaviorInternalIdRecord::findRecordOrFail('record_beta', [], [], function ($query) {
+        $query->where('company_uuid', 'company-a');
+    });
+    $sortBuilder = $model->applySorts(
+        has_api_model_behavior_request(['sort' => ['records.name', 'count(name)', 'custom alias']]),
+        HasApiModelBehaviorRecord::query()
+    );
+
+    expect($searchResponse->items())->toHaveCount(2)
+        ->and($searchResponse->total())->toBe(2)
+        ->and($deleteCount)->toBe(1)
+        ->and($capsule->getConnection('mysql')->table('api_model_behavior_records')->where('uuid', 'record-1')->whereNotNull('deleted_at')->exists())->toBeTrue()
+        ->and($foundInternal->uuid)->toBe('record-2')
+        ->and($emptyColumnFound->uuid)->toBe('record-2')
+        ->and((new HasApiModelBehaviorFilterParamRecord())->isInvalidUpdateParam('virtual_filter'))->toBeFalse()
+        ->and((new HasApiModelBehaviorAppendedRecord())->isInvalidUpdateParam('computed_label'))->toBeFalse()
+        ->and(array_map(fn ($order) => [$order['column'], $order['direction']], $sortBuilder->getQuery()->orders))->toBe([
+            ['records.name', 'asc'],
+            ['count(name)', 'asc'],
+            ['custom alias', 'asc'],
+        ]);
 });
