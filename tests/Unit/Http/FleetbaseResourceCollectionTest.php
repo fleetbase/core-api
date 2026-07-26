@@ -315,6 +315,21 @@ test('resource collection wraps raw items after construction when a valid resour
             'visible' => 'yes',
         ],
     ]);
+
+    $fleetbaseResourceCollection = (new FleetbaseResourceCollectionMutableCollects([
+        [
+            'id'      => 'late-wrapped-2',
+            'visible' => 'yes',
+            'secret'  => 'no',
+        ],
+    ]))->forceCollects(FleetbaseResourceCollectionTestResource::class)->without('secret');
+
+    expect($fleetbaseResourceCollection->toArray($request))->toBe([
+        [
+            'id'      => 'late-wrapped-2',
+            'visible' => 'yes',
+        ],
+    ]);
 });
 
 test('resource collection filters plain json resources and arrayable objects', function () {

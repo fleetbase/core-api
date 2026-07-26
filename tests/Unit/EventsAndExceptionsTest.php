@@ -72,6 +72,22 @@ class EventsAndExceptionsNotifiable
     }
 }
 
+class EventsAndExceptionsArrayChannelNotifiable
+{
+    public string $uuid      = 'array-user-uuid';
+    public string $public_id = 'array_user_1234567';
+
+    public function getKey(): string
+    {
+        return 'array-primary-key';
+    }
+
+    public function receivesBroadcastNotificationsOn(Notification $notification)
+    {
+        return [new Channel('notifiable.array-one'), new Channel('notifiable.array-two')];
+    }
+}
+
 class EventsAndExceptionsLogger
 {
     public array $errors = [];
@@ -273,6 +289,22 @@ test('broadcast notification event merges notification and notifiable channels',
             'message' => 'Hello',
             'id'      => 'notification-1',
             'type'    => EventsAndExceptionsNotification::class,
+        ]);
+});
+
+test('broadcast notification event preserves array channel responses from notifiables', function () {
+    $event = new BroadcastNotificationCreated(
+        new EventsAndExceptionsArrayChannelNotifiable(),
+        new EventsAndExceptionsNotification(),
+        ['message' => 'Hello']
+    );
+
+    $channels = $event->broadcastOn();
+
+    expect($channels[1])->toBeArray()
+        ->and(array_map(fn ($channel) => (string) $channel, $channels[1]))->toBe([
+            'notifiable.array-one',
+            'notifiable.array-two',
         ]);
 });
 

@@ -21,8 +21,9 @@ class LifecycleTraitsAliasRecord extends Model
 
     protected $guarded = [];
 
-    public bool $saved    = false;
-    public array $updates = [];
+    public static array $aliases = ['alpha', 'beta'];
+    public bool $saved           = false;
+    public array $updates        = [];
 
     public function update(array $attributes = [], array $options = [])
     {
@@ -252,7 +253,9 @@ test('has aliases casts stores normalizes and rejects unsafe aliases', function 
         ->and($record->aliases)->toBe(['alpha', 'beta'])
         ->and($record->hasAlias('alpha'))->toBeTrue()
         ->and($record->hasAlias('ALPHA'))->toBeFalse()
-        ->and($record->hasAlias('gamma'))->toBeFalse();
+        ->and($record->hasAlias('gamma'))->toBeFalse()
+        ->and(LifecycleTraitsAliasRecord::includesAlias('alpha'))->toBeTrue()
+        ->and(LifecycleTraitsAliasRecord::includesAlias('missing'))->toBeFalse();
 
     expect($record->addAlias('Gamma'))->toBeTrue()
         ->and($record->updates[0])->toBe(['aliases' => ['alpha', 'beta', 'gamma']])

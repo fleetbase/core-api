@@ -223,7 +223,11 @@ afterEach(function () {
 it('logs successful webhook attempts with credential attribution on the live connection', function () {
     $capsule = webhook_logging_database();
 
-    (new LogSuccessfulWebhook())->handle(webhook_logging_event(WebhookCallSucceededEvent::class));
+    (new LogSuccessfulWebhook())->handle(webhook_logging_event(WebhookCallSucceededEvent::class, [
+        'meta' => [
+            'access_token_id' => '44',
+        ],
+    ]));
 
     $row = webhook_log_row($capsule);
 
@@ -234,7 +238,7 @@ it('logs successful webhook attempts with credential attribution on the live con
         ->and($row->webhook_uuid)->toBe('webhook-1')
         ->and($row->api_event_uuid)->toBe('event-1')
         ->and($row->api_credential_uuid)->toBe('11111111-1111-4111-8111-111111111111')
-        ->and($row->access_token_id)->toBeNull()
+        ->and($row->access_token_id)->toBe(44)
         ->and($row->method)->toBe('POST')
         ->and($row->status_code)->toBe(202)
         ->and($row->reason_phrase)->toBe('Accepted')
@@ -259,7 +263,7 @@ it('logs failed webhook attempts to sandbox and attributes valid personal access
         'response' => new PsrResponse(503, ['X-Hook' => 'failed'], '{"error":"down"}'),
         'meta'     => [
             'is_sandbox'          => true,
-            'api_credential_uuid' => 'not-a-real-credential',
+            'api_credential_uuid' => '11111111-1111-4111-8111-111111111111',
             'access_token_id'     => '44',
         ],
         'attempt'      => 5,
@@ -272,7 +276,7 @@ it('logs failed webhook attempts to sandbox and attributes valid personal access
 
     expect($capsule->getConnection('mysql')->table('webhook_request_logs')->count())->toBe(0)
         ->and($capsule->getConnection('sandbox')->table('webhook_request_logs')->count())->toBe(1)
-        ->and($row->api_credential_uuid)->toBeNull()
+        ->and($row->api_credential_uuid)->toBe('11111111-1111-4111-8111-111111111111')
         ->and($row->access_token_id)->toBe(44)
         ->and($row->status_code)->toBe(503)
         ->and($row->reason_phrase)->toBe('Service Unavailable')
@@ -282,7 +286,7 @@ it('logs failed webhook attempts to sandbox and attributes valid personal access
         ->and($row->status)->toBe('failed')
         ->and(json_decode($row->meta, true))->toMatchArray([
             'is_sandbox'          => true,
-            'api_credential_uuid' => 'not-a-real-credential',
+            'api_credential_uuid' => '11111111-1111-4111-8111-111111111111',
             'access_token_id'     => '44',
         ]);
 });
@@ -293,6 +297,9 @@ it('classifies final webhook attempts by response status and handles missing res
     (new LogFinalWebhookAttempt())->handle(webhook_logging_event(FinalWebhookCallFailedEvent::class, [
         'response' => new PsrResponse(204, [], ''),
         'attempt'  => 3,
+        'meta'     => [
+            'access_token_id' => '44',
+        ],
     ]));
     (new LogFinalWebhookAttempt())->handle(webhook_logging_event(FinalWebhookCallFailedEvent::class, [
         'response'      => null,
@@ -311,6 +318,7 @@ it('classifies final webhook attempts by response status and handles missing res
         ->and($rows[0]->status_code)->toBe(204)
         ->and($rows[0]->reason_phrase)->toBe('No Content')
         ->and($rows[0]->status)->toBe('successful')
+        ->and($rows[0]->access_token_id)->toBe(44)
         ->and($rows[0]->response)->toBe('{}')
         ->and($rows[1]->method)->toBe('DELETE')
         ->and($rows[1]->status_code)->toBe(500)
