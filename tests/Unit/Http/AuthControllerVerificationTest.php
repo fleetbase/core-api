@@ -121,6 +121,16 @@ class AuthControllerVerificationCacheFake
     }
 }
 
+class AuthControllerVerificationAuthFake
+{
+    public array $loggedIn = [];
+
+    public function login(User $user): void
+    {
+        $this->loggedIn[] = $user->uuid;
+    }
+}
+
 class AuthControllerVerificationResponseCacheFake
 {
     public function clear(): void
@@ -556,4 +566,46 @@ test('authenticate sms code rejects invalid otp before querying users or deletin
         ])
         ->and($redis->deleted)->toBe([])
         ->and($redis->values[$key])->toBe('135790');
+});
+
+test('authenticate sms code logs in matching users and consumes one time codes', function () {
+    [$capsule, $redis] = auth_controller_verification_database();
+    auth_controller_verification_insert_user($capsule, [
+        'status' => 'active',
+    ]);
+    $auth = new AuthControllerVerificationAuthFake();
+    Illuminate\Support\Facades\Auth::swap($auth);
+
+    $key                 = auth_controller_verification_phone_key('+15555550123');
+    $redis->values[$key] = '135790';
+
+    $response = (new AuthController())->authenticateSmsCode(auth_controller_verification_request([
+        'phone'       => '5555550123',
+        'countryCode' => '1',
+        'code'        => '135790',
+    ]));
+    $payload = $response->getData(true);
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($payload['token'])->toContain('|')
+        ->and($payload['user']['uuid'])->toBe('verification-user')
+        ->and($auth->loggedIn)->toBe(['verification-user'])
+        ->and($redis->deleted)->toBe([$key])
+        ->and($redis->values)->not->toHaveKey($key);
+});
+
+test('authenticate sms code reports authentication failure when a valid otp no longer matches a user', function () {
+    [, $redis]           = auth_controller_verification_database();
+    $key                 = auth_controller_verification_phone_key('+19995550123');
+    $redis->values[$key] = '135790';
+
+    $response = (new AuthController())->authenticateSmsCode(auth_controller_verification_request([
+        'phone'       => '9995550123',
+        'countryCode' => '1',
+        'code'        => '135790',
+    ]));
+
+    expect($response->getStatusCode())->toBe(401)
+        ->and($response->getData(true))->toBe('Authentication failed')
+        ->and($redis->deleted)->toBe([$key]);
 });
