@@ -1,6 +1,8 @@
 <?php
 
+use Fleetbase\Exports\ApiCredentialExport;
 use Fleetbase\Http\Controllers\Internal\v1\ApiCredentialController;
+use Fleetbase\Http\Requests\ExportRequest;
 use Fleetbase\Models\ApiCredential;
 use Illuminate\Container\Container;
 use Illuminate\Database\Capsule\Manager as Capsule;
@@ -8,6 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Facade;
@@ -21,6 +24,19 @@ class ApiCredentialControllerSpy extends ApiCredentialController
         $this->syncedModels[] = [
             'class' => $model::class,
             'uuid'  => $model->getAttribute('uuid'),
+        ];
+    }
+}
+
+class ApiCredentialControllerCreateSpy extends ApiCredentialController
+{
+    public array $syncCalls = [];
+
+    protected function syncCurrentSessionToSandbox(Request $request): void
+    {
+        $this->syncCalls[] = [
+            'path'    => $request->path(),
+            'sandbox' => $request->header('Access-Console-Sandbox'),
         ];
     }
 }
@@ -93,6 +109,20 @@ class ApiCredentialControllerTaggedCacheFake
     public function rememberForever(string $key, Closure $callback): mixed
     {
         return $this->values[$key] ??= $callback();
+    }
+}
+
+class ApiCredentialControllerExcelFake
+{
+    public ?object $export   = null;
+    public ?string $filename = null;
+
+    public function download(object $export, string $filename): Response
+    {
+        $this->export   = $export;
+        $this->filename = $filename;
+
+        return new Response('api credential export');
     }
 }
 
@@ -368,6 +398,43 @@ test('api credential controller skips sandbox upserts without string uuids', fun
     expect($capsule->getConnection('sandbox')->table('api_credential_sandbox_payloads')->count())->toBe(0);
 });
 
+test('api credential controller create syncs sandbox context only for sandbox console requests', function () {
+    api_credential_controller_database();
+
+    $sandboxController = new ApiCredentialControllerCreateSpy(new ApiCredential());
+    $liveController    = new ApiCredentialControllerCreateSpy(new ApiCredential());
+
+    $sandboxResponse = $sandboxController->createRecord(Request::create('/int/v1/api-credentials', 'POST', [], [], [], [
+        'HTTP_ACCESS_CONSOLE_SANDBOX' => 'true',
+    ]));
+    $liveResponse = $liveController->createRecord(Request::create('/int/v1/api-credentials', 'POST'));
+
+    expect($sandboxController->syncCalls)->toBe([
+        ['path' => 'int/v1/api-credentials', 'sandbox' => 'true'],
+    ])
+        ->and($liveController->syncCalls)->toBe([])
+        ->and($sandboxResponse->getStatusCode())->toBe(400)
+        ->and($liveResponse->getStatusCode())->toBe(400);
+});
+
+test('api credential controller export downloads api credential exports with requested format', function () {
+    api_credential_controller_database();
+
+    $excel = new ApiCredentialControllerExcelFake();
+    app()->instance('excel', $excel);
+    Facade::clearResolvedInstance('excel');
+
+    $response = ApiCredentialController::export(ExportRequest::create('/int/v1/api-credentials/export', 'GET', [
+        'format' => 'csv',
+    ]));
+
+    expect($response)->toBeInstanceOf(Response::class)
+        ->and($response->getContent())->toBe('api credential export')
+        ->and($excel->export)->toBeInstanceOf(ApiCredentialExport::class)
+        ->and($excel->filename)->toStartWith('api-credentials-')
+        ->and($excel->filename)->toEndWith('.csv');
+});
+
 test('api credential controller roll rejects unauthenticated and missing tenant credentials', function () {
     api_credential_controller_database();
     Auth::swap(new ApiCredentialControllerAuthFake(false));
@@ -387,6 +454,33 @@ test('api credential controller roll rejects unauthenticated and missing tenant 
         ->and($authFailure->getData(true))->toBe(['errors' => ['Authentication required to roll key failed.']])
         ->and($missing->getStatusCode())->toBe(400)
         ->and($missing->getData(true))->toBe(['errors' => ['API credential attempted to roll could not be found.']]);
+});
+
+test('api credential controller roll returns a stable error when regenerated credentials cannot be saved', function () {
+    api_credential_controller_database();
+    EloquentModel::setEventDispatcher(new Dispatcher(Container::getInstance()));
+    Auth::swap(new ApiCredentialControllerAuthFake(true));
+
+    try {
+        ApiCredential::saving(function (ApiCredential $credential) {
+            if ($credential->uuid === 'credential-1') {
+                throw new RuntimeException('credential save failed');
+            }
+        });
+
+        $request = Request::create('/int/v1/api-credentials/credential-1/roll', 'POST', [
+            'password' => 'correct-password',
+        ]);
+        $request->setUserResolver(fn () => new ApiCredentialControllerUserStub('developer@example.test'));
+
+        $response = ApiCredentialController::roll('credential-1', $request);
+    } finally {
+        ApiCredential::flushEventListeners();
+        EloquentModel::unsetEventDispatcher();
+    }
+
+    expect($response->getStatusCode())->toBe(400)
+        ->and($response->getData(true))->toBe(['errors' => ['Attempt to roll key failed.']]);
 });
 
 test('api credential controller roll regenerates keys and rewrites sandbox resource ownership keys', function () {
