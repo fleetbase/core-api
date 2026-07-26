@@ -51,6 +51,14 @@ class TelemetryCacheFake
     }
 }
 
+class TelemetryThrowsOnSend extends Telemetry
+{
+    public static function send(array $payload = []): bool
+    {
+        throw new RuntimeException('telemetry send failed');
+    }
+}
+
 function telemetry_reset_state(): void
 {
     $reflection = new ReflectionClass(Telemetry::class);
@@ -225,6 +233,42 @@ test('telemetry returns false and logs when downstream responses fail', function
     Http::assertSent(fn ($request) => $request->url() === 'https://telemetry.fleetbase.io/');
 });
 
+test('telemetry returns false without outbound requests when disabled', function () {
+    telemetry_fixtures();
+    putenv('TELEMETRY_DISABLED=true');
+    Http::fake();
+
+    expect(Telemetry::send())->toBeFalse();
+
+    Http::assertNothingSent();
+});
+
+test('telemetry handles outbound exceptions after building payload tags', function () {
+    telemetry_fixtures();
+    session()->flush();
+    $tags = [];
+    Http::fake([
+        'https://json.geoiplookup.io/8.8.8.8' => Http::response([
+            'time_zone'    => ['name' => 'Asia/Ulaanbaatar'],
+            'region'       => 'Ulaanbaatar',
+            'country_name' => 'Mongolia',
+            'country_code' => 'MN',
+        ], 200),
+        'https://api.github.com/repos/fleetbase/fleetbase/commits/main' => Http::response([
+            'sha' => 'official-main-sha',
+        ], 200),
+        'https://telemetry.fleetbase.io/' => function ($request) use (&$tags) {
+            $tags = $request['tags'];
+
+            throw new RuntimeException('telemetry endpoint unavailable');
+        },
+    ]);
+
+    expect(Telemetry::send())->toBeFalse();
+
+    expect($tags)->toContain('fleetbase.company:Fleetbase HQ');
+});
+
 test('telemetry ping sends at most once for the cache window', function () {
     telemetry_fixtures();
     telemetry_fake_successful_dependencies();
@@ -234,6 +278,54 @@ test('telemetry ping sends at most once for the cache window', function () {
 
     Http::assertSentCount(4);
     Http::assertSent(fn ($request) => $request->url() === 'https://telemetry.fleetbase.io/');
+});
+
+test('telemetry ping caches timestamp even when send throws', function () {
+    telemetry_fixtures();
+
+    TelemetryThrowsOnSend::ping();
+
+    $cache = app('cache');
+
+    expect($cache->values)->toHaveKey('telemetry:last_ping')
+        ->and($cache->values['telemetry:last_ping'])->toBeString();
+});
+
+test('telemetry source lookup handles client exceptions and continues sending', function () {
+    telemetry_fixtures();
+    Http::fake([
+        'https://json.geoiplookup.io/8.8.8.8' => Http::response([
+            'time_zone'    => ['name' => 'Asia/Ulaanbaatar'],
+            'region'       => 'Ulaanbaatar',
+            'country_name' => 'Mongolia',
+            'country_code' => 'MN',
+        ], 200),
+        'https://api.github.com/repos/fleetbase/fleetbase/commits/main' => function () {
+            throw new RuntimeException('github unavailable');
+        },
+        'https://telemetry.fleetbase.io/' => Http::response(['ok' => true], 202),
+    ]);
+
+    expect(Telemetry::send())->toBeTrue();
+
+    Http::assertSent(function ($request) {
+        if ($request->url() !== 'https://telemetry.fleetbase.io/') {
+            return false;
+        }
+
+        return in_array('source.modified:false', $request['tags'], true)
+            && in_array('source.main_hash:', $request['tags'], true);
+    });
+});
+
+test('telemetry caches ip metadata between sends', function () {
+    telemetry_fixtures();
+    telemetry_fake_successful_dependencies();
+
+    expect(Telemetry::send())->toBeTrue()
+        ->and(Telemetry::send(['custom' => 'second']))->toBeTrue();
+
+    Http::assertSentCount(7);
 });
 
 test('telemetry can generate and reuse a stable instance id file', function () {
