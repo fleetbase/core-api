@@ -29,6 +29,7 @@ namespace {
     use Fleetbase\Http\Resources\AuthOrganization;
     use Fleetbase\Http\Resources\Organization;
     use Fleetbase\Models\Company;
+    use Fleetbase\Models\User;
     use Illuminate\Container\Container;
     use Illuminate\Database\Capsule\Manager as Capsule;
     use Illuminate\Database\Eloquent\Model as EloquentModel;
@@ -99,6 +100,7 @@ namespace {
         $schema->create('users', function ($table) {
             $table->string('uuid')->primary();
             $table->string('public_id')->nullable();
+            $table->string('company_uuid')->nullable()->index();
             $table->string('email')->nullable();
             $table->string('name')->nullable();
             $table->timestamps();
@@ -130,6 +132,18 @@ namespace {
             $table->timestamps();
             $table->softDeletes();
         });
+        $schema->create('personal_access_tokens', function ($table) {
+            $table->increments('id');
+            $table->string('tokenable_type');
+            $table->string('tokenable_id');
+            $table->string('name')->nullable();
+            $table->string('token', 64)->unique();
+            $table->text('abilities')->nullable();
+            $table->timestamp('last_used_at')->nullable();
+            $table->timestamp('expires_at')->nullable();
+            $table->timestamp('created_at')->nullable();
+            $table->timestamp('updated_at')->nullable();
+        });
         $schema->create('settings', function ($table) {
             $table->increments('id');
             $table->string('key')->nullable()->index();
@@ -144,8 +158,9 @@ namespace {
 
         $now = '2026-07-18 00:00:00';
         $capsule->getConnection('mysql')->table('users')->insert([
-            ['uuid' => 'user-owner', 'public_id' => 'user_owner', 'email' => 'owner@example.com', 'name' => 'Owner User', 'created_at' => $now, 'updated_at' => $now],
-            ['uuid' => 'user-member', 'public_id' => 'user_member', 'email' => 'member@example.com', 'name' => 'Member User', 'created_at' => $now, 'updated_at' => $now],
+            ['uuid' => 'user-owner', 'public_id' => 'user_owner', 'company_uuid' => 'company-visible', 'email' => 'owner@example.com', 'name' => 'Owner User', 'created_at' => $now, 'updated_at' => $now],
+            ['uuid' => 'user-member', 'public_id' => 'user_member', 'company_uuid' => 'company-visible', 'email' => 'member@example.com', 'name' => 'Member User', 'created_at' => $now, 'updated_at' => $now],
+            ['uuid' => 'user-token', 'public_id' => 'user_token', 'company_uuid' => 'company-visible', 'email' => 'token@example.com', 'name' => 'Token User', 'created_at' => $now, 'updated_at' => $now],
         ]);
         $capsule->getConnection('mysql')->table('companies')->insert([
             [
@@ -175,6 +190,9 @@ namespace {
         ]);
         $capsule->getConnection('mysql')->table('api_credentials')->insert([
             ['uuid' => 'credential-live', '_key' => null, 'user_uuid' => 'user-owner', 'company_uuid' => 'company-visible', 'name' => 'Live Key', 'key' => 'flb_live_visible', 'secret' => '$secret_visible', 'test_mode' => false, 'api' => 'fleetbase', 'browser_origins' => null, 'last_used_at' => null, 'expires_at' => null, 'created_at' => $now, 'updated_at' => $now],
+        ]);
+        $capsule->getConnection('mysql')->table('personal_access_tokens')->insert([
+            ['id' => 1, 'tokenable_type' => User::class, 'tokenable_id' => 'user-token', 'name' => 'organization-current', 'token' => hash('sha256', 'plain-current-org-token'), 'abilities' => json_encode(['*']), 'last_used_at' => null, 'expires_at' => null, 'created_at' => $now, 'updated_at' => $now],
         ]);
         $capsule->getConnection('mysql')->table('settings')->insert([
             ['key' => 'branding.default_theme', 'value' => 'light'],
@@ -239,6 +257,29 @@ namespace {
             ])
             ->and($payload['owner'])->not->toBeNull()
             ->and($payload)->not->toHaveKeys(['uuid', 'owner_uuid', 'public_id', 'users_count', 'billing_status']);
+    });
+
+    test('current organization resolves from secret keys and sanctum fallback tokens', function () {
+        organization_controller_database();
+
+        $secretResource = (new OrganizationController())->getCurrent(organization_request('GET', '/v1/organizations/current', [], [
+            'HTTP_AUTHORIZATION' => 'Bearer $secret_visible',
+        ]));
+        $sanctumResource = (new OrganizationController())->getCurrent(organization_request('GET', '/v1/organizations/current', [], [
+            'HTTP_AUTHORIZATION' => 'Bearer 1|plain-current-org-token',
+        ]));
+        $invalidResponse = (new OrganizationController())->getCurrent(organization_request('GET', '/v1/organizations/current', [], [
+            'HTTP_AUTHORIZATION' => 'Bearer missing-token',
+        ]));
+
+        expect($secretResource)->toBeInstanceOf(Organization::class)
+            ->and($secretResource->resource->uuid)->toBe('company-visible')
+            ->and($sanctumResource)->toBeInstanceOf(Organization::class)
+            ->and($sanctumResource->resource->uuid)->toBe('company-visible')
+            ->and($invalidResponse->getStatusCode())->toBe(400)
+            ->and($invalidResponse->getData(true))->toBe([
+                'errors' => ['No API key found to fetch company details with.'],
+            ]);
     });
 
     test('organization resource includes internal identifiers counts billing and joined at for internal requests', function () {
