@@ -133,7 +133,7 @@ class DataPurgerMetadataConnection extends Illuminate\Database\Connection
     {
         $this->queries[] = ['table' => $table, 'as' => $as];
 
-        return new DataPurgerMetadataQuery($this->mysqlRows);
+        return new DataPurgerMetadataQuery($table === 'pg_catalog.pg_tables' ? $this->pgsqlRows : $this->mysqlRows);
     }
 
     public function select($query, $bindings = [], $useReadPdo = true)
@@ -176,6 +176,31 @@ class DataPurgerMetadataQuery
     public function get(): Collection
     {
         return collect($this->rows);
+    }
+
+    public function pluck(string $column): Collection
+    {
+        $this->calls[] = ['pluck', $column];
+
+        return collect($this->rows)->map(fn ($row) => data_get($row, $column));
+    }
+}
+
+class DataPurgerSchemaFallback
+{
+    public function __construct(private array $tables = [])
+    {
+    }
+
+    public function getConnection(): object
+    {
+        return new class {
+        };
+    }
+
+    public function getAllTables(): array
+    {
+        return $this->tables;
     }
 }
 
@@ -418,6 +443,51 @@ test('data purger discovers allowed tenant tables and detects safe key columns',
         ->and($purger->keyFor('orders'))->toBe('uuid')
         ->and($purger->keyFor('id_only_rows'))->toBe('id')
         ->and($purger->keyFor('audit_rows'))->toBeNull();
+});
+
+test('data purger falls back to driver metadata when doctrine table discovery is unavailable', function () {
+    bind_test_container();
+    app()->instance('db.schema', new DataPurgerSchemaFallback());
+    Facade::clearResolvedInstance('db.schema');
+
+    $mysql = new DataPurgerMetadataConnection('mysql', [
+        (object) ['table_name' => 'orders'],
+        (object) ['table_name' => 'jobs'],
+        (object) ['table_name' => 'global_settings'],
+    ], [], 'fleetbase_core');
+    $pgsql = new DataPurgerMetadataConnection('pgsql', [], [
+        (object) ['tablename' => 'companies'],
+        (object) ['tablename' => 'personal_access_tokens'],
+        (object) ['tablename' => 'fleetbase_webhooks'],
+    ]);
+
+    $mysqlProbe = new DataPurgerProbe($mysql);
+    $mysqlProbe->setSkipPrefixes(['global_']);
+    $pgsqlProbe = new DataPurgerProbe($pgsql);
+    $pgsqlProbe->setSkipPrefixes(['fleetbase_']);
+
+    expect($mysqlProbe->tenantTables())->toBe(['orders'])
+        ->and($pgsqlProbe->tenantTables())->toBe(['companies'])
+        ->and($mysql->queries[0]['table'])->toBe('information_schema.tables')
+        ->and($pgsql->queries[0]['table'])->toBe('pg_catalog.pg_tables');
+});
+
+test('data purger maps generic schema table rows as a last resort', function () {
+    bind_test_container();
+    app()->instance('db.schema', new DataPurgerSchemaFallback([
+        (object) ['name' => 'orders'],
+        ['name' => 'api_events'],
+        'jobs',
+        'global_settings',
+    ]));
+    Facade::clearResolvedInstance('db.schema');
+
+    $connection = new DataPurgerMetadataConnection('sqlite');
+    $purger     = new DataPurgerProbe($connection);
+    $purger->setSkipPrefixes(['global_']);
+
+    expect($purger->tenantTables())->toBe(['orders', 'api_events'])
+        ->and($connection->queries)->toBe([]);
 });
 
 test('data purger delete helper chunks filtered rows and honors dry run', function () {
