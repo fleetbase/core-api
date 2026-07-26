@@ -372,6 +372,7 @@ test('request expansion helpers normalize parameters and global filter payloads'
         ->and($expansion->or()->call($request, ['missing'], 'fallback'))->toBe('fallback')
         ->and($expansion->array()->call($request, 'ids'))->toBe(['one', 'two', 'three'])
         ->and($expansion->array()->call($request, 'tags'))->toBe(['fragile', 'cold'])
+        ->and($expansion->array()->call($request, 'missing'))->toBe([])
         ->and($expansion->isString()->call($request, 'status'))->toBeTrue()
         ->and($expansion->isUuid()->call($request, 'uuid'))->toBeTrue()
         ->and($expansion->isArray()->call($request, 'tags'))->toBeTrue()
@@ -391,6 +392,14 @@ test('request expansion helpers normalize parameters and global filter payloads'
     $expansion->removeParam()->call($request, 'status');
 
     expect($request->has('status'))->toBeFalse();
+
+    $request->session()->forget('company');
+    $arraySearchRequest = HttpRequest::create('/int/v1/test', 'GET', [
+        'query' => ['nested'],
+    ]);
+
+    expect($expansion->company()->call($request))->toBeNull()
+        ->and($expansion->searchQuery()->call($arraySearchRequest))->toBe(['nested']);
 });
 
 test('builder expansion search where applies strict and fuzzy search contracts', function () {

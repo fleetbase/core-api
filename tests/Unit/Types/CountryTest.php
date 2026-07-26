@@ -86,7 +86,27 @@ test('country supports array construction and rejects unknown iso2 codes', funct
             ->and($country->only([['name' => 'country_name'], ['geo.region' => 'region']]))->toBe([
                 'country_name' => 'Testland',
                 'region'       => 'Test Region',
+            ])
+            ->and($country->only(['cca2', 123, ['missing' => 'missing_alias']]))->toBe([
+                'cca2' => 'ZZ',
             ]);
+
+        $arrayableCountry = new Country(new class {
+            public function toArray(): array
+            {
+                return [
+                    'cca2'       => 'AA',
+                    'cca3'       => 'AAA',
+                    'name'       => ['common' => 'Arrayland'],
+                    'currencies' => ['ARY'],
+                    'flag'       => ['emoji' => 'A'],
+                ];
+            }
+        });
+
+        expect($arrayableCountry->getCode())->toBe('AAA')
+            ->and($arrayableCountry->getName())->toBe('Arrayland')
+            ->and(Country::missingStatic())->toBeNull();
     });
 
     expect(fn () => withCountryVendorDeprecationsSuppressed(fn () => new Country('ZZ')))

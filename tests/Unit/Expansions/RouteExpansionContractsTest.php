@@ -192,6 +192,27 @@ test('route expansion registers rest routes with default controller callback and
         ->toBeLessThan(route_expansion_index($routes, 'DELETE', 'delivery-zones/{delivery_zone}'));
 });
 
+test('route expansion creates a rest registrar when the container has no registrar binding', function () {
+    $container = bind_test_container(['app.env' => 'testing']);
+    $router    = new Router(new Dispatcher($container), $container);
+
+    $routeExpansion = new Fleetbase\Expansions\Route();
+    Router::macro('fleetbaseRestRoutes', $routeExpansion->fleetbaseRestRoutes());
+
+    $pendingExpansion = new Fleetbase\Expansions\PendingResourceRegistration();
+    LaravelPendingResourceRegistration::macro('setRouter', $pendingExpansion->setRouter());
+    LaravelPendingResourceRegistration::macro('extend', $pendingExpansion->extend());
+
+    $router->fleetbaseRestRoutes('audit-events')->register();
+
+    $routes = route_expansion_rows($router);
+
+    expect(route_expansion_find($routes, 'GET', 'audit-events')['action'])
+        ->toBe('AuditEventController@queryRecord')
+        ->and(route_expansion_find($routes, 'DELETE', 'audit-events/bulk-delete')['action'])
+        ->toBe('AuditEventController@bulkDelete');
+});
+
 test('route expansion wraps custom fleetbase routes and preserves generated controller helper', function () {
     $router = route_expansion_router();
 

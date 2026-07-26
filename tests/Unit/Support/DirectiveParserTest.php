@@ -102,9 +102,12 @@ test('directive parser qualifies nested relation columns without altering method
     $query = DirectiveParserOrder::query();
 
     DirectiveParser::apply($query, ['whereHas', 'payloads', 'where', 'status', '=', 'ready']);
+    DirectiveParser::apply($query, ['whereHas', 'payloads']);
+    DirectiveParser::apply($query, ['whereHas', 'payloads', 'whereColumn', 'status', 'orders.status']);
 
     expect($query->toSql())->toContain('exists')
         ->and($query->toSql())->toContain('"payloads"."status" = ?')
+        ->and($query->toSql())->not->toContain('"payloads"."status" = "orders"."status"')
         ->and($query->getBindings())->toBe(['ready']);
 });
 
