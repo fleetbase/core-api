@@ -256,6 +256,7 @@ afterEach(function () {
         'fleetbase.connection.db' => null,
     ]);
     EloquentModel::clearBootedModels();
+    EloquentModel::reguard();
     Container::setInstance(new FleetbaseTestContainer());
     Facade::clearResolvedInstances();
 });
@@ -275,6 +276,9 @@ test('public comment controller creates comments from resolved subject and rejec
         'subject_type' => 'user',
         'content'      => 'Cannot attach',
     ]));
+    $missingSubject = comment_controller()->create(comment_controller_create_request([
+        'content' => 'Cannot attach without subject',
+    ]));
 
     $record = $capsule->getConnection('mysql')->table('comments')->where('content', 'Arrived at the dock.')->first();
 
@@ -286,7 +290,9 @@ test('public comment controller creates comments from resolved subject and rejec
         ->and(comment_controller_payload($created)['content'])->toBe('Arrived at the dock.')
         ->and($record->subject_uuid)->toBe('user-subject')
         ->and($invalid->getStatusCode())->toBe(400)
-        ->and($invalid->getData(true))->toBe(['error' => 'Invalid subject provided for comment.']);
+        ->and($invalid->getData(true))->toBe(['error' => 'Invalid subject provided for comment.'])
+        ->and($missingSubject->getStatusCode())->toBe(400)
+        ->and($missingSubject->getData(true))->toBe(['error' => 'Invalid subject provided for comment.']);
 });
 
 test('public comment controller replies inherit parent subject and stay in active company', function () {
@@ -336,6 +342,52 @@ test('public comment controller updates finds deletes and reports tenant scoped 
         ->and($missingUpdate->getData(true))->toBe(['error' => 'Comment resource not found.'])
         ->and($missingDelete->getStatusCode())->toBe(404)
         ->and($missingDelete->getData(true))->toBe(['error' => 'Comment resource not found.']);
+});
+
+test('public comment controller returns stable errors when comment creation fails', function () {
+    comment_controller_database();
+
+    try {
+        Comment::creating(function () {
+            throw new RuntimeException('comment creation failed');
+        });
+
+        $response = comment_controller()->create(comment_controller_create_request([
+            'subject' => [
+                'id'   => 'user_subject',
+                'type' => 'user',
+            ],
+            'content' => 'Cannot persist',
+        ]));
+    } finally {
+        EloquentModel::reguard();
+        Comment::flushEventListeners();
+        EloquentModel::clearBootedModels();
+    }
+
+    expect($response->getStatusCode())->toBe(400)
+        ->and($response->getData(true))->toBe(['error' => 'Uknown error attempting to create comment.']);
+});
+
+test('public comment controller returns stable errors when updates fail', function () {
+    comment_controller_database();
+
+    try {
+        Comment::updating(function () {
+            throw new RuntimeException('comment update failed');
+        });
+
+        $response = comment_controller()->update('comment_root', comment_controller_update_request([
+            'content' => 'Cannot update',
+        ]));
+    } finally {
+        EloquentModel::reguard();
+        Comment::flushEventListeners();
+        EloquentModel::clearBootedModels();
+    }
+
+    expect($response->getStatusCode())->toBe(400)
+        ->and($response->getData(true))->toBe(['error' => 'Uknown error attempting to update comment.']);
 });
 
 test('public comment controller query applies subject parent and active company filters', function () {
