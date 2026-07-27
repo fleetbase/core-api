@@ -141,6 +141,11 @@ class AuthControllerLoginBootstrapRedisFake
         return array_key_exists($key, $this->values);
     }
 
+    public function get(string $key): mixed
+    {
+        return $this->values[$key] ?? null;
+    }
+
     public function del(?string $key): bool
     {
         unset($this->values[$key]);
@@ -1202,4 +1207,87 @@ test('end impersonation reports token creation failures after restoring the impe
         ->and($response->getData(true)['errors'][0])->toContain('personal_access_tokens')
         ->and(session('user'))->toBe('admin-user')
         ->and(session('impersonator'))->toBeNull();
+});
+
+// -----------------------------------------------------------------------------
+// authenticateSmsCode — SMS-2FA security contracts (bypass gating + replay).
+// These assert the security-critical branches that run before/around the user
+// lookup, so they do not depend on the Auth::login guard path.
+// -----------------------------------------------------------------------------
+
+function auth_controller_sms_request(array $input): Request
+{
+    return Request::create('/int/v1/auth/authenticate-sms', 'POST', $input);
+}
+
+test('authenticate sms code rejects an invalid verification code', function () {
+    auth_controller_login_bootstrap_database();
+
+    $response = (new AuthController())->authenticateSmsCode(auth_controller_sms_request([
+        'phone' => '+15555550123',
+        'code'  => '000000',
+    ]));
+
+    expect($response->getStatusCode())->toBe(400)
+        ->and($response->getData(true))->toBe(['errors' => ['Invalid verification code']]);
+});
+
+test('authenticate sms code refuses the bypass code in production', function () {
+    auth_controller_login_bootstrap_database();
+    config([
+        'app.env'                        => 'production',
+        'fleetbase.sms_auth_bypass_code' => 'BYPASS-PROD',
+    ]);
+
+    // No stored OTP; the only candidate is the bypass code, which must NOT be honored
+    // in a production environment.
+    $response = (new AuthController())->authenticateSmsCode(auth_controller_sms_request([
+        'phone' => '+15555550123',
+        'code'  => 'BYPASS-PROD',
+    ]));
+
+    expect($response->getStatusCode())->toBe(400)
+        ->and($response->getData(true))->toBe(['errors' => ['Invalid verification code']]);
+});
+
+test('authenticate sms code accepts the bypass code outside production', function () {
+    auth_controller_login_bootstrap_database();
+    config(['fleetbase.sms_auth_bypass_code' => 'BYPASS-DEV']);
+
+    // Non-production env (default 'testing') with no user for the phone: the bypass code
+    // passes validation and falls through to the failing user lookup, proving it was
+    // accepted only because the environment is not production.
+    $response = (new AuthController())->authenticateSmsCode(auth_controller_sms_request([
+        'phone' => '+15555559999',
+        'code'  => 'BYPASS-DEV',
+    ]));
+
+    expect($response->getStatusCode())->toBe(401)
+        ->and($response->getData(true))->toBe('Authentication failed');
+});
+
+test('authenticate sms code consumes the stored otp to prevent replay', function () {
+    auth_controller_login_bootstrap_database();
+
+    $phone = '+15555559999';
+    $key   = SupportStr::slug($phone . '_verify_code', '_');
+    app('redis')->set($key, '654321');
+
+    // First use: valid OTP but no user for this phone -> 401, and the OTP is deleted.
+    $first = (new AuthController())->authenticateSmsCode(auth_controller_sms_request([
+        'phone' => $phone,
+        'code'  => '654321',
+    ]));
+
+    expect($first->getStatusCode())->toBe(401)
+        ->and(app('redis')->get($key))->toBeNull();
+
+    // Replaying the same code now fails because the stored OTP was consumed.
+    $replay = (new AuthController())->authenticateSmsCode(auth_controller_sms_request([
+        'phone' => $phone,
+        'code'  => '654321',
+    ]));
+
+    expect($replay->getStatusCode())->toBe(400)
+        ->and($replay->getData(true))->toBe(['errors' => ['Invalid verification code']]);
 });
