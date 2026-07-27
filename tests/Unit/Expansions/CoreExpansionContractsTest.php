@@ -258,6 +258,8 @@ test('string carbon and blade expansions preserve formatting contracts', functio
         ->and($humanize('apiCredentialID', false))->toBe('API credential i d')
         ->and($humanize(null))->toBe('')
         ->and($domain('https://console.fleetbase.io/auth/login'))->toBe('fleetbase.io')
+        ->and($domain('http://localhost:4200'))->toBe('localhost')
+        ->and($domain('localhost'))->toBe('localhost')
         ->and($fromString('first day of quarter')->toDateString())->toBe('2026-04-01')
         ->and($fromString('last day of quarter')->toDateString())->toBe('2026-06-30')
         ->and($fromString('start of decade')->toDateTimeString())->toBe('2020-01-01 00:00:00')
