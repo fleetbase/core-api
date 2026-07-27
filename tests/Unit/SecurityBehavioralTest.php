@@ -12,11 +12,13 @@
  * via Eloquent Capsule).
  */
 
+use Fleetbase\Http\Controllers\Internal\v1\ApiCredentialController;
 use Fleetbase\Http\Controllers\Internal\v1\CompanyController;
 use Fleetbase\Http\Controllers\Internal\v1\FileController;
 use Fleetbase\Http\Controllers\Internal\v1\NotificationController;
 use Fleetbase\Http\Controllers\Internal\v1\PolicyController;
 use Fleetbase\Http\Requests\Internal\DownloadFileRequest;
+use Fleetbase\Models\ApiCredential;
 use Fleetbase\Models\File;
 use Fleetbase\Models\Notification;
 use Fleetbase\Models\Permission;
@@ -226,6 +228,20 @@ function security_behavioral_database(): Capsule
         $table->timestamps();
     });
 
+    $schema->create('api_credentials', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('public_id')->nullable();
+        $table->string('company_uuid')->nullable();
+        $table->string('user_uuid')->nullable();
+        $table->string('name')->nullable();
+        $table->string('key')->nullable();
+        $table->string('secret')->nullable();
+        $table->boolean('test_mode')->default(false);
+        $table->timestamp('expires_at')->nullable();
+        $table->timestamp('deleted_at')->nullable();
+        $table->timestamps();
+    });
+
     $now = '2026-07-18 10:00:00';
     $capsule->getConnection('mysql')->table('policies')->insert([
         ['id' => 'policy-mine', 'company_uuid' => 'company-1', 'name' => 'My Policy', 'guard_name' => 'sanctum', 'service' => 'iam', 'created_at' => $now, 'updated_at' => $now],
@@ -238,6 +254,10 @@ function security_behavioral_database(): Capsule
     $capsule->getConnection('mysql')->table('files')->insert([
         ['uuid' => 'file-mine', 'public_id' => 'file_mine', 'company_uuid' => 'company-1', 'disk' => 'local', 'path' => 'uploads/mine.pdf', 'original_filename' => 'mine.pdf', 'created_at' => $now, 'updated_at' => $now],
         ['uuid' => 'file-theirs', 'public_id' => 'file_theirs', 'company_uuid' => 'company-2', 'disk' => 'local', 'path' => 'uploads/theirs.pdf', 'original_filename' => 'theirs.pdf', 'created_at' => $now, 'updated_at' => $now],
+    ]);
+    $capsule->getConnection('mysql')->table('api_credentials')->insert([
+        ['uuid' => 'cred-mine', 'public_id' => 'key_mine', 'company_uuid' => 'company-1', 'user_uuid' => 'owner-1', 'name' => 'Mine', 'key' => 'flb_test_mine', 'secret' => 'secret_mine', 'test_mode' => true, 'created_at' => $now, 'updated_at' => $now],
+        ['uuid' => 'cred-theirs', 'public_id' => 'key_theirs', 'company_uuid' => 'company-2', 'user_uuid' => 'foreign-1', 'name' => 'Theirs', 'key' => 'flb_test_theirs', 'secret' => 'secret_theirs', 'test_mode' => true, 'created_at' => $now, 'updated_at' => $now],
     ]);
 
     return $capsule;
@@ -254,10 +274,38 @@ function security_behavioral_request(string $method, string $path): Request
 function security_behavioral_request_with_user(string $method, string $path, array $input = [], string $userUuid = 'owner-1'): Request
 {
     $request = Request::create($path, $method, $input);
-    $request->setUserResolver(fn () => (object) ['uuid' => $userUuid]);
+    $request->setUserResolver(fn () => (object) ['uuid' => $userUuid, 'email' => $userUuid . '@example.test']);
     app()->instance('request', $request);
 
     return $request;
+}
+
+/**
+ * Minimal stand-in for the resolved 'auth' guard so Auth::validate() succeeds without a
+ * real auth manager (used by the ApiCredential roll flow).
+ */
+class SecurityBehavioralAuthGuardFake
+{
+    public bool $validateResult = true;
+
+    public function validate(array $credentials = []): bool
+    {
+        return $this->validateResult;
+    }
+
+    public function login($user, bool $remember = false): void
+    {
+    }
+}
+
+function security_behavioral_bind_auth_guard(bool $validateResult = true): SecurityBehavioralAuthGuardFake
+{
+    $guard                 = new SecurityBehavioralAuthGuardFake();
+    $guard->validateResult = $validateResult;
+    app()->instance('auth', $guard);
+    Facade::clearResolvedInstance('auth');
+
+    return $guard;
 }
 
 afterEach(function () {
@@ -358,4 +406,31 @@ test('company leave organization rejects a company id that is not the active ses
 
     expect($response->getStatusCode())->toBe(400)
         ->and($response->getData(true))->toBe(['errors' => ['Unable to leave organization.']]);
+});
+
+test('api credential roll requires an authenticated request', function () {
+    security_behavioral_database();
+
+    // No user resolver on the request -> the auth guard short-circuits before any lookup.
+    $request  = security_behavioral_request('POST', '/int/v1/api-credentials/cred-mine/roll');
+    $response = ApiCredentialController::roll('cred-mine', $request);
+
+    expect($response->getStatusCode())->toBe(401)
+        ->and($response->getData(true))->toBe(['errors' => ['Authentication required to roll key failed.']]);
+});
+
+test('api credential roll refuses to roll another company credential (IDOR)', function () {
+    security_behavioral_database();
+    security_behavioral_bind_auth_guard(true); // authentication passes
+
+    // Acting as company-1 (session), attempt to roll company-2's credential.
+    $request  = security_behavioral_request_with_user('POST', '/int/v1/api-credentials/cred-theirs/roll', [
+        'password' => 'whatever',
+    ]);
+    $response = ApiCredentialController::roll('cred-theirs', $request);
+
+    expect($response->getStatusCode())->toBe(400)
+        ->and($response->getData(true))->toBe(['errors' => ['API credential attempted to roll could not be found.']])
+        // The foreign credential's key is unchanged.
+        ->and(ApiCredential::where('uuid', 'cred-theirs')->value('key'))->toBe('flb_test_theirs');
 });

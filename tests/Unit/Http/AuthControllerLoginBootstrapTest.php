@@ -159,6 +159,31 @@ class AuthControllerLoginBootstrapRedisFake
     }
 }
 
+/**
+ * Minimal stand-in for the resolved 'auth' guard so controller calls to the
+ * Auth facade (Auth::validate / Auth::login) work without a real auth manager.
+ */
+class AuthControllerLoginBootstrapAuthGuardFake
+{
+    public array $loggedIn      = [];
+    public bool $validateResult = true;
+
+    public function validate(array $credentials = []): bool
+    {
+        return $this->validateResult;
+    }
+
+    public function login($user, bool $remember = false): void
+    {
+        $this->loggedIn[] = $user;
+    }
+
+    public function user()
+    {
+        return $this->loggedIn[count($this->loggedIn) - 1] ?? null;
+    }
+}
+
 class AuthControllerLoginBootstrapPermissionRegistrarFake
 {
     public string $pivotRole       = 'role_id';
@@ -1290,4 +1315,33 @@ test('authenticate sms code consumes the stored otp to prevent replay', function
 
     expect($replay->getStatusCode())->toBe(400)
         ->and($replay->getData(true))->toBe(['errors' => ['Invalid verification code']]);
+});
+
+test('authenticate sms code authenticates a matching user and issues a token on a valid otp', function () {
+    $capsule = auth_controller_login_bootstrap_database();
+    auth_controller_login_insert_user($capsule); // phone +15555550123
+
+    $authGuard = new AuthControllerLoginBootstrapAuthGuardFake();
+    app()->instance('auth', $authGuard);
+    Facade::clearResolvedInstance('auth');
+
+    $phone = '+15555550123';
+    $key   = SupportStr::slug($phone . '_verify_code', '_');
+    app('redis')->set($key, '123456');
+
+    $response = (new AuthController())->authenticateSmsCode(auth_controller_sms_request([
+        'phone' => $phone,
+        'code'  => '123456',
+    ]));
+
+    $payload = $response->getData(true);
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($payload['token'])->toBeString()
+        ->and($payload['token'])->not->toBeEmpty()
+        ->and($payload['user']['uuid'])->toBe('11111111-1111-4111-8111-111111111111')
+        // The user was logged in through the guard, the OTP consumed, and a token issued.
+        ->and($authGuard->loggedIn)->toHaveCount(1)
+        ->and(app('redis')->get($key))->toBeNull()
+        ->and($capsule->getConnection('mysql')->table('personal_access_tokens')->count())->toBe(1);
 });

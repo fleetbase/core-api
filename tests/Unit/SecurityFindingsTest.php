@@ -8,7 +8,6 @@ namespace Fleetbase\Tests\SecurityFixtures {
 }
 
 namespace {
-    use Fleetbase\Http\Controllers\Internal\v1\ApiCredentialController;
     use Fleetbase\Http\Controllers\Internal\v1\ChatChannelController;
     use Fleetbase\Http\Controllers\Internal\v1\CompanyController;
     use Fleetbase\Http\Controllers\Internal\v1\ReportController;
@@ -61,16 +60,8 @@ namespace {
             ->and($reflection->getMethod('deleteRecord')->getDeclaringClass()->getName())->toBe(CompanyController::class);
     });
 
-    test('api credential roll resolves credentials inside the active company', function () {
-        $source = controller_source(ApiCredentialController::class);
-
-        expect($source)->toContain("ApiCredential::where('uuid', \$id)")
-            ->and($source)->toContain("->where('company_uuid', session('company'))")
-            ->and($source)->not->toContain('ApiCredential::find($id)');
-    });
-
-    // NOTE: Policy-delete and Notification-delete cross-tenant/cross-user scoping are now
-    // covered behaviorally (real execution + row-untouched assertions) in
+    // NOTE: ApiCredential-roll, Policy-delete and Notification-delete cross-tenant scoping are
+    // now covered behaviorally (real execution + row-untouched assertions) in
     // tests/Unit/SecurityBehavioralTest.php, replacing the previous source-text greps here.
 
     // NOTE: the session-company binding guard for transferOwnership/leaveOrganization is now
