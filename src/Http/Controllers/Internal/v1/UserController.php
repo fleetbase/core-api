@@ -710,7 +710,7 @@ class UserController extends FleetbaseController
             return $this->inviteExistingUser($user, $request);
         }
 
-        // Brand-new user — create a pending record then invite.
+        // Brand-new user — create a pending record; assignCompany() below issues the join invite + notification.
         $data['company_uuid'] = $company->uuid;
         $data['status']       = 'pending';
         $data['type']         = 'user';

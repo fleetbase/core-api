@@ -48,6 +48,15 @@ class DataPurgerFailingPurger extends DataPurgerTestPurger
     }
 }
 
+class DataPurgerNoForeignKeyTogglePurger extends DataPurgerTestPurger
+{
+    public function __construct($db, ?Closure $logger = null, array $tables = [], array $foreignKeys = [])
+    {
+        parent::__construct($db, $logger, $tables, $foreignKeys);
+        $this->disableForeignKeys = false;
+    }
+}
+
 class DataPurgerProbe extends DataPurger
 {
     public function tenantTables(): array
@@ -623,4 +632,42 @@ test('data purger discovers foreign key metadata by driver and filters unrelated
         ->and($mysql->queries[0]['table'])->toBe('information_schema.KEY_COLUMN_USAGE')
         ->and($pgsql->queries[0]['select'])->toContain('FOREIGN KEY')
         ->and($sqlite->queries)->toBe([]);
+});
+
+test('data purger skips foreign key toggling when disableForeignKeys is false', function () {
+    $capsule = data_purger_database();
+    $db      = $capsule->getConnection('mysql');
+
+    $purger = new DataPurgerNoForeignKeyTogglePurger($db, null, data_purger_tables());
+    $result = $purger->purgeCompany('company-1', deleteCompanyRow: true);
+
+    // Deletion still happens; the FK toggle is simply never invoked.
+    expect($purger->foreignKeyToggles)->toBe([])
+        ->and($result['total'])->toBe(4)
+        ->and($db->table('orders')->pluck('uuid')->all())->toBe(['order-3'])
+        ->and($db->table('companies')->pluck('uuid')->all())->toBe(['company-2']);
+});
+
+test('data purger rolls back deep-reference child deletions when a later parent purge fails', function () {
+    $capsule = data_purger_database();
+    $db      = $capsule->getConnection('mysql');
+
+    // Deep pass deletes order_notes (child of orders) first; the primary pass then throws on
+    // 'orders'. The whole transaction must roll back — including the deep-pass child deletes.
+    $purger = new DataPurgerFailingPurger(
+        $db,
+        null,
+        data_purger_tables(),
+        [['order_notes', 'order_uuid', 'orders', 'uuid']]
+    );
+
+    expect(fn () => $purger->purgeCompany('company-1', deleteCompanyRow: false, deepReferencePass: true))
+        ->toThrow(RuntimeException::class, 'simulated purge failure');
+
+    // Nothing persisted: the child rows deleted by the deep pass are restored, and orders is intact.
+    expect($db->table('order_notes')->pluck('body')->all())->toBe(['tenant note', 'other note'])
+        ->and($db->table('orders')->count())->toBe(3)
+        ->and($db->table('api_events')->count())->toBe(2)
+        // Foreign key checks are restored on the failure path.
+        ->and($purger->foreignKeyToggles)->toBe([false, true]);
 });

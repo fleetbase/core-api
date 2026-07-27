@@ -179,3 +179,22 @@ test('parse phone fills missing regional context from the authenticated company'
 
     expect(ParsePhone::fromModel(new ParsePhoneRecord(['phone' => '4155552671'])))->toBe('+14155552671');
 });
+
+test('parse phone strips extensions from a valid international number in E164 output', function () {
+    session()->flush();
+
+    // libphonenumber parses the extension but E164 output excludes it.
+    $record = new ParsePhoneRecord(['phone' => '+14155552671 ext. 123']);
+
+    expect(ParsePhone::fromModel($record))->toBe('+14155552671');
+});
+
+test('parse phone returns non-string numeric input unchanged when no region context resolves', function () {
+    session()->flush();
+
+    // A non-string phone value has no leading "+" and no country/currency/timezone context,
+    // so it falls through every parse attempt and is returned as-is (documents current behavior).
+    $record = new ParsePhoneRecord(['phone' => 14155552671]);
+
+    expect(ParsePhone::fromModel($record))->toBe(14155552671);
+});

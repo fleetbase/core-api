@@ -11,9 +11,6 @@ namespace {
     use Fleetbase\Http\Controllers\Internal\v1\ApiCredentialController;
     use Fleetbase\Http\Controllers\Internal\v1\ChatChannelController;
     use Fleetbase\Http\Controllers\Internal\v1\CompanyController;
-    use Fleetbase\Http\Controllers\Internal\v1\FileController;
-    use Fleetbase\Http\Controllers\Internal\v1\NotificationController;
-    use Fleetbase\Http\Controllers\Internal\v1\PolicyController;
     use Fleetbase\Http\Controllers\Internal\v1\ReportController;
     use Fleetbase\Http\Controllers\Internal\v1\RoleController;
     use Fleetbase\Http\Controllers\Internal\v1\ScheduleExceptionController;
@@ -72,25 +69,13 @@ namespace {
             ->and($source)->not->toContain('ApiCredential::find($id)');
     });
 
-    test('policy deletion resolves only organization managed policies inside the active company', function () {
-        $source = controller_source(PolicyController::class);
+    // NOTE: Policy-delete and Notification-delete cross-tenant/cross-user scoping are now
+    // covered behaviorally (real execution + row-untouched assertions) in
+    // tests/Unit/SecurityBehavioralTest.php, replacing the previous source-text greps here.
 
-        expect($source)->toContain("Policy::where('id', \$id)")
-            ->and($source)->toContain("->where('company_uuid', session('company'))")
-            ->and($source)->not->toContain('Policy::find($id)');
-    });
-
-    test('notification mutations are scoped to the authenticated user', function () {
-        $source = controller_source(NotificationController::class);
-
-        expect($source)->toContain("Notification::where('notifiable_id', session('user'))")
-            ->and($source)->toContain("->where('notifiable_type', User::class)")
-            ->and($source)->toContain('public function deleteRecord($id, Request $request)')
-            ->and($source)->not->toContain("Notification::where('id', \$id)->first()")
-            ->and($source)->not->toContain('Notification::find($notificationId)')
-            ->and($source)->not->toContain('Notification::whereIn(\'id\', $notifications)->delete()');
-    });
-
+    // NOTE: the session-company binding guard for transferOwnership/leaveOrganization is now
+    // covered behaviorally in tests/Unit/SecurityBehavioralTest.php. The source checks below are
+    // retained only for the owner-only/leave-member string invariants not yet exercised behaviorally.
     test('company ownership transfer and leave bind to session company and authenticated user', function () {
         $source = controller_source(CompanyController::class);
 
@@ -122,13 +107,8 @@ namespace {
             ->and($source)->not->toContain('Policy::whereIn(\'id\', $request->array(\'role.policies\'))->get()');
     });
 
-    test('file download resolves files inside the active company and uses stored disk', function () {
-        $source = controller_source(FileController::class);
-
-        expect($source)->toContain("->where('company_uuid', session('company'))")
-            ->and($source)->toContain('$disk     = $file->disk ?: config(\'filesystems.default\');')
-            ->and($source)->not->toContain("\$disk     = \$request->input('disk'");
-    });
+    // File download cross-tenant scoping is covered behaviorally (ModelNotFoundException on a
+    // foreign-company file) in tests/Unit/SecurityBehavioralTest.php, replacing a source-text grep.
 
     test('scheduling custom actions are scoped to the active company', function () {
         $exceptionSource = controller_source(ScheduleExceptionController::class);

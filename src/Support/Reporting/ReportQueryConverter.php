@@ -580,14 +580,38 @@ class ReportQueryConverter
         $foreignKey = $join['foreignKey'] ?? 'uuid';
         $alias      = $join['alias'] ?? $joinTable;
 
-        // Apply the join
-        $query->join(
-            "{$joinTable} as {$alias}",
-            $join['localTable'] . ".{$localKey}",
-            '=',
-            "{$alias}.{$foreignKey}",
-            $joinType
-        );
+        // If the joined table is itself tenant-scoped (declares a company_uuid column in
+        // the registry), constrain the join to the active company. This is applied inside
+        // the JOIN ON clause (not a WHERE) so LEFT joins keep their unmatched-row semantics
+        // while still never exposing another tenant's rows through the join.
+        $joinTableSchema  = $this->registry->getTable($joinTable);
+        $scopeJoinCompany = $joinTableSchema && $joinTableSchema->hasColumn('company_uuid')
+            ? $this->resolveCompanyUuid()
+            : null;
+
+        if ($scopeJoinCompany !== null) {
+            $localColumn = $join['localTable'] . ".{$localKey}";
+            $foreignRef  = "{$alias}.{$foreignKey}";
+            $query->join(
+                "{$joinTable} as {$alias}",
+                function ($joinClause) use ($localColumn, $foreignRef, $alias, $scopeJoinCompany) {
+                    $joinClause->on($localColumn, '=', $foreignRef)
+                        ->where("{$alias}.company_uuid", '=', $scopeJoinCompany);
+                },
+                null,
+                null,
+                $joinType
+            );
+        } else {
+            // Apply the join
+            $query->join(
+                "{$joinTable} as {$alias}",
+                $join['localTable'] . ".{$localKey}",
+                '=',
+                "{$alias}.{$foreignKey}",
+                $joinType
+            );
+        }
 
         $this->manualJoins[] = [
             'table'       => $joinTable,
@@ -1250,6 +1274,39 @@ class ReportQueryConverter
             if (!$this->isConfiguredColumnAllowed($tableName, $column['name'])) {
                 throw new \InvalidArgumentException("Column '{$column['name']}' is not allowed for table '{$tableName}'");
             }
+
+            // User-provided aliases are interpolated raw into `... as `{$alias}`` in
+            // buildSelectClause(), so an unchecked alias (e.g. containing a backtick)
+            // is a SQL-injection vector.
+            if (isset($column['alias']) && !$this->isSafeSqlIdentifier((string) $column['alias'])) {
+                throw new \InvalidArgumentException("Invalid column alias '{$column['alias']}'");
+            }
+        }
+
+        foreach ($this->queryConfig['groupBy'] ?? [] as $g) {
+            $groupAlias = $g['groupBy']['alias'] ?? null;
+            if ($groupAlias !== null && !$this->isSafeSqlIdentifier((string) $groupAlias)) {
+                throw new \InvalidArgumentException("Invalid group-by alias '{$groupAlias}'");
+            }
+        }
+
+        // Validate manual joins: the join target must be a registered table, and every
+        // identifier interpolated raw into the JOIN clause (table/alias/keys/localTable)
+        // must be a safe SQL identifier. Without this, applyManualJoin() would splice
+        // arbitrary attacker-controlled tables and identifiers directly into SQL.
+        foreach ($this->queryConfig['joins'] ?? [] as $join) {
+            $joinTable = $join['table'] ?? null;
+
+            if (!$joinTable || !$this->registry->isTableRegistered($joinTable)) {
+                throw new \InvalidArgumentException("Join table '" . ($joinTable ?? '') . "' is not registered");
+            }
+
+            foreach (['table', 'alias', 'name', 'localTable', 'localKey', 'foreignKey'] as $identifierKey) {
+                if (isset($join[$identifierKey]) && $join[$identifierKey] !== ''
+                    && !$this->isSafeSqlIdentifier((string) $join[$identifierKey])) {
+                    throw new \InvalidArgumentException("Invalid identifier '{$join[$identifierKey]}' in join configuration");
+                }
+            }
         }
 
         if (!empty($this->queryConfig['groupBy'])) {
@@ -1285,6 +1342,17 @@ class ReportQueryConverter
         //     ));
         //     // (Optional) log/warn that some columns were dropped
         // }
+    }
+
+    /**
+     * Whether a string is a safe, bare SQL identifier (letters, digits and underscores,
+     * starting with a letter or underscore). Used to guard values that are interpolated
+     * raw into SQL — manual-join tables/aliases/keys and select aliases — rather than
+     * passed as bound parameters.
+     */
+    protected function isSafeSqlIdentifier(string $identifier): bool
+    {
+        return (bool) preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $identifier);
     }
 
     protected function isConfiguredColumnAllowed(string $tableName, string $columnName): bool

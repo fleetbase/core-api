@@ -1081,3 +1081,166 @@ test('report query converter aggregates computed group by metadata supplied by a
             'auto_join_path' => null,
         ]);
 });
+
+// -----------------------------------------------------------------------------
+// H2 hardening: manual-join enforcement (identifier + registry validation) and
+// tenant-scoping of joined tables on the real execution path.
+// -----------------------------------------------------------------------------
+
+test('report query converter rejects a manual join to an unregistered table', function () {
+    $result = report_converter_execute([
+        'table'   => ['name' => 'orders'],
+        'columns' => [['name' => 'tracking_number']],
+        'joins'   => [
+            [
+                'table'      => 'personal_access_tokens', // not in the registry
+                'localTable' => 'orders',
+                'localKey'   => 'uuid',
+                'foreignKey' => 'tokenable_id',
+            ],
+        ],
+    ]);
+
+    expect($result['success'])->toBeFalse()
+        ->and($result['error'])->toBe("Join table 'personal_access_tokens' is not registered");
+});
+
+test('report query converter rejects a malicious column alias before building sql', function () {
+    $result = report_converter_execute([
+        'table'   => ['name' => 'orders'],
+        'columns' => [
+            ['name' => 'tracking_number', 'alias' => 'ok`, (select secret from users) as `leak'],
+        ],
+    ]);
+
+    expect($result['success'])->toBeFalse()
+        ->and($result['error'])->toContain('Invalid column alias');
+});
+
+test('report query converter rejects malicious identifiers in a manual join', function () {
+    $result = report_converter_execute([
+        'table'   => ['name' => 'orders'],
+        'columns' => [['name' => 'tracking_number']],
+        'joins'   => [
+            [
+                'table'      => 'payloads',
+                'localTable' => 'orders',
+                'localKey'   => 'uuid',
+                'foreignKey' => 'uuid) ON 1=1 -- ',
+            ],
+        ],
+    ]);
+
+    expect($result['success'])->toBeFalse()
+        ->and($result['error'])->toContain('Invalid identifier');
+});
+
+/**
+ * Self-contained fixture with two tenant-scoped tables (widgets → gadgets, both
+ * carrying company_uuid) so we can prove that a manual join to a company-scoped
+ * table does not leak another tenant's rows through the join.
+ */
+function report_converter_join_scope_registry(): ReportSchemaRegistry
+{
+    $registry = new ReportSchemaRegistry();
+    $registry->setCacheEnabled(false);
+
+    $registry->registerTable(
+        Table::make('widgets')->columns([
+            Column::make('uuid'),
+            Column::make('company_uuid'),
+            Column::make('name'),
+        ])
+    );
+    $registry->registerTable(
+        Table::make('gadgets')->columns([
+            Column::make('uuid'),
+            Column::make('company_uuid'),
+            Column::make('widget_uuid'),
+            Column::make('label'),
+        ])
+    );
+
+    return $registry;
+}
+
+function report_converter_join_scope_fixture(): void
+{
+    $connectionConfig = ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => ''];
+    $container        = bind_test_container();
+
+    session()->flush();
+    session(['company' => 'company-1']);
+
+    $capsule = new Capsule($container);
+    $capsule->addConnection($connectionConfig, 'testing');
+    $capsule->setEventDispatcher(new Dispatcher($container));
+    $capsule->setAsGlobal();
+    $capsule->bootEloquent();
+
+    config([
+        'database.default'             => 'testing',
+        'database.connections.testing' => $connectionConfig,
+    ]);
+
+    $databaseManager = $capsule->getDatabaseManager();
+    $databaseManager->setDefaultConnection('testing');
+    $container->instance('db', $databaseManager);
+    Facade::clearResolvedInstance('db');
+
+    $schema = $capsule->getConnection('testing')->getSchemaBuilder();
+    $schema->create('widgets', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('company_uuid');
+        $table->string('name');
+    });
+    $schema->create('gadgets', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('company_uuid');
+        $table->string('widget_uuid');
+        $table->string('label');
+    });
+
+    $connection = $capsule->getConnection('testing');
+    $connection->table('widgets')->insert([
+        ['uuid' => 'widget-1', 'company_uuid' => 'company-1', 'name' => 'Mine'],
+        ['uuid' => 'widget-2', 'company_uuid' => 'company-2', 'name' => 'Theirs'],
+    ]);
+    // gadget-mine and gadget-theirs both reference widget-1's uuid, but belong to
+    // different companies — the cross-tenant leak vector through the join key.
+    $connection->table('gadgets')->insert([
+        ['uuid' => 'gadget-mine', 'company_uuid' => 'company-1', 'widget_uuid' => 'widget-1', 'label' => 'Gadget Mine'],
+        ['uuid' => 'gadget-theirs', 'company_uuid' => 'company-2', 'widget_uuid' => 'widget-1', 'label' => 'Gadget Theirs'],
+    ]);
+}
+
+test('report query converter scopes a joined tenant table to the active company', function () {
+    report_converter_join_scope_fixture();
+
+    $result = (new ReportQueryConverter(report_converter_join_scope_registry(), [
+        'table'   => ['name' => 'widgets'],
+        'columns' => [
+            ['name' => 'name'],
+            ['name' => 'gadgets.label', 'alias' => 'gadget_label'],
+        ],
+        'joins' => [
+            [
+                'table'      => 'gadgets',
+                'name'       => 'gadgets',
+                'localTable' => 'widgets',
+                'localKey'   => 'uuid',
+                'foreignKey' => 'widget_uuid',
+            ],
+        ],
+    ]))->execute();
+
+    $labels = collect($result['data'])->pluck('gadget_label')->all();
+
+    expect($result['success'])->toBeTrue()
+        // Only the active company's gadget is joined; the foreign-tenant row that shares
+        // the same widget_uuid must NOT leak through the join.
+        ->and($labels)->toContain('Gadget Mine')
+        ->and($labels)->not->toContain('Gadget Theirs')
+        // The company scope must live in the JOIN ON clause and be bound (not inlined).
+        ->and($result['meta']['query_bindings'])->toContain('company-1');
+});
