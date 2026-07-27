@@ -3,6 +3,8 @@
 use Fleetbase\Attributes\SkipAuthorizationCheck;
 use Fleetbase\Expansions\Builder as BuilderExpansion;
 use Fleetbase\Expansions\Str as StrExpansion;
+use Fleetbase\Http\Controllers\Internal\v1\AuthController;
+use Fleetbase\Http\Requests\SignUpRequest;
 use Fleetbase\Models\ApiCredential;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\Directive;
@@ -619,6 +621,50 @@ test('auth support registers lowercase owner and organization records and joins 
         ->and($company)->toBeInstanceOf(Company::class)
         ->and($company->name)->toBe('Registered Company')
         ->and(app('db')->table('company_users')->where('user_uuid', $owner->uuid)->where('company_uuid', $company->uuid)->exists())->toBeTrue();
+});
+
+test('auth controller sign up registers an owner and organization then returns an access token', function () {
+    auth_support_fixtures();
+
+    // createToken persists to personal_access_tokens; the shared fixture omits it.
+    app('db')->connection('mysql')->getSchemaBuilder()->create('personal_access_tokens', function ($table) {
+        $table->increments('id');
+        $table->string('tokenable_type');
+        $table->string('tokenable_id');
+        $table->string('name');
+        $table->string('token', 64)->unique();
+        $table->text('abilities')->nullable();
+        $table->timestamp('last_used_at')->nullable();
+        $table->timestamp('expires_at')->nullable();
+        $table->timestamps();
+    });
+
+    $request = SignUpRequest::create('/int/v1/auth/sign-up', 'POST', [
+        'user' => [
+            'email'    => 'Founder@Example.TEST',
+            'name'     => 'Founder User',
+            'password' => 'hashed:founder',
+        ],
+        'company' => [
+            'email' => 'HQ@Example.TEST',
+            'name'  => 'Founder Company',
+        ],
+    ]);
+
+    $response = (new AuthController())->signUp($request);
+    $payload  = $response->getData(true);
+
+    $owner   = User::where('email', 'founder@example.test')->first();
+    $company = Company::where('owner_uuid', $owner?->uuid)->first();
+
+    expect($payload['token'])->toBeString()
+        ->and($payload['token'])->not->toBeEmpty()
+        ->and($owner)->toBeInstanceOf(User::class)
+        ->and($company)->toBeInstanceOf(Company::class)
+        ->and($company->name)->toBe('Founder Company')
+        ->and($owner->company_uuid)->toBe($company->uuid)
+        ->and(app('db')->table('company_users')->where('user_uuid', $owner->uuid)->where('company_uuid', $company->uuid)->exists())->toBeTrue()
+        ->and(app('db')->table('personal_access_tokens')->where('tokenable_id', $owner->uuid)->count())->toBe(1);
 });
 
 test('auth support stores api credential session context and tracks key usage', function () {

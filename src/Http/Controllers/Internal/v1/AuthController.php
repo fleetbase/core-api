@@ -554,8 +554,6 @@ class AuthController extends Controller
      */
     public function signUp(SignUpRequest $request)
     {
-        // @codeCoverageIgnoreStart
-        // Sign-up uses real registration side effects; request validation and auth bootstrap cover the public contract.
         $userDetails    = $request->input('user');
         $companyDetails = $request->input('company');
 
@@ -563,7 +561,6 @@ class AuthController extends Controller
         $token   = $newUser->createToken($newUser->uuid);
 
         return response()->json(['token' => $token->plainTextToken]);
-        // @codeCoverageIgnoreEnd
     }
 
     /**
