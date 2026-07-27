@@ -636,6 +636,32 @@ test('login rejects matching customer auth tokens before reusing existing sessio
         ->and($capsule->getConnection('mysql')->table('personal_access_tokens')->count())->toBe(1);
 });
 
+test('login does not honor an auth token whose owner does not match the claimed identity (token-swap)', function () {
+    $capsule = auth_controller_login_bootstrap_database();
+    auth_controller_login_insert_user($capsule);
+
+    // A valid token belonging to auth@example.test.
+    $user      = User::find('11111111-1111-4111-8111-111111111111');
+    $authToken = $user->createToken($user->uuid)->plainTextToken;
+
+    // The attacker presents that valid token but claims a DIFFERENT identity. The token
+    // owner's email/phone does not match the claimed identity, so the token must be ignored
+    // and the request must fall through to (failing) password authentication.
+    $response = (new AuthController())->login(auth_controller_login_request([
+        'identity'  => 'someone-else@example.test',
+        'password'  => 'not-the-password',
+        'authToken' => $authToken,
+    ]));
+
+    $payload = $response->getData(true);
+
+    expect($response->getStatusCode())->toBe(401)
+        ->and($payload['code'])->toBe('invalid_credentials')
+        // The victim's token was NOT returned, and no new token was issued.
+        ->and($payload)->not->toHaveKey('token')
+        ->and($capsule->getConnection('mysql')->table('personal_access_tokens')->count())->toBe(1);
+});
+
 test('login starts two factor authentication without issuing a sanctum token when enabled', function () {
     $capsule = auth_controller_login_bootstrap_database();
     auth_controller_login_insert_user($capsule, [
