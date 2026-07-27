@@ -360,7 +360,9 @@ class TwoFactorAuth
         $companyEnforced = static::isCompanyEnforced($user->company);
         $userEnabled     = static::isEnabled($user);
 
-        return $userEnabled ? !$userEnabled : $systemEnforced || $companyEnforced;
+        // A user who has already enabled 2FA is never re-prompted to enroll; otherwise we
+        // enforce enrollment when the system or the user's company mandates it.
+        return $userEnabled ? false : ($systemEnforced || $companyEnforced);
     }
 
     /**
