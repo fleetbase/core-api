@@ -339,6 +339,13 @@ namespace {
         {
             return new MessageBag($this->messages);
         }
+
+        public function getTranslator()
+        {
+            // The real Illuminate\Validation\ValidationException::summarize() asks the
+            // validator for a translator when building its message.
+            return new Illuminate\Translation\Translator(new Illuminate\Translation\ArrayLoader(), 'en');
+        }
     }
 
     class RequestContractsFleetbaseRequestProbe extends FleetbaseRequest
@@ -526,7 +533,7 @@ namespace {
             ->and(request_rule_strings($createRules['password']))->toContain('sometimes', 'confirmed', 'string')
             ->and(request_rule_strings($updateRules['name']))->toBe(['sometimes', 'required', 'string', 'min:2', 'max:100'])
             ->and(request_rule_strings($updateRules['phone']))->toContain('sometimes', 'nullable')
-            ->and(request_rule_strings($updateRules['phone']))->toContain('unique:users,phone,user-1,uuid,deleted_at,"NULL"')
+            ->and(request_rule_strings($updateRules['phone']))->toContain('unique:users,phone,"user-1",uuid,deleted_at,"NULL"')
             ->and($messages['*.required'])->toBe('Your :attribute is required')
             ->and($messages['email'])->toBe('You must enter a valid :attribute')
             ->and($messages['phone.unique'])->toBe('An account with this phone number already exists')
@@ -797,7 +804,7 @@ namespace {
 
         expect($emailRequest->authorize())->toBe($user)
             ->and(request_rule_strings($emailRules['email']))->toContain('required', 'email')
-            ->and(request_rule_strings($emailRules['email']))->toContain('unique:users,email,user-1,uuid,deleted_at,"NULL"')
+            ->and(request_rule_strings($emailRules['email']))->toContain('unique:users,email,"user-1",uuid,deleted_at,"NULL"')
             ->and($emailRules['password'])->toBe(['required', 'string'])
             ->and($validator->errors['password'][0])->toBe('The current password provided is invalid.')
             ->and($user->checked)->toBe(['wrong'])

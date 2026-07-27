@@ -105,6 +105,12 @@ class CoreExpansionValidatorFake implements ValidatorContract
     {
         return $this->errors();
     }
+
+    public function getTranslator()
+    {
+        // Real Illuminate\Validation\ValidationException::summarize() asks for a translator.
+        return new Illuminate\Translation\Translator(new Illuminate\Translation\ArrayLoader(), 'en');
+    }
 }
 
 afterEach(function () {

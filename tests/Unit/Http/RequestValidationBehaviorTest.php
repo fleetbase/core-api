@@ -3,148 +3,134 @@
 /**
  * FormRequest validation behavior tests.
  *
- * Context: this package does NOT depend on illuminate/validation (only the contracts),
- * so the full Laravel validation engine cannot be driven here — which is exactly why
- * RequestContractsTest stubs Illuminate\Validation\*. Rather than assert only the shape
- * of rules() arrays, this file:
- *
- *   1. Exercises the Fleetbase-owned PublicWebhookUrl SSRF rule behaviorally (it is a real
- *      Illuminate\Contracts\Validation\Rule with no framework-engine dependency), covering
- *      edge cases beyond SecurityFindingsTest.
- *   2. Locks the security-critical invariants of the key request rule sets so a regression
- *      that weakens them (e.g. adding an email-enumeration oracle, or dropping the public-URL
- *      SSRF guard) fails the suite.
- *
- * Follow-up (tracked in the audit): add illuminate/validation as a dev dependency to drive
- * the real validation engine end-to-end for these requests.
+ * These drive the REAL Laravel validation engine (illuminate/validation) against each
+ * request's rules(), asserting that valid input passes and invalid input is actually
+ * rejected — not merely that the rules() array has a given shape. They also exercise the
+ * Fleetbase-owned PublicWebhookUrl SSRF rule directly.
  */
 
-namespace Illuminate\Validation\Rules {
-    // illuminate/validation is not installed in this package; UpdatePasswordRequest::rules()
-    // references this class, so provide the same minimal stub RequestContractsTest uses when
-    // the real class is absent (guarded so it never collides with a real/loaded definition).
-    if (!class_exists(Password::class)) {
-        class Password
-        {
-            public static function min(int $size): self
-            {
-                return new self();
-            }
+use Fleetbase\Http\Requests\Internal\InviteUserRequest;
+use Fleetbase\Http\Requests\Internal\UpdatePasswordRequest;
+use Fleetbase\Http\Requests\Internal\UserForgotPasswordRequest;
+use Fleetbase\Http\Requests\Internal\WebhookEndpointRequest;
+use Fleetbase\Rules\PublicWebhookUrl;
+use Illuminate\Support\Facades\Facade;
+use Illuminate\Translation\ArrayLoader;
+use Illuminate\Translation\Translator;
+use Illuminate\Validation\Factory;
 
-            public function mixedCase(): self
-            {
-                return $this;
-            }
+function request_validation_factory(): Factory
+{
+    $container = bind_test_container();
+    session(['company' => 'company-1']);
 
-            public function letters(): self
-            {
-                return $this;
-            }
+    $factory = new Factory(new Translator(new ArrayLoader(), 'en'), $container);
+    // The Password rule resolves the 'validator' service internally.
+    $container->instance('validator', $factory);
+    Facade::clearResolvedInstance('validator');
 
-            public function numbers(): self
-            {
-                return $this;
-            }
-
-            public function symbols(): self
-            {
-                return $this;
-            }
-
-            public function uncompromised(): self
-            {
-                return $this;
-            }
-
-            public function __toString(): string
-            {
-                return 'password';
-            }
-        }
-    }
+    return $factory;
 }
 
-namespace {
-    use Fleetbase\Http\Requests\Internal\InviteUserRequest;
-    use Fleetbase\Http\Requests\Internal\UpdatePasswordRequest;
-    use Fleetbase\Http\Requests\Internal\UserForgotPasswordRequest;
-    use Fleetbase\Http\Requests\Internal\WebhookEndpointRequest;
-    use Fleetbase\Rules\PublicWebhookUrl;
-    use Illuminate\Validation\Rules\Password;
+function validate_payload(object $request, array $data): Illuminate\Contracts\Validation\Validator
+{
+    $factory  = request_validation_factory();
+    $messages = method_exists($request, 'messages') ? $request->messages() : [];
 
-    beforeEach(function () {
-        bind_test_container();
-        session(['company' => 'company-1']);
-    });
-
-    test('public webhook url rule accepts public http and https hosts', function () {
-        $rule = new PublicWebhookUrl();
-
-        expect($rule->passes('url', 'https://93.184.216.34/hooks/fleetbase'))->toBeTrue()
-            ->and($rule->passes('url', 'http://93.184.216.34/hook'))->toBeTrue()
-            ->and($rule->message())->toContain('public');
-    });
-
-    test('public webhook url rule blocks SSRF and malformed vectors', function (mixed $value) {
-        expect((new PublicWebhookUrl())->passes('url', $value))->toBeFalse();
-    })->with([
-        'non-string int'    => [12345],
-        'non-string array'  => [['https://example.test']],
-        'empty string'      => [''],
-        'not a url'         => ['not a url'],
-        'no host'           => ['https:///path'],
-        'ftp scheme'        => ['ftp://93.184.216.34/x'],
-        'file scheme'       => ['file:///etc/passwd'],
-        'javascript scheme' => ['javascript:alert(1)'],
-        'localhost'         => ['http://localhost/hook'],
-        'localhost suffix'  => ['http://api.localhost/hook'],
-        'internal suffix'   => ['https://svc.internal/hook'],
-        'gcp metadata host' => ['http://metadata.google.internal/x'],
-        'aws metadata ip'   => ['http://169.254.169.254/latest/meta-data/'],
-        'loopback v4'       => ['http://127.0.0.1/hook'],
-        'loopback v6'       => ['http://[::1]/hook'],
-        'private 10'        => ['https://10.0.0.1/hook'],
-        'private 172'       => ['https://172.16.0.1/hook'],
-        'private 192'       => ['https://192.168.0.1/hook'],
-        'link local'        => ['https://169.254.10.20/hook'],
-    ]);
-
-    test('forgot password rule set does not expose an email-enumeration oracle', function () {
-        // exists:users would let an attacker probe which emails are registered.
-        expect((new UserForgotPasswordRequest())->rules()['email'])->toBe(['required', 'email']);
-    });
-
-    test('invite user rule set requires a valid email and a name', function () {
-        $rules = (new InviteUserRequest())->rules();
-
-        expect($rules['user.email'])->toBe('required|email')
-            ->and($rules['user.name'])->toBe('required');
-    });
-
-    test('update password rule set enforces confirmation and password complexity', function () {
-        $rules         = (new UpdatePasswordRequest())->rules();
-        $passwordRules = $rules['password'];
-
-        $hasComplexityRule = collect($passwordRules)->contains(fn ($rule) => $rule instanceof Password);
-
-        expect($passwordRules)->toContain('required')
-            ->and($passwordRules)->toContain('confirmed')
-            ->and($passwordRules)->toContain('string')
-            ->and($hasComplexityRule)->toBeTrue()
-            ->and($rules['password_confirmation'])->toBe(['required', 'string']);
-    });
-
-    test('webhook endpoint rule set requires a public url on create and keeps the SSRF guard on update', function () {
-        $createRules = WebhookEndpointRequest::create('/int/v1/webhook-endpoints', 'POST')->rules();
-        $updateRules = WebhookEndpointRequest::create('/int/v1/webhook-endpoints/webhook_123', 'PUT')->rules();
-
-        $createHasSsrfGuard = collect($createRules['url'])->contains(fn ($rule) => $rule instanceof PublicWebhookUrl);
-        $updateHasSsrfGuard = collect($updateRules['url'])->contains(fn ($rule) => $rule instanceof PublicWebhookUrl);
-
-        expect($createRules['url'][0])->toBe('required')
-            ->and($createRules['url'])->toContain('url')
-            ->and($createHasSsrfGuard)->toBeTrue()
-            ->and($updateRules['url'][0])->toBe('sometimes')
-            ->and($updateHasSsrfGuard)->toBeTrue();
-    });
+    return $factory->make($data, $request->rules(), $messages);
 }
+
+test('forgot password request rejects missing and malformed emails but accepts a valid one', function () {
+    $request = new UserForgotPasswordRequest();
+
+    expect(validate_payload($request, [])->fails())->toBeTrue()
+        ->and(validate_payload($request, ['email' => 'not-an-email'])->fails())->toBeTrue()
+        ->and(validate_payload($request, ['email' => 'user@example.test'])->passes())->toBeTrue();
+
+    // Regression guard: forgot-password must NOT use exists:users (email-enumeration oracle).
+    expect($request->rules()['email'])->toBe(['required', 'email']);
+});
+
+test('invite user request requires a valid email and a name', function () {
+    $request = new InviteUserRequest();
+
+    $missingBoth  = validate_payload($request, ['user' => []]);
+    $invalidEmail = validate_payload($request, ['user' => ['email' => 'nope', 'name' => 'Jane']]);
+    $missingName  = validate_payload($request, ['user' => ['email' => 'jane@example.test']]);
+    $valid        = validate_payload($request, ['user' => ['email' => 'jane@example.test', 'name' => 'Jane']]);
+
+    expect($missingBoth->fails())->toBeTrue()
+        ->and($missingBoth->errors()->has('user.email'))->toBeTrue()
+        ->and($missingBoth->errors()->has('user.name'))->toBeTrue()
+        ->and($invalidEmail->fails())->toBeTrue()
+        ->and($invalidEmail->errors()->has('user.email'))->toBeTrue()
+        ->and($missingName->fails())->toBeTrue()
+        ->and($missingName->errors()->has('user.name'))->toBeTrue()
+        ->and($valid->passes())->toBeTrue();
+});
+
+test('update password request rejects missing, weak, and unconfirmed passwords', function () {
+    $request = new UpdatePasswordRequest();
+
+    // NOTE: only failure cases are asserted — the Password rule's uncompromised() makes a
+    // network call, but only AFTER the local complexity checks pass, so weak/missing/mismatched
+    // passwords are rejected before any network access.
+    $missing     = validate_payload($request, []);
+    $weak        = validate_payload($request, ['password' => 'abc', 'password_confirmation' => 'abc']);
+    $unconfirmed = validate_payload($request, ['password' => 'weakpass', 'password_confirmation' => 'different']);
+
+    expect($missing->fails())->toBeTrue()
+        ->and($missing->errors()->has('password'))->toBeTrue()
+        ->and($weak->fails())->toBeTrue()
+        ->and($weak->errors()->has('password'))->toBeTrue()
+        ->and($weak->errors()->first('password'))->toContain('Password must')
+        ->and($unconfirmed->fails())->toBeTrue()
+        ->and($unconfirmed->errors()->has('password'))->toBeTrue();
+});
+
+test('webhook endpoint request enforces a public url on create and is optional on update', function () {
+    $createRequest = WebhookEndpointRequest::create('/int/v1/webhook-endpoints', 'POST');
+    $updateRequest = WebhookEndpointRequest::create('/int/v1/webhook-endpoints/webhook_123', 'PUT');
+
+    // POST: url is required, must be a syntactically valid URL, and must pass the SSRF guard.
+    expect(validate_payload($createRequest, [])->fails())->toBeTrue()
+        ->and(validate_payload($createRequest, ['url' => 'not a url'])->fails())->toBeTrue()
+        ->and(validate_payload($createRequest, ['url' => 'https://10.0.0.1/hook'])->fails())->toBeTrue()
+        ->and(validate_payload($createRequest, ['url' => 'https://93.184.216.34/hooks/fleetbase'])->passes())->toBeTrue();
+
+    // PUT: url is "sometimes" — omitting it is allowed, but a bad value is still rejected.
+    expect(validate_payload($updateRequest, [])->passes())->toBeTrue()
+        ->and(validate_payload($updateRequest, ['url' => 'https://169.254.169.254/latest/meta-data/'])->fails())->toBeTrue();
+});
+
+test('public webhook url rule accepts public http and https hosts', function () {
+    $rule = new PublicWebhookUrl();
+
+    expect($rule->passes('url', 'https://93.184.216.34/hooks/fleetbase'))->toBeTrue()
+        ->and($rule->passes('url', 'http://93.184.216.34/hook'))->toBeTrue()
+        ->and($rule->message())->toContain('public');
+});
+
+test('public webhook url rule blocks SSRF and malformed vectors', function (mixed $value) {
+    expect((new PublicWebhookUrl())->passes('url', $value))->toBeFalse();
+})->with([
+    'non-string int'    => [12345],
+    'non-string array'  => [['https://example.test']],
+    'empty string'      => [''],
+    'not a url'         => ['not a url'],
+    'no host'           => ['https:///path'],
+    'ftp scheme'        => ['ftp://93.184.216.34/x'],
+    'file scheme'       => ['file:///etc/passwd'],
+    'javascript scheme' => ['javascript:alert(1)'],
+    'localhost'         => ['http://localhost/hook'],
+    'localhost suffix'  => ['http://api.localhost/hook'],
+    'internal suffix'   => ['https://svc.internal/hook'],
+    'gcp metadata host' => ['http://metadata.google.internal/x'],
+    'aws metadata ip'   => ['http://169.254.169.254/latest/meta-data/'],
+    'loopback v4'       => ['http://127.0.0.1/hook'],
+    'loopback v6'       => ['http://[::1]/hook'],
+    'private 10'        => ['https://10.0.0.1/hook'],
+    'private 172'       => ['https://172.16.0.1/hook'],
+    'private 192'       => ['https://192.168.0.1/hook'],
+    'link local'        => ['https://169.254.10.20/hook'],
+]);
