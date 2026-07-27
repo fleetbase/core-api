@@ -4,25 +4,6 @@ use Fleetbase\Support\Reporting\ReportQueryExporter;
 use Illuminate\Support\Carbon;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 
-class ReportQueryExporterMoneyFake
-{
-    public static array $constructed = [];
-
-    public function __construct(private int $amount, private string $currency)
-    {
-        self::$constructed[] = compact('amount', 'currency');
-    }
-
-    public function format(): string
-    {
-        return $this->currency . ':' . $this->amount;
-    }
-}
-
-if (!class_exists('Cknow\\Money\\Money')) {
-    class_alias(ReportQueryExporterMoneyFake::class, 'Cknow\\Money\\Money');
-}
-
 beforeEach(function () {
     bind_test_container();
     Carbon::setTestNow(Carbon::parse('2026-07-17 12:00:00'));
@@ -159,7 +140,7 @@ test('report query exporter formats cell values and excel styles by declared col
         ->and($exporter->formatValue('42', ['type' => 'number']))->toBe(42.0)
         ->and($exporter->formatValue('42.75', ['type' => 'decimal']))->toBe(42.75)
         ->and($exporter->formatValue('not numeric', ['type' => 'number']))->toBe('not numeric')
-        ->and($exporter->formatValue(1234.56, ['type' => 'currency']))->toBe('USD:123456')
+        ->and($exporter->formatValue(1234.56, ['type' => 'currency']))->toBe('$1,234.56')
         ->and($exporter->formatValue('', ['type' => 'currency']))->toBe('')
         ->and($exporter->formatValue('n/a', ['type' => 'percentage']))->toBe('n/a')
         ->and($exporter->formatValue(false, ['type' => 'boolean']))->toBe('No')

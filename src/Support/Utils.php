@@ -730,14 +730,33 @@ class Utils
     /**
      * Converts the param to an integer with numbers only.
      *
+     * A leading minus sign is preserved so signed values (e.g. negative
+     * monetary amounts like "-5.00" or "-$5.00") keep their sign. Only a
+     * minus that appears *before* the first digit is treated as a sign; a
+     * hyphen occurring after digits (such as within a phone number like
+     * "276-7156") is ignored, so this remains safe for non-monetary input.
+     *
      * @return int
      */
     public static function numbersOnly($value)
     {
         $string = strval($value);
-        $string = preg_replace('/[^0-9]/', '', $string);
 
-        return intval($string);
+        $isNegative = false;
+        if (preg_match('/\d/', $string, $matches, PREG_OFFSET_CAPTURE)) {
+            $firstDigitOffset = $matches[0][1];
+            $minusOffset      = strpos($string, '-');
+            $isNegative       = $minusOffset !== false && $minusOffset < $firstDigitOffset;
+        }
+
+        $digits = preg_replace('/[^0-9]/', '', $string);
+        if ($digits === '') {
+            return 0;
+        }
+
+        $number = intval($digits);
+
+        return $isNegative ? -$number : $number;
     }
 
     /**
@@ -764,10 +783,20 @@ class Utils
     }
 
     /**
-     * Format number to a particular currency.
+     * Format an amount, expressed in a currency's smallest (minor) unit, into a
+     * localized currency string.
      *
-     * @param float  $amount   amount to format
-     * @param string $currency the currency to format into
+     * The amount is interpreted as an integer number of minor units — cents for
+     * USD/EUR, whole yen for JPY/KRW (which have no minor unit), fils for
+     * BHD/KWD (three-decimal currencies), and so on. The underlying money
+     * adapter honors each currency's ISO-4217 minor-unit exponent, so the
+     * decimal placement is derived from the currency rather than assumed to be
+     * two places. Any surrounding formatting (currency symbols, grouping
+     * commas) is stripped and a leading minus sign is preserved, so negative
+     * amounts (refunds, adjustments) format correctly.
+     *
+     * @param int|float|string $amount   the amount in the currency's smallest unit
+     * @param string           $currency the currency to format into
      *
      * @return string
      */
