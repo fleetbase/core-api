@@ -61,6 +61,7 @@
         "rlanvin/php-rrule": "^2.4"
     },
     "require-dev": {
+        "cknow/laravel-money": "^7.2",
         "friendsofphp/php-cs-fixer": "3.82.2",
         "illuminate/translation": "^10.0",
         "illuminate/validation": "^10.0",

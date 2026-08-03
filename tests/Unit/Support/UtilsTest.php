@@ -490,6 +490,27 @@ test('utils validates identifiers base64 and numeric strings across edge cases',
         ->and(Utils::calculatePercentage(12.5, 200))->toBe(25.0);
 });
 
+test('utils numbers only preserves a leading sign and normalizes non-numeric input', function () {
+    expect(Utils::numbersOnly(500))->toBe(500)
+        // Leading minus sign is preserved for negative amounts (refunds, adjustments).
+        ->and(Utils::numbersOnly(-500))->toBe(-500)
+        ->and(Utils::numbersOnly('-5.00'))->toBe(-500)
+        ->and(Utils::numbersOnly('-$5.00'))->toBe(-500)
+        ->and(Utils::numbersOnly('$-5.00'))->toBe(-500)
+        // Positive/zero/formatted values.
+        ->and(Utils::numbersOnly('$1,234.56'))->toBe(123456)
+        ->and(Utils::numbersOnly(0))->toBe(0)
+        ->and(Utils::numbersOnly('0.00'))->toBe(0)
+        // A hyphen occurring after digits (e.g. phone numbers) is not a sign.
+        ->and(Utils::numbersOnly('276-7156'))->toBe(2767156)
+        // A leading plus is not a negative sign.
+        ->and(Utils::numbersOnly('+5'))->toBe(5)
+        // Non-numeric and null collapse to zero.
+        ->and(Utils::numbersOnly('abc'))->toBe(0)
+        ->and(Utils::numbersOnly(''))->toBe(0)
+        ->and(Utils::numbersOnly(null))->toBe(0);
+});
+
 test('utils resolves model class mutation and ember resource type contracts', function () {
     $user  = new User();
     $order = (object) [
