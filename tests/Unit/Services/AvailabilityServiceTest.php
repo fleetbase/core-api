@@ -5,6 +5,7 @@ use Fleetbase\Services\Scheduling\AvailabilityService;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Events\Dispatcher;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Facade;
 use Spatie\Activitylog\ActivityLogger;
@@ -206,7 +207,12 @@ function availability_service_bind_activity(): AvailabilityServiceActivityFake
     return $activity;
 }
 
+beforeEach(function () {
+    Carbon::setTestNow(Carbon::parse('2026-08-03 12:00:00', 'UTC'));
+});
+
 afterEach(function () {
+    Carbon::setTestNow();
     Facade::clearResolvedInstances();
 });
 

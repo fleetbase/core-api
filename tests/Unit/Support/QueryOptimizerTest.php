@@ -125,7 +125,7 @@ test('query optimizer keeps matching columns with distinct binding values', func
         ->where('status', 'pending')
         ->where('status', 'ready')
         ->whereBetween('created_at', ['2026-07-01', '2026-07-31'])
-        ->whereBetween('created_at', ['2026-08-01', '2026-08-31']);
+        ->whereBetween('created_at', ['2026-08-01', '2026-08-31']); // date-drift-ok: literal query bindings, never compared to the clock
 
     QueryOptimizer::removeDuplicateWheres($query);
 
@@ -136,7 +136,7 @@ test('query optimizer keeps matching columns with distinct binding values', func
             '2026-07-01',
             '2026-07-31',
             '2026-08-01',
-            '2026-08-31',
+            '2026-08-31', // date-drift-ok: literal query bindings, never compared to the clock
         ]);
 });
 

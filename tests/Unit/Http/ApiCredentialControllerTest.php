@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Facade;
@@ -325,7 +326,12 @@ function api_credential_controller_reflect(object $controller, string $method, m
     return $reflection->invoke($controller, ...$arguments);
 }
 
+beforeEach(function () {
+    Carbon::setTestNow(Carbon::parse('2026-07-18 12:00:00', 'UTC'));
+});
+
 afterEach(function () {
+    Carbon::setTestNow();
     session()->flush();
     config([
         'database.default'        => null,

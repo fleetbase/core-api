@@ -10,6 +10,7 @@ use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon as TestClock;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Facade;
@@ -224,7 +225,13 @@ function schedule_controller_contracts_controller(string $class, ScheduleService
     return $controller;
 }
 
+// Carbon is aliased because the fake above type hints the relative name `Carbon\Carbon`.
+beforeEach(function () {
+    TestClock::setTestNow(TestClock::parse('2026-08-03 12:00:00', 'UTC'));
+});
+
 afterEach(function () {
+    TestClock::setTestNow();
     Facade::clearResolvedInstances();
 });
 

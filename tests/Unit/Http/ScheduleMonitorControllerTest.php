@@ -75,7 +75,12 @@ function schedule_monitor_admin_request(): AdminRequest
     return AdminRequest::create('/int/v1/schedule-monitor', 'GET');
 }
 
+beforeEach(function () {
+    Carbon::setTestNow(Carbon::parse('2026-08-03 12:00:00', 'UTC'));
+});
+
 afterEach(function () {
+    Carbon::setTestNow();
     Facade::clearResolvedInstances();
 });
 

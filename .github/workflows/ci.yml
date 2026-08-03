@@ -40,6 +40,9 @@ jobs:
     - name: Run Lint
       run: composer test:lint
 
+    - name: Check Test Date Drift
+      run: composer test:date-drift
+
     - name: Run Tests
       run: composer test:unit
 

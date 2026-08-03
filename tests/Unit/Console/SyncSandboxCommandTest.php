@@ -168,7 +168,7 @@ it('syncs production records into sandbox and filters api credentials to test mo
             'api'             => 'v1',
             'browser_origins' => json_encode(['https://fleetbase.test']),
             'last_used_at'    => '2026-07-18 09:00:00',
-            'expires_at'      => '2026-08-18 09:00:00',
+            'expires_at'      => '2026-08-18 09:00:00', // date-drift-ok: SyncSandbox reads withoutGlobalScopes(), so ExpiryScope never applies
             'created_at'      => '2026-07-17 08:00:00',
             'updated_at'      => '2026-07-18 08:00:00',
         ],
@@ -185,7 +185,7 @@ it('syncs production records into sandbox and filters api credentials to test mo
             'api'             => 'v1',
             'browser_origins' => json_encode(['https://live.test']),
             'last_used_at'    => '2026-07-18 09:00:00',
-            'expires_at'      => '2026-08-18 09:00:00',
+            'expires_at'      => '2026-08-18 09:00:00', // date-drift-ok: SyncSandbox reads withoutGlobalScopes(), so ExpiryScope never applies
             'created_at'      => '2026-07-17 08:00:00',
             'updated_at'      => '2026-07-18 08:00:00',
         ],
