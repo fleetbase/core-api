@@ -4,6 +4,7 @@ use Fleetbase\Console\Commands\PurgeActivityLogs;
 use Fleetbase\Console\Commands\PurgeApiLogs;
 use Fleetbase\Console\Commands\PurgeScheduledTaskLogs;
 use Fleetbase\Console\Commands\PurgeWebhookLogs;
+use Fleetbase\Exceptions\PurgeBackupException;
 use Fleetbase\Traits\ForcesCommands;
 use Fleetbase\Traits\PurgeCommand;
 use Illuminate\Console\Command;
@@ -242,6 +243,16 @@ class PurgeCommandTestCommand extends Command
     {
         return $this->confirmDeleteLine($tableName);
     }
+
+    public function uploadBackupForTest(string $localTmp, string $disk, string $remote): void
+    {
+        $this->uploadBackup($localTmp, $disk, $remote);
+    }
+
+    public function pruneBackupsForTest(string $disk, string $backupPath, string $tableName, string $justUploaded): void
+    {
+        $this->pruneBackups($disk, $backupPath, $tableName, $justUploaded);
+    }
 }
 
 function purge_log_commands_database(bool $withCreatedAt = true): Capsule
@@ -310,8 +321,55 @@ function purge_log_cutoff(array $purge): ?string
     return $binding instanceof Carbon ? $binding->toDateTimeString() : null;
 }
 
+/**
+ * Swap the 'local' disk for a decorator that delegates to the real one, except for
+ * the methods overridden here. Lets a test make an upload fail the way S3 can:
+ * by returning a value rather than by throwing.
+ */
+function purge_command_break_disk(array $overrides): void
+{
+    $real = Storage::disk('local');
+
+    Storage::set('local', new class($real, $overrides) {
+        public function __construct(private $real, private array $overrides)
+        {
+        }
+
+        public function __call($method, $arguments)
+        {
+            if (isset($this->overrides[$method])) {
+                return ($this->overrides[$method])($this->real, ...$arguments);
+            }
+
+            return $this->real->{$method}(...$arguments);
+        }
+    });
+}
+
+/**
+ * Local dump files left in storage/app/tmp for the given table.
+ *
+ * @return array<int,string>
+ */
+function purge_command_temp_dumps(string $tableName = 'purge_command_records'): array
+{
+    return glob(storage_path("app/tmp/{$tableName}_*.sql")) ?: [];
+}
+
+function purge_command_clear_temp_dumps(string $tableName = 'purge_command_records'): void
+{
+    foreach (purge_command_temp_dumps($tableName) as $path) {
+        @unlink($path);
+    }
+}
+
+beforeEach(function () {
+    purge_command_clear_temp_dumps();
+});
+
 afterEach(function () {
     Carbon::setTestNow();
+    purge_command_clear_temp_dumps();
     Storage::clearResolvedInstances();
     Facade::clearResolvedInstances();
 });
@@ -438,7 +496,7 @@ it('runs purge flow with backup upload deletion and empty set handling', functio
     expect($command->runPurgeForTest(PurgeCommandRecord::query()->where('created_at', '<', '2026-06-15 00:00:00'), new PurgeCommandRecord(), null, 'purge-backups'))->toBe(1)
         ->and(PurgeCommandRecord::query()->pluck('name')->all())->toBe(['Keep'])
         ->and($command->confirmations)->toBe(['Do you want to permanently delete the selected records from purge_command_records?'])
-        ->and($command->infos)->toContain('Backup uploaded.')
+        ->and($command->infos)->toContain('Backup verified and uploaded.')
         ->and($command->infos)->toContain('Purge completed. Deleted: 1');
 
     $diskFiles = Storage::disk('local')->allFiles('purge-backups');
@@ -505,6 +563,204 @@ it('runs purge flow skip backup and decline paths and detects primary keys', fun
         ->and($skipBackup->detectPrimaryKeyForTest('purge_command_records'))->toBe('uuid')
         ->and($skipBackup->detectPrimaryKeyForTest('purge_command_records', new PurgeCommandRecord()))->toBe('id')
         ->and($skipBackup->detectPrimaryKeyForTest('purge_command_no_key_records', new PurgeCommandNoKeyRecord()))->toBeNull();
+});
+
+it('removes the local dump after a successful purge', function () {
+    $capsule = purge_log_commands_database();
+    Carbon::setTestNow(Carbon::parse('2026-07-17 12:00:00'));
+
+    $capsule->getConnection('mysql')->table('purge_command_records')->insert([
+        ['id' => 1, 'uuid' => 'record-1', 'name' => 'Delete', 'created_at' => '2026-06-01 00:00:00'],
+    ]);
+
+    $command = new PurgeCommandTestCommand(['force' => true]);
+
+    expect($command->runPurgeForTest(PurgeCommandRecord::query()->where('name', 'Delete'), new PurgeCommandRecord(), null, 'purge-backups'))->toBe(1)
+        ->and(purge_command_temp_dumps())->toBe([])
+        ->and(Storage::disk('local')->allFiles('purge-backups'))->toHaveCount(1);
+});
+
+it('streams large purges to the dump one chunk at a time', function () {
+    $capsule = purge_log_commands_database();
+    Carbon::setTestNow(Carbon::parse('2026-07-17 12:00:00'));
+
+    $rows = [];
+    for ($i = 1; $i <= 2500; $i++) {
+        $rows[] = ['id' => $i, 'uuid' => "record-{$i}", 'name' => "Row {$i}", 'created_at' => '2026-06-01 00:00:00'];
+    }
+    foreach (array_chunk($rows, 500) as $batch) {
+        $capsule->getConnection('mysql')->table('purge_command_records')->insert($batch);
+    }
+
+    $command = new PurgeCommandTestCommand(['force' => true]);
+
+    expect($command->runPurgeForTest(PurgeCommandRecord::query()->where('created_at', '<', '2026-06-15 00:00:00'), new PurgeCommandRecord(), null, 'purge-backups'))->toBe(2500)
+        ->and(PurgeCommandRecord::query()->count())->toBe(0)
+        ->and(purge_command_temp_dumps())->toBe([]);
+
+    $dump = Storage::disk('local')->get(Storage::disk('local')->allFiles('purge-backups')[0]);
+
+    // One header, and one INSERT per 1000-row chunk rather than a single buffered write.
+    expect(substr_count($dump, '-- Dump of purge_command_records'))->toBe(1)
+        ->and(substr_count($dump, 'INSERT INTO `purge_command_records`'))->toBe(3)
+        ->and($dump)->toContain("'Row 2500'");
+});
+
+it('aborts without deleting when the backup upload fails', function () {
+    $capsule = purge_log_commands_database();
+    Carbon::setTestNow(Carbon::parse('2026-07-17 12:00:00'));
+
+    $capsule->getConnection('mysql')->table('purge_command_records')->insert([
+        ['id' => 1, 'uuid' => 'record-1', 'name' => 'Delete', 'created_at' => '2026-06-01 00:00:00'],
+    ]);
+
+    purge_command_break_disk(['writeStream' => fn () => false]);
+
+    $command = new PurgeCommandTestCommand(['force' => true]);
+
+    expect(fn () => $command->runPurgeForTest(PurgeCommandRecord::query()->where('name', 'Delete'), new PurgeCommandRecord(), null, 'purge-backups'))
+        ->toThrow(PurgeBackupException::class, 'aborting purge without deleting rows')
+        ->and(PurgeCommandRecord::query()->count())->toBe(1)
+        ->and(purge_command_temp_dumps())->toBe([])
+        ->and($command->infos)->not->toContain('Backup verified and uploaded.');
+});
+
+it('aborts without deleting when the uploaded backup is missing', function () {
+    $capsule = purge_log_commands_database();
+    Carbon::setTestNow(Carbon::parse('2026-07-17 12:00:00'));
+
+    $capsule->getConnection('mysql')->table('purge_command_records')->insert([
+        ['id' => 1, 'uuid' => 'record-1', 'name' => 'Delete', 'created_at' => '2026-06-01 00:00:00'],
+    ]);
+
+    purge_command_break_disk(['exists' => fn () => false]);
+
+    $command = new PurgeCommandTestCommand(['force' => true]);
+
+    expect(fn () => $command->runPurgeForTest(PurgeCommandRecord::query()->where('name', 'Delete'), new PurgeCommandRecord(), null, 'purge-backups'))
+        ->toThrow(PurgeBackupException::class, 'upload failed')
+        ->and(PurgeCommandRecord::query()->count())->toBe(1)
+        ->and(purge_command_temp_dumps())->toBe([]);
+});
+
+it('aborts without deleting when the uploaded backup is empty', function () {
+    $capsule = purge_log_commands_database();
+    Carbon::setTestNow(Carbon::parse('2026-07-17 12:00:00'));
+
+    $capsule->getConnection('mysql')->table('purge_command_records')->insert([
+        ['id' => 1, 'uuid' => 'record-1', 'name' => 'Delete', 'created_at' => '2026-06-01 00:00:00'],
+    ]);
+
+    purge_command_break_disk(['size' => fn () => 0]);
+
+    $command = new PurgeCommandTestCommand(['force' => true]);
+
+    expect(fn () => $command->runPurgeForTest(PurgeCommandRecord::query()->where('name', 'Delete'), new PurgeCommandRecord(), null, 'purge-backups'))
+        ->toThrow(PurgeBackupException::class, 'is empty')
+        ->and(PurgeCommandRecord::query()->count())->toBe(1)
+        ->and(purge_command_temp_dumps())->toBe([]);
+});
+
+it('aborts when the local dump was never written or is empty', function () {
+    purge_log_commands_database();
+
+    $command = new PurgeCommandTestCommand();
+    $missing = storage_path('app/tmp/purge_command_records_never-written.sql');
+    $empty   = storage_path('app/tmp/purge_command_records_empty.sql');
+
+    if (!is_dir(dirname($empty))) {
+        mkdir(dirname($empty), 0775, true);
+    }
+    file_put_contents($empty, '');
+
+    expect(fn () => $command->uploadBackupForTest($missing, 'local', 'purge-backups/missing.sql'))
+        ->toThrow(PurgeBackupException::class, 'was not written locally, or is empty')
+        ->and(fn () => $command->uploadBackupForTest($empty, 'local', 'purge-backups/empty.sql'))
+        ->toThrow(PurgeBackupException::class, 'was not written locally, or is empty');
+
+    @unlink($empty);
+});
+
+it('does not append to a dump left behind by an earlier run', function () {
+    $capsule = purge_log_commands_database();
+    Carbon::setTestNow(Carbon::parse('2026-07-17 12:00:00'));
+
+    $capsule->getConnection('mysql')->table('purge_command_records')->insert([
+        ['id' => 1, 'uuid' => 'record-1', 'name' => 'Delete', 'created_at' => '2026-06-01 00:00:00'],
+    ]);
+
+    // Same table, same second: exactly what an aborted run leaves behind.
+    $stale = storage_path('app/tmp/purge_command_records_2026-07-17_12-00-00.sql');
+    if (!is_dir(dirname($stale))) {
+        mkdir(dirname($stale), 0775, true);
+    }
+    file_put_contents($stale, "-- Dump of purge_command_records\nINSERT INTO `purge_command_records` (`id`) VALUES (999);\n");
+
+    $command = new PurgeCommandTestCommand(['force' => true]);
+
+    expect($command->runPurgeForTest(PurgeCommandRecord::query()->where('name', 'Delete'), new PurgeCommandRecord(), null, 'purge-backups'))->toBe(1);
+
+    $dump = Storage::disk('local')->get(Storage::disk('local')->allFiles('purge-backups')[0]);
+
+    expect(substr_count($dump, '-- Dump of purge_command_records'))->toBe(1)
+        ->and($dump)->not->toContain('(999)')
+        ->and(purge_command_temp_dumps())->toBe([]);
+});
+
+it('prunes old backups down to keep-backups leaving unrelated objects alone', function () {
+    $capsule = purge_log_commands_database();
+    Carbon::setTestNow(Carbon::parse('2026-07-17 12:00:00'));
+
+    $capsule->getConnection('mysql')->table('purge_command_records')->insert([
+        ['id' => 1, 'uuid' => 'record-1', 'name' => 'Delete', 'created_at' => '2026-06-01 00:00:00'],
+    ]);
+
+    Storage::disk('local')->put('purge-backups/purge_command_records_2026-01-01_00-00-00.sql', 'old');
+    Storage::disk('local')->put('purge-backups/purge_command_records_2026-02-01_00-00-00.sql', 'older');
+    Storage::disk('local')->put('purge-backups/purge_command_records_2026-03-01_00-00-00.sql', 'newest kept');
+    Storage::disk('local')->put('purge-backups/other_table_2026-01-01_00-00-00.sql', 'not ours');
+    Storage::disk('local')->put('purge-backups/notes.txt', 'not a dump');
+
+    $command = new PurgeCommandTestCommand(['force' => true, 'keep-backups' => 2]);
+
+    expect($command->runPurgeForTest(PurgeCommandRecord::query()->where('name', 'Delete'), new PurgeCommandRecord(), null, 'purge-backups'))->toBe(1)
+        ->and(Storage::disk('local')->allFiles('purge-backups'))->toBe([
+            'purge-backups/notes.txt',
+            'purge-backups/other_table_2026-01-01_00-00-00.sql',
+            'purge-backups/purge_command_records_2026-03-01_00-00-00.sql',
+            'purge-backups/purge_command_records_2026-07-17_12-00-00.sql',
+        ])
+        ->and($command->infos)->toContain('Pruned 2 old backup(s), keeping the 2 most recent.');
+});
+
+it('leaves old backups alone when keep-backups is unset or invalid', function () {
+    purge_log_commands_database();
+
+    Storage::disk('local')->put('purge-backups/purge_command_records_2026-01-01_00-00-00.sql', 'old');
+    Storage::disk('local')->put('purge-backups/purge_command_records_2026-02-01_00-00-00.sql', 'older');
+
+    $unset    = new PurgeCommandTestCommand();
+    $blank    = new PurgeCommandTestCommand(['keep-backups' => '']);
+    $zero     = new PurgeCommandTestCommand(['keep-backups' => 0]);
+    $uploaded = 'purge-backups/purge_command_records_2026-07-17_12-00-00.sql';
+
+    $unset->pruneBackupsForTest('local', 'purge-backups', 'purge_command_records', $uploaded);
+    $blank->pruneBackupsForTest('local', 'purge-backups', 'purge_command_records', $uploaded);
+    $zero->pruneBackupsForTest('local', 'purge-backups', 'purge_command_records', $uploaded);
+
+    expect(Storage::disk('local')->allFiles('purge-backups'))->toHaveCount(2)
+        ->and($unset->infos)->toBe([]);
+});
+
+it('warns instead of failing when pruning old backups errors', function () {
+    purge_log_commands_database();
+
+    purge_command_break_disk(['files' => fn () => throw new RuntimeException('listing denied')]);
+
+    $command = new PurgeCommandTestCommand(['keep-backups' => 2]);
+    $command->pruneBackupsForTest('local', 'purge-backups', 'purge_command_records', 'purge-backups/whatever.sql');
+
+    expect($command->warnings)->toBe(['Could not prune old backups: listing denied']);
 });
 
 it('runs purge flow through model deletes when no primary key can be detected', function () {

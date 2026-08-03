@@ -939,10 +939,10 @@ namespace {
                 ->and(array_map(fn ($event) => $event->name, $provider->schedule->commands))->toBe([
                     'cache:prune-stale-tags',
                     'model:prune',
-                    'purge:api-logs --force --no-interaction --days 2',
-                    'purge:webhook-logs --force --no-interaction --days 2',
-                    'purge:activity-logs --force --no-interaction --days 2',
-                    'purge:scheduled-task-logs --force --no-interaction --days 1',
+                    'purge:api-logs --force --no-interaction --days 2 --keep-backups=30',
+                    'purge:webhook-logs --force --no-interaction --days 2 --keep-backups=30',
+                    'purge:activity-logs --force --no-interaction --days 2 --keep-backups=30',
+                    'purge:scheduled-task-logs --force --no-interaction --days 1 --keep-backups=30',
                     'telemetry:ping',
                     'sandbox:sync',
                 ])
