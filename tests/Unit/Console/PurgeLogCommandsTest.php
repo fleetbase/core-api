@@ -255,6 +255,31 @@ class PurgeCommandTestCommand extends Command
     }
 }
 
+/**
+ * Mirrors Symfony's behavior for a command that uses the trait without declaring the
+ * `keep-backups` option: asking for it throws rather than returning null.
+ */
+class PurgeCommandUndeclaredOptionCommand extends PurgeCommandTestCommand
+{
+    public function option($key = null)
+    {
+        throw new InvalidArgumentException(sprintf('The "--%s" option does not exist.', $key));
+    }
+}
+
+function purge_command_remove_directory(string $directory): void
+{
+    if (!is_dir($directory)) {
+        return;
+    }
+
+    foreach (glob($directory . '/*') ?: [] as $path) {
+        is_dir($path) ? purge_command_remove_directory($path) : @unlink($path);
+    }
+
+    @rmdir($directory);
+}
+
 function purge_log_commands_database(bool $withCreatedAt = true): Capsule
 {
     $connection = [
@@ -750,6 +775,49 @@ it('leaves old backups alone when keep-backups is unset or invalid', function ()
 
     expect(Storage::disk('local')->allFiles('purge-backups'))->toHaveCount(2)
         ->and($unset->infos)->toBe([]);
+});
+
+it('keeps every backup when the retention budget exceeds the dumps on disk', function () {
+    purge_log_commands_database();
+
+    Storage::disk('local')->put('purge-backups/purge_command_records_2026-01-01_00-00-00.sql', 'old');
+    Storage::disk('local')->put('purge-backups/purge_command_records_2026-02-01_00-00-00.sql', 'older');
+
+    $command = new PurgeCommandTestCommand(['keep-backups' => 5]);
+    $command->pruneBackupsForTest('local', 'purge-backups', 'purge_command_records', 'purge-backups/purge_command_records_2026-07-17_12-00-00.sql');
+
+    expect(Storage::disk('local')->allFiles('purge-backups'))->toHaveCount(2)
+        ->and($command->infos)->toBe([]);
+});
+
+it('skips pruning entirely for commands that never declared the keep-backups option', function () {
+    purge_log_commands_database();
+
+    Storage::disk('local')->put('purge-backups/purge_command_records_2026-01-01_00-00-00.sql', 'old');
+    Storage::disk('local')->put('purge-backups/purge_command_records_2026-02-01_00-00-00.sql', 'older');
+
+    $command = new PurgeCommandUndeclaredOptionCommand();
+    $command->pruneBackupsForTest('local', 'purge-backups', 'purge_command_records', 'purge-backups/purge_command_records_2026-07-17_12-00-00.sql');
+
+    expect(Storage::disk('local')->allFiles('purge-backups'))->toHaveCount(2)
+        ->and($command->infos)->toBe([])
+        ->and($command->warnings)->toBe([]);
+});
+
+it('creates the dump directory before writing when it does not exist yet', function () {
+    purge_log_commands_database();
+
+    $directory = storage_path('app/tmp/nested/purge-dumps');
+    $fileName  = $directory . '/purge_command_records_2026-07-17_12-00-00.sql';
+    purge_command_remove_directory(storage_path('app/tmp/nested'));
+
+    $command = new PurgeCommandTestCommand();
+    $command->writeSqlDumpForTest('purge_command_records', collect([['id' => 1, 'name' => 'Keep']]), $fileName);
+
+    expect(is_dir($directory))->toBeTrue()
+        ->and(file_get_contents($fileName))->toContain('INSERT INTO `purge_command_records`');
+
+    purge_command_remove_directory(storage_path('app/tmp/nested'));
 });
 
 it('warns instead of failing when pruning old backups errors', function () {

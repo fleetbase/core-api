@@ -1117,6 +1117,25 @@ test('report query converter rejects a malicious column alias before building sq
         ->and($result['error'])->toContain('Invalid column alias');
 });
 
+test('report query converter rejects a malicious group-by alias before building sql', function () {
+    $result = report_converter_execute([
+        'table'   => ['name' => 'orders'],
+        'columns' => [
+            ['name' => 'status', 'label' => 'Status'],
+        ],
+        'groupBy' => [
+            [
+                'groupBy'     => ['name' => 'status', 'alias' => 'ok`, (select secret from users) as `leak'],
+                'aggregateFn' => ['value' => 'sum'],
+                'aggregateBy' => ['name' => 'total'],
+            ],
+        ],
+    ]);
+
+    expect($result['success'])->toBeFalse()
+        ->and($result['error'])->toContain('Invalid group-by alias');
+});
+
 test('report query converter rejects malicious identifiers in a manual join', function () {
     $result = report_converter_execute([
         'table'   => ['name' => 'orders'],

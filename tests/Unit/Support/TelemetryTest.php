@@ -346,6 +346,16 @@ test('telemetry installation type detects docker host markers', function () {
     expect(Telemetry::getInstallationType())->toBe('docker');
 });
 
+// Driven through the fake rather than the real filesystem so the fall-through is exercised on any
+// host: on Ubuntu (CI) /etc/lsb-release exists and returns early, on macOS it does not.
+test('telemetry installation type falls back to unknown without host markers', function () {
+    telemetry_fixtures();
+
+    FileFacade::swap(new TelemetryFilesystemFake());
+
+    expect(Telemetry::getInstallationType())->toBe('unknown');
+});
+
 test('telemetry caches ip metadata between sends', function () {
     telemetry_fixtures();
     telemetry_fake_successful_dependencies();

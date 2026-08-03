@@ -2,7 +2,36 @@
 
 declare(strict_types=1);
 
-$cloverPath = $argv[1] ?? 'coverage/clover.xml';
+/*
+ * Usage: coverage-summary.php [clover.xml] [--min=<percent>]
+ *
+ * Prints the coverage summary and then enforces a floor on line, method and fully covered class
+ * coverage, exiting non-zero when any of them falls short. The floor is what keeps the suite at
+ * 100%: without it a merge can drop coverage and nothing fails.
+ *
+ * Genuinely unreachable or defensive branches should carry a narrow @codeCoverageIgnoreStart/End
+ * block with a comment explaining why, which is the existing convention in this codebase.
+ */
+
+$cloverPath      = 'coverage/clover.xml';
+$minimumCoverage = 100.0;
+
+foreach (array_slice($argv, 1) as $argument) {
+    if (str_starts_with($argument, '--min=')) {
+        $value = substr($argument, strlen('--min='));
+
+        if (!is_numeric($value) || (float) $value < 0 || (float) $value > 100) {
+            fwrite(STDERR, "Invalid --min value, expected a percentage between 0 and 100: {$value}\n");
+            exit(1);
+        }
+
+        $minimumCoverage = (float) $value;
+
+        continue;
+    }
+
+    $cloverPath = $argument;
+}
 
 if (!is_file($cloverPath)) {
     fwrite(STDERR, "Coverage file not found: {$cloverPath}\n");
@@ -166,3 +195,29 @@ foreach (array_slice($files, 0, 20) as $file) {
     $relativePath = preg_replace('#^' . preg_quote(getcwd(), '#') . '/?#', '', $file['path']);
     printf("  %6.2f%%  %5d/%-5d  %s\n", $file['percent'], $file['covered'], $file['statements'], $relativePath ?: $file['path']);
 }
+
+// Enforced after the listings above so a failing build still shows which files to look at.
+$enforced = [
+    'Line coverage'                => coveragePercent($coveredStatements, $statements),
+    'Method coverage'              => coveragePercent($coveredMethods, $methods),
+    'Fully covered class coverage' => coveragePercent($coveredClasses, $classes),
+];
+
+$shortfalls = array_filter($enforced, static fn (float $percent): bool => $percent < $minimumCoverage);
+
+if ($shortfalls === []) {
+    printf("\nCoverage threshold met: every enforced metric is at or above %.2f%%.\n", $minimumCoverage);
+    exit(0);
+}
+
+fwrite(STDERR, sprintf("\nCoverage threshold not met (minimum %.2f%%):\n", $minimumCoverage));
+
+foreach ($shortfalls as $metric => $percent) {
+    fwrite(STDERR, sprintf("  %s is %.2f%%, short by %.2f%%.\n", $metric, $percent, $minimumCoverage - $percent));
+}
+
+fwrite(STDERR, "\nSee the \"Lowest covered files\" list above for where to add tests. If a statement is\n");
+fwrite(STDERR, "genuinely unreachable or defensive, wrap it in a narrow @codeCoverageIgnoreStart/End block\n");
+fwrite(STDERR, "with a comment explaining why.\n");
+
+exit(1);

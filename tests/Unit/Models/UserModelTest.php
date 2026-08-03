@@ -883,6 +883,23 @@ it('enriches user request info from public ip lookup metadata when request timez
     ]);
 });
 
+it('keeps request derived attributes when the public ip lookup fails', function () {
+    user_model_container();
+
+    config(['fleetbase.services.ipinfo.api_key' => null]);
+    // Http::fake() accumulates stubs across tests in the same process and the first match wins, so
+    // this uses an address no other test stubs rather than trying to override an existing stub.
+    Illuminate\Support\Facades\Http::fake([
+        'https://json.geoiplookup.io/9.9.9.9' => Illuminate\Support\Facades\Http::response(['message' => 'rate limited'], 429),
+    ]);
+
+    $request = Request::create('/signup', 'POST', ['timezone' => 'Asia/Ulaanbaatar'], [], [], ['REMOTE_ADDR' => '9.9.9.9']);
+
+    $attributes = User::applyUserInfoFromRequest($request);
+
+    expect($attributes)->toBe(['timezone' => 'Asia/Ulaanbaatar']);
+});
+
 it('assigns a single company role only when the company-user relation exists', function () {
     user_model_container();
 
