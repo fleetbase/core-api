@@ -166,10 +166,10 @@ class CoreServiceProvider extends ServiceProvider
         $this->scheduleCommands(function ($schedule) {
             $schedule->command('cache:prune-stale-tags')->hourly();
             $schedule->command('model:prune', ['--model' => MonitoredScheduledTaskLogItem::class])->twiceDaily(1, 13);
-            $schedule->command('purge:api-logs --force --no-interaction --days 2')->twiceDaily(1, 13);
-            $schedule->command('purge:webhook-logs --force --no-interaction --days 2')->twiceDaily(1, 13);
-            $schedule->command('purge:activity-logs --force --no-interaction --days 2')->twiceDaily(1, 13);
-            $schedule->command('purge:scheduled-task-logs --force --no-interaction --days 1')->twiceDaily(1, 13);
+            $schedule->command('purge:api-logs --force --no-interaction --days 2 --keep-backups=30')->twiceDaily(1, 13);
+            $schedule->command('purge:webhook-logs --force --no-interaction --days 2 --keep-backups=30')->twiceDaily(1, 13);
+            $schedule->command('purge:activity-logs --force --no-interaction --days 2 --keep-backups=30')->twiceDaily(1, 13);
+            $schedule->command('purge:scheduled-task-logs --force --no-interaction --days 1 --keep-backups=30')->twiceDaily(1, 13);
             $schedule->command('telemetry:ping')->daily();
             $schedule->job(new \Fleetbase\Jobs\MaterializeSchedulesJob())->dailyAt('01:00')->name('materialize-schedules')->withoutOverlapping();
             // Keep sandbox users/companies in sync with production so that
