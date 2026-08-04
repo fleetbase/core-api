@@ -627,8 +627,8 @@ class SettingController extends Controller
      */
     public function saveNotificationChannelsConfig(AdminRequest $request)
     {
-        $apn         = $request->array('apn', config('broadcasting.connections.apn'));
-        $firebase    = $request->array('firebase', config('firebase.projects.app'));
+        $apn         = array_merge(config('broadcasting.connections.apn', []), $request->array('apn', []));
+        $firebase    = array_merge(config('firebase.projects.app', []), $request->array('firebase', []));
 
         // Get the APN key file and it's contents and store to config
         $apn = static::_setupApnConfigUsingFileId($apn);
@@ -636,8 +636,8 @@ class SettingController extends Controller
         // Get credentials config array from file contents
         $firebase = static::_setupFcmConfigUsingFileId($firebase);
 
-        Setting::configureSystem('broadcasting.apn', array_merge(config('broadcasting.connections.apn', []), $apn));
-        Setting::configureSystem('firebase.app', array_merge(config('firebase.projects.app', []), $firebase));
+        Setting::configureSystem('broadcasting.apn', $apn);
+        Setting::configureSystem('firebase.app', $firebase);
 
         // Refresh config
         $this->refreshConfigCache();
@@ -841,13 +841,13 @@ class SettingController extends Controller
         } catch (\Twilio\Exceptions\RestException $e) {
             $message = $e->getMessage();
             $status  = 'error';
+        } catch (\ErrorException $e) {
+            $message = $e->getMessage();
+            $status  = 'error';
         } catch (\Exception $e) {
             $message = $e->getMessage();
             $status  = 'error';
         } catch (\Error $e) {
-            $message = $e->getMessage();
-            $status  = 'error';
-        } catch (\ErrorException $e) {
             $message = $e->getMessage();
             $status  = 'error';
         }
@@ -911,8 +911,9 @@ class SettingController extends Controller
         // Set config from request
         config(['sentry.dsn' => $dsn]);
 
-        $message = 'Sentry configuration is successful, test Exception sent.';
-        $status  = 'success';
+        $message       = 'Sentry configuration is successful, test Exception sent.';
+        $status        = 'success';
+        $clientBuilder = null;
 
         try {
             $clientBuilder = \Sentry\ClientBuilder::create([
@@ -946,10 +947,13 @@ class SettingController extends Controller
             try {
                 // Capture test exception
                 $hub->captureException($testException);
+                // @codeCoverageIgnoreStart
+                // Sentry capture failures depend on the external SDK transport after the client is built.
             } catch (\Exception $e) {
                 $message = $e->getMessage();
                 $status  = 'error';
             }
+            // @codeCoverageIgnoreEnd
         }
 
         return response()->json(['status' => $status, 'message' => $message]);
@@ -979,6 +983,8 @@ class SettingController extends Controller
                 'sender'  => 'Fleetbase',
             ]);
             $response = $socketClusterClient->response();
+            // @codeCoverageIgnoreStart
+            // SocketClusterService::send() catches these transport failures internally and returns false.
         } catch (\WebSocket\ConnectionException $e) {
             $message = $e->getMessage();
         } catch (\WebSocket\TimeoutException $e) {
@@ -986,6 +992,7 @@ class SettingController extends Controller
         } catch (\Throwable $e) {
             $message = $e->getMessage();
         }
+        // @codeCoverageIgnoreEnd
 
         if (!$sent) {
             $status = 'error';

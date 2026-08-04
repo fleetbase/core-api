@@ -142,7 +142,7 @@ class Policy extends Model implements PolicyContract
      *
      * @return void
      */
-    public function setGuardNameAttribute()
+    public function setGuardNameAttribute($value = null)
     {
         $this->attributes['guard_name'] = 'sanctum';
     }
@@ -152,12 +152,12 @@ class Policy extends Model implements PolicyContract
      *
      * @param string|null $guardName
      *
-     * @return \Fleebase\Models\Policy
-     *
-     * @throws \Fleetbase\Exceptions\PolicyDoesNotExist
+     * @return \Fleebase\Models\Policy|null
      */
-    public static function findByName(string $name, $guardName): self
+    public static function findByName(string $name, $guardName): ?self
     {
+        $guardName = static::getNormalizedGuardName($guardName);
+
         return static::where(['name' => $name, 'guard_name' => $guardName])->first();
     }
 
@@ -166,12 +166,12 @@ class Policy extends Model implements PolicyContract
      *
      * @param string|null $guardName
      *
-     * @return \Fleebase\Models\Policy
-     *
-     * @throws \Fleetbase\Exceptions\PolicyDoesNotExist
+     * @return \Fleebase\Models\Policy|null
      */
-    public static function findByIdentifier(string $id, $guardName): self
+    public static function findByIdentifier(string $id, $guardName): ?self
     {
+        $guardName = static::getNormalizedGuardName($guardName);
+
         return static::where(['id' => $id, 'guard_name' => $guardName])->first();
     }
 
@@ -184,11 +184,20 @@ class Policy extends Model implements PolicyContract
      */
     public static function findOrCreate(string $name, $guardName): self
     {
-        $policy = static::findByName($name, $guardName);
+        $guardName = static::getNormalizedGuardName($guardName);
+        $policy    = static::findByName($name, $guardName);
         if (!$policy) {
             $policy = static::create(['name' => $name, 'guard_name' => $guardName]);
         }
 
         return $policy;
+    }
+
+    /**
+     * Policy records are stored under the API guard enforced by the mutator.
+     */
+    protected static function getNormalizedGuardName($guardName): string
+    {
+        return 'sanctum';
     }
 }

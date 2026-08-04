@@ -9,6 +9,18 @@ use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\Facades\Http;
 use Psr\Log\NullLogger;
 
+class CallProSmsServiceTwilioFake
+{
+    public array $messages = [];
+
+    public function message(string $to, string $text, array $mediaUrls = [], array $params = []): object
+    {
+        $this->messages[] = compact('to', 'text', 'mediaUrls', 'params');
+
+        return (object) ['sid' => 'twilio-fallback-sid'];
+    }
+}
+
 if (!function_exists('config')) {
     function config($key = null, $default = null)
     {
@@ -153,4 +165,29 @@ test('sms service passes callpro options and ignores twilio sender ids', functio
             && $request['brand'] === '42'
             && $request['unique_id'] === 'verification-123';
     });
+});
+
+test('sms service falls back to twilio when callpro is not configured', function () {
+    $twilio = new CallProSmsServiceTwilioFake();
+    app()->instance('twilio', $twilio);
+    Facade::clearResolvedInstance('twilio');
+    config()->set('services.callpromn.api_key', '');
+
+    $result = (new SmsService())->send('+976 9911 2233', 'Fallback hello', [
+        'from' => '+15555550100',
+    ], SmsService::PROVIDER_CALLPRO);
+
+    expect($result)->toMatchArray([
+        'success'    => true,
+        'message_id' => 'twilio-fallback-sid',
+        'provider'   => SmsService::PROVIDER_CALLPRO,
+    ])
+        ->and($twilio->messages)->toBe([
+            [
+                'to'        => '+97699112233',
+                'text'      => 'Fallback hello',
+                'mediaUrls' => [],
+                'params'    => ['from' => '+15555550100'],
+            ],
+        ]);
 });

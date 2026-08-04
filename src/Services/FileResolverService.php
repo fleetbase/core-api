@@ -174,7 +174,7 @@ class FileResolverService
             $contentType = $response->header('Content-Type') ?? 'application/octet-stream';
 
             // Get file size
-            $fileSize = $response->header('Content-Length') ?? strlen($response->body());
+            $fileSize = $response->header('Content-Length') ?: strlen($response->body());
 
             // Create the file record
             return File::create([

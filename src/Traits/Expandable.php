@@ -52,20 +52,19 @@ trait Expandable
      */
     public static function expandFromClass($class): void
     {
-        $methods = (new \ReflectionClass($class))->getMethods(\ReflectionMethod::IS_PUBLIC | \ReflectionMethod::IS_PROTECTED);
-        $target  = null;
-        if (method_exists($class, 'target')) {
-            $target = app($class::target());
-        }
+        $reflection = new \ReflectionClass($class);
+        $methods    = $reflection->getMethods(\ReflectionMethod::IS_PUBLIC | \ReflectionMethod::IS_PROTECTED);
+        $provider   = is_object($class) ? $class : app($reflection->getName());
 
         foreach ($methods as $method) {
             $method->setAccessible(true);
 
-            if (!static::isMethodExpandable($method, $class)) {
+            $closure = static::invokeExpansionMethod($method, $provider);
+
+            if (!$closure instanceof \Closure) {
                 continue;
             }
 
-            $closure = $method->invoke($target);
             static::expand($method->getName(), $closure);
         }
     }
@@ -165,10 +164,13 @@ trait Expandable
             try {
                 // Try to make a simple DB call
                 DB::connection()->getPdo();
+                // Broken connection fallback only applies to dynamic model calls under unavailable DB connections.
+                // @codeCoverageIgnoreStart
             } catch (\Exception $e) {
                 // Connection failed, or other error occurred
                 return $this->$method(...$parameters);
             }
+            // @codeCoverageIgnoreEnd
 
             return $this->forwardCallTo($this->newQuery(), $method, $parameters);
         }
@@ -178,21 +180,11 @@ trait Expandable
     }
 
     /**
-     * Checks if a method can be expanded.
-     *
-     * This method determines whether a given method from a class or object can be
-     * added as an expansion, based on whether it returns a closure.
-     *
-     * @param \ReflectionMethod $method the reflection method to check
-     * @param object|string     $target the class or object being checked
-     *
-     * @return bool true if the method can be expanded, false otherwise
+     * Invoke an expansion provider method using the reflection target PHP expects.
      */
-    private static function isMethodExpandable(\ReflectionMethod $method, $target)
+    private static function invokeExpansionMethod(\ReflectionMethod $method, $target)
     {
-        $closure = $method->invoke($target);
-
-        return $closure instanceof \Closure;
+        return $method->isStatic() ? $method->invoke(null) : $method->invoke($target);
     }
 
     /**

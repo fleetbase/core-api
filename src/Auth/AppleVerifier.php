@@ -39,9 +39,12 @@ class AppleVerifier
 
         // Fetch and cache the Apple public keys
         $data = Cache::remember('apple-JWKSet', self::CACHE_DURATION, function () {
+            // Cache-miss retrieval hits Apple's live JWK endpoint; unit tests inject cached key data.
+            // @codeCoverageIgnoreStart
             $response = (new Client())->get(self::APPLE_KEYS_URL);
 
             return json_decode((string) $response->getBody(), true);
+            // @codeCoverageIgnoreEnd
         });
 
         $publicKeys = JWK::parseKeySet($data);

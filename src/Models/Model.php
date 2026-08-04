@@ -10,6 +10,7 @@ use Fleetbase\Traits\HasSessionAttributes;
 use Fleetbase\Traits\Insertable;
 use Fleetbase\Traits\Searchable;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 
@@ -207,7 +208,7 @@ class Model extends EloquentModel
      *
      * @return static
      *
-     * @throws \Illuminate\Database\Eloquent\ModelNotFoundException
+     * @throws ModelNotFoundException
      */
     public static function findByIdOrFail(self|string|null $identifier, array $with = [], array $columns = ['*'], bool $withTrashed = false): self
     {
@@ -219,9 +220,7 @@ class Model extends EloquentModel
         $result = static::findById($identifier, $with, $columns, $withTrashed);
 
         if ($result === null) {
-            /** @var class-string<static> $cls */
-            $cls = static::class;
-            throw (new static())->newModelQuery()->getModel()->newQuery()->getModel()::query()->getModel()::query()->getModelNotFoundException($cls, [$identifier]);
+            throw (new ModelNotFoundException())->setModel(static::class, [$identifier]);
         }
 
         return $result;

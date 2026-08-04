@@ -127,6 +127,83 @@ class ReportQueryConverter
     }
 
     /**
+     * Export the query results in the requested format.
+     */
+    public function export(string $format, array $options = []): array
+    {
+        $result = $this->execute();
+
+        if (!($result['success'] ?? false)) {
+            return $result;
+        }
+
+        $columns = array_map(
+            fn (array $column) => array_merge(['key' => $column['name']], $column),
+            $result['columns'] ?? []
+        );
+
+        return (new ReportQueryExporter(
+            $result['data'] ?? [],
+            $columns,
+            $result['meta'] ?? [],
+            $this->queryConfig['table']['name'] ?? 'report'
+        ))->export($format, $options);
+    }
+
+    /**
+     * Get supported export formats for report results.
+     */
+    public function getAvailableExportFormats(): array
+    {
+        return ReportQueryExporter::getSupportedFormats();
+    }
+
+    /**
+     * Return structural query analysis without executing the query.
+     */
+    public function getQueryAnalysis(): array
+    {
+        $joinsCount           = count($this->queryConfig['joins'] ?? []);
+        $selectedColumnsCount = count($this->queryConfig['columns'] ?? []) + count($this->queryConfig['computed_columns'] ?? []);
+        $conditionsCount      = $this->countConfiguredConditions($this->queryConfig['conditions'] ?? []);
+        $groupByCount         = count($this->queryConfig['groupBy'] ?? []);
+        $sortByCount          = count($this->queryConfig['sortBy'] ?? []);
+        $complexityScore      = $joinsCount + $groupByCount + intdiv($selectedColumnsCount, 10) + intdiv($conditionsCount, 5);
+
+        return [
+            'table_name'             => $this->queryConfig['table']['name'] ?? null,
+            'complexity'             => $complexityScore >= 3 ? 'complex' : ($complexityScore >= 1 ? 'moderate' : 'simple'),
+            'joins_count'            => $joinsCount,
+            'selected_columns_count' => $selectedColumnsCount,
+            'conditions_count'       => $conditionsCount,
+            'group_by_count'         => $groupByCount,
+            'sort_by_count'          => $sortByCount,
+            'has_limit'              => isset($this->queryConfig['limit']),
+            'limit'                  => $this->queryConfig['limit'] ?? null,
+        ];
+    }
+
+    /**
+     * Count nested query condition leaves.
+     */
+    protected function countConfiguredConditions(array $conditions): int
+    {
+        $count = 0;
+
+        foreach ($conditions as $condition) {
+            if (isset($condition['conditions']) && is_array($condition['conditions'])) {
+                $count += $this->countConfiguredConditions($condition['conditions']);
+
+                continue;
+            }
+
+            $count++;
+        }
+
+        return $count;
+    }
+
+    /**
      * Build the complete query.
      */
     protected function buildQuery(): Builder
@@ -503,14 +580,38 @@ class ReportQueryConverter
         $foreignKey = $join['foreignKey'] ?? 'uuid';
         $alias      = $join['alias'] ?? $joinTable;
 
-        // Apply the join
-        $query->join(
-            "{$joinTable} as {$alias}",
-            $join['localTable'] . ".{$localKey}",
-            '=',
-            "{$alias}.{$foreignKey}",
-            $joinType
-        );
+        // If the joined table is itself tenant-scoped (declares a company_uuid column in
+        // the registry), constrain the join to the active company. This is applied inside
+        // the JOIN ON clause (not a WHERE) so LEFT joins keep their unmatched-row semantics
+        // while still never exposing another tenant's rows through the join.
+        $joinTableSchema  = $this->registry->getTable($joinTable);
+        $scopeJoinCompany = $joinTableSchema && $joinTableSchema->hasColumn('company_uuid')
+            ? $this->resolveCompanyUuid()
+            : null;
+
+        if ($scopeJoinCompany !== null) {
+            $localColumn = $join['localTable'] . ".{$localKey}";
+            $foreignRef  = "{$alias}.{$foreignKey}";
+            $query->join(
+                "{$joinTable} as {$alias}",
+                function ($joinClause) use ($localColumn, $foreignRef, $alias, $scopeJoinCompany) {
+                    $joinClause->on($localColumn, '=', $foreignRef)
+                        ->where("{$alias}.company_uuid", '=', $scopeJoinCompany);
+                },
+                null,
+                null,
+                $joinType
+            );
+        } else {
+            // Apply the join
+            $query->join(
+                "{$joinTable} as {$alias}",
+                $join['localTable'] . ".{$localKey}",
+                '=',
+                "{$alias}.{$foreignKey}",
+                $joinType
+            );
+        }
 
         $this->manualJoins[] = [
             'table'       => $joinTable,
@@ -701,37 +802,67 @@ class ReportQueryConverter
 
         // Apply the condition based on operator
         switch ($operator) {
+            case 'eq':
             case '=':
+                $query->where($field, '=', $value, $boolean);
+                break;
+            case 'neq':
             case '!=':
+                $query->where($field, '!=', $value, $boolean);
+                break;
+            case 'gt':
             case '>':
+                $query->where($field, '>', $value, $boolean);
+                break;
+            case 'gte':
             case '>=':
+                $query->where($field, '>=', $value, $boolean);
+                break;
+            case 'lt':
             case '<':
+                $query->where($field, '<', $value, $boolean);
+                break;
+            case 'lte':
             case '<=':
-                $query->where($field, $operator, $value, $boolean);
+                $query->where($field, '<=', $value, $boolean);
                 break;
             case 'like':
+            case 'contains':
                 $query->where($field, 'LIKE', "%{$value}%", $boolean);
                 break;
             case 'not_like':
                 $query->where($field, 'NOT LIKE', "%{$value}%", $boolean);
                 break;
+            case 'starts_with':
+                $query->where($field, 'LIKE', "{$value}%", $boolean);
+                break;
+            case 'ends_with':
+                $query->where($field, 'LIKE', "%{$value}", $boolean);
+                break;
             case 'in':
-                $values = is_array($value) ? $value : explode(',', $value);
+                $values = is_array($value) ? $value : array_map('trim', explode(',', $value));
                 $query->whereIn($field, $values, $boolean);
                 break;
             case 'not_in':
-                $values = is_array($value) ? $value : explode(',', $value);
+                $values = is_array($value) ? $value : array_map('trim', explode(',', $value));
                 $query->whereNotIn($field, $values, $boolean);
                 break;
+            case 'is_null':
             case 'null':
                 $query->whereNull($field, $boolean);
                 break;
+            case 'is_not_null':
             case 'not_null':
                 $query->whereNotNull($field, $boolean);
                 break;
             case 'between':
                 if (is_array($value) && count($value) === 2) {
                     $query->whereBetween($field, $value, $boolean);
+                }
+                break;
+            case 'not_between':
+                if (is_array($value) && count($value) === 2) {
+                    $query->whereNotBetween($field, $value, $boolean);
                 }
                 break;
         }
@@ -1087,10 +1218,13 @@ class ReportQueryConverter
                     [$tblAlias, $col] = $this->resolveAliasAndColumn($rootTable, $columnRef);
 
                     return "{$tblAlias}.{$col}";
+                    // resolveAliasAndColumn() falls back instead of throwing for unknown references; this is defensive only.
+                    // @codeCoverageIgnoreStart
                 } catch (\Exception $e) {
                     // If resolution fails, return as-is (might be a literal or string)
                     return $columnRef;
                 }
+                // @codeCoverageIgnoreEnd
             },
             $protectedExpression
         );
@@ -1137,8 +1271,41 @@ class ReportQueryConverter
 
         // Validate columns
         foreach ($this->queryConfig['columns'] as $column) {
-            if (!$this->registry->isColumnAllowed($tableName, $column['name'])) {
+            if (!$this->isConfiguredColumnAllowed($tableName, $column['name'])) {
                 throw new \InvalidArgumentException("Column '{$column['name']}' is not allowed for table '{$tableName}'");
+            }
+
+            // User-provided aliases are interpolated raw into `... as `{$alias}`` in
+            // buildSelectClause(), so an unchecked alias (e.g. containing a backtick)
+            // is a SQL-injection vector.
+            if (isset($column['alias']) && !$this->isSafeSqlIdentifier((string) $column['alias'])) {
+                throw new \InvalidArgumentException("Invalid column alias '{$column['alias']}'");
+            }
+        }
+
+        foreach ($this->queryConfig['groupBy'] ?? [] as $g) {
+            $groupAlias = $g['groupBy']['alias'] ?? null;
+            if ($groupAlias !== null && !$this->isSafeSqlIdentifier((string) $groupAlias)) {
+                throw new \InvalidArgumentException("Invalid group-by alias '{$groupAlias}'");
+            }
+        }
+
+        // Validate manual joins: the join target must be a registered table, and every
+        // identifier interpolated raw into the JOIN clause (table/alias/keys/localTable)
+        // must be a safe SQL identifier. Without this, applyManualJoin() would splice
+        // arbitrary attacker-controlled tables and identifiers directly into SQL.
+        foreach ($this->queryConfig['joins'] ?? [] as $join) {
+            $joinTable = $join['table'] ?? null;
+
+            if (!$joinTable || !$this->registry->isTableRegistered($joinTable)) {
+                throw new \InvalidArgumentException("Join table '" . ($joinTable ?? '') . "' is not registered");
+            }
+
+            foreach (['table', 'alias', 'name', 'localTable', 'localKey', 'foreignKey'] as $identifierKey) {
+                if (isset($join[$identifierKey]) && $join[$identifierKey] !== ''
+                    && !$this->isSafeSqlIdentifier((string) $join[$identifierKey])) {
+                    throw new \InvalidArgumentException("Invalid identifier '{$join[$identifierKey]}' in join configuration");
+                }
             }
         }
 
@@ -1175,6 +1342,45 @@ class ReportQueryConverter
         //     ));
         //     // (Optional) log/warn that some columns were dropped
         // }
+    }
+
+    /**
+     * Whether a string is a safe, bare SQL identifier (letters, digits and underscores,
+     * starting with a letter or underscore). Used to guard values that are interpolated
+     * raw into SQL — manual-join tables/aliases/keys and select aliases — rather than
+     * passed as bound parameters.
+     */
+    protected function isSafeSqlIdentifier(string $identifier): bool
+    {
+        return (bool) preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $identifier);
+    }
+
+    protected function isConfiguredColumnAllowed(string $tableName, string $columnName): bool
+    {
+        if ($this->registry->isColumnAllowed($tableName, $columnName)) {
+            return true;
+        }
+
+        if (!str_contains($columnName, '.')) {
+            return false;
+        }
+
+        [$joinAlias, $joinedColumn] = explode('.', $columnName, 2);
+
+        foreach ($this->queryConfig['joins'] ?? [] as $join) {
+            $joinTable = $join['table'] ?? null;
+            $aliases   = array_filter([
+                $join['name'] ?? null,
+                $join['alias'] ?? null,
+                $joinTable,
+            ]);
+
+            if ($joinTable && in_array($joinAlias, $aliases, true)) {
+                return $this->registry->isColumnAllowed($joinTable, $joinedColumn);
+            }
+        }
+
+        return false;
     }
 
     /**

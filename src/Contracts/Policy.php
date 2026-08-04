@@ -16,22 +16,18 @@ interface Policy
      *
      * @param string|null $guardName
      *
-     * @return \Fleebase\Policy
-     *
-     * @throws \Fleetbase\Exceptions\PolicyDoesNotExist
+     * @return \Fleebase\Policy|null
      */
-    public static function findByName(string $name, $guardName): self;
+    public static function findByName(string $name, $guardName): ?self;
 
     /**
      * Find a policy by its id and guard name.
      *
      * @param string|null $guardName
      *
-     * @return \Fleebase\Policy
-     *
-     * @throws \Fleetbase\Exceptions\PolicyDoesNotExist
+     * @return \Fleebase\Policy|null
      */
-    public static function findByIdentifier(string $id, $guardName): self;
+    public static function findByIdentifier(string $id, $guardName): ?self;
 
     /**
      * Find or create a policy by its name and guard name.

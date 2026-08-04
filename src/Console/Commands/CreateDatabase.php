@@ -44,9 +44,12 @@ class CreateDatabase extends Command
         $connections        = ['mysql', 'sandbox'];
         $packageConnections = Utils::fromFleetbaseExtensions('create-database');
 
+        // Extension-provided connection discovery depends on installed package metadata.
+        // @codeCoverageIgnoreStart
         if (is_array($packageConnections) && !empty($packageConnections)) {
             $connections = array_merge($connections, $packageConnections);
         }
+        // @codeCoverageIgnoreEnd
 
         foreach ($connections as $connection) {
             $schemaName = config("database.connections.$connection.database");

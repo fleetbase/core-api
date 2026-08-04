@@ -5,7 +5,6 @@ namespace Fleetbase\Expansions;
 use Fleetbase\Build\Expansion;
 use Fleetbase\Support\Auth;
 use Fleetbase\Support\Http;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -95,17 +94,18 @@ class Builder implements Expansion
             $bindings        = $underlyingQuery->bindings['where'];
 
             // find key to remove based on where clause match
-            $removeKey = Arr::search(
-                $wheres,
-                function ($where) use ($column, $value, $operator, $type) {
-                    $isColumn   = data_get($where, 'column') === $column;
-                    $isValue    = data_get($where, 'value') === $value;
-                    $isOperator = data_get($where, 'operator') === $operator;
-                    $isType     = data_get($where, 'type') === $type;
+            $removeKey = null;
+            foreach ($wheres as $key => $where) {
+                $isColumn   = data_get($where, 'column') === $column;
+                $isValue    = data_get($where, 'value') === $value;
+                $isOperator = data_get($where, 'operator') === $operator;
+                $isType     = data_get($where, 'type') === $type;
 
-                    return $isColumn && $isValue && $isOperator && $isType;
+                if ($isColumn && $isValue && $isOperator && $isType) {
+                    $removeKey = $key;
+                    break;
                 }
-            );
+            }
 
             // remove using key found
             if (is_int($removeKey)) {
@@ -147,7 +147,7 @@ class Builder implements Expansion
         return function ($request) {
             /** @var \Illuminate\Database\Eloquent\Builder $this */
             $sorts = $request->or(['sort', 'nestedSort'], '-created_at');
-            $sorts = $sorts ? explode(',', $sorts) : null;
+            $sorts = is_array($sorts) ? $sorts : ($sorts ? explode(',', $sorts) : null);
 
             if (!$sorts) {
                 return $this;
@@ -157,7 +157,30 @@ class Builder implements Expansion
             $model = $this->getModel();
 
             foreach ($sorts as $sort) {
-                if (Schema::hasColumn($model->table, $model->getCreatedAtColumn())) {
+                if (is_array($sort) || (is_string($sort) && Str::contains($sort, ','))) {
+                    $columns = !is_array($sort) ? explode(',', $sort) : $sort;
+
+                    foreach ($columns as $column) {
+                        if (Str::startsWith($column, '-')) {
+                            $direction = Str::startsWith($column, '-') ? 'desc' : 'asc';
+                            $param     = Str::startsWith($column, '-') ? substr($column, 1) : $column;
+
+                            $this->orderBy($param, $direction);
+                            continue;
+                        }
+
+                        $sd = explode(':', $column);
+                        if ($sd && count($sd) > 0) {
+                            count($sd) == 2
+                                ? $this->orderBy(trim($sd[0]), trim($sd[1]))
+                                : $this->orderBy(trim($sd[0]), 'asc');
+                        }
+                    }
+
+                    continue;
+                }
+
+                if (Schema::hasColumn($model->getTable(), $model->getCreatedAtColumn())) {
                     if (strtolower($sort) == 'latest') {
                         $this->latest();
                         continue;
@@ -172,27 +195,6 @@ class Builder implements Expansion
                 if (strtolower($sort) == 'distance') {
                     $this->orderByDistance();
                     continue;
-                }
-
-                if (is_array($sort) || Str::contains($sort, ',')) {
-                    $columns = !is_array($sort) ? explode(',', $sort) : $sort;
-
-                    foreach ($columns as $column) {
-                        if (Str::startsWith($column, '-')) {
-                            $direction = Str::startsWith($column, '-') ? 'desc' : 'asc';
-                            $param     = Str::startsWith($column, '-') ? substr($column, 1) : $column;
-
-                            $this->orderBy($column, $direction);
-                            continue;
-                        }
-
-                        $sd = explode(':', $column);
-                        if ($sd && count($sd) > 0) {
-                            count($sd) == 2
-                                ? $this->orderBy(trim($sd[0]), trim($sd[1]))
-                                : $this->orderBy(trim($sd[0]), 'asc');
-                        }
-                    }
                 }
 
                 if (Str::startsWith($sort, '-')) {

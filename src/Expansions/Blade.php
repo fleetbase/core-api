@@ -19,7 +19,7 @@ class Blade implements Expansion
 
     public static function target()
     {
-        return Illuminate\Support\Facades\Blade::class;
+        return \Illuminate\Support\Facades\Blade::class;
     }
 
     public function assetFromS3()

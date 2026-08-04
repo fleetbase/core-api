@@ -162,9 +162,9 @@ class SocketClusterService
             $this->response = $this->client->receive();
             $this->client->close();
             $this->sent = true;
-        } catch (\WebSocket\ConnectionException $e) {
-            $this->error = $e->getMessage();
         } catch (\WebSocket\TimeoutException $e) {
+            $this->error = $e->getMessage();
+        } catch (\WebSocket\ConnectionException $e) {
             $this->error = $e->getMessage();
         } catch (\Throwable $e) {
             $this->error = $e->getMessage();
@@ -193,9 +193,9 @@ class SocketClusterService
             $this->client->send($handshake);
             $this->handshakeResponse = $this->client->receive();
             $this->handshakeSent     = true;
-        } catch (\WebSocket\ConnectionException $e) {
-            $this->handshakeError = $e->getMessage();
         } catch (\WebSocket\TimeoutException $e) {
+            $this->handshakeError = $e->getMessage();
+        } catch (\WebSocket\ConnectionException $e) {
             $this->handshakeError = $e->getMessage();
         } catch (\Throwable $e) {
             $this->handshakeError = $e->getMessage();

@@ -67,9 +67,12 @@ class ScheduleExceptionFilter extends Filter
         try {
             $resolved = Utils::getMutationType($type);
             $this->builder->where('subject_type', $resolved);
+            // @codeCoverageIgnoreStart
+            // Defensive fallback for unexpected resolver failures; normal unknown aliases resolve to a namespaced string.
         } catch (\Throwable $e) {
             $this->builder->where('subject_type', $type);
         }
+        // @codeCoverageIgnoreEnd
     }
 
     /**

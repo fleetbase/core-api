@@ -8,6 +8,7 @@ use Fleetbase\Support\Utils;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\PersonalAccessToken;
+use Symfony\Component\HttpFoundation\Response;
 
 class AuthenticateOnceWithBasicAuth
 {
@@ -24,7 +25,7 @@ class AuthenticateOnceWithBasicAuth
             return $next($request);
         }
 
-        if ($authenticationResponse instanceof \Illuminate\Http\Response) {
+        if ($authenticationResponse instanceof Response) {
             return $authenticationResponse;
         }
 
@@ -75,17 +76,17 @@ class AuthenticateOnceWithBasicAuth
             return $this->authenticatedWithBasic($request, 'sandbox');
         }
 
+        // Credentials don't exist
+        if (!$apiCredential || Utils::isEmpty($apiCredential, 'company.owner')) {
+            return response()->error('Oops! The api credentials provided were not valid', 401);
+        }
+
         // If OPTIONS set api key and continue
         if ($request->isMethod('OPTIONS')) {
             // Set api credential session
             Auth::setApiKey($apiCredential);
 
             return true;
-        }
-
-        // Credentials don't exist
-        if (!$apiCredential || Utils::isEmpty($apiCredential, 'company.owner')) {
-            return response()->error('Oops! The api credentials provided were not valid', 401);
         }
 
         // If credentials have expired

@@ -48,11 +48,20 @@ class Str implements Expansion
     public function domain()
     {
         return function (string $url) {
-            $parsedUrl = parse_url($url);
-            $host      = explode('.', $parsedUrl['host']);
-            $domain    = $host[count($host) - 2] . '.' . $host[count($host) - 1];
+            // Accept a bare host or a full URL; fall back to the raw value when
+            // there is no scheme for parse_url to key off of.
+            $host = parse_url($url, PHP_URL_HOST) ?: $url;
 
-            return $domain;
+            $labels = array_values(array_filter(explode('.', (string) $host), 'strlen'));
+            $count  = count($labels);
+
+            // Single-label ("localhost") or empty hosts have no registrable
+            // domain — return the host as-is instead of reading a negative index.
+            if ($count < 2) {
+                return (string) $host;
+            }
+
+            return $labels[$count - 2] . '.' . $labels[$count - 1];
         };
     }
 }

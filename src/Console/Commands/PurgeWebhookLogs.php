@@ -15,7 +15,8 @@ class PurgeWebhookLogs extends Command
                             {--days=30 : Only purge records older than this many days}
                             {--disk= : Filesystem disk for backups; defaults to app default}
                             {--force : Do not ask for interactive confirmation}
-                            {--skip-backup : Skip creating a backup and delete immediately}';
+                            {--skip-backup : Skip creating a backup and delete immediately}
+                            {--keep-backups= : Keep only the N most recent backups for this table; unset disables pruning}';
 
     protected $description = 'Purge webhook request logs.';
 

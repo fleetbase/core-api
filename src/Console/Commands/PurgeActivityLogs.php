@@ -15,7 +15,8 @@ class PurgeActivityLogs extends Command
                             {--days=30}
                             {--disk=}
                             {--force}
-                            {--skip-backup}';
+                            {--skip-backup}
+                            {--keep-backups=}';
 
     protected $description = 'Purge activity/audit logs.';
 

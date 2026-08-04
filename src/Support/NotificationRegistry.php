@@ -338,7 +338,7 @@ class NotificationRegistry
 
             if (is_array($notifiables)) {
                 foreach ($notifiables as $notifiable) {
-                    $notifiableModel = static::resolveNotifiable($notifiable);
+                    $notifiableModel = static::resolveNotifiable($notifiable, ...$params);
 
                     // if has multiple notifiables
                     if (isset($notifiableModel->containsMultipleNotifiables) && is_string($notifiableModel->containsMultipleNotifiables)) {
@@ -369,7 +369,7 @@ class NotificationRegistry
      *
      * @return Model|null the Eloquent model or null if it cannot be resolved
      */
-    protected static function resolveNotifiable(array $notifiableObject, $subject): ?Model
+    protected static function resolveNotifiable(array $notifiableObject, $subject = null): ?Model
     {
         $definition = data_get($notifiableObject, 'definition');
         $primaryKey = data_get($notifiableObject, 'primaryKey');

@@ -34,8 +34,9 @@ namespace {
     test('company invite acceptance still requires a code', function () {
         $request = new AcceptCompanyInvite();
 
-        expect($request->rules())->toBe([
-            'code' => ['required'],
-        ]);
+        expect($request->authorize())->toBeTrue()
+            ->and($request->rules())->toBe([
+                'code' => ['required'],
+            ]);
     });
 }

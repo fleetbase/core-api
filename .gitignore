@@ -3,6 +3,7 @@
 composer.lock
 /vendor/
 /coverage/
+/.fleetbase-id
 /.phpunit.cache/
 .phpunit.result.cache
 .php_cs.cache

@@ -6,6 +6,7 @@ use Fleetbase\Models\File;
 use Illuminate\Container\Container;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Kreait\Firebase\Contract\Messaging;
 use Kreait\Laravel\Firebase\FirebaseProjectManager;
 use NotificationChannels\Apn\ApnMessage;
 use NotificationChannels\Fcm\FcmMessage;
@@ -41,11 +42,6 @@ class PushNotification
         // Configure FCM
         static::configureFcmClient();
 
-        // Get FCM Client using Notification Channel
-        $container      = Container::getInstance();
-        $projectManager = new FirebaseProjectManager($container);
-        $client         = $projectManager->project('app')->messaging();
-
         // Create Notification
         $notification = new FcmNotification(
             title: $title,
@@ -75,7 +71,7 @@ class PushNotification
                     ],
                 ],
             ])
-            ->usingClient($client);
+            ->usingClient(static::getFcmMessagingClient());
     }
 
     public static function getApnClient(): PushOkClient
@@ -96,7 +92,11 @@ class PushNotification
         // Always unsetset apn `private_key_path` and `private_key_file`
         unset($config['private_key_path'], $config['private_key_file']);
 
-        $isProductionEnv = Utils::castBoolean(data_get($config, 'production', app()->isProduction()));
+        $production = data_get($config, 'production');
+        if ($production === null) {
+            $production = app()->isProduction();
+        }
+        $isProductionEnv = Utils::castBoolean($production);
 
         return new PushOkClient(PuskOkToken::create($config), $isProductionEnv);
     }
@@ -126,5 +126,13 @@ class PushNotification
         config(['firebase.projects.app' => $config]);
 
         return $config;
+    }
+
+    protected static function getFcmMessagingClient(): Messaging
+    {
+        $container      = Container::getInstance();
+        $projectManager = new FirebaseProjectManager($container);
+
+        return $projectManager->project('app')->messaging();
     }
 }

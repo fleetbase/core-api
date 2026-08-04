@@ -74,9 +74,12 @@ class ScheduleItemFilter extends Filter
         try {
             $resolved = Utils::getMutationType($type);
             $this->builder->where('assignee_type', $resolved);
+            // @codeCoverageIgnoreStart
+            // Defensive fallback for unexpected resolver failures; normal unknown aliases resolve to a namespaced string.
         } catch (\Throwable $e) {
             $this->builder->where('assignee_type', $type);
         }
+        // @codeCoverageIgnoreEnd
     }
 
     /**

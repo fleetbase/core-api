@@ -37,12 +37,12 @@ class ChatReceiptController extends FleetbaseController
             $record = $this->model->createRecordFromRequest($request);
 
             return ['chatReceipt' => new $this->resource($record)];
-        } catch (\Exception $e) {
-            return response()->error($e->getMessage());
-        } catch (\Illuminate\Database\QueryException $e) {
-            return response()->error($e->getMessage());
         } catch (FleetbaseRequestValidationException $e) {
             return response()->error($e->getErrors());
+        } catch (\Illuminate\Database\QueryException $e) {
+            return response()->error($e->getMessage());
+        } catch (\Exception $e) {
+            return response()->error($e->getMessage());
         }
     }
 }

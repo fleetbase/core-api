@@ -16,7 +16,8 @@ class PurgeApiLogs extends Command
                             {--days=30}
                             {--disk=}
                             {--force}
-                            {--skip-backup}';
+                            {--skip-backup}
+                            {--keep-backups=}';
 
     protected $description = 'Purge API request logs and API events.';
 

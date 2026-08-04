@@ -152,7 +152,7 @@ class EnvironmentMapper
     {
         $settableEnvironmentVariables = [];
         foreach (static::$environmentVariables as $variable => $configPath) {
-            if (Utils::isEmpty(env($variable))) {
+            if (Utils::isEmpty(getenv($variable))) {
                 $settableEnvironmentVariables[$variable] = $configPath;
             }
         }
@@ -266,7 +266,7 @@ class EnvironmentMapper
 
         foreach ($environmentVariables as $envVar => $configPath) {
             $dbKey = Str::startsWith($configPath, 'system.') ? $configPath : 'system.' . $configPath;
-            if (empty(env($envVar))) {
+            if (empty(getenv($envVar))) {
                 $value = static::getDbSetting($dbSettings, $dbKey);
                 if (is_string($value) && !empty($value)) {
                     putenv(sprintf('%s="%s"', $envVar, addcslashes($value, '"')));

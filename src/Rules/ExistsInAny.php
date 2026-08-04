@@ -52,6 +52,9 @@ class ExistsInAny implements Rule
     public function passes($attribute, $value)
     {
         foreach ($this->tables as $table) {
+            $connection = config('database.default');
+            $exists     = false;
+
             // hanlde multiple connection check with : -> connection:table
             if (Str::contains($table, ':')) {
                 [$connection, $table] = explode(':', $table);
@@ -59,8 +62,8 @@ class ExistsInAny implements Rule
 
             if (is_array($this->column)) {
                 foreach ($this->column as $column) {
-                    if (Schema::hasColumn($table, $column)) {
-                        $exists = DB::connection($connection ?? config('database.default'))->table($table)->where($column, $value)->exists();
+                    if (Schema::connection($connection)->hasColumn($table, $column)) {
+                        $exists = DB::connection($connection)->table($table)->where($column, $value)->exists();
                     }
 
                     if ($exists) {
@@ -68,8 +71,8 @@ class ExistsInAny implements Rule
                     }
                 }
             } else {
-                if (Schema::hasColumn($table, $this->column)) {
-                    $exists = DB::connection($connection ?? config('database.default'))->table($table)->where($this->column, $value)->exists();
+                if (Schema::connection($connection)->hasColumn($table, $this->column)) {
+                    $exists = DB::connection($connection)->table($table)->where($this->column, $value)->exists();
                 }
             }
 

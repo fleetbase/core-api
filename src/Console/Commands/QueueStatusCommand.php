@@ -86,11 +86,7 @@ class QueueStatusCommand extends Command
                 );
 
                 try {
-                    $client = new SqsClient([
-                        'version'     => 'latest',
-                        'region'      => $sqsConfig['region'],
-                        'credentials' => $credentials,
-                    ]);
+                    $client = $this->makeSqsClient($sqsConfig, $credentials);
 
                     // Attempt to list queues to ensure connectivity
                     $result = $client->listQueues();
@@ -109,5 +105,14 @@ class QueueStatusCommand extends Command
 
                 return 0;
         }
+    }
+
+    protected function makeSqsClient(array $sqsConfig, Credentials $credentials): SqsClient
+    {
+        return new SqsClient([
+            'version'     => 'latest',
+            'region'      => $sqsConfig['region'],
+            'credentials' => $credentials,
+        ]);
     }
 }

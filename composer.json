@@ -1,6 +1,6 @@
 {
     "name": "fleetbase/core-api",
-    "version": "1.6.54",
+    "version": "1.6.55",
     "description": "Core Framework and Resources for Fleetbase API",
     "keywords": [
         "fleetbase",
@@ -61,7 +61,10 @@
         "rlanvin/php-rrule": "^2.4"
     },
     "require-dev": {
+        "cknow/laravel-money": "^7.2",
         "friendsofphp/php-cs-fixer": "3.82.2",
+        "illuminate/translation": "^10.0",
+        "illuminate/validation": "^10.0",
         "nunomaduro/collision": "^7.0",
         "pestphp/pest": "^2.33.2",
         "phpstan/phpstan": "^1.10.38",
@@ -106,11 +109,13 @@
         "lint": "php-cs-fixer fix -v",
         "test:coverage": "php scripts/coverage-runner.php --coverage --coverage-text --colors=always",
         "test:coverage:clover": "mkdir -p coverage && php scripts/coverage-runner.php --coverage-clover=coverage/clover.xml --colors=always",
+        "test:date-drift": "php scripts/check-test-date-drift.php",
         "test:lint": "php-cs-fixer fix -v --dry-run",
         "test:types": "phpstan analyse --ansi --memory-limit=-1",
-        "test:unit": "pest --colors=always",
+        "test:unit": "php -d memory_limit=512M vendor/bin/pest --colors=always",
         "test": [
             "@test:lint",
+            "@test:date-drift",
             "@test:types",
             "@test:unit"
         ]

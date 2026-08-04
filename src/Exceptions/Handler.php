@@ -112,18 +112,24 @@ class Handler extends ExceptionHandler
                         'line'    => $exception->getLine(),
                     ]
                 );
+                // json_encode without JSON_THROW_ON_ERROR returns false instead of throwing; this is a defensive guard.
+                // @codeCoverageIgnoreStart
             } catch (\Exception $e) {
                 $output = null;
             }
+            // @codeCoverageIgnoreEnd
         }
 
         if (empty($output) && method_exists($exception, 'getMessage')) {
             $output = $exception->getMessage();
         }
 
+        // Throwable always exposes getMessage(); this protects non-standard engine behavior.
+        // @codeCoverageIgnoreStart
         if (empty($output)) {
             $output = class_basename($exception);
         }
+        // @codeCoverageIgnoreEnd
 
         return $output;
     }

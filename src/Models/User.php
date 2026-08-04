@@ -342,7 +342,7 @@ class User extends Authenticatable
      */
     public function companies(): HasManyThrough
     {
-        return $this->hasManyThrough(Company::class, CompanyUser::class, 'company_uuid', 'uuid', 'uuid', 'user_uuid');
+        return $this->hasManyThrough(Company::class, CompanyUser::class, 'user_uuid', 'uuid', 'uuid', 'company_uuid');
     }
 
     /**
@@ -1009,10 +1009,8 @@ class User extends Authenticatable
         // Check if $code is a string, and retrieve the verification code model if necessary
         if (is_string($code)) {
             $verifyCode = $this->getVerificationCodeOrFail($code);
-        } elseif ($code instanceof VerificationCode) {
-            $verifyCode = $code;
         } else {
-            throw new InvalidVerificationCodeException('Invalid verification code.');
+            $verifyCode = $code;
         }
 
         // Get the current time
@@ -1301,7 +1299,7 @@ class User extends Authenticatable
      */
     public function setUserInfoFromRequest($request, bool $save = false): self
     {
-        $userInfoAttributes = static::getUserInfoFromRequest($request);
+        $userInfoAttributes = static::applyUserInfoFromRequest($request);
 
         foreach ($userInfoAttributes as $key => $value) {
             if ($this->isFillable($key)) {

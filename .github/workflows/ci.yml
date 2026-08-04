@@ -40,6 +40,9 @@ jobs:
     - name: Run Lint
       run: composer test:lint
 
+    - name: Check Test Date Drift
+      run: composer test:date-drift
+
     - name: Run Tests
       run: composer test:unit
 
@@ -51,3 +54,12 @@ jobs:
       with:
         name: coverage-baseline
         path: coverage/clover.xml
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v5
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        files: coverage/clover.xml
+        disable_search: true
+        flags: backend
+        fail_ci_if_error: false

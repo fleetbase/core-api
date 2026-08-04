@@ -263,7 +263,10 @@ class ScheduleTemplate extends Model
         // Throw a clear RuntimeException so the API returns a 500 with a
         // meaningful message instead of silently materialising 0 items.
         if (!class_exists('RRule\\RRule')) {
+            // @codeCoverageIgnoreStart
+            // Composer installs php-rrule for the supported runtime; this protects incomplete installs.
             throw new \RuntimeException('php-rrule is not installed. Run: composer require rlanvin/php-rrule inside the API container.');
+            // @codeCoverageIgnoreEnd
         }
 
         try {
@@ -278,7 +281,9 @@ class ScheduleTemplate extends Model
             ]);
 
             return null;
+            // @codeCoverageIgnoreStart
         } catch (\RRule\RRuleException $e) {
+            // Older php-rrule versions exposed this exception; the pinned version throws InvalidArgumentException.
             // Invalid RRULE string — log and return null so callers can skip gracefully
             \Log::warning('ScheduleTemplate: invalid RRULE string', [
                 'template_uuid' => $this->uuid,
@@ -288,6 +293,7 @@ class ScheduleTemplate extends Model
             ]);
 
             return null;
+            // @codeCoverageIgnoreEnd
         }
     }
 

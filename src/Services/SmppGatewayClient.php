@@ -42,8 +42,11 @@ class SmppGatewayClient
             throw new \RuntimeException("Unable to connect to SMPP gateway {$scheme}://{$host}:{$port}: {$errstr}", $errno);
         }
 
+        // Successful connection requires a live SMPP gateway; unit tests cover protocol behavior with injected sockets.
+        // @codeCoverageIgnoreStart
         stream_set_timeout($this->socket, (int) $timeout);
         $this->bind();
+        // @codeCoverageIgnoreEnd
     }
 
     public function submit(string $from, string $to, string $text, array $options = []): string

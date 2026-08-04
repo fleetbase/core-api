@@ -46,7 +46,7 @@ class ExpiryScope implements Scope
      */
     protected function getExpiredAtColumn(Builder $builder)
     {
-        if (count($builder->getQuery()->joins) > 0) {
+        if (count($builder->getQuery()->joins ?? []) > 0) {
             return $builder->getModel()->getQualifiedExpiredAtColumn();
         }
 

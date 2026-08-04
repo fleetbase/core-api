@@ -62,7 +62,8 @@ test('fleetbase blog parser returns an empty array for malformed rss', function 
 });
 
 test('fleetbase blog link normalization keeps non ghost links unchanged', function () {
-    expect(FleetbaseBlog::normalizeLink('https://www.fleetbase.io/blog/already-canonical'))->toBe('https://www.fleetbase.io/blog/already-canonical')
+    expect(FleetbaseBlog::normalizeLink(''))->toBe('https://www.fleetbase.io/blog')
+        ->and(FleetbaseBlog::normalizeLink('https://www.fleetbase.io/blog/already-canonical'))->toBe('https://www.fleetbase.io/blog/already-canonical')
         ->and(FleetbaseBlog::normalizeLink('https://fleetbase.ghost.io/legacy-ghost-post/'))->toBe('https://www.fleetbase.io/blog/legacy-ghost-post')
         ->and(FleetbaseBlog::normalizeLink('https://blog.fleetbase.io/ghost-post/'))->toBe('https://www.fleetbase.io/blog/ghost-post');
 });

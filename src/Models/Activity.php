@@ -22,26 +22,26 @@ class Activity extends SpatieActivity
 
     public function getHumanizedSubjectTypeAttribute(): ?string
     {
-        $segments = explode('\\', $this->attributes['subject_type']);
-        if (!$segments) {
+        if (empty($this->attributes['subject_type'])) {
             return null;
         }
 
-        $name = end($segments);
-        $name = Str::snake($name);
+        $segments = explode('\\', $this->attributes['subject_type']);
+        $name     = end($segments);
+        $name     = Str::snake($name);
 
         return Utils::humanize($name);
     }
 
     public function getHumanizedCauserTypeAttribute(): ?string
     {
-        $segments = explode('\\', $this->attributes['causer_type']);
-        if (!$segments) {
+        if (empty($this->attributes['causer_type'])) {
             return null;
         }
 
-        $name = end($segments);
-        $name = Str::snake($name);
+        $segments = explode('\\', $this->attributes['causer_type']);
+        $name     = end($segments);
+        $name     = Str::snake($name);
 
         return Utils::humanize($name);
     }

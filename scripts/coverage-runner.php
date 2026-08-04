@@ -22,7 +22,7 @@ if ($hasCoverageExtension) {
     $_ENV['XDEBUG_MODE']    = 'coverage';
     $_SERVER['XDEBUG_MODE'] = 'coverage';
 
-    $command = array_merge([PHP_BINARY, $pest], $args);
+    $command = array_merge([PHP_BINARY, '-d', 'memory_limit=-1', $pest], $args);
 } else {
     fwrite(STDERR, "No PHP coverage driver is available.\n\n");
     fwrite(STDERR, "Install or enable one of:\n");

@@ -89,7 +89,7 @@ class SyncSandbox extends Command
                 // if ends with _at assume datetime column
                 foreach ($clone as $key => $value) {
                     if (isset($clone[$key]) && Str::endsWith($key, '_at')) {
-                        $clone[$key] = Carbon::fromString($clone[$key])->toDateTimeString();
+                        $clone[$key] = Carbon::parse($clone[$key])->toDateTimeString();
                     }
                 }
 

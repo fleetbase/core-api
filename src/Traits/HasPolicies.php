@@ -279,7 +279,7 @@ trait HasPolicies
         }
 
         $quoteCharacter = substr($pipeString, 0, 1);
-        $endCharacter   = substr($quoteCharacter, -1, 1);
+        $endCharacter   = substr($pipeString, -1, 1);
 
         if ($quoteCharacter !== $endCharacter) {
             return explode('|', $pipeString);

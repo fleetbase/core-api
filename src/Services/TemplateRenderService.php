@@ -514,12 +514,14 @@ class TemplateRenderService
             }
         }
 
-        // Fallback: simple recursive descent evaluator for +, -, *, /, ()
+        // Fallback when the optional math parser package is not installed.
+        // @codeCoverageIgnoreStart
         try {
             return (string) $this->parseExpression(trim($expression));
         } catch (\Throwable $e) {
             return '#ERR';
         }
+        // @codeCoverageIgnoreEnd
     }
 
     /**

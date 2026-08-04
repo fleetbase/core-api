@@ -86,9 +86,12 @@ class VonageSmsService
             throw new \InvalidArgumentException('Message text cannot be empty');
         }
 
+        // isConfigured() rejects empty configured senders before this point.
+        // @codeCoverageIgnoreStart
         if (empty($from)) {
             throw new \InvalidArgumentException('Vonage sender (from) is required');
         }
+        // @codeCoverageIgnoreEnd
     }
 
     protected function normalizeRecipient(string $to): string

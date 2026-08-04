@@ -55,7 +55,7 @@ class Directive extends Model
      */
     public function permission(): BelongsTo
     {
-        return $this->belongsTo(Permission::class, 'permission_id');
+        return $this->belongsTo(Permission::class, 'permission_uuid', 'id');
     }
 
     /**

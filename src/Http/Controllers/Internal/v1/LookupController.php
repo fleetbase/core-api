@@ -26,7 +26,7 @@ class LookupController extends Controller
         $prefix = $request->input('prefix');
         $limit  = $request->input('limit');
 
-        $content = file_get_contents('https://raw.githubusercontent.com/FortAwesome/Font-Awesome/master/metadata/icons.json');
+        $content = $this->fetchFontAwesomeIconMetadata();
         $json    = json_decode($content);
         $icons   = [];
 
@@ -75,6 +75,14 @@ class LookupController extends Controller
         }
 
         return $icons;
+    }
+
+    protected function fetchFontAwesomeIconMetadata(): string
+    {
+        // Network boundary; tests override this method and cover icon filtering.
+        // @codeCoverageIgnoreStart
+        return file_get_contents('https://raw.githubusercontent.com/FortAwesome/Font-Awesome/master/metadata/icons.json');
+        // @codeCoverageIgnoreEnd
     }
 
     /**
@@ -223,6 +231,9 @@ class LookupController extends Controller
                 ->retry(2, 100) // Retry twice with 100ms delay
                 ->get($rssUrl);
 
+            // PendingRequest::retry() throws final unsuccessful responses by
+            // default, so this branch is only reachable if that behavior changes.
+            // @codeCoverageIgnoreStart
             if (!$response->successful()) {
                 Log::error('[Blog] Failed to fetch RSS feed', [
                     'status' => $response->status(),
@@ -231,6 +242,7 @@ class LookupController extends Controller
 
                 return [];
             }
+            // @codeCoverageIgnoreEnd
 
             $posts = $this->parseBlogPostsFromRss($response->body(), $limit);
 

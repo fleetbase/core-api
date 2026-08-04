@@ -134,7 +134,10 @@ class Request implements Expansion
                 return in_array($needle, $haystack);
             }
 
+            // $haystack is explicitly cast to array above; this is defensive only.
+            // @codeCoverageIgnoreStart
             return false;
+            // @codeCoverageIgnoreEnd
         };
     }
 
@@ -250,9 +253,12 @@ class Request implements Expansion
         return function () {
             /** @var \Illuminate\Http\Request $this */
             $controller = ControllerResolver::resolve($this);
+            // ControllerResolver::resolve() has a non-null Controller return type; this is a legacy fallback.
+            // @codeCoverageIgnoreStart
             if (!$controller) {
                 $controller = $this->route()->getController();
             }
+            // @codeCoverageIgnoreEnd
 
             return $controller;
         };

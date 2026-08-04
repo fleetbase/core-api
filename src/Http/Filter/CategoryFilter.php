@@ -41,7 +41,7 @@ class CategoryFilter extends Filter
             $this->builder->where('parent_uuid', $id);
         } else {
             $this->builder->whereHas(
-                'parent',
+                'parentCategory',
                 function ($query) use ($id) {
                     $query->where('public_id', $id);
                 }

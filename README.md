@@ -7,6 +7,10 @@
     </p>
 </p>
 
+<p align="center">
+    <a href="https://codecov.io/gh/fleetbase/core-api"><img src="https://codecov.io/gh/fleetbase/core-api/branch/main/graph/badge.svg" alt="Coverage" /></a>
+</p>
+
 ------
 This package provides the base framework and API resources required by Fleetbase API.
 

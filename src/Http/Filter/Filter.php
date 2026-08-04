@@ -191,9 +191,12 @@ abstract class Filter
 
         $ranges = $this->getRangeFilterCallbacks();
 
+        // getRangeFilterCallbacks() is typed as array; this guards incompatible downstream overrides.
+        // @codeCoverageIgnoreStart
         if (!is_array($ranges)) {
             return;
         }
+        // @codeCoverageIgnoreEnd
 
         foreach ($ranges as $method => $values) {
             if (method_exists($this, $method)) {

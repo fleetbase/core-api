@@ -54,7 +54,7 @@ class Invite extends Model
      */
     public function getConnectionName(): string
     {
-        return env('DB_CONNECTION', 'mysql');
+        return getenv('DB_CONNECTION') ?: ($_ENV['DB_CONNECTION'] ?? $_SERVER['DB_CONNECTION'] ?? 'mysql');
     }
 
     /**

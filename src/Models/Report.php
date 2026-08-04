@@ -54,7 +54,11 @@ class Report extends Model
         'execution_time',
         'row_count',
         'is_scheduled',
+        'schedule_frequency',
+        'schedule_time',
+        'schedule_timezone',
         'schedule_config',
+        'next_scheduled_run',
         'export_formats',
         'is_generated',
         'generation_progress',
@@ -84,6 +88,7 @@ class Report extends Model
         'period_start'              => 'datetime',
         'period_end'                => 'datetime',
         'last_executed_at'          => 'datetime',
+        'next_scheduled_run'        => 'datetime',
     ];
 
     /**
@@ -559,10 +564,25 @@ class Report extends Model
     }
 
     /**
+     * Get reports whose scheduled execution time has passed.
+     */
+    public static function getDueReports()
+    {
+        return static::where('is_scheduled', true)
+            ->whereNotNull('next_scheduled_run')
+            ->where('next_scheduled_run', '<=', now())
+            ->orderBy('next_scheduled_run')
+            ->get();
+    }
+
+    /**
      * Calculate next scheduled run time.
      */
-    protected function calculateNextRun(string $frequency, string $time, string $timezone): Carbon
+    public function calculateNextRun(?string $frequency = null, ?string $time = null, ?string $timezone = null): Carbon
     {
+        $frequency ??= $this->schedule_frequency ?? 'hourly';
+        $time ??= $this->schedule_time ?? '00:00';
+        $timezone ??= $this->schedule_timezone ?? 'UTC';
         $now = Carbon::now($timezone);
 
         switch ($frequency) {

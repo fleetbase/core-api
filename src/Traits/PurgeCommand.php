@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Traits;
 
+use Fleetbase\Exceptions\PurgeBackupException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
@@ -40,12 +41,25 @@ trait PurgeCommand
     }
 
     /**
+     * Make sure the directory holding a dump file exists.
+     */
+    protected function ensureDumpDirectory(string $fileName): void
+    {
+        $directory = dirname($fileName);
+
+        if (!is_dir($directory)) {
+            @mkdir($directory, 0775, true);
+        }
+    }
+
+    /**
      * Write a simple SQL INSERT dump to $fileName for the given rows.
      */
     protected function writeSqlDump(string $tableName, Collection $records, string $fileName): void
     {
         if ($records->isEmpty()) {
-            file_put_contents($fileName, "-- empty set\n");
+            $this->ensureDumpDirectory($fileName);
+            file_put_contents($fileName, "-- empty set\n", FILE_APPEND);
 
             return;
         }
@@ -55,7 +69,7 @@ trait PurgeCommand
 
         // Start file (create/overwrite once)
         if (!file_exists($fileName)) {
-            @mkdir(dirname($fileName), 0775, true);
+            $this->ensureDumpDirectory($fileName);
             file_put_contents($fileName, "-- Dump of {$tableName}\n");
         }
 
@@ -79,6 +93,83 @@ trait PurgeCommand
 
         $dump .= implode(",\n", $rows) . ";\n";
         file_put_contents($fileName, $dump, FILE_APPEND);
+    }
+
+    /**
+     * Stream the local dump to the backup disk and prove it landed intact.
+     *
+     * Deleting rows is only safe once the backup is known to exist and to be non-empty,
+     * so every failure here aborts before the caller reaches its delete stage.
+     *
+     * @throws PurgeBackupException when the backup cannot be verified
+     */
+    protected function uploadBackup(string $localTmp, string $disk, string $remote): void
+    {
+        if (!is_file($localTmp) || filesize($localTmp) === 0) {
+            throw new PurgeBackupException('was not written locally, or is empty', $disk, $remote);
+        }
+
+        $filesystem = Storage::disk($disk);
+        $stream     = fopen($localTmp, 'rb');
+        $uploaded   = $stream !== false && $filesystem->writeStream($remote, $stream) !== false;
+
+        if (is_resource($stream)) {
+            fclose($stream);
+        }
+
+        if (!$uploaded || !$filesystem->exists($remote)) {
+            throw new PurgeBackupException('upload failed', $disk, $remote);
+        }
+
+        if ($filesystem->size($remote) === 0) {
+            throw new PurgeBackupException('is empty', $disk, $remote);
+        }
+    }
+
+    /**
+     * Keep only the --keep-backups most recent dumps for this table, if the option is set.
+     *
+     * Scoped to this table's own dumps so a shared or reused backup prefix is never touched,
+     * and non-fatal: the backup is already safe by the time this runs.
+     */
+    protected function pruneBackups(string $disk, string $backupPath, string $tableName, string $justUploaded): void
+    {
+        try {
+            // Commands using this trait without declaring the option simply opt out of pruning.
+            $keep = method_exists($this, 'option') ? $this->option('keep-backups') : null;
+        } catch (\Throwable $e) {
+            return;
+        }
+
+        if ($keep === null || $keep === '' || (int) $keep < 1) {
+            return;
+        }
+
+        $keep       = (int) $keep;
+        $filesystem = Storage::disk($disk);
+
+        try {
+            // Dump names are "<table>_<Y-m-d>_<H-i-s>.sql", so for a single table
+            // sorting by name descending is the same as sorting newest first.
+            $dumps = collect($filesystem->files(trim($backupPath, '/')))
+                ->filter(fn ($path) => $path !== $justUploaded && preg_match('/^' . preg_quote($tableName, '/') . '_[\d\-_]+\.sql$/', basename($path)))
+                ->sortDesc()
+                ->values();
+
+            // The upload we just made is the newest and is excluded above, so it counts against the budget.
+            $stale = $dumps->slice($keep - 1);
+            if ($stale->isEmpty()) {
+                return;
+            }
+
+            foreach ($stale as $path) {
+                $filesystem->delete($path);
+            }
+
+            $this->info("Pruned {$stale->count()} old backup(s), keeping the {$keep} most recent.");
+        } catch (\Throwable $e) {
+            $this->warn('Could not prune old backups: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -144,26 +235,30 @@ trait PurgeCommand
             $disk     = $this->resolveBackupDisk($diskOption);
             $tmpName  = str_replace([' ', ':'], '_', "{$tableName}_" . now()->format('Y-m-d_H-i-s') . '.sql');
             $localTmp = storage_path("app/tmp/{$tmpName}");
-            $this->info("Backing up {$count} records from {$tableName} to '{$disk}:{$backupPath}/{$tmpName}'...");
+            $remote   = trim($backupPath, '/') . "/{$tmpName}";
+            $this->info("Backing up {$count} records from {$tableName} to '{$disk}:{$remote}'...");
 
-            $buffer = collect();
-
-            // stream rows to file in chunks
-            (clone $baseQuery)->orderBy($this->detectPrimaryKey($tableName, $model) ?? 'created_at')->chunk(1000, function ($chunk) use (&$buffer, $tableName, $localTmp) {
-                $buffer = $buffer->concat($chunk->map(fn ($m) => $m->getAttributes()));
-                if ($buffer->count() >= 5000) {
-                    $this->writeSqlDump($tableName, $buffer, $localTmp);
-                    $buffer = collect();
-                }
-            });
-            if ($buffer->count() > 0) {
-                $this->writeSqlDump($tableName, $buffer, $localTmp);
+            // A dump left behind by an earlier run would be appended to rather than replaced.
+            if (is_file($localTmp)) {
+                @unlink($localTmp);
             }
 
-            // upload and done
-            $remote = trim($backupPath, '/') . "/{$tmpName}";
-            Storage::disk($disk)->put($remote, file_get_contents($localTmp));
-            $this->info('Backup uploaded.');
+            try {
+                // Stream rows to file one chunk at a time so neither the rows nor the SQL
+                // they produce are ever fully resident in memory.
+                (clone $baseQuery)->orderBy($this->detectPrimaryKey($tableName, $model) ?? 'created_at')->chunk(1000, function ($chunk) use ($tableName, $localTmp) {
+                    $this->writeSqlDump($tableName, $chunk->map(fn ($m) => $m->getAttributes()), $localTmp);
+                });
+
+                $this->uploadBackup($localTmp, $disk, $remote);
+                $this->pruneBackups($disk, $backupPath, $tableName, $remote);
+            } finally {
+                if (is_file($localTmp)) {
+                    @unlink($localTmp);
+                }
+            }
+
+            $this->info('Backup verified and uploaded.');
         } else {
             $this->warn('Skipping backup as --skip-backup was provided.');
         }
@@ -182,10 +277,15 @@ trait PurgeCommand
                 }
             }, $pkColumn);
         } else {
-            (clone $baseQuery)->chunk(1000, function ($chunk) use (&$deleted) {
+            (clone $baseQuery)->orderByRaw('1')->chunk(1000, function ($chunk) use (&$deleted, $tableName) {
                 foreach ($chunk as $m) {
-                    $m->delete();
-                    $deleted++;
+                    $deleteQuery = DB::table($tableName);
+
+                    foreach ($m->getAttributes() as $column => $value) {
+                        $value === null ? $deleteQuery->whereNull($column) : $deleteQuery->where($column, $value);
+                    }
+
+                    $deleted += $deleteQuery->delete();
                 }
             });
         }

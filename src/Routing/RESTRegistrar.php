@@ -23,15 +23,15 @@ class RESTRegistrar extends ResourceRegistrar
      *
      * @return void
      */
-    protected function prefixedResource($name, $controller = null, array $options)
+    protected function prefixedResource($name, $controller, array $options)
     {
         [$name, $prefix] = $this->getResourcePrefix($name);
 
         // We need to extract the base resource from the resource name. Nested resources
         // are supported in the framework, but we need to know what name to use for a
         // place-holder on the route parameters, which should be the base resources.
-        $callback = function ($me) use ($name, $controller, $options) {
-            $me->rest($name, $controller, $options);
+        $callback = function () use ($name, $controller, $options) {
+            $this->register($name, $controller, $options);
         };
 
         return $this->router->group(compact('prefix'), $callback);
@@ -206,7 +206,7 @@ class RESTRegistrar extends ResourceRegistrar
     protected function getUniqueRouteName(array $append, string $name, array $options = []): string
     {
         $lastGroupStack          = is_array($options) && isset($options['groupStack']) ? Arr::last($options['groupStack']) : null;
-        $lastGroupStackNamespace = empty($lastGroupStack) ? null : $lastGroupStack['namespace'];
+        $lastGroupStackNamespace = empty($lastGroupStack) ? null : ($lastGroupStack['namespace'] ?? null);
         $groupPrefix             = $lastGroupStackNamespace ? strtolower(Str::replace('\\', '-', $lastGroupStackNamespace)) : null;
         $nameStack               = array_filter([$groupPrefix, $name, ...$append], fn ($segment) => !empty($segment));
 

@@ -139,7 +139,10 @@ class SqlDumper
             foreach ($fkMatches as $fk) {
                 $parents = $this->collectPrimaryKeysForFk($fk, $relatedPrimaryKeys);
                 if (empty($parents)) {
+                    // @codeCoverageIgnoreStart
+                    // relatedPrimaryKeys entries are only created after at least one parent key is streamed.
                     continue;
+                    // @codeCoverageIgnoreEnd
                 }
 
                 // Stream rows in chunks where $fk in (batch)
@@ -193,9 +196,12 @@ class SqlDumper
             file_put_contents($filePath, $insert, FILE_APPEND);
 
             // If pk wasn’t present, we can’t advance reliably; bail to avoid loops
+            // $pk is assigned a detected key or the first column above, so this only guards future changes.
+            // @codeCoverageIgnoreStart
             if ($pk === null) {
                 break;
             }
+            // @codeCoverageIgnoreEnd
         }
     }
 

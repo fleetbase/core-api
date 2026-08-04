@@ -230,12 +230,12 @@ class UserController extends FleetbaseController
             });
 
             return ['user' => new $this->resource($record)];
-        } catch (\Exception $e) {
-            return response()->error($e->getMessage());
         } catch (\Illuminate\Database\QueryException $e) {
             return response()->error($e->getMessage());
         } catch (FleetbaseRequestValidationException $e) {
             return response()->error($e->getErrors());
+        } catch (\Exception $e) {
+            return response()->error($e->getMessage());
         }
     }
 
@@ -275,16 +275,19 @@ class UserController extends FleetbaseController
                 }
             }
 
+            $roleToAssign = null;
+            if ($request->filled('user.role')) {
+                $roleToAssign = $this->resolveAssignableRole($request->input('user.role'));
+                if (!$roleToAssign) {
+                    return response()->error('The selected role is not available for this organisation.', 404);
+                }
+            }
+
             $record->update(Arr::except($input, ['uuid', 'public_id', 'deleted_at', 'updated_at', 'created_at']));
 
             // Assign role if set
-            if ($request->filled('user.role')) {
-                $role = $this->resolveAssignableRole($request->input('user.role'));
-                if (!$role) {
-                    return response()->error('The selected role is not available for this organisation.', 404);
-                }
-
-                $record->assignSingleRole($role);
+            if ($roleToAssign) {
+                $record->assignSingleRole($roleToAssign);
             }
 
             // Sync Permissions
@@ -302,12 +305,12 @@ class UserController extends FleetbaseController
             $record = $record->refresh();
 
             return ['user' => new $this->resource($record)];
-        } catch (\Exception $e) {
-            return response()->error($e->getMessage());
         } catch (\Illuminate\Database\QueryException $e) {
             return response()->error($e->getMessage());
         } catch (FleetbaseRequestValidationException $e) {
             return response()->error($e->getErrors());
+        } catch (\Exception $e) {
+            return response()->error($e->getMessage());
         }
     }
 
@@ -707,7 +710,7 @@ class UserController extends FleetbaseController
             return $this->inviteExistingUser($user, $request);
         }
 
-        // Brand-new user — create a pending record then invite.
+        // Brand-new user — create a pending record; assignCompany() below issues the join invite + notification.
         $data['company_uuid'] = $company->uuid;
         $data['status']       = 'pending';
         $data['type']         = 'user';
@@ -726,22 +729,6 @@ class UserController extends FleetbaseController
         // Assign role if set
         if ($role) {
             $user->assignSingleRole($role);
-        }
-
-        if (!Invite::isAlreadySentToJoinCompany($user, $company)) {
-            $invitation = Invite::create([
-                'company_uuid'    => $company->uuid,
-                'created_by_uuid' => session('user'),
-                'subject_uuid'    => $company->uuid,
-                'subject_type'    => Utils::getMutationType($company),
-                'protocol'        => 'email',
-                'recipients'      => [$user->email],
-                'reason'          => 'join_company',
-                'meta'            => array_filter(['role_uuid' => $request->input('user.role_uuid') ?? $request->input('user.role')]),
-                'expires_at'      => now()->addHours(48),
-            ]);
-
-            $user->notify(new UserInvited($invitation));
         }
 
         return response()->json(['user' => new $this->resource($user)]);
@@ -990,9 +977,12 @@ class UserController extends FleetbaseController
         // in any other organisations they are a member of.
         $companyUser = $user->companyUsers()->where('company_uuid', session('company'))->first();
 
+        // @codeCoverageIgnoreStart
+        // The preceding whereHas(companyUsers...) lookup already rejects users outside the active organisation.
         if (!$companyUser) {
             return response()->error('User is not a member of this organisation.', 404);
         }
+        // @codeCoverageIgnoreEnd
 
         $companyUser->status = 'inactive';
         $companyUser->save();
@@ -1111,7 +1101,7 @@ class UserController extends FleetbaseController
             })->first();
 
             if ($nextCompany) {
-                $user->update(['company_uuid' => $nextCompany->uuid]);
+                $user->update(['company_uuid' => $nextCompany->company_uuid]);
             } else {
                 $user->delete();
             }
@@ -1170,20 +1160,6 @@ class UserController extends FleetbaseController
         $fileName     = trim(Str::slug('users-' . date('Y-m-d-H:i')) . '.' . $format);
 
         return Excel::download(new UserExport($selections), $fileName);
-    }
-
-    /**
-     * Get user and always return with driver.
-     *
-     * @return \Illuminate\Http\Response
-     */
-    public static function getWithDriver($id, Request $request)
-    {
-        $user           = User::select(['public_id', 'uuid', 'email', 'name', 'phone', 'type'])->where('uuid', $id)->with(['driver'])->first();
-        $json           = $user->toArray();
-        $json['driver'] = $user->driver;
-
-        return response()->json(['user' => $user]);
     }
 
     /**

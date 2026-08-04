@@ -264,9 +264,12 @@ class TemplateController extends FleetbaseController
      */
     protected function _syncQueries(Template $template, array $queries): void
     {
+        // $queries is typed array; this legacy guard is defensive only.
+        // @codeCoverageIgnoreStart
         if (empty($queries) && !is_array($queries)) {
             return;
         }
+        // @codeCoverageIgnoreEnd
 
         $companyUuid   = session('company');
         $createdByUuid = session('user');

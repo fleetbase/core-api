@@ -305,7 +305,7 @@ trait HasCustomFields
             $name  = $this->normalizeCustomFieldKey((string) $fieldOrKey);
             $label = $this->labelFromKey((string) $fieldOrKey);
 
-            $field = $this->customFields()->create([
+            $field = $this->customFields()->make([
                 'name'         => $name,
                 'label'        => $label,
                 'type'         => 'text',
@@ -317,6 +317,8 @@ trait HasCustomFields
                 'subject_uuid' => $this->getAttribute('uuid'),
                 'company_uuid' => $this->getAttribute('company_uuid') ?? session('company'),
             ]);
+            $field->forceFill(['uuid' => CustomField::generateUuid()]);
+            method_exists($field, 'saveQuietly') ? $field->saveQuietly() : $field->save();
             // bust definition cache for subsequent lookups
             $this->customFieldCache = [];
         }
@@ -337,6 +339,10 @@ trait HasCustomFields
         $cfv->subject_type   = $this->getMorphClass();
         $cfv->value          = $value; // will be cast via CustomValue
         $cfv->company_uuid   = $this->getAttribute('company_uuid') ?? $cfv->company_uuid;
+
+        if (!$cfv->exists && empty($cfv->uuid)) {
+            $cfv->forceFill(['uuid' => CustomFieldValue::generateUuid()]);
+        }
 
         method_exists($cfv, 'saveQuietly') ? $cfv->saveQuietly() : $cfv->save();
 
@@ -441,6 +447,7 @@ trait HasCustomFields
     public function clearCustomFields(): int
     {
         $count                        = $this->customFieldValues()->delete();
+        $this->unsetRelation('customFieldValues');
         $this->customFieldValuesCache = [];
 
         return $count;
@@ -519,11 +526,12 @@ trait HasCustomFields
         $created = $updated = $deleted = $skipped = 0;
 
         // normalize incoming; keep track of which field UUIDs we touched
-        $incoming = [];
+        $incoming        = [];
+        $invalidIncoming = 0;
         foreach ($payload as $row) {
             $fieldUuid = Arr::get($row, 'custom_field_uuid');
             if (!is_string($fieldUuid) || $fieldUuid === '') {
-                $skipped++;
+                $invalidIncoming++;
                 continue;
             }
             $incoming[] = $fieldUuid;
@@ -531,7 +539,7 @@ trait HasCustomFields
 
         if (!$opts['persist']) {
             // dry-run: just report intent (very lightweight)
-            return ['created' => 0, 'updated' => 0, 'deleted' => 0, 'skipped' => $skipped];
+            return ['created' => 0, 'updated' => 0, 'deleted' => 0, 'skipped' => $invalidIncoming];
         }
 
         DB::transaction(function () use (
@@ -573,8 +581,8 @@ trait HasCustomFields
                     $changed = ($target->value !== $value) || ($target->value_type !== $valueType);
                     if ($changed) {
                         $target->fill([
-                            'value'      => $value,
                             'value_type' => $valueType,
+                            'value'      => $value,
                         ]);
                         $target->company_uuid = $companyUuid ?? $target->company_uuid;
                         $target->subject_type = $subjectType;
@@ -594,8 +602,8 @@ trait HasCustomFields
                     $changed = ($target->value !== $value) || ($target->value_type !== $valueType);
                     if ($changed) {
                         $target->fill([
-                            'value'      => $value,
                             'value_type' => $valueType,
+                            'value'      => $value,
                         ]);
                         $target->company_uuid = $companyUuid ?? $target->company_uuid;
                         $target->subject_type = $subjectType;
@@ -611,8 +619,8 @@ trait HasCustomFields
                         'subject_uuid'      => $subjectUuid,
                         'subject_type'      => $subjectType,
                         'company_uuid'      => $companyUuid,
-                        'value'             => $value,
                         'value_type'        => $valueType,
+                        'value'             => $value,
                     ]);
                     $new->forceFill(['uuid' => CustomFieldValue::generateUuid()]);
                     method_exists($new, 'saveQuietly') ? $new->saveQuietly() : $new->save();

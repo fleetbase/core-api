@@ -31,6 +31,11 @@ class FleetbaseResourceCollection extends ResourceCollection
     public $collects;
 
     /**
+     * Whether collection keys should be preserved when serializing.
+     */
+    public bool $preserveKeys = false;
+
+    /**
      * Keys to exclude from each item's serialized array (dot-notation supported).
      *
      * @var array<int, string>

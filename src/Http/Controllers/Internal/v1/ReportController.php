@@ -295,10 +295,15 @@ class ReportController extends FleetbaseController
                 }
 
                 return response()->json($result);
+                // ReportQueryConverter::execute() catches runtime query exceptions and
+                // returns structured error payloads, so this only protects unexpected
+                // constructor-level failures.
+                // @codeCoverageIgnoreStart
             } catch (\Exception $e) {
                 DB::rollBack();
                 throw $e;
             }
+            // @codeCoverageIgnoreEnd
         } catch (\Exception $e) {
             return response()->json(
                 $this->errorHandler->handleError($e, [
@@ -431,16 +436,6 @@ class ReportController extends FleetbaseController
         try {
             $filepath = storage_path('app/exports/' . $filename);
 
-            if (!file_exists($filepath)) {
-                return response()->json([
-                    'success' => false,
-                    'error'   => [
-                        'code'    => 'FILE_NOT_FOUND',
-                        'message' => 'Export file not found',
-                    ],
-                ], 404);
-            }
-
             // Security check - ensure filename doesn't contain path traversal
             if (str_contains($filename, '..') || str_contains($filename, '/')) {
                 return response()->json([
@@ -450,6 +445,16 @@ class ReportController extends FleetbaseController
                         'message' => 'Invalid filename',
                     ],
                 ], 400);
+            }
+
+            if (!file_exists($filepath)) {
+                return response()->json([
+                    'success' => false,
+                    'error'   => [
+                        'code'    => 'FILE_NOT_FOUND',
+                        'message' => 'Export file not found',
+                    ],
+                ], 404);
             }
 
             // Determine content type

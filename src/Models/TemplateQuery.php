@@ -110,9 +110,12 @@ class TemplateQuery extends Model
         }
 
         $model = new $modelClass();
+        // @codeCoverageIgnoreStart
+        // Allowed template query models are configured as Eloquent models.
         if (!$model instanceof EloquentModel) {
             return collect();
         }
+        // @codeCoverageIgnoreEnd
 
         $query = $modelClass::query();
 
@@ -177,8 +180,9 @@ class TemplateQuery extends Model
         }
 
         // Eager-load relationships
-        if (!empty($this->with)) {
-            $query->with($this->with);
+        $with = $this->getAttribute('with');
+        if (!empty($with)) {
+            $query->with($with);
         }
 
         return $query->get();

@@ -49,12 +49,12 @@ class GroupController extends FleetbaseController
             });
 
             return ['group' => new $this->resource($record)];
-        } catch (\Exception $e) {
-            return response()->error($e->getMessage());
-        } catch (\Illuminate\Database\QueryException $e) {
-            return response()->error($e->getMessage());
         } catch (FleetbaseRequestValidationException $e) {
             return response()->error($e->getErrors());
+        } catch (\Illuminate\Database\QueryException $e) {
+            return response()->error($e->getMessage());
+        } catch (\Exception $e) {
+            return response()->error($e->getMessage());
         }
     }
 
@@ -71,7 +71,7 @@ class GroupController extends FleetbaseController
 
                 // users should always be an array of user ids
                 // we will first delete all group users where id is not in this array
-                GroupUser::whereNotIn('user_uuid', $users)->delete();
+                GroupUser::where('group_uuid', $group->uuid)->whereNotIn('user_uuid', $users)->delete();
 
                 foreach ($users as $id) {
                     GroupUser::firstOrCreate([
@@ -84,12 +84,12 @@ class GroupController extends FleetbaseController
             });
 
             return ['group' => new $this->resource($record)];
-        } catch (\Exception $e) {
-            return response()->error($e->getMessage());
-        } catch (\Illuminate\Database\QueryException $e) {
-            return response()->error($e->getMessage());
         } catch (FleetbaseRequestValidationException $e) {
             return response()->error($e->getErrors());
+        } catch (\Illuminate\Database\QueryException $e) {
+            return response()->error($e->getMessage());
+        } catch (\Exception $e) {
+            return response()->error($e->getMessage());
         }
     }
 

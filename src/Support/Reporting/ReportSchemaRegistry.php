@@ -214,7 +214,10 @@ class ReportSchemaRegistry
         // But for "Order Payload" we prefer the last ("Payload") so nested pickup/dropoff can still prepend naturally
         $parts = preg_split('/\s+/', trim($label));
         if (!$parts || count($parts) === 0) {
+            // @codeCoverageIgnoreStart
+            // preg_split() on a string returns at least one part unless the PCRE call fails.
             return trim($label);
+            // @codeCoverageIgnoreEnd
         }
 
         // Special case: if it contains "Payload", keep "Payload"
