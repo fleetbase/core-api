@@ -934,10 +934,13 @@ class SettingController extends Controller
                 'environment'        => app()->environment(),
                 'traces_sample_rate' => 1.0,
             ]);
+            // @codeCoverageIgnoreStart
+            // Sentry client construction errors depend on SDK versions that throw instead of normalizing invalid options.
         } catch (\Exception $e) {
             $message = $e->getMessage();
             $status  = 'error';
         }
+        // @codeCoverageIgnoreEnd
 
         if ($clientBuilder) {
             // Set the Laravel SDK identifier and version
