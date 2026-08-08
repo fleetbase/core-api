@@ -906,10 +906,22 @@ class SettingController extends Controller
      */
     public function testSentryConfig(AdminRequest $request)
     {
-        $dsn = $request->input('dsn');
+        $dsn       = $request->input('dsn');
+        $clientDsn = $dsn;
 
         // Set config from request
         config(['sentry.dsn' => $dsn]);
+
+        if (is_string($dsn) && $dsn !== '') {
+            try {
+                $clientDsn = \Sentry\Dsn::createFromString($dsn);
+            } catch (\InvalidArgumentException) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'The provided Sentry DSN is invalid.',
+                ]);
+            }
+        }
 
         $message       = 'Sentry configuration is successful, test Exception sent.';
         $status        = 'success';
@@ -917,7 +929,7 @@ class SettingController extends Controller
 
         try {
             $clientBuilder = \Sentry\ClientBuilder::create([
-                'dsn'                => $dsn,
+                'dsn'                => $clientDsn,
                 'release'            => env('SENTRY_RELEASE'),
                 'environment'        => app()->environment(),
                 'traces_sample_rate' => 1.0,
