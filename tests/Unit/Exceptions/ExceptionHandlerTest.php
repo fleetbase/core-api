@@ -20,6 +20,29 @@ namespace Illuminate\Foundation\Exceptions {
             protected function reportable(callable $callback): void
             {
             }
+
+            // Mirrors Illuminate\Foundation\Exceptions\Handler so the overrides under
+            // test can delegate to a parent, as they do against the real framework.
+            protected function shouldReturnJson($request, \Throwable $e)
+            {
+                return $request->expectsJson();
+            }
+
+            protected function convertExceptionToArray(\Throwable $e)
+            {
+                return [
+                    'message'   => $e->getMessage(),
+                    'exception' => get_class($e),
+                    'file'      => $e->getFile(),
+                    'line'      => $e->getLine(),
+                    'trace'     => [],
+                ];
+            }
+
+            protected function isHttpException(\Throwable $e)
+            {
+                return $e instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
+            }
         }
     }
 }
@@ -43,6 +66,7 @@ namespace {
     use Illuminate\Http\Request;
     use Illuminate\Session\TokenMismatchException;
     use Illuminate\Support\Facades\Facade;
+    use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
     use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
     class TestableExceptionHandler extends Handler
@@ -83,10 +107,10 @@ namespace {
                 'errors' => $expectedErrors,
             ]);
     })->with([
-        'token mismatch'         => [new TokenMismatchException(), ['Invalid XSRF token sent with request.'], 400],
-        'throttled request'      => [new ThrottleRequestsException('Slow down'), ['Too many requests.'], 400],
-        'authentication failure' => [new AuthenticationException(), ['Unauthenticated.'], 400],
-        'http not found'         => [new NotFoundHttpException(), ['There is nothing to see here.'], 400],
+        'token mismatch'         => [new TokenMismatchException(), ['Invalid XSRF token sent with request.'], 419],
+        'throttled request'      => [new ThrottleRequestsException('Slow down'), ['Too many requests.'], 429],
+        'authentication failure' => [new AuthenticationException(), ['Unauthenticated.'], 401],
+        'http not found'         => [new NotFoundHttpException(), ['There is nothing to see here.'], 404],
     ]);
 
     it('returns a resource-specific model not found json response when the model is known', function () {
@@ -203,6 +227,86 @@ namespace {
         $exception = new RuntimeException("\xB1\x31");
 
         expect($handler->getCloudwatchLoggableException($exception))->toBe("\xB1\x31");
+    });
+
+    it('forces json error responses when debugging is off so API clients never receive html', function () {
+        bind_test_container(['app.debug' => false]);
+        Facade::clearResolvedInstances();
+        $handler = new Handler(app());
+        $method  = new ReflectionMethod($handler, 'shouldReturnJson');
+        $method->setAccessible(true);
+
+        // A browser-shaped request: no Accept: application/json, no XHR header. Laravel
+        // would render the HTML error page for this; the override must not.
+        $request = Request::create('/v1/orders', 'GET');
+
+        expect($method->invoke($handler, $request, new RuntimeException('boom')))->toBeTrue();
+    });
+
+    it('defers to the framework content negotiation while debugging is on', function () {
+        bind_test_container(['app.debug' => true]);
+        Facade::clearResolvedInstances();
+        $handler = new Handler(app());
+        $method  = new ReflectionMethod($handler, 'shouldReturnJson');
+        $method->setAccessible(true);
+
+        $htmlRequest = Request::create('/v1/orders', 'GET');
+        $jsonRequest = Request::create('/v1/orders', 'GET', server: ['HTTP_ACCEPT' => 'application/json']);
+
+        expect($method->invoke($handler, $htmlRequest, new RuntimeException('boom')))->toBeFalse()
+            ->and($method->invoke($handler, $jsonRequest, new RuntimeException('boom')))->toBeTrue();
+    });
+
+    it('withholds paths and stack frames from error payloads when debugging is off', function () {
+        bind_test_container(['app.debug' => false]);
+        Facade::clearResolvedInstances();
+        $handler = new Handler(app());
+        $method  = new ReflectionMethod($handler, 'convertExceptionToArray');
+        $method->setAccessible(true);
+
+        $payload = $method->invoke($handler, new RuntimeException('Connection refused at /srv/app/secret.php'));
+
+        expect($payload)->toBe(['errors' => ['Server Error']])
+            ->and($payload)->not->toHaveKeys(['file', 'line', 'trace', 'exception']);
+    });
+
+    it('preserves http exception messages in the error envelope when debugging is off', function () {
+        bind_test_container(['app.debug' => false]);
+        Facade::clearResolvedInstances();
+        $handler = new Handler(app());
+        $method  = new ReflectionMethod($handler, 'convertExceptionToArray');
+        $method->setAccessible(true);
+
+        // A bare HttpExceptionInterface rather than a Symfony subclass: their constructors
+        // emit implicit-nullable deprecations on newer PHP, and only the interface matters here.
+        $exception = new class('The PUT method is not supported for route v1/orders.') extends RuntimeException implements HttpExceptionInterface {
+            public function getStatusCode(): int
+            {
+                return 405;
+            }
+
+            public function getHeaders(): array
+            {
+                return [];
+            }
+        };
+
+        $payload = $method->invoke($handler, $exception);
+
+        expect($payload)->toBe(['errors' => ['The PUT method is not supported for route v1/orders.']]);
+    });
+
+    it('keeps the full framework payload while debugging is on', function () {
+        bind_test_container(['app.debug' => true]);
+        Facade::clearResolvedInstances();
+        $handler = new Handler(app());
+        $method  = new ReflectionMethod($handler, 'convertExceptionToArray');
+        $method->setAccessible(true);
+
+        $payload = $method->invoke($handler, new RuntimeException('Unexpected failure'));
+
+        expect($payload)->toHaveKeys(['message', 'exception', 'file', 'line', 'trace'])
+            ->and($payload['message'])->toBe('Unexpected failure');
     });
 
     it('keeps a default manual error response for explicitly invoked fallback handling', function () {
