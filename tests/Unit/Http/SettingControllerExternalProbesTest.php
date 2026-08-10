@@ -182,7 +182,7 @@ test('test socketcluster returns stable json when the configured socket cannot s
         ]);
 });
 
-test('test sentry config returns sdk builder errors for invalid dsns', function () {
+test('test sentry config rejects invalid dsns before sdk fallback handling', function () {
     setting_controller_external_probe_fixtures();
 
     $response = (new SettingController())->testSentryConfig(setting_controller_external_probe_request([
@@ -192,7 +192,7 @@ test('test sentry config returns sdk builder errors for invalid dsns', function 
     expect($response->getStatusCode())->toBe(200)
         ->and($response->getData(true))->toBe([
             'status'  => 'error',
-            'message' => 'The option "dsn" with value "not-a-dsn" is invalid.',
+            'message' => 'The provided Sentry DSN is invalid.',
         ])
         ->and(config('sentry.dsn'))->toBe('not-a-dsn');
 });
