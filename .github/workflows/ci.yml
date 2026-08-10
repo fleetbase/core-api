@@ -1,12 +1,15 @@
 name: PHP CI
 
+# Release work lands on a dev-v* branch first and only reaches main via the release
+# PR, so a main-only filter leaves every PR targeting a release branch with no CI at
+# all — the release is then assembled from unverified commits.
 on:
   push:
-    branches: [ main ]
+    branches: [ main, 'dev-v*' ]
     tags:
       - 'v*'
   pull_request:
-    branches: [ main ]
+    branches: [ main, 'dev-v*' ]
 
 jobs:
   build:
