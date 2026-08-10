@@ -602,6 +602,7 @@ namespace {
             ->and($provider->commands)->toContain(
                 Fleetbase\Console\Commands\Recovery::class,
                 Fleetbase\Console\Commands\ForceResetDatabase::class,
+                Fleetbase\Console\Commands\DeleteUser::class,
                 Fleetbase\Console\Commands\PurgeApiLogs::class,
                 Fleetbase\Console\Commands\PurgeWebhookLogs::class,
                 Fleetbase\Console\Commands\TelemetryPing::class
