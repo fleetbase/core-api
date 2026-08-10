@@ -3,7 +3,7 @@
 namespace Fleetbase\Http\Controllers\Api\v1;
 
 use Fleetbase\Http\Controllers\Controller;
-use Fleetbase\Http\Requests\Internal\DownloadFileRequest;
+use Fleetbase\Http\Requests\DownloadFileRequest;
 use Fleetbase\Http\Requests\Internal\UploadBase64FileRequest;
 use Fleetbase\Http\Requests\Internal\UploadFileRequest;
 use Fleetbase\Http\Resources\DeletedResource;
