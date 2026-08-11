@@ -3,6 +3,7 @@
 namespace Fleetbase\Http\Middleware;
 
 use Fleetbase\Models\ApiCredential;
+use Fleetbase\Models\User;
 use Fleetbase\Support\Auth;
 use Fleetbase\Support\Utils;
 use Illuminate\Http\Request;
@@ -47,7 +48,7 @@ class AuthenticateOnceWithBasicAuth
 
         // Check if sanctum token
         if ($sanctumToken = $this->getSanctumToken($token)) {
-            return $this->authenticateSanctumToken($sanctumToken);
+            return $this->authenticateSanctumToken($sanctumToken, $request);
         }
 
         // Check if secret key
@@ -97,6 +98,16 @@ class AuthenticateOnceWithBasicAuth
         // Login user
         Auth::setSession($apiCredential);
 
+        // Bind the user resolver so $request->user() answers on the public API.
+        //
+        // Auth::setSession() writes session('user') but takes $login = false, so nothing
+        // ever binds a resolver and the default guard is session-based with no login —
+        // meaning $request->user() was null on EVERY public API request. Extensions that
+        // reasonably read it got nothing: the ledger wallet routes answered 401 to every
+        // credential, and fleetops' tokenless register-device answered 404, both because
+        // the authenticated identity was invisible through the standard accessor.
+        static::bindUserResolver($request, User::find($apiCredential->user_uuid));
+
         // Set sandbox session if applicable
         Auth::setSandboxSession($request, $apiCredential);
 
@@ -109,7 +120,7 @@ class AuthenticateOnceWithBasicAuth
     /**
      * Authenticate the request using Sanctum token.
      */
-    private function authenticateSanctumToken(PersonalAccessToken $sanctumToken)
+    private function authenticateSanctumToken(PersonalAccessToken $sanctumToken, ?Request $request = null)
     {
         if ($sanctumToken && $sanctumToken->tokenable instanceof \Fleetbase\Models\User) {
             // Make sure company is set
@@ -119,6 +130,10 @@ class AuthenticateOnceWithBasicAuth
 
             // Set user to session
             Auth::setSession($sanctumToken->tokenable);
+
+            // Same reasoning as above: a driver or customer authenticating with their own
+            // token is exactly the case where $request->user() ought to answer.
+            static::bindUserResolver($request, $sanctumToken->tokenable);
 
             // Get API Credential for User
             $apiCredential = ApiCredential::where('company_uuid', $sanctumToken->tokenable->company_uuid)->first();
@@ -133,6 +148,27 @@ class AuthenticateOnceWithBasicAuth
         }
 
         return response()->error('Oops! The api credentials provided were not valid', 401);
+    }
+
+    /**
+     * Make the authenticated user visible through $request->user().
+     *
+     * Only sets a resolver when one is not already bound, so a guard that genuinely
+     * authenticated the request (the internal session routes) always wins.
+     */
+    protected static function bindUserResolver(?Request $request, $user): void
+    {
+        if (!$request instanceof Request || !$user instanceof User) {
+            return;
+        }
+
+        // getUserResolver() never returns null — Request falls back to a closure that
+        // yields null — so the presence of a resolved user is the only usable signal.
+        if ($request->user() instanceof User) {
+            return;
+        }
+
+        $request->setUserResolver(static fn () => $user);
     }
 
     /**
