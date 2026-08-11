@@ -701,6 +701,15 @@ class Utils
                     return $model;
                 }
             }
+
+            // Exhausted every table without a match. Falling through to the scalar
+            // lookup below passed the ARRAY to DB::table(), which stringified it to the
+            // literal table name "Array" and threw SQLSTATE[42S02]. Any array lookup
+            // that simply found nothing became a 500 — POST /v1/tracking-numbers/from-qr
+            // answered one for every code that did not resolve, where the caller was
+            // already written to handle null as "not found". getUuid() above returns
+            // null in the same situation; this branch was the odd one out.
+            return null;
         }
 
         return DB::table($table)
