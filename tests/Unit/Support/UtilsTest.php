@@ -729,7 +729,13 @@ test('utils handles numeric text url formatting and encoded string edge cases', 
         ->and(Utils::slugify('HelloWorld API v2!'))->toBe('hello-world-api-v2')
         ->and(Utils::formatPhoneNumber('+1 561-276-7156'))->toBe('+15612767156')
         ->and(Utils::delinkify('Email ron@example.test or visit https://fleetbase.io'))->toContain('&#8203;@')
-        ->and(Utils::delinkify('Email ron@example.test or visit https://fleetbase.io'))->toContain('https://&#8203;');
+        ->and(Utils::delinkify('Email ron@example.test or visit https://fleetbase.io'))->toContain('https://&#8203;')
+        // Callers pass model attributes straight in — the verification and credentials
+        // mail views call this on `$user->name`, and a user created from an identity alone
+        // has none. A TypeError from inside a compiled Blade view surfaced as a 500 on
+        // POST /storefront/v1/customers/request-creation-code.
+        ->and(Utils::delinkify(null))->toBe('')
+        ->and(Utils::delinkify(''))->toBe('');
 
     putenv('CONSOLE_HOST=https://console.fleetbase.test');
 
