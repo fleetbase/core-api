@@ -122,7 +122,7 @@ class AuthenticateOnceWithBasicAuth
      */
     private function authenticateSanctumToken(PersonalAccessToken $sanctumToken, ?Request $request = null)
     {
-        if ($sanctumToken && $sanctumToken->tokenable instanceof \Fleetbase\Models\User) {
+        if ($sanctumToken && $sanctumToken->tokenable instanceof User) {
             // Make sure company is set
             if (!Str::isUuid($sanctumToken->tokenable->company_uuid)) {
                 return response()->error('Oops! The api credentials provided were not valid', 401);
