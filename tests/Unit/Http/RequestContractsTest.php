@@ -137,6 +137,7 @@ namespace {
     use Fleetbase\Http\Requests\CreateCommentRequest;
     use Fleetbase\Http\Requests\CreateReportRequest;
     use Fleetbase\Http\Requests\CreateUserRequest;
+    use Fleetbase\Http\Requests\DownloadFileRequest as PublicDownloadFileRequest;
     use Fleetbase\Http\Requests\ExecuteReportQueryRequest;
     use Fleetbase\Http\Requests\ExportReportRequest;
     use Fleetbase\Http\Requests\ExportRequest;
@@ -674,6 +675,50 @@ namespace {
             ])
             ->and($exportRules['format'])->toBe('required|string|in:json,csv,xlsx')
             ->and((new ExportReportRequest())->messages()['format.in'])->toBe('Export format must be one of: json, csv, xlsx');
+    });
+
+    it('lets the public download request take a public_id', function () {
+        // The internal request requires a uuid because the console works in uuids. The
+        // public API addresses resources by public_id and rejects uuids, and an upload
+        // returns file_xxxxxxxx — so validating the public route with the internal rules
+        // meant a consumer could not download the file it had just uploaded.
+        $public   = request_with_session(PublicDownloadFileRequest::class, 'GET');
+        $internal = request_with_session(DownloadFileRequest::class, 'GET', [], ['user' => 'user-1']);
+
+        $publicRules   = $public->rules();
+        $internalRules = $internal->rules();
+
+        expect(request_rule_strings($publicRules['id']))->toContain('required_without:file', 'string')
+            ->and(request_rule_strings($publicRules['id']))->not->toContain('uuid')
+            ->and(request_rule_strings($publicRules['file']))->not->toContain('uuid')
+            // Existence stays with the controller: findRecordOrFail answers 404 for an
+            // unknown file, which is the right status. An exists rule would say 422.
+            ->and(request_rule_strings($publicRules['id']))->not->toContain('exists:files,uuid')
+            ->and($publicRules['disk'])->toBe(['sometimes', 'string'])
+            // the internal contract is deliberately unchanged
+            ->and(request_rule_strings($internalRules['id']))->toContain('uuid', 'exists:files,uuid');
+    });
+
+    it('authorizes the public download request without a session user', function () {
+        // The route is behind fleetbase.api, which authenticates the API credential.
+        // The internal request checks for a session user, which is the wrong notion of
+        // identity for a key-authenticated request and would 403 every API consumer.
+        $public = request_with_session(PublicDownloadFileRequest::class, 'GET');
+
+        expect(bind_active_request($public)->authorize())->toBeTrue();
+    });
+
+    it('merges the route id into the public download request', function () {
+        $routeDownload = request_with_route_parameter(PublicDownloadFileRequest::class, 'id', 'file_abc123xyz');
+        $prepare       = new ReflectionMethod(PublicDownloadFileRequest::class, 'prepareForValidation');
+
+        $prepare->setAccessible(true);
+        $prepare->invoke($routeDownload);
+
+        expect($routeDownload->input('id'))->toBe('file_abc123xyz')
+            ->and((new PublicDownloadFileRequest())->messages()['id.required_without'])->toBe('Please provide a file identifier.')
+            ->and((new PublicDownloadFileRequest())->messages()['id.string'])->toBe('The file identifier must be a string.')
+            ->and((new PublicDownloadFileRequest())->messages()['disk.string'])->toBe('The storage disk must be a valid string.');
     });
 
     it('keeps internal file upload and download request contracts stable', function () {

@@ -701,6 +701,15 @@ class Utils
                     return $model;
                 }
             }
+
+            // Exhausted every table without a match. Falling through to the scalar
+            // lookup below passed the ARRAY to DB::table(), which stringified it to the
+            // literal table name "Array" and threw SQLSTATE[42S02]. Any array lookup
+            // that simply found nothing became a 500 — POST /v1/tracking-numbers/from-qr
+            // answered one for every code that did not resolve, where the caller was
+            // already written to handle null as "not found". getUuid() above returns
+            // null in the same situation; this branch was the odd one out.
+            return null;
         }
 
         return DB::table($table)
@@ -2837,8 +2846,23 @@ class Utils
         return str_replace(['-', ' '], '', $phone);
     }
 
-    public static function delinkify(string $text): string
+    /**
+     * Break autolink patterns in user-supplied text before it is rendered into an email.
+     *
+     * Accepts null because that is what callers actually have. The verification and
+     * credentials mail views call this on `$user->name`, and a user created from an
+     * identity alone — which is exactly what the storefront customer-creation flow does
+     * before Create a Customer supplies a name — has none. That threw
+     *   Utils::delinkify(): Argument #1 ($text) must be of type string, null given
+     * from inside the compiled view, surfacing as a 500 on
+     * POST /storefront/v1/customers/request-creation-code.
+     */
+    public static function delinkify(?string $text): string
     {
+        if ($text === null || $text === '') {
+            return '';
+        }
+
         // Break common autolink patterns by inserting zero-width space
         // between parts that would form a URL or email
         $patterns = [

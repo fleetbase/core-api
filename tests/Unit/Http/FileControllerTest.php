@@ -2,6 +2,7 @@
 
 use Fleetbase\Http\Controllers\Api\v1\FileController as PublicFileController;
 use Fleetbase\Http\Controllers\Internal\v1\FileController;
+use Fleetbase\Http\Requests\DownloadFileRequest as PublicDownloadFileRequest;
 use Fleetbase\Http\Requests\Internal\DownloadFileRequest;
 use Fleetbase\Http\Requests\Internal\UploadBase64FileRequest;
 use Fleetbase\Http\Requests\Internal\UploadFileRequest;
@@ -442,9 +443,11 @@ function public_file_controller_upload_base64_request(array $input = []): Upload
     return UploadBase64FileRequest::create('/v1/files/upload-base64', 'POST', $input);
 }
 
-function public_file_controller_download_request(array $query = []): DownloadFileRequest
+function public_file_controller_download_request(array $query = []): PublicDownloadFileRequest
 {
-    return DownloadFileRequest::create('/v1/files/download', 'GET', $query);
+    // The public route validates with the public request class: it accepts a public_id,
+    // where the internal one requires a uuid.
+    return PublicDownloadFileRequest::create('/v1/files/download', 'GET', $query);
 }
 
 function public_file_controller_query_request(array $query = []): Request

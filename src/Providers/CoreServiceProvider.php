@@ -98,6 +98,7 @@ class CoreServiceProvider extends ServiceProvider
         \Fleetbase\Console\Commands\PurgeActivityLogs::class,
         \Fleetbase\Console\Commands\PurgeScheduledTaskLogs::class,
         \Fleetbase\Console\Commands\PurgeOrphanedModelRecords::class,
+        \Fleetbase\Console\Commands\DeleteUser::class,
         \Fleetbase\Console\Commands\BackupDatabase\MysqlS3Backup::class,
         \Fleetbase\Console\Commands\TelemetryPing::class,
     ];

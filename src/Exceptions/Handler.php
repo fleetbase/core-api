@@ -87,6 +87,46 @@ class Handler extends ExceptionHandler
     }
 
     /**
+     * Determine if the exception should be rendered as JSON.
+     *
+     * Fleetbase is a JSON-only HTTP surface, but clients do not reliably send an
+     * `Accept: application/json` header. Laravel's default would then render an HTML
+     * error page for any exception not covered by shouldManuallyHandleException(),
+     * leaking file paths and stack frames to API consumers. Outside of local debugging
+     * always answer with JSON; when debugging is on the HTML page is kept, since it is
+     * the more useful development affordance.
+     *
+     * @param \Illuminate\Http\Request $request
+     */
+    protected function shouldReturnJson($request, \Throwable $e): bool
+    {
+        if (!config('app.debug')) {
+            return true;
+        }
+
+        return parent::shouldReturnJson($request, $e);
+    }
+
+    /**
+     * Convert the given exception to an array.
+     *
+     * Matches the `{"errors": [...]}` envelope used by response()->error() so error
+     * payloads are consistent across the API, and withholds internals when debugging
+     * is off. HTTP exception messages are preserved because they describe the request
+     * the caller already made; anything else collapses to a generic message.
+     */
+    protected function convertExceptionToArray(\Throwable $e): array
+    {
+        if (config('app.debug')) {
+            return parent::convertExceptionToArray($e);
+        }
+
+        $message = $this->isHttpException($e) && $e->getMessage() !== '' ? $e->getMessage() : 'Server Error';
+
+        return ['errors' => [$message]];
+    }
+
+    /**
      * Retrieves a loggable message from an exception for CloudWatch.
      *
      * This function attempts to extract a loggable message from the given exception object.
@@ -162,16 +202,16 @@ class Handler extends ExceptionHandler
 
         switch ($type) {
             case 'TokenMismatchException':
-                return response()->error('Invalid XSRF token sent with request.');
+                return response()->error('Invalid XSRF token sent with request.', 419);
 
             case 'ThrottleRequestsException':
-                return response()->error('Too many requests.');
+                return response()->error('Too many requests.', 429);
 
             case 'AuthenticationException':
-                return response()->error('Unauthenticated.');
+                return response()->error('Unauthenticated.', 401);
 
             case 'NotFoundHttpException':
-                return response()->error('There is nothing to see here.');
+                return response()->error('There is nothing to see here.', 404);
 
             case 'ModelNotFoundException':
                 return response()->error($this->modelNotFoundMessage($exception), 404);

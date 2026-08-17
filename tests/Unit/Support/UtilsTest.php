@@ -631,7 +631,13 @@ test('utils resolves uuids and models across tables and ember style resource typ
         ])
         ->and(Utils::getUuid(['order', 'file'], ['public_id' => 'none']))->toBeNull()
         ->and($orderModel->uuid)->toBe('order-1')
-        ->and($fileModel->uuid)->toBe('file-1');
+        ->and($fileModel->uuid)->toBe('file-1')
+        // A multi-table lookup that matches nothing must answer null, like getUuid does.
+        // It used to fall through to the scalar branch with the ARRAY still in hand,
+        // which DB::table() stringified to the literal table name "Array" and threw
+        // SQLSTATE[42S02] — turning every "not found" into a 500 for callers that were
+        // already written to handle null.
+        ->and(Utils::findModel(['orders', 'files'], ['public_id' => 'nothing_matches']))->toBeNull();
 });
 
 test('utils deletes model collections and keeps empty deletes as no ops', function () {
@@ -723,7 +729,13 @@ test('utils handles numeric text url formatting and encoded string edge cases', 
         ->and(Utils::slugify('HelloWorld API v2!'))->toBe('hello-world-api-v2')
         ->and(Utils::formatPhoneNumber('+1 561-276-7156'))->toBe('+15612767156')
         ->and(Utils::delinkify('Email ron@example.test or visit https://fleetbase.io'))->toContain('&#8203;@')
-        ->and(Utils::delinkify('Email ron@example.test or visit https://fleetbase.io'))->toContain('https://&#8203;');
+        ->and(Utils::delinkify('Email ron@example.test or visit https://fleetbase.io'))->toContain('https://&#8203;')
+        // Callers pass model attributes straight in — the verification and credentials
+        // mail views call this on `$user->name`, and a user created from an identity alone
+        // has none. A TypeError from inside a compiled Blade view surfaced as a 500 on
+        // POST /storefront/v1/customers/request-creation-code.
+        ->and(Utils::delinkify(null))->toBe('')
+        ->and(Utils::delinkify(''))->toBe('');
 
     putenv('CONSOLE_HOST=https://console.fleetbase.test');
 

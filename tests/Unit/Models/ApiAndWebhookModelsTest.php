@@ -89,9 +89,16 @@ it('derives api credential sandbox mode expiration values and generated key pref
     expect($credential->getAttributes()['expires_at']->format('Y-m-d H:i:s'))->toBe('2026-06-04 12:00:00');
 
     Carbon::setTestNow();
-    $expectedRelativeExpiration = date('Y-m-d H:i:s', strtotime('+ 3 days'));
-    $credential->expires_at     = 'in 3 days';
-    expect($credential->getAttributes()['expires_at']->format('Y-m-d H:i:s'))->toBe($expectedRelativeExpiration);
+    // The mutator resolves relative strings with strtotime(), which reads the wall clock and so
+    // ignores Carbon::setTestNow(). Bracket the write with the same expression rather than
+    // comparing against a value computed a line earlier: those two reads can straddle a second
+    // boundary, which is what made this fail under the slower coverage run.
+    $lowerBound             = strtotime('+ 3 days');
+    $credential->expires_at = 'in 3 days';
+    $upperBound             = strtotime('+ 3 days');
+
+    expect($credential->getAttributes()['expires_at']->getTimestamp())->toBeGreaterThanOrEqual($lowerBound)
+        ->and($credential->getAttributes()['expires_at']->getTimestamp())->toBeLessThanOrEqual($upperBound);
     Carbon::setTestNow();
 
     $liveKeys = ApiCredential::generateKeys([1, 2, 3], false);

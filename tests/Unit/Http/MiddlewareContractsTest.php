@@ -1046,7 +1046,33 @@ namespace {
             ->and(session('api_secret'))->toBe('$live_secret')
             ->and(session('api_environment'))->toBe('live')
             ->and(session('api_test_mode'))->toBeFalse()
-            ->and($capsule->getConnection('mysql')->table('api_credentials')->where('uuid', 'credential-live')->value('last_used_at'))->not->toBeNull();
+            ->and($capsule->getConnection('mysql')->table('api_credentials')->where('uuid', 'credential-live')->value('last_used_at'))->not->toBeNull()
+            // Auth::setSession() takes $login = false and the default guard is
+            // session-based with no login, so nothing bound a user resolver and
+            // $request->user() was null on every public API request. Extensions that read
+            // it got nothing — the ledger wallet routes 401'd on every credential and
+            // fleetops' tokenless register-device 404'd, both from this one gap.
+            ->and($request->user())->toBeInstanceOf(FleetbaseUser::class)
+            ->and($request->user()->uuid)->toBe('user-1');
+    });
+
+    test('basic auth middleware does not displace a user already resolved by a guard', function () {
+        middleware_contracts_basic_auth_database();
+        session()->flush();
+
+        // The internal session routes authenticate through a real guard. Binding over
+        // that would silently swap the acting identity for the credential's owner.
+        $existing = new FleetbaseUser();
+        $existing->setRawAttributes(['uuid' => 'already-authenticated'], true);
+
+        $request = Request::create('/v1/orders', 'GET', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer flb_live_auth',
+        ]);
+        $request->setUserResolver(fn () => $existing);
+
+        (new AuthenticateOnceWithBasicAuth())->handle($request, fn () => new JsonResponse(['ok' => true]));
+
+        expect($request->user()->uuid)->toBe('already-authenticated');
     });
 
     test('basic auth middleware allows sdk secret keys and rejects expired credentials', function () {
