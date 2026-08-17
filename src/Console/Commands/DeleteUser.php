@@ -19,13 +19,21 @@ class DeleteUser extends Command
 
     protected $description = 'Safely preview and delete users and their identity-bound resources across Fleetbase schemas';
 
-    public function __construct(protected UserDeletionService $deletionService)
+    protected UserDeletionService $deletionService;
+
+    public function __construct()
     {
         parent::__construct();
     }
 
-    public function handle(): int
+    public function handle(UserDeletionService $deletionService): int
     {
+        // Resolve the database-backed service only when this command is executed.
+        // Laravel instantiates every registered command during package discovery;
+        // constructor injection here opened MySQL while the release image was still
+        // being built, before a database service existed.
+        $this->deletionService = $deletionService;
+
         $emailOption = $this->option('email');
         $email       = is_string($emailOption) && $emailOption !== '' ? $emailOption : null;
         $uuids       = array_values(array_unique(array_filter((array) $this->option('uuid'), 'is_string')));
