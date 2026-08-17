@@ -290,6 +290,26 @@ it('retrieves system settings with prefixes nested keys defaults and cache reuse
         ->and($cache->forgotten)->toContain('system_settings.system.timezone');
 });
 
+it('invalidates the cache entry system() actually reads when a setting is written', function () {
+    // system() caches under the key AS PASSED — 'system_settings.platform_api.token_hash' —
+    // while the row is stored as 'system.platform_api.token_hash'. Building the cache key
+    // from the row produced 'system_settings.system.platform_api.token_hash', which nothing
+    // ever writes, so the entry the reader uses survived every write.
+    //
+    // clearSystemCache() looked like it covered the gap, but it pattern-clears through
+    // Redis and api/.env.example ships CACHE_DRIVER=file — so on a default install neither
+    // path invalidated anything, and a rotated platform API token kept validating against
+    // the previously cached hash.
+    setting_model_database();
+
+    Setting::configureSystem('platform_api.token_hash', 'OLD_HASH');
+    expect(Setting::system('platform_api.token_hash'))->toBe('OLD_HASH');
+
+    Setting::configureSystem('platform_api.token_hash', 'NEW_HASH');
+
+    expect(Setting::system('platform_api.token_hash'))->toBe('NEW_HASH');
+});
+
 it('configures and looks up company settings from session context', function () {
     setting_model_database();
     session()->flush();

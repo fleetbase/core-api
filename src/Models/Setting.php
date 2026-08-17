@@ -103,15 +103,44 @@ class Setting extends EloquentModel
 
         // Using saved event to cover both creating and updating scenarios
         static::saved(function ($setting) {
-            $cacheKey = 'system_settings.' . $setting->key;
-            cache()->forget($cacheKey);
+            static::forgetCachedSetting($setting->key);
         });
 
         // Handle the setting deletion scenario
         static::deleted(function ($setting) {
-            $cacheKey = 'system_settings.' . $setting->key;
-            cache()->forget($cacheKey);
+            static::forgetCachedSetting($setting->key);
         });
+    }
+
+    /**
+     * Forgets every cache entry system() could be holding for a stored setting key.
+     *
+     * system() caches under 'system_settings.' . $key using the key EXACTLY as the caller
+     * passed it, and callers pass it without the 'system.' prefix that is stored on the
+     * row — configureSystem('platform_api.token_hash') writes the row
+     * 'system.platform_api.token_hash'. Building the cache key from the row therefore
+     * produced 'system_settings.system.platform_api.token_hash', which nothing ever
+     * writes, so the entry the reader actually uses was never invalidated.
+     *
+     * Nothing surfaced it because clearSystemCache() appeared to cover the gap — but that
+     * pattern-clear is Redis-only, and api/.env.example ships CACHE_DRIVER=file, so on a
+     * default install neither path invalidated anything. A rotated platform API token kept
+     * failing against the previously cached hash until the cache was cleared by hand.
+     */
+    protected static function forgetCachedSetting(?string $key): void
+    {
+        // Cast rather than guard-and-return: a keyless row is not reachable through the
+        // events that call this, so a guard would be an untestable branch, and forgetting
+        // 'system_settings.' costs nothing on the off chance.
+        $key = (string) $key;
+
+        // The key as stored, for callers that pass the fully-qualified form.
+        cache()->forget('system_settings.' . $key);
+
+        // And the unprefixed form, which is what configureSystem() callers actually read.
+        if (Str::startsWith($key, 'system.')) {
+            cache()->forget('system_settings.' . Str::after($key, 'system.'));
+        }
     }
 
     /**
