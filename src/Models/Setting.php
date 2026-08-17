@@ -129,9 +129,10 @@ class Setting extends EloquentModel
      */
     protected static function forgetCachedSetting(?string $key): void
     {
-        if (!is_string($key) || $key === '') {
-            return;
-        }
+        // Cast rather than guard-and-return: a keyless row is not reachable through the
+        // events that call this, so a guard would be an untestable branch, and forgetting
+        // 'system_settings.' costs nothing on the off chance.
+        $key = (string) $key;
 
         // The key as stored, for callers that pass the fully-qualified form.
         cache()->forget('system_settings.' . $key);
