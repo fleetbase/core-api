@@ -2704,9 +2704,18 @@ class Utils
      */
     public static function clearCacheByPattern(string $pattern): void
     {
-        $redis  = Redis::connection();
-        $prefix = Cache::getPrefix();
-        $keys   = $redis->keys($prefix . $pattern);
+        // Only Redis can be searched by pattern, and it is not always there — the default
+        // api/.env.example ships CACHE_DRIVER=file. Resolving the connection unguarded made
+        // this throw on an install with no Redis configured, which took a plain
+        // Setting::configureSystem() write down with it, since the model's saved event
+        // calls through here. Nothing to enumerate without Redis, so skip rather than fail.
+        try {
+            $redis  = Redis::connection();
+            $prefix = Cache::getPrefix();
+            $keys   = $redis->keys($prefix . $pattern);
+        } catch (\Throwable $e) {
+            return;
+        }
 
         if (is_array($keys)) {
             $keys = array_map(function ($key) {
