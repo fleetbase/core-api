@@ -1,12 +1,19 @@
 <x-mail-layout>
 <h2 style="font-size: 18px; font-weight: 600;">
-@if($currentHour < 12)
-    Good Morning@if($user->name), {{ \Fleetbase\Support\Utils::delinkify($user->name) }}@endif!
-@elseif($currentHour < 18)
-    Good Afternoon@if($user->name), {{ \Fleetbase\Support\Utils::delinkify($user->name) }}@endif!
-@else
-    Good Evening@if($user->name), {{ \Fleetbase\Support\Utils::delinkify($user->name) }}@endif!
-@endif
+@php
+    // Blade only treats `@` as a directive when the preceding character is NOT a word
+    // character — the rule that keeps `foo@bar.com` from compiling. `Good Morning@if(...)`
+    // therefore stayed literal text while its `@endif` still compiled, leaving an
+    // unmatched endif that broke the enclosing if/elseif/else. The whole view failed to
+    // parse, so every mail using it threw instead of sending.
+    //
+    // Build the greeting in one expression instead, so no directive ever sits against a
+    // word. delinkify() returns '' for a null or empty name, which is what makes the
+    // no-name case fall through to the bare greeting.
+    $greeting  = $currentHour < 12 ? 'Good Morning' : ($currentHour < 18 ? 'Good Afternoon' : 'Good Evening');
+    $recipient = \Fleetbase\Support\Utils::delinkify($user?->name);
+@endphp
+{{ $recipient === '' ? $greeting : $greeting . ', ' . $recipient }}!
 </h2>
 
 Your login credentials:
