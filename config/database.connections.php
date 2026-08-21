@@ -20,7 +20,19 @@ if (!empty($databaseUrl)) {
 }
 
 $mysql_options = [
-    PDO::ATTR_PERSISTENT => true,
+    // Persistent connections keep the MySQL session alive in PHP's persistent pool
+    // after the PDO object is gone, and hand that same session to the next PDO
+    // built from the same DSN/user/password - including one built while another
+    // handle is still using it. Two handles then share one transaction: a COMMIT
+    // through either ends it for both, so the other's commit() raises
+    // "There is no active transaction" for a write that already committed, and the
+    // caller reports failure for data that landed. Laravel cannot detect this,
+    // because commit() gates on its own $transactions counter rather than on
+    // PDO::inTransaction() (Illuminate\Database\Concerns\ManagesTransactions).
+    //
+    // Off by default. Set DB_PERSISTENT=true only where the reconnect cost is
+    // measured and no request opens a transaction.
+    PDO::ATTR_PERSISTENT => env('DB_PERSISTENT', false),
     PDO::ATTR_TIMEOUT => 5,
 ];
 
