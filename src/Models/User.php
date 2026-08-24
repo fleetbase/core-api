@@ -147,6 +147,7 @@ class User extends Authenticatable
         'apple_user_id',
         'facebook_user_id',
         'google_user_id',
+        'microsoft_user_id',
         'name',
         'phone',
         'date_of_birth',
