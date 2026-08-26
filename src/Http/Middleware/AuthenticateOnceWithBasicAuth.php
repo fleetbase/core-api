@@ -82,6 +82,18 @@ class AuthenticateOnceWithBasicAuth
             return response()->error('Oops! The api credentials provided were not valid', 401);
         }
 
+        // Credentials have been revoked.
+        //
+        // withoutGlobalScopes() above strips SoftDeletingScope along with ExpiryScope, so
+        // the lookup deliberately sees deleted rows. Expiry is re-applied in PHP below, but
+        // soft-deletion never was — a credential the console reports as "Deleted" kept
+        // authenticating indefinitely, and Delete was the only revocation most operators
+        // ever performed. Treated as "not valid" rather than a distinct message so a caller
+        // cannot distinguish a revoked key from one that never existed.
+        if ($apiCredential->trashed()) {
+            return response()->error('Oops! The api credentials provided were not valid', 401);
+        }
+
         // If OPTIONS set api key and continue
         if ($request->isMethod('OPTIONS')) {
             // Set api credential session
@@ -96,7 +108,13 @@ class AuthenticateOnceWithBasicAuth
         }
 
         // Login user
-        Auth::setSession($apiCredential);
+        //
+        // Fails when the credential's creating user no longer resolves — the credential has
+        // no identity to act as, so the request is rejected rather than continuing with a
+        // half-populated session.
+        if (Auth::setSession($apiCredential) !== true) {
+            return response()->error('Oops! The api credentials provided were not valid', 401);
+        }
 
         // Bind the user resolver so $request->user() answers on the public API.
         //

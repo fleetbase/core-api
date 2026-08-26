@@ -62,14 +62,25 @@ class Auth extends Authentication
 
         if ($user instanceof ApiCredential) {
             $apiCredential = $user;
-            session(['company' => $apiCredential->company_uuid, 'user' => $apiCredential->user_uuid]);
-            // user couldn't be loaded, fallback with api credential if applicable
-            $user = User::find($apiCredential->user_uuid);
 
-            // Set is admin if user of api credential is admin
-            if ($user) {
-                session(['is_admin' => $user->isAdmin()]);
+            // An API credential carries no identity of its own — it acts as the user that
+            // created it. When that user no longer resolves (hard or soft deleted) there is
+            // no identity to run as, so authentication must fail closed.
+            //
+            // This previously fell through and returned true with `is_admin` simply never
+            // set. Authorization degraded safely, but authentication did not: the key kept
+            // working on every read endpoint and every ungated write, so off-boarding a
+            // person did not revoke the keys they had created.
+            $user = User::find($apiCredential->user_uuid);
+            if (!$user instanceof User) {
+                return false;
             }
+
+            session([
+                'company'  => $apiCredential->company_uuid,
+                'user'     => $apiCredential->user_uuid,
+                'is_admin' => $user->isAdmin(),
+            ]);
 
             // track last usage of api credential
             $apiCredential->trackLastUsed();
