@@ -38,7 +38,9 @@ class Utils
     public static function apiUrl(string $path, ?array $queryParams = [], int $port = 80): string
     {
         $isLocalDevelopment = app()->environment(['local', 'development']);
-        $baseURL            = url($path, $queryParams, !$isLocalDevelopment);
+        // Laravel's url() renders extra parameters as path segments, not a query string,
+        // so the query string must be built here
+        $baseURL = url($path, [], !$isLocalDevelopment);
 
         // Check if default port is used to avoid appending it unnecessarily
         if (!in_array($port, [80, 443])) {
@@ -50,6 +52,10 @@ class Utils
                 // Insert port after the host
                 $baseURL = str_replace($parsedUrl['host'], $parsedUrl['host'] . $portString, $baseURL);
             }
+        }
+
+        if (!empty($queryParams)) {
+            $baseURL .= (str_contains($baseURL, '?') ? '&' : '?') . http_build_query($queryParams);
         }
 
         return $baseURL;
