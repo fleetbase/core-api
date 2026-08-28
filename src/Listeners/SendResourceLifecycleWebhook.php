@@ -19,6 +19,21 @@ use Laravel\Sanctum\PersonalAccessToken;
 class SendResourceLifecycleWebhook implements ShouldQueue
 {
     /**
+     * Session keys which carry the request context a lifecycle event was created in.
+     *
+     * @var string[]
+     */
+    protected static array $contextSessionKeys = [
+        'api_credential',
+        'api_key',
+        'api_secret',
+        'api_environment',
+        'is_sandbox',
+        'company',
+        'user',
+    ];
+
+    /**
      * Handle the event.
      *
      * @param ResourceLifecycleEvent $event
@@ -27,15 +42,35 @@ class SendResourceLifecycleWebhook implements ShouldQueue
      */
     public function handle($event)
     {
-        $this->setSessionFromEvent($event);
+        // The context serialized on the event is the only trustworthy source for this job. A long
+        // running queue worker keeps its session between jobs, so the context left behind by a
+        // previously handled event must never be preferred over, or leak into, this one.
+        $context        = static::resolveEventContext($event);
+        $restoreSession = $this->applySessionContext($context);
 
-        // get session variables or fallback to event value
-        $companyId       = session()->get('company', $event->companySession);
-        $apiCredentialId = session()->get('api_credential', $event->apiCredential);
-        $apiKey          = session()->get('api_key', $event->apiKey ?? 'console');
-        $apiSecret       = session()->get('api_secret', $event->apiSecret ?? 'internal');
-        $apiEnvironment  = session()->get('api_environment', $event->apiEnvironment ?? 'live');
-        $isSandbox       = session()->get('is_sandbox', $event->isSandbox);
+        try {
+            $this->sendWebhooksForEvent($event, $context);
+        } finally {
+            $restoreSession();
+        }
+    }
+
+    /**
+     * Send the webhooks for a single lifecycle event using the context serialized on it.
+     *
+     * @param ResourceLifecycleEvent $event
+     * @param array<string, mixed>   $context
+     *
+     * @return void
+     */
+    protected function sendWebhooksForEvent($event, array $context)
+    {
+        $companyId       = $context['company'];
+        $apiCredentialId = $context['api_credential'];
+        $apiKey          = $context['api_key'];
+        $apiSecret       = $context['api_secret'];
+        $apiEnvironment  = $context['api_environment'];
+        $isSandbox       = $context['is_sandbox'];
 
         // Compute the event payload exactly once so the persisted ApiEvent record and the
         // outbound webhook body are guaranteed to be identical. $event->getEventData() resolves
@@ -53,17 +88,14 @@ class SendResourceLifecycleWebhook implements ShouldQueue
             'description'         => $this->getHumanReadableEventDescription($event),
         ];
 
-        // Get api credential from session
-        $apiCredential = session('api_credential');
-
         // Validate api credential, if not uuid then it could be internal
-        if ($apiCredential && Str::isUuid($apiCredential) && ApiCredential::where('uuid', session('api_credential'))->exists()) {
-            $eventData['api_credential_uuid'] = $apiCredential;
+        if ($apiCredentialId && Str::isUuid($apiCredentialId) && ApiCredential::where('uuid', $apiCredentialId)->exists()) {
+            $eventData['api_credential_uuid'] = $apiCredentialId;
         }
 
         // Check if it was a personal access token which made the request
-        if ($apiCredential && is_numeric($apiCredential) && PersonalAccessToken::where('id', $apiCredential)->exists()) {
-            $eventData['access_token_id'] = (int) $apiCredential;
+        if ($apiCredentialId && is_numeric($apiCredentialId) && PersonalAccessToken::where('id', $apiCredentialId)->exists()) {
+            $eventData['access_token_id'] = (int) $apiCredentialId;
         }
 
         try {
@@ -154,36 +186,72 @@ class SendResourceLifecycleWebhook implements ShouldQueue
         }
     }
 
-    public function setSessionFromEvent($event)
+    /**
+     * Resolve the request context which was serialized onto the event when it was dispatched.
+     *
+     * @param ResourceLifecycleEvent $event
+     *
+     * @return array<string, mixed>
+     */
+    public static function resolveEventContext($event): array
     {
-        // set session variables if not set
-        if (!session()->has('api_credential')) {
-            session()->put('api_credential', $event->apiCredential);
+        return [
+            'api_credential'  => $event->apiCredential,
+            'api_key'         => $event->apiKey ?? 'console',
+            'api_secret'      => $event->apiSecret ?? 'internal',
+            'api_environment' => $event->apiEnvironment ?? 'live',
+            'is_sandbox'      => (bool) $event->isSandbox,
+            'company'         => $event->companySession,
+            'user'            => $event->userSession,
+        ];
+    }
+
+    /**
+     * Replace the session context with the context serialized on the event.
+     *
+     * The session is replaced unconditionally: a queue worker session may already hold the context
+     * of an event it handled earlier, and that context must not be applied to this event. Downstream
+     * code (model scopes, observers, resources) still reads this context from the session, so it is
+     * written there for the duration of the job only.
+     *
+     * @param ResourceLifecycleEvent $event
+     *
+     * @return callable a callback which restores the session to the state it was in before the event
+     */
+    public function setSessionFromEvent($event): callable
+    {
+        return $this->applySessionContext(static::resolveEventContext($event));
+    }
+
+    /**
+     * Write a resolved event context to the session, replacing whatever was there before.
+     *
+     * @param array<string, mixed> $context
+     *
+     * @return callable a callback which restores the session to the state it was in before the event
+     */
+    protected function applySessionContext(array $context): callable
+    {
+        $previous = [];
+
+        foreach (static::$contextSessionKeys as $key) {
+            if (session()->has($key)) {
+                $previous[$key] = session()->get($key);
+            }
+
+            session()->put($key, $context[$key]);
         }
 
-        if (!session()->has('api_key')) {
-            session()->put('api_key', $event->apiKey);
-        }
+        return function () use ($previous) {
+            foreach (static::$contextSessionKeys as $key) {
+                if (array_key_exists($key, $previous)) {
+                    session()->put($key, $previous[$key]);
+                    continue;
+                }
 
-        if (!session()->has('api_secret')) {
-            session()->put('api_secret', $event->apiSecret);
-        }
-
-        if (!session()->has('api_environment')) {
-            session()->put('api_environment', $event->apiEnvironment);
-        }
-
-        if (!session()->has('is_sandbox')) {
-            session()->put('is_sandbox', $event->isSandbox);
-        }
-
-        if (!session()->has('company')) {
-            session()->put('company', $event->companySession);
-        }
-
-        if (!session()->has('user')) {
-            session()->put('user', $event->userSession);
-        }
+                session()->remove($key);
+            }
+        };
     }
 
     /**

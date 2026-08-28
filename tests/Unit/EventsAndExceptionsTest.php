@@ -788,7 +788,11 @@ test('resource lifecycle webhook listener restores event session defaults and de
         'companySession'      => 'company-uuid',
     ]);
 
-    $listener->setSessionFromEvent($event);
+    // stale context left in a long running queue worker session must be replaced, not preserved
+    session()->put('api_credential', 'stale-credential-uuid');
+    session()->put('api_secret', 'stale-secret');
+
+    $restoreSession = $listener->setSessionFromEvent($event);
 
     expect(session('api_credential'))->toBe('credential-uuid')
         ->and(session('api_key'))->toBe('key')
@@ -798,4 +802,11 @@ test('resource lifecycle webhook listener restores event session defaults and de
         ->and(session('company'))->toBe('company-uuid')
         ->and(session('user'))->toBe('user-uuid')
         ->and($listener->getHumanReadableEventDescription($event))->toBe('A order (Order 1001) was assigned a driver via API');
+
+    $restoreSession();
+
+    expect(session('api_credential'))->toBe('stale-credential-uuid')
+        ->and(session('api_secret'))->toBe('stale-secret')
+        ->and(session()->has('company'))->toBeFalse()
+        ->and(session()->has('user'))->toBeFalse();
 });
