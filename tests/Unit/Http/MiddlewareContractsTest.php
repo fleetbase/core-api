@@ -67,6 +67,14 @@ namespace {
         protected array $except = ['health'];
     }
 
+    class MiddlewareContractsBasicAuthHarness extends AuthenticateOnceWithBasicAuth
+    {
+        public static function bindUserResolverPublic(?Request $request, $user): void
+        {
+            static::bindUserResolver($request, $user);
+        }
+    }
+
     class MiddlewareContractsCustomMiddlewareHarness
     {
         use Fleetbase\Traits\CustomMiddleware;
@@ -1211,6 +1219,34 @@ namespace {
             ->and(session('company'))->toBeNull()
             ->and(session('api_credential'))->toBeNull()
             ->and($capsule->getConnection('mysql')->table('api_credentials')->where('uuid', 'credential-orphaned')->value('last_used_at'))->toBeNull();
+    });
+
+    test('basic auth middleware user resolver binding refuses incomplete arguments', function () {
+        // bindUserResolver() is protected static, so a downstream middleware subclass can
+        // call it with whatever it has. Neither in-tree call site can reach this guard --
+        // the sanctum path checks `tokenable instanceof User` first, and the credential
+        // path now fails closed before it -- but the guard still has to hold for callers
+        // that are not this class.
+        middleware_contracts_basic_auth_database();
+
+        $request = Request::create('/v1/orders', 'GET');
+        $user    = new FleetbaseUser();
+        $user->setRawAttributes(['uuid' => 'user-1'], true);
+
+        // No request to bind onto.
+        MiddlewareContractsBasicAuthHarness::bindUserResolverPublic(null, $user);
+
+        // No user to bind -- must not install a resolver that yields null, which would
+        // shadow a guard that resolves the user later in the stack.
+        MiddlewareContractsBasicAuthHarness::bindUserResolverPublic($request, null);
+
+        expect($request->user())->toBeNull();
+
+        // The positive case still binds, so the guard is not simply rejecting everything.
+        MiddlewareContractsBasicAuthHarness::bindUserResolverPublic($request, $user);
+
+        expect($request->user())->toBeInstanceOf(FleetbaseUser::class)
+            ->and($request->user()->uuid)->toBe('user-1');
     });
 
     test('basic auth middleware falls back to sandbox for sdk secret keys', function () {
