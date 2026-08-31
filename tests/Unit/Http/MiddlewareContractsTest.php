@@ -67,6 +67,14 @@ namespace {
         protected array $except = ['health'];
     }
 
+    class MiddlewareContractsBasicAuthHarness extends AuthenticateOnceWithBasicAuth
+    {
+        public static function bindUserResolverPublic(?Request $request, $user): void
+        {
+            static::bindUserResolver($request, $user);
+        }
+    }
+
     class MiddlewareContractsCustomMiddlewareHarness
     {
         use Fleetbase\Traits\CustomMiddleware;
@@ -348,6 +356,16 @@ namespace {
             ['uuid' => 'sanctum-user-invalid-company', 'company_uuid' => 'company-1', 'type' => 'user'],
             ['uuid' => 'sanctum-user-valid-company', 'company_uuid' => '550e8400-e29b-41d4-a716-446655440000', 'type' => 'user'],
             ['uuid' => 'sanctum-user-token-fallback', 'company_uuid' => '550e8400-e29b-41d4-a716-446655440001', 'type' => 'driver'],
+            // The User model is pinned to the mysql connection (User::$connection), and
+            // production is authoritative for users — the sandbox schema only holds a
+            // mirror maintained by sandbox:sync. So a sandbox credential's creator is
+            // resolved here, not on the sandbox connection.
+            ['uuid' => 'sandbox-user-1', 'company_uuid' => 'sandbox-company-1', 'type' => 'admin'],
+        ]);
+        // An off-boarded creator: the row still exists, but soft-deleted, so User::find()
+        // no longer resolves it.
+        $db->table('users')->insert([
+            ['uuid' => 'user-gone', 'company_uuid' => 'company-1', 'type' => 'admin', 'deleted_at' => '2026-07-19 00:00:00'],
         ]);
         $db->table('companies')->insert([
             ['uuid' => 'company-1', 'owner_id' => 'user-1', 'owner_uuid' => 'user-1'],
@@ -358,6 +376,12 @@ namespace {
             ['uuid' => 'credential-live', 'user_uuid' => 'user-1', 'company_uuid' => 'company-1', 'name' => 'Live', 'key' => 'flb_live_auth', 'secret' => '$live_secret', 'test_mode' => 0, 'last_used_at' => null, 'expires_at' => null, 'created_at' => '2026-07-18 00:00:00', 'updated_at' => '2026-07-18 00:00:00'],
             ['uuid' => 'credential-expired', 'user_uuid' => 'user-1', 'company_uuid' => 'company-1', 'name' => 'Expired', 'key' => 'flb_live_expired', 'secret' => '$expired_secret', 'test_mode' => 0, 'last_used_at' => null, 'expires_at' => '2020-01-01 00:00:00', 'created_at' => '2026-07-18 00:00:00', 'updated_at' => '2026-07-18 00:00:00'],
             ['uuid' => 'credential-sanctum', 'user_uuid' => 'sanctum-user-valid-company', 'company_uuid' => '550e8400-e29b-41d4-a716-446655440000', 'name' => 'Sanctum', 'key' => 'flb_live_sanctum', 'secret' => '$sanctum_secret', 'test_mode' => 0, 'last_used_at' => null, 'expires_at' => null, 'created_at' => '2026-07-18 00:00:00', 'updated_at' => '2026-07-18 00:00:00'],
+        ]);
+        // Revoked (soft-deleted, and carrying no expiry) and orphaned (its creating user
+        // has been off-boarded) credentials.
+        $db->table('api_credentials')->insert([
+            ['uuid' => 'credential-revoked', 'user_uuid' => 'user-1', 'company_uuid' => 'company-1', 'name' => 'Revoked', 'key' => 'flb_live_revoked', 'secret' => '$revoked_secret', 'test_mode' => 0, 'last_used_at' => null, 'expires_at' => null, 'created_at' => '2026-07-18 00:00:00', 'updated_at' => '2026-07-18 00:00:00', 'deleted_at' => '2026-07-19 00:00:00'],
+            ['uuid' => 'credential-orphaned', 'user_uuid' => 'user-gone', 'company_uuid' => 'company-1', 'name' => 'Orphaned', 'key' => 'flb_live_orphaned', 'secret' => '$orphaned_secret', 'test_mode' => 0, 'last_used_at' => null, 'expires_at' => null, 'created_at' => '2026-07-18 00:00:00', 'updated_at' => '2026-07-18 00:00:00', 'deleted_at' => null],
         ]);
         $db->table('personal_access_tokens')->insert([
             ['id' => 1, 'tokenable_type' => FleetbaseUser::class, 'tokenable_id' => 'sanctum-user-invalid-company', 'name' => 'invalid-company', 'token' => hash('sha256', 'plain-invalid-company-token'), 'abilities' => json_encode(['*']), 'created_at' => '2026-07-18 00:00:00', 'updated_at' => '2026-07-18 00:00:00'],
@@ -1108,6 +1132,121 @@ namespace {
             ->and($expiredResponse->getData(true))->toBe([
                 'errors' => ['Oops! These api credentials have expired'],
             ]);
+    });
+
+    test('basic auth middleware rejects revoked credentials', function () {
+        // The credential lookup uses withoutGlobalScopes(), which strips SoftDeletingScope
+        // along with ExpiryScope. Expiry is re-applied in PHP; soft-deletion was not, so a
+        // credential the console reports as "Deleted" authenticated indefinitely. It also
+        // carries no expiry here, so nothing else could catch it.
+        $capsule = middleware_contracts_basic_auth_database();
+        session()->flush();
+
+        $request = Request::create('/v1/orders', 'GET', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer flb_live_revoked',
+        ]);
+        $continued = false;
+        $response  = (new AuthenticateOnceWithBasicAuth())->handle(
+            $request,
+            function () use (&$continued) {
+                $continued = true;
+
+                return new JsonResponse(['ok' => true]);
+            }
+        );
+
+        expect($continued)->toBeFalse()
+            ->and($response->getStatusCode())->toBe(401)
+            ->and($response->getData(true))->toBe([
+                'errors' => ['Oops! The api credentials provided were not valid'],
+            ])
+            ->and(session('api_credential'))->toBeNull()
+            ->and(session('user'))->toBeNull()
+            ->and($capsule->getConnection('mysql')->table('api_credentials')->where('uuid', 'credential-revoked')->value('last_used_at'))->toBeNull();
+    });
+
+    test('basic auth middleware rejects revoked credentials on preflight requests', function () {
+        // Rejected before the OPTIONS shortcut, so a revoked key cannot seed api key
+        // session context on a preflight either.
+        middleware_contracts_basic_auth_database();
+        session()->flush();
+
+        $request = Request::create('/v1/orders', 'OPTIONS', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer flb_live_revoked',
+        ]);
+        $continued = false;
+        $response  = (new AuthenticateOnceWithBasicAuth())->handle(
+            $request,
+            function () use (&$continued) {
+                $continued = true;
+
+                return new JsonResponse(['preflight' => true]);
+            }
+        );
+
+        expect($continued)->toBeFalse()
+            ->and($response->getStatusCode())->toBe(401)
+            ->and(session('api_credential'))->toBeNull();
+    });
+
+    test('basic auth middleware fails closed when the credential creator no longer resolves', function () {
+        // A credential acts as the user that created it. Once that user is soft-deleted
+        // there is no identity to run as, and the request must be rejected — previously
+        // `is_admin` was simply never set and authentication still succeeded, so
+        // off-boarding a person left every key they had created working.
+        $capsule = middleware_contracts_basic_auth_database();
+        session()->flush();
+
+        $request = Request::create('/v1/orders', 'GET', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer flb_live_orphaned',
+        ]);
+        $continued = false;
+        $response  = (new AuthenticateOnceWithBasicAuth())->handle(
+            $request,
+            function () use (&$continued) {
+                $continued = true;
+
+                return new JsonResponse(['ok' => true]);
+            }
+        );
+
+        expect($continued)->toBeFalse()
+            ->and($response->getStatusCode())->toBe(401)
+            ->and($response->getData(true))->toBe([
+                'errors' => ['Oops! The api credentials provided were not valid'],
+            ])
+            ->and(session('user'))->toBeNull()
+            ->and(session('company'))->toBeNull()
+            ->and(session('api_credential'))->toBeNull()
+            ->and($capsule->getConnection('mysql')->table('api_credentials')->where('uuid', 'credential-orphaned')->value('last_used_at'))->toBeNull();
+    });
+
+    test('basic auth middleware user resolver binding refuses incomplete arguments', function () {
+        // bindUserResolver() is protected static, so a downstream middleware subclass can
+        // call it with whatever it has. Neither in-tree call site can reach this guard --
+        // the sanctum path checks `tokenable instanceof User` first, and the credential
+        // path now fails closed before it -- but the guard still has to hold for callers
+        // that are not this class.
+        middleware_contracts_basic_auth_database();
+
+        $request = Request::create('/v1/orders', 'GET');
+        $user    = new FleetbaseUser();
+        $user->setRawAttributes(['uuid' => 'user-1'], true);
+
+        // No request to bind onto.
+        MiddlewareContractsBasicAuthHarness::bindUserResolverPublic(null, $user);
+
+        // No user to bind -- must not install a resolver that yields null, which would
+        // shadow a guard that resolves the user later in the stack.
+        MiddlewareContractsBasicAuthHarness::bindUserResolverPublic($request, null);
+
+        expect($request->user())->toBeNull();
+
+        // The positive case still binds, so the guard is not simply rejecting everything.
+        MiddlewareContractsBasicAuthHarness::bindUserResolverPublic($request, $user);
+
+        expect($request->user())->toBeInstanceOf(FleetbaseUser::class)
+            ->and($request->user()->uuid)->toBe('user-1');
     });
 
     test('basic auth middleware falls back to sandbox for sdk secret keys', function () {

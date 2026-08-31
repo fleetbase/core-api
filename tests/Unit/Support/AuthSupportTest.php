@@ -688,6 +688,21 @@ test('auth support stores api credential session context and tracks key usage', 
         ->and(Auth::getApiKey()->uuid)->toBe($credential->uuid);
 });
 
+test('auth support fails closed when an api credential creator no longer resolves', function () {
+    [$admin, , $credential] = auth_support_fixtures();
+
+    // Off-board the creating user. A credential has no identity of its own — it acts as
+    // its creator — so there is nothing left for it to run as. This used to return true
+    // with `is_admin` merely unset, leaving the key live on every read endpoint.
+    app('db')->table('users')->where('uuid', $admin->uuid)->update(['deleted_at' => '2026-07-17 11:00:00']);
+
+    expect(Auth::setSession($credential))->toBeFalse()
+        ->and(session('user'))->toBeNull()
+        ->and(session('company'))->toBeNull()
+        ->and(session('is_admin'))->toBeNull()
+        ->and(app('db')->table('api_credentials')->where('uuid', $credential->uuid)->value('last_used_at'))->toBeNull();
+});
+
 test('auth support returns null when no api credential session exists', function () {
     auth_support_fixtures();
 

@@ -311,11 +311,15 @@ namespace {
     if (!function_exists('url')) {
         function url(string $path = '', mixed $parameters = [], ?bool $secure = null): string
         {
+            // Mirrors Illuminate\Routing\UrlGenerator::to(): extra parameters become
+            // rawurlencoded path segments with keys discarded, NOT a query string
             $base = $secure ? 'https://fleetbase.test' : 'http://fleetbase.test';
             $path = '/' . ltrim($path, '/');
 
             if (is_array($parameters) && $parameters !== []) {
-                return $base . $path . '?' . http_build_query($parameters);
+                $tail = implode('/', array_map('rawurlencode', array_values($parameters)));
+
+                return $base . rtrim($path, '/') . '/' . $tail;
             }
 
             return $base . $path;

@@ -282,8 +282,15 @@ test('expirable reports expiry ttl timestamp and qualified columns', function ()
     $expired = new LifecycleTraitsExpirableRecord([
         'expires_at' => Carbon::now()->subMinute(),
     ]);
+    // ExpiryScope keeps a row only while `expires_at > now()`, so an exactly-now expiry is
+    // already excluded from queries — hasExpired() has to agree. This is the value written
+    // for the console's "expire immediately" option.
+    $expiredNow = new LifecycleTraitsExpirableRecord([
+        'expires_at' => Carbon::now(),
+    ]);
 
-    expect($active->hasExpired())->toBeFalse()
+    expect($expiredNow->hasExpired())->toBeTrue()
+        ->and($active->hasExpired())->toBeFalse()
         ->and($active->timeToLive())->toBe(300)
         ->and($active->expiresAtTimestamp())->toBe(Carbon::now()->addMinutes(5)->timestamp)
         ->and($active->getExpiredAtColumn())->toBe('expires_at')

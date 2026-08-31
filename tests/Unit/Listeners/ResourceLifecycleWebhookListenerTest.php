@@ -202,6 +202,35 @@ namespace {
         }
     }
 
+    class ResourceLifecycleWebhookListenerSessionSpyResource extends JsonResource
+    {
+        public static array $observed = [];
+
+        public static function reset(): void
+        {
+            static::$observed = [];
+        }
+
+        public function toWebhookPayload(): array
+        {
+            static::$observed[] = [
+                'api_credential'  => session('api_credential'),
+                'api_key'         => session('api_key'),
+                'api_secret'      => session('api_secret'),
+                'api_environment' => session('api_environment'),
+                'is_sandbox'      => session('is_sandbox'),
+                'company'         => session('company'),
+                'user'            => session('user'),
+            ];
+
+            return [
+                'id'     => $this->resource->public_id,
+                'uuid'   => $this->resource->uuid,
+                'status' => $this->resource->status,
+            ];
+        }
+    }
+
     class ResourceLifecycleWebhookListenerEvent extends ResourceLifecycleEvent
     {
         public ?EloquentModel $record  = null;
@@ -232,6 +261,47 @@ namespace {
         {
             return $this->resource ?? new JsonResource($model);
         }
+    }
+
+    function resource_lifecycle_webhook_listener_record(array $attributes = []): FleetbaseModel
+    {
+        $record = new FleetbaseModel();
+        $record->setRawAttributes(array_merge([
+            'uuid'         => 'record-uuid',
+            'public_id'    => 'order_1234567',
+            'company_uuid' => 'company-uuid',
+            'status'       => 'dispatched',
+        ], $attributes), true);
+
+        return $record;
+    }
+
+    function resource_lifecycle_webhook_listener_event(array $context, ?EloquentModel $record = null, ?JsonResource $resource = null): ResourceLifecycleWebhookListenerEvent
+    {
+        $record = $record ?? resource_lifecycle_webhook_listener_record();
+
+        return ResourceLifecycleWebhookListenerEvent::fake(array_merge([
+            'modelName'           => 'order',
+            'modelClassNamespace' => FleetbaseModel::class,
+            'modelClassName'      => 'Order',
+            'modelHumanName'      => 'order',
+            'modelUuid'           => 'record-uuid',
+            'namespace'           => '\\Fleetbase',
+            'version'             => 1,
+            'eventName'           => 'updated',
+            'sentAt'              => '2026-07-18 15:25:00',
+            'eventId'             => 'event_lifecycle',
+            'apiVersion'          => 'v1',
+            'requestMethod'       => 'PATCH',
+            'apiCredential'       => null,
+            'apiSecret'           => 'event-secret',
+            'apiKey'              => 'event-api-key',
+            'apiEnvironment'      => 'live',
+            'isSandbox'           => false,
+            'data'                => [],
+            'userSession'         => null,
+            'companySession'      => 'company-uuid',
+        ], $context), $record, $resource ?? new ResourceLifecycleWebhookListenerResource($record));
     }
 
     function resource_lifecycle_webhook_listener_database(): array
@@ -403,6 +473,7 @@ namespace {
     }
 
     afterEach(function () {
+        ResourceLifecycleWebhookListenerSessionSpyResource::reset();
         session()->flush();
         Carbon::setTestNow();
         EloquentModel::clearBootedModels();
@@ -490,99 +561,182 @@ namespace {
             ->and($bus->jobs[0]->meta['api_event_uuid'])->toBe($apiEvent->uuid)
             ->and($bus->jobs[0]->meta['webhook_uuid'])->toBe('webhook-enabled')
             ->and($bus->jobs[0]->headers)->toHaveKey('X-Fleetbase-Signature')
-            ->and(session('company'))->toBe('company-uuid')
-            ->and(session('api_environment'))->toBe('live');
+            ->and(session('company'))->toBeNull()
+            ->and(session('api_environment'))->toBeNull();
     });
 
-    test('resource lifecycle webhook listener preserves session credential attribution', function () {
+    test('resource lifecycle webhook listener prefers event credential attribution over a stale worker session', function () {
         [$capsule, $bus] = resource_lifecycle_webhook_listener_database();
 
+        // context left behind in the worker session by a previously handled event
         session()->put('api_credential', '11111111-1111-4111-8111-111111111111');
         session()->put('api_key', 'session-api-key');
         session()->put('api_secret', 'session-secret');
 
-        $record = new FleetbaseModel();
-        $record->setRawAttributes([
-            'uuid'         => 'record-uuid',
-            'public_id'    => 'order_1234567',
-            'company_uuid' => 'company-uuid',
-            'status'       => 'dispatched',
-        ], true);
-
-        $event = ResourceLifecycleWebhookListenerEvent::fake([
-            'modelName'           => 'order',
-            'modelClassNamespace' => FleetbaseModel::class,
-            'modelClassName'      => 'Order',
-            'modelHumanName'      => 'order',
-            'modelUuid'           => 'record-uuid',
-            'namespace'           => '\\Fleetbase',
-            'version'             => 1,
-            'eventName'           => 'updated',
-            'sentAt'              => '2026-07-18 15:25:00',
-            'eventId'             => 'event_lifecycle',
-            'apiVersion'          => 'v1',
-            'requestMethod'       => 'PATCH',
-            'apiCredential'       => 'internal-console',
-            'apiSecret'           => 'event-secret',
-            'apiKey'              => 'event-api-key',
-            'apiEnvironment'      => 'live',
-            'isSandbox'           => false,
-            'data'                => [],
-            'userSession'         => null,
-            'companySession'      => 'company-uuid',
-        ], $record, new ResourceLifecycleWebhookListenerResource($record));
+        $event = resource_lifecycle_webhook_listener_event([
+            'apiCredential' => '44',
+            'apiSecret'     => 'event-secret',
+            'apiKey'        => 'event-api-key',
+        ]);
 
         (new SendResourceLifecycleWebhook())->handle($event);
 
         $apiEvent = ApiEvent::first();
 
-        expect($apiEvent->api_credential_uuid)->toBe('11111111-1111-4111-8111-111111111111')
-            ->and($apiEvent->access_token_id)->toBeNull()
+        expect($apiEvent->access_token_id)->toBe(44)
+            ->and($apiEvent->api_credential_uuid)->toBeNull()
             ->and($bus->jobs)->toHaveCount(1)
-            ->and($bus->jobs[0]->meta['api_key'])->toBe('session-api-key')
-            ->and($bus->jobs[0]->meta['api_credential_uuid'])->toBe('11111111-1111-4111-8111-111111111111')
-            ->and($bus->jobs[0]->meta['access_token_id'])->toBeNull()
-            ->and($bus->jobs[0]->headers)->toHaveKey('X-Fleetbase-Signature');
+            ->and($bus->jobs[0]->meta['api_key'])->toBe('event-api-key')
+            ->and($bus->jobs[0]->meta['access_token_id'])->toBe(44)
+            ->and($bus->jobs[0]->meta['api_credential_uuid'])->toBeNull()
+            ->and($bus->jobs[0]->headers['X-Fleetbase-Signature'])->toBe(hash_hmac('sha256', json_encode($bus->jobs[0]->payload), 'event-secret'));
+    });
+
+    test('resource lifecycle webhook listener restores the previous session context after handling an event', function () {
+        resource_lifecycle_webhook_listener_database();
+
+        session()->put('api_credential', '11111111-1111-4111-8111-111111111111');
+        session()->put('api_key', 'session-api-key');
+        session()->put('company', 'other-company');
+
+        $record = resource_lifecycle_webhook_listener_record();
+        $event  = resource_lifecycle_webhook_listener_event([
+            'apiCredential'  => '44',
+            'apiKey'         => 'event-api-key',
+            'apiSecret'      => 'event-secret',
+            'companySession' => 'company-uuid',
+            'userSession'    => 'user-uuid',
+        ], $record, new ResourceLifecycleWebhookListenerSessionSpyResource($record));
+
+        (new SendResourceLifecycleWebhook())->handle($event);
+
+        // the event context is visible to downstream code while the job runs
+        expect(ResourceLifecycleWebhookListenerSessionSpyResource::$observed[0])->toBe([
+            'api_credential'  => '44',
+            'api_key'         => 'event-api-key',
+            'api_secret'      => 'event-secret',
+            'api_environment' => 'live',
+            'is_sandbox'      => false,
+            'company'         => 'company-uuid',
+            'user'            => 'user-uuid',
+        ])
+            // and the session it was running in is handed back untouched
+            ->and(session('api_credential'))->toBe('11111111-1111-4111-8111-111111111111')
+            ->and(session('api_key'))->toBe('session-api-key')
+            ->and(session('company'))->toBe('other-company')
+            ->and(session()->has('api_secret'))->toBeFalse()
+            ->and(session()->has('api_environment'))->toBeFalse()
+            ->and(session()->has('is_sandbox'))->toBeFalse()
+            ->and(session()->has('user'))->toBeFalse();
+    });
+
+    test('resource lifecycle webhook listener signs each queued event with its own secret', function () {
+        [$capsule, $bus] = resource_lifecycle_webhook_listener_database();
+
+        $listener = new SendResourceLifecycleWebhook();
+        $record   = resource_lifecycle_webhook_listener_record();
+
+        // two events handled back to back by the same long running worker
+        $listener->handle(resource_lifecycle_webhook_listener_event([
+            'eventId'        => 'event_first',
+            'apiCredential'  => '11111111-1111-4111-8111-111111111111',
+            'apiKey'         => 'flb_live_key',
+            'apiSecret'      => 'secret-a',
+            'userSession'    => 'user-uuid',
+        ], $record, new ResourceLifecycleWebhookListenerSessionSpyResource($record)));
+
+        $listener->handle(resource_lifecycle_webhook_listener_event([
+            'eventId'        => 'event_second',
+            'apiCredential'  => '44',
+            'apiKey'         => 'console',
+            'apiSecret'      => 'secret-b',
+            'userSession'    => null,
+        ], $record, new ResourceLifecycleWebhookListenerSessionSpyResource($record)));
+
+        expect($bus->jobs)->toHaveCount(2);
+
+        [$first, $second] = $bus->jobs;
+
+        expect($first->headers['X-Fleetbase-Signature'])->toBe(hash_hmac('sha256', json_encode($first->payload), 'secret-a'))
+            ->and($first->headers['X-Fleetbase-Signature'])->not->toBe(hash_hmac('sha256', json_encode($first->payload), 'secret-b'))
+            ->and($second->headers['X-Fleetbase-Signature'])->toBe(hash_hmac('sha256', json_encode($second->payload), 'secret-b'))
+            ->and($second->headers['X-Fleetbase-Signature'])->not->toBe(hash_hmac('sha256', json_encode($second->payload), 'secret-a'))
+            ->and($first->meta['api_key'])->toBe('flb_live_key')
+            ->and($second->meta['api_key'])->toBe('console');
+
+        $apiEvents = ApiEvent::all();
+
+        expect($apiEvents)->toHaveCount(2)
+            ->and($apiEvents[0]->api_credential_uuid)->toBe('11111111-1111-4111-8111-111111111111')
+            ->and($apiEvents[0]->access_token_id)->toBeNull()
+            ->and($apiEvents[1]->api_credential_uuid)->toBeNull()
+            ->and($apiEvents[1]->access_token_id)->toBe(44);
+
+        $observed = ResourceLifecycleWebhookListenerSessionSpyResource::$observed;
+
+        expect($observed[0]['api_secret'])->toBe('secret-a')
+            ->and($observed[0]['api_credential'])->toBe('11111111-1111-4111-8111-111111111111')
+            ->and($observed[0]['api_key'])->toBe('flb_live_key')
+            ->and($observed[0]['user'])->toBe('user-uuid')
+            ->and($observed[1]['api_secret'])->toBe('secret-b')
+            ->and($observed[1]['api_credential'])->toBe('44')
+            ->and($observed[1]['api_key'])->toBe('console')
+            ->and($observed[1]['user'])->toBeNull()
+            ->and(session()->has('api_secret'))->toBeFalse();
+    });
+
+    test('resource lifecycle webhook listener does not leak environment sandbox or company context between queued events', function () {
+        [$capsule, $bus] = resource_lifecycle_webhook_listener_database();
+
+        $listener = new SendResourceLifecycleWebhook();
+        $record   = resource_lifecycle_webhook_listener_record();
+
+        // a sandbox event is handled first and must not push the next live event into sandbox
+        $listener->handle(resource_lifecycle_webhook_listener_event([
+            'eventId'        => 'event_sandbox',
+            'apiEnvironment' => 'sandbox',
+            'isSandbox'      => true,
+            'companySession' => 'company-uuid',
+        ], $record, new ResourceLifecycleWebhookListenerSessionSpyResource($record)));
+
+        $listener->handle(resource_lifecycle_webhook_listener_event([
+            'eventId'        => 'event_live',
+            'apiEnvironment' => 'live',
+            'isSandbox'      => false,
+            'companySession' => 'company-uuid',
+        ], $record, new ResourceLifecycleWebhookListenerSessionSpyResource($record)));
+
+        expect($bus->jobs)->toHaveCount(2)
+            ->and($bus->jobs[0]->meta['webhook_uuid'])->toBe('webhook-sandbox')
+            ->and($bus->jobs[0]->meta['is_sandbox'])->toBeTrue()
+            ->and($bus->jobs[1]->meta['webhook_uuid'])->toBe('webhook-enabled')
+            ->and($bus->jobs[1]->meta['is_sandbox'])->toBeFalse();
+
+        $observed = ResourceLifecycleWebhookListenerSessionSpyResource::$observed;
+
+        expect($observed[0]['api_environment'])->toBe('sandbox')
+            ->and($observed[0]['is_sandbox'])->toBeTrue()
+            ->and($observed[1]['api_environment'])->toBe('live')
+            ->and($observed[1]['is_sandbox'])->toBeFalse()
+            ->and(session()->has('is_sandbox'))->toBeFalse()
+            ->and(session()->has('company'))->toBeFalse();
     });
 
     test('resource lifecycle webhook listener logs failed sandbox dispatches with access token context', function () {
         [$capsule, $bus] = resource_lifecycle_webhook_listener_database();
 
         config()->set('webhook-server.signer', ResourceLifecycleWebhookListenerFailingSigner::class);
-        session()->put('api_credential', '44');
-        session()->put('api_environment', 'sandbox');
-        session()->put('is_sandbox', true);
 
-        $record = new FleetbaseModel();
-        $record->setRawAttributes([
-            'uuid'         => 'record-uuid',
-            'public_id'    => 'order_1234567',
-            'company_uuid' => 'company-uuid',
-            'status'       => 'dispatched',
-        ], true);
+        // stale live context from a previously handled event must not redirect this sandbox event
+        session()->put('api_credential', '11111111-1111-4111-8111-111111111111');
+        session()->put('api_environment', 'live');
+        session()->put('is_sandbox', false);
 
-        $event = ResourceLifecycleWebhookListenerEvent::fake([
-            'modelName'           => 'order',
-            'modelClassNamespace' => FleetbaseModel::class,
-            'modelClassName'      => 'Order',
-            'modelHumanName'      => 'order',
-            'modelUuid'           => 'record-uuid',
-            'namespace'           => '\\Fleetbase',
-            'version'             => 1,
-            'eventName'           => 'updated',
-            'sentAt'              => '2026-07-18 15:25:00',
-            'eventId'             => 'event_lifecycle',
-            'apiVersion'          => 'v1',
-            'requestMethod'       => 'PATCH',
-            'apiCredential'       => null,
-            'apiSecret'           => 'event-secret',
-            'apiKey'              => 'event-api-key',
-            'apiEnvironment'      => 'live',
-            'isSandbox'           => false,
-            'data'                => [],
-            'userSession'         => null,
-            'companySession'      => 'company-uuid',
-        ], $record, new ResourceLifecycleWebhookListenerResource($record));
+        $event = resource_lifecycle_webhook_listener_event([
+            'apiCredential'  => '44',
+            'apiEnvironment' => 'sandbox',
+            'isSandbox'      => true,
+        ]);
 
         (new SendResourceLifecycleWebhook())->handle($event);
 
@@ -608,38 +762,10 @@ namespace {
         [$capsule, $bus] = resource_lifecycle_webhook_listener_database();
 
         config()->set('webhook-server.signer', ResourceLifecycleWebhookListenerFailingSigner::class);
-        session()->put('api_credential', '11111111-1111-4111-8111-111111111111');
 
-        $record = new FleetbaseModel();
-        $record->setRawAttributes([
-            'uuid'         => 'record-uuid',
-            'public_id'    => 'order_1234567',
-            'company_uuid' => 'company-uuid',
-            'status'       => 'dispatched',
-        ], true);
-
-        $event = ResourceLifecycleWebhookListenerEvent::fake([
-            'modelName'           => 'order',
-            'modelClassNamespace' => FleetbaseModel::class,
-            'modelClassName'      => 'Order',
-            'modelHumanName'      => 'order',
-            'modelUuid'           => 'record-uuid',
-            'namespace'           => '\\Fleetbase',
-            'version'             => 1,
-            'eventName'           => 'updated',
-            'sentAt'              => '2026-07-18 15:25:00',
-            'eventId'             => 'event_lifecycle',
-            'apiVersion'          => 'v1',
-            'requestMethod'       => 'PATCH',
-            'apiCredential'       => null,
-            'apiSecret'           => 'event-secret',
-            'apiKey'              => 'event-api-key',
-            'apiEnvironment'      => 'live',
-            'isSandbox'           => false,
-            'data'                => [],
-            'userSession'         => null,
-            'companySession'      => 'company-uuid',
-        ], $record, new ResourceLifecycleWebhookListenerResource($record));
+        $event = resource_lifecycle_webhook_listener_event([
+            'apiCredential' => '11111111-1111-4111-8111-111111111111',
+        ]);
 
         (new SendResourceLifecycleWebhook())->handle($event);
 

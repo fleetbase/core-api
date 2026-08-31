@@ -88,7 +88,12 @@ trait Expirable
         $column = $this->getExpiredAtColumn();
 
         if (is_object($this->{$column})) {
-            return $this->{$column} < Carbon::now();
+            // Inclusive, to agree with ExpiryScope, which keeps a row only while
+            // `expires_at > now()` and therefore already treats an exactly-now expiry as
+            // expired. A strict `<` here disagreed with the scope on that boundary, which
+            // is precisely the value ApiCredential writes for the console's "immediately"
+            // option (Carbon::now()) — so "expire this key right now" left it valid.
+            return $this->{$column} <= Carbon::now();
         }
 
         return false;
