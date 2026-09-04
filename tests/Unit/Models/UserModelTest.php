@@ -22,6 +22,29 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Facade;
 
+/**
+ * A `companyUser` pivot whose relations are already eager-loaded, and whose relation
+ * QUERY methods throw. If an authorization accessor falls back to querying when the
+ * relation is present, these throws are what surfaces it.
+ */
+class UserModelEagerLoadedPivotFake extends Model
+{
+    public function roles(): object
+    {
+        throw new RuntimeException('roles() was queried despite an eager-loaded relation');
+    }
+
+    public function policies(): object
+    {
+        throw new RuntimeException('policies() was queried despite an eager-loaded relation');
+    }
+
+    public function permissions(): object
+    {
+        throw new RuntimeException('permissions() was queried despite an eager-loaded relation');
+    }
+}
+
 class UserModelSaveSpy extends User
 {
     public int $saves = 0;
@@ -823,6 +846,41 @@ it('returns authorization roles policies and permissions from the resolved compa
         ->and($user->getRole())->toBe($role)
         ->and($user->getRoleName())->toBe('Dispatcher')
         ->and($userWithoutRoles->getRoleName())->toBeNull();
+});
+
+it('reads eager-loaded authorization relations without re-querying them', function () {
+    user_model_container();
+    config([
+        'auth.defaults.guard' => 'web',
+        'auth.guards.web'     => [
+            'driver'   => 'session',
+            'provider' => 'users',
+        ],
+    ]);
+
+    $role = new Role();
+    $role->setRawAttributes(['name' => 'Dispatcher'], true);
+
+    $policy = new Policy();
+    $policy->setRawAttributes(['name' => 'Orders Read'], true);
+
+    $permission = new Permission();
+    $permission->setRawAttributes(['name' => 'orders.read'], true);
+
+    // The pivot's roles()/policies()/permissions() QUERY methods throw, so this test
+    // fails loudly if an accessor ignores the loaded relation and queries anyway.
+    $pivot = new UserModelEagerLoadedPivotFake();
+    $pivot->setRelation('roles', collect([$role]));
+    $pivot->setRelation('policies', collect([$policy]));
+    $pivot->setRelation('permissions', collect([$permission]));
+
+    $user = new UserModelSaveSpy();
+    $user->setRelation('companyUser', $pivot);
+
+    expect($user->role)->toBe($role)
+        ->and($user->roles)->toEqual(collect([$role]))
+        ->and($user->policies)->toEqual(collect([$policy]))
+        ->and($user->permissions)->toEqual(collect([$permission]));
 });
 
 it('enriches new and existing users from request timezone data without calling missing helpers', function () {
