@@ -693,6 +693,96 @@ test('user controller scopes query and lookup to the active company unless reque
         ->and($foreign->getData(true))->toBe(['errors' => ['User not found']]);
 });
 
+test('user controller batches authorization for each users own company without changing resource values', function () {
+    $db = user_controller_database()->getConnection('mysql');
+
+    // The member belongs to two companies; deliberately give its other membership
+    // different authorization so matching on user_uuid alone cannot pass.
+    foreach (['pivot-owner-1', 'pivot-member-1', 'pivot-member-2', 'pivot-foreign-1'] as $pivotUuid) {
+        $db->table('roles')->insert(['id' => $pivotUuid, 'name' => $pivotUuid, 'guard_name' => 'sanctum']);
+        $db->table('policies')->insert(['id' => $pivotUuid, 'name' => $pivotUuid, 'guard_name' => 'sanctum']);
+        $db->table('permissions')->insert(['id' => $pivotUuid, 'name' => $pivotUuid, 'guard_name' => 'sanctum']);
+        foreach (['roles' => 'role_id', 'policies' => 'policy_id', 'permissions' => 'permission_id'] as $relation => $key) {
+            $db->table('model_has_' . $relation)->insert([
+                $key         => $pivotUuid,
+                'model_type' => Fleetbase\Models\CompanyUser::class,
+                'model_uuid' => $pivotUuid,
+            ]);
+        }
+    }
+
+    $expected   = ['owner-1' => 'pivot-owner-1', 'member-1' => 'pivot-member-1', 'foreign-1' => 'pivot-foreign-1'];
+    $controller = user_controller();
+    $route      = new UserControllerRouteStub('queryRecord');
+    $request    = user_controller_request('GET', [], user_controller_user('admin-1'), 'queryRecord');
+    $request->setRouteResolver(fn () => $route);
+    session(['user' => 'admin-1']);
+    $queryCounts = [];
+    foreach ([['owner-1'], array_keys($expected)] as $userUuids) {
+        $query = User::whereIn('uuid', $userUuids)->orderBy('uuid');
+        $controller->onQueryRecord($query, $request);
+        $db->enableQueryLog();
+        $db->flushQueryLog();
+        $users         = $query->get();
+        $queryCounts[] = count($db->getQueryLog());
+        $db->flushQueryLog();
+
+        foreach ($users as $user) {
+            expect($user->companyUser->uuid)->toBe($expected[$user->uuid])
+                ->and($user->role->id)->toBe($expected[$user->uuid])
+                ->and($user->roles->pluck('id')->all())->toBe([$expected[$user->uuid]])
+                ->and($user->policies->pluck('id')->all())->toBe([$expected[$user->uuid]])
+                ->and($user->permissions->pluck('id')->all())->toBe([$expected[$user->uuid]]);
+        }
+        expect($db->getQueryLog())->toBe([]);
+        $db->disableQueryLog();
+
+        foreach ($users as $user) {
+            $lazy      = user_controller_user($user->uuid);
+            $serialize = fn (User $model) => json_decode(json_encode((new Fleetbase\Http\Resources\User($model))->resolve($request)), true);
+            expect($serialize($user))->toBe($serialize($lazy));
+        }
+    }
+    expect($queryCounts[0])->toBeGreaterThan(1)
+        ->and($queryCounts[1])->toBe($queryCounts[0]);
+
+    // The tenant-scoped controller path also loads the correct membership.
+    $query = User::where('uuid', 'member-1');
+    session(['user' => 'owner-1']);
+    $request->setUserResolver(fn () => user_controller_user('owner-1'));
+    $controller->onQueryRecord($query, $request);
+    expect($query->firstOrFail()->role->id)->toBe('pivot-member-1');
+});
+
+test('company user relation preserves lazy loading and matches duplicate users in different company contexts', function () {
+    user_controller_database();
+    $member = user_controller_user('member-1');
+    expect($member->companyUser()->first()->uuid)->toBe('pivot-member-1');
+    $otherCompany               = clone $member;
+    $otherCompany->company_uuid = 'company-2';
+    expect($otherCompany->companyUser()->first()->uuid)->toBe('pivot-member-2');
+
+    $users = new Illuminate\Database\Eloquent\Collection([$member, $otherCompany]);
+    $users->load('companyUser');
+    expect($member->companyUser->uuid)->toBe('pivot-member-1')
+        ->and($otherCompany->companyUser->uuid)->toBe('pivot-member-2');
+});
+
+test('company user relation handles missing memberships and correlates existence queries to the users company', function () {
+    $db = user_controller_database()->getConnection('mysql');
+    $db->table('company_users')->where('uuid', 'pivot-member-1')->update(['deleted_at' => '2026-07-18 10:00:00']);
+    $users = User::whereIn('uuid', ['admin-1', 'member-1', 'single-1'])->with('companyUser')->get()->keyBy('uuid');
+
+    expect($users['admin-1']->companyUser)->toBeNull()
+        ->and($users['member-1']->companyUser)->toBeNull()
+        ->and($users['single-1']->companyUser->uuid)->toBe('pivot-single-1')
+        ->and($users['member-1']->role)->toBeNull()
+        ->and($users['member-1']->roles)->toBeEmpty()
+        ->and($users['member-1']->policies)->toBeEmpty()
+        ->and($users['member-1']->permissions)->toBeEmpty()
+        ->and(User::whereHas('companyUser')->orderBy('uuid')->pluck('uuid')->all())->toBe(['foreign-1', 'owner-1', 'single-1']);
+});
+
 test('user controller restores sandbox connection settings after generic user queries', function () {
     user_controller_database();
     config([

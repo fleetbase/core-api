@@ -6,6 +6,7 @@ use Fleetbase\Casts\Json;
 use Fleetbase\Exceptions\InvalidVerificationCodeException;
 use Fleetbase\Notifications\UserCreated;
 use Fleetbase\Notifications\UserInvited;
+use Fleetbase\Relations\CompanyUserRelation;
 use Fleetbase\Support\NotificationRegistry;
 use Fleetbase\Support\Timezone;
 use Fleetbase\Support\Utils;
@@ -349,13 +350,15 @@ class User extends Authenticatable
      * Defines the relationship between the user and their current company user record.
      *
      * This method establishes a `HasOne` relationship, indicating that the user has one associated
-     * `CompanyUser` record for the current company (determined by the `company_uuid` stored in the session).
+     * `CompanyUser` record for the company identified by the user's `company_uuid`.
      *
      * @return HasOne|Builder the relationship instance between the User and the CompanyUser model
      */
     public function companyUser(): HasOne|Builder
     {
-        return $this->hasOne(CompanyUser::class, 'user_uuid', 'uuid')->where('company_uuid', $this->company_uuid);
+        $related = $this->newRelatedInstance(CompanyUser::class);
+
+        return new CompanyUserRelation($related->newQuery(), $this, $related->qualifyColumn('user_uuid'), 'uuid');
     }
 
     /**
