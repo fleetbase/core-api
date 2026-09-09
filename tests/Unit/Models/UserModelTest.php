@@ -692,6 +692,46 @@ it('resolves company user pivots from loaded relations explicit companies and em
         ->and((new User(['uuid' => 'user-3']))->getCompanyUser($missingCompany))->toBeNull();
 });
 
+it('recovers a company membership created after the relation was loaded as null', function () {
+    user_model_schema();
+    $db = app('db')->connection('mysql');
+    $db->table('companies')->insert([
+        'uuid'       => 'company-late-membership',
+        'name'       => 'Late Membership',
+        'owner_uuid' => 'user-late-membership',
+    ]);
+
+    $user = new User();
+    $user->setRawAttributes([
+        'uuid'         => 'user-late-membership',
+        'company_uuid' => 'company-late-membership',
+    ], true);
+    $user->loadMissing('companyUser');
+    expect($user->relationLoaded('companyUser'))->toBeTrue()
+        ->and($user->companyUser)->toBeNull();
+
+    // loadMissing will keep the cached null after a membership is created.
+    // loadCompanyUser must recover it through the database fallback.
+    $db->table('company_users')->insert([
+        'uuid'         => 'late-membership',
+        'company_uuid' => 'company-late-membership',
+        'user_uuid'    => 'user-late-membership',
+        'status'       => 'active',
+    ]);
+
+    expect($user->loadCompanyUser())->toBe($user)
+        ->and($user->companyUser)->toBeInstanceOf(CompanyUser::class)
+        ->and($user->companyUser->uuid)->toBe('late-membership')
+        ->and($user->companyUser->company_uuid)->toBe('company-late-membership');
+
+    $membership = $user->companyUser;
+    $db->enableQueryLog();
+    $db->flushQueryLog();
+    expect($user->loadCompanyUser()->companyUser)->toBe($membership)
+        ->and($db->getQueryLog())->toBe([]);
+    $db->disableQueryLog();
+});
+
 it('falls back to database lookups for company and verification code helpers', function () {
     user_model_schema();
 
