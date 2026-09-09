@@ -17,6 +17,11 @@ class User extends FleetbaseResource
      */
     public function toArray($request)
     {
+        // Read the `role` accessor once. It is not memoised — every read re-queries
+        // through `companyUser` — and this resource previously evaluated it four times
+        // per row (twice below, twice for `role_name`).
+        $role = Http::isInternalRequest() ? $this->role : null;
+
         $data = [
             'id'                                                                       => $this->when(Http::isInternalRequest(), $this->id, $this->public_id),
             'uuid'                                                                     => $this->when(Http::isInternalRequest(), $this->uuid),
@@ -31,10 +36,10 @@ class User extends FleetbaseResource
             'timezone'                                                                 => $this->timezone,
             'avatar_url'                                                               => $this->avatar_url,
             'meta'                                                                     => data_get($this, 'meta', Utils::createObject()),
-            'role'                                                                     => $this->when(Http::isInternalRequest(), $this->role ? new Role($this->role) : null, null),
+            'role'                                                                     => $this->when(Http::isInternalRequest(), $role ? new Role($role) : null, null),
             'policies'                                                                 => $this->when(Http::isInternalRequest(), Policy::collection($this->policies), []),
             'permissions'                                                              => $this->when(Http::isInternalRequest(), $this->serializePermissions($this->permissions), []),
-            'role_name'                                                                => $this->when(Http::isInternalRequest(), $this->role ? $this->role->name : null),
+            'role_name'                                                                => $this->when(Http::isInternalRequest(), $role ? $role->name : null),
             'type'                                                                     => $this->type,
             'locale'                                                                   => $this->getLocale(),
             'types'                                                                    => $this->when(Http::isInternalRequest(), $this->types ?? []),

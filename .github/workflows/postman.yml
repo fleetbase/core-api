@@ -16,9 +16,9 @@ name: API Contract (Postman)
 
 on:
   push:
-    branches: [main, 'dev-v*']
+    branches: [main, 'dev-v*', 'release/v*']
   pull_request:
-    branches: [main, 'dev-v*']
+    branches: [main, 'dev-v*', 'release/v*']
   workflow_dispatch:
 permissions:
   contents: read
