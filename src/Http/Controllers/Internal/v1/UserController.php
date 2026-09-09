@@ -114,6 +114,11 @@ class UserController extends FleetbaseController
      */
     public function onQueryRecord($query, Request $request): void
     {
+        // Eager-load what the `role` / `roles` / `policies` / `permissions` accessors
+        // read. CompanyUserRelation matches each user's own company membership,
+        // so authorization relations are fetched in batches across the page.
+        $query->with(['companyUser.roles', 'companyUser.policies', 'companyUser.permissions']);
+
         if ($this->canAccessUsersAcrossCompanies($request)) {
             return;
         }

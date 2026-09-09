@@ -6,6 +6,7 @@ use Fleetbase\Casts\Json;
 use Fleetbase\Exceptions\InvalidVerificationCodeException;
 use Fleetbase\Notifications\UserCreated;
 use Fleetbase\Notifications\UserInvited;
+use Fleetbase\Relations\CompanyUserRelation;
 use Fleetbase\Support\NotificationRegistry;
 use Fleetbase\Support\Timezone;
 use Fleetbase\Support\Utils;
@@ -349,13 +350,15 @@ class User extends Authenticatable
      * Defines the relationship between the user and their current company user record.
      *
      * This method establishes a `HasOne` relationship, indicating that the user has one associated
-     * `CompanyUser` record for the current company (determined by the `company_uuid` stored in the session).
+     * `CompanyUser` record for the company identified by the user's `company_uuid`.
      *
      * @return HasOne|Builder the relationship instance between the User and the CompanyUser model
      */
     public function companyUser(): HasOne|Builder
     {
-        return $this->hasOne(CompanyUser::class, 'user_uuid', 'uuid')->where('company_uuid', $this->company_uuid);
+        $related = $this->newRelatedInstance(CompanyUser::class);
+
+        return new CompanyUserRelation($related->newQuery(), $this, $related->qualifyColumn('user_uuid'), 'uuid');
     }
 
     /**
@@ -622,7 +625,13 @@ class User extends Authenticatable
             return null;
         }
 
-        return $this->companyUser->roles()->first();
+        // Prefer the eager-loaded relation when the caller has loaded it, so a list
+        // query that eager-loads `companyUser.roles` pays no per-row query. Falls back
+        // to the query for callers that have not, and for a `companyUser` that is not
+        // an Eloquent model (the suite's UserModelAuthorizationPivotFake is duck-typed).
+        return $this->companyUser instanceof Model && $this->companyUser->relationLoaded('roles')
+            ? $this->companyUser->roles->first()
+            : $this->companyUser->roles()->first();
     }
 
     /**
@@ -639,7 +648,9 @@ class User extends Authenticatable
             return collect();
         }
 
-        return $this->companyUser->roles()->get();
+        return $this->companyUser instanceof Model && $this->companyUser->relationLoaded('roles')
+            ? $this->companyUser->roles
+            : $this->companyUser->roles()->get();
     }
 
     /**
@@ -656,7 +667,9 @@ class User extends Authenticatable
             return collect();
         }
 
-        return $this->companyUser->policies()->get();
+        return $this->companyUser instanceof Model && $this->companyUser->relationLoaded('policies')
+            ? $this->companyUser->policies
+            : $this->companyUser->policies()->get();
     }
 
     /**
@@ -673,7 +686,9 @@ class User extends Authenticatable
             return collect();
         }
 
-        return $this->companyUser->permissions()->get();
+        return $this->companyUser instanceof Model && $this->companyUser->relationLoaded('permissions')
+            ? $this->companyUser->permissions
+            : $this->companyUser->permissions()->get();
     }
 
     /**
