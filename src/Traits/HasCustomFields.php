@@ -317,7 +317,12 @@ trait HasCustomFields
                 'subject_uuid' => $this->getAttribute('uuid'),
                 'company_uuid' => $this->getAttribute('company_uuid') ?? session('company'),
             ]);
-            $field->forceFill(['uuid' => CustomField::generateUuid()]);
+            // A quiet save skips the `creating` hook that mints a public id,
+            // so a field created on the fly would be the only one without one.
+            $field->forceFill([
+                'uuid'      => CustomField::generateUuid(),
+                'public_id' => CustomField::generatePublicId('custom_field'),
+            ]);
             method_exists($field, 'saveQuietly') ? $field->saveQuietly() : $field->save();
             // bust definition cache for subsequent lookups
             $this->customFieldCache = [];

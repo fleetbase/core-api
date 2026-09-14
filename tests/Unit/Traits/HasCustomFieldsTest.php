@@ -119,6 +119,7 @@ function has_custom_fields_database(string $routeUri = 'int/v1/subjects'): HasCu
     });
     $schema->create('custom_fields', function ($table) {
         $table->string('uuid')->primary();
+        $table->string('public_id')->nullable();
         $table->string('company_uuid')->nullable();
         $table->string('category_uuid')->nullable();
         $table->string('subject_uuid')->nullable();
