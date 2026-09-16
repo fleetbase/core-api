@@ -1,5 +1,6 @@
 <?php
 
+use Fleetbase\Exceptions\FleetbaseRequestValidationException;
 use Fleetbase\Http\Requests\Internal\BulkDeleteRequest;
 use Fleetbase\Http\Resources\FleetbaseResource;
 use Fleetbase\Traits\HasApiControllerBehavior;
@@ -504,6 +505,37 @@ test('api controller behavior creates updates and formats exception responses', 
         ->and($updateFailure->getData(true))->toBe(['errors' => ['Error occurred while trying to update a Widget']])
         ->and($createQueryFailure->getData(true))->toBe(['errors' => ['Error occurred while trying to create a Widget']])
         ->and($updateQueryFailure->getData(true))->toBe(['errors' => ['Error occurred while trying to update a Widget']]);
+});
+
+test('api controller behavior surfaces observer refusals on update and bulk delete', function () {
+    $refusingModel = new class extends HasApiControllerBehaviorModel {
+        public function updateRecordFromRequest(Request $request, $id, ?callable $onBefore = null, ?callable $onAfter = null): self
+        {
+            throw new FleetbaseRequestValidationException(['Widget is locked and cannot be changed.']);
+        }
+
+        public function bulkRemove(array $ids): int
+        {
+            throw new FleetbaseRequestValidationException(['Widget is locked and cannot be deleted.']);
+        }
+    };
+    $queryFailingModel = new class extends HasApiControllerBehaviorModel {
+        public function bulkRemove(array $ids): int
+        {
+            throw new QueryException('mysql', 'delete from widgets', [], new RuntimeException('database unavailable'));
+        }
+    };
+
+    $refusingController = new HasApiControllerBehaviorController($refusingModel);
+    $updateRefusal      = $refusingController->updateRecord(has_api_controller_behavior_request('/v1/widgets/widget-1', 'PATCH', ['name' => 'Nope']), 'widget-1');
+    $bulkDeleteRefusal  = $refusingController->bulkDelete(BulkDeleteRequest::create('/v1/widgets/bulk-delete', 'DELETE', ['ids' => ['widget-1']]));
+    $bulkDeleteQuery    = (new HasApiControllerBehaviorController($queryFailingModel))->bulkDelete(
+        BulkDeleteRequest::create('/v1/widgets/bulk-delete', 'DELETE', ['ids' => ['widget-1']])
+    );
+
+    expect($updateRefusal->getData(true))->toBe(['errors' => ['Widget is locked and cannot be changed.']])
+        ->and($bulkDeleteRefusal->getData(true))->toBe(['errors' => ['Widget is locked and cannot be deleted.']])
+        ->and($bulkDeleteQuery->getData(true)['errors'][0])->toContain('database unavailable');
 });
 
 test('api controller behavior validates fallback rule contracts before writing', function () {
