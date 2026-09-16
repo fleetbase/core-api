@@ -81,6 +81,10 @@ class Alert extends Model
         'resolved_at',
         'acknowledged_by_uuid',
         'resolved_by_uuid',
+        'snoozed_until',
+        'snoozed_by_uuid',
+        'assigned_to_uuid',
+        'planned_at',
         'meta',
     ];
 
@@ -93,8 +97,10 @@ class Alert extends Model
         'subject_name',
         'acknowledged_by_name',
         'resolved_by_name',
+        'assigned_to_name',
         'is_acknowledged',
         'is_resolved',
+        'is_snoozed',
         'duration_minutes',
         'age_minutes',
     ];
@@ -104,7 +110,7 @@ class Alert extends Model
      *
      * @var array
      */
-    protected $hidden = ['subject', 'acknowledgedBy', 'resolvedBy'];
+    protected $hidden = ['subject', 'acknowledgedBy', 'resolvedBy', 'snoozedBy', 'assignedTo'];
 
     /**
      * The attributes that should be cast to native types.
@@ -117,6 +123,8 @@ class Alert extends Model
         'triggered_at'    => 'datetime',
         'acknowledged_at' => 'datetime',
         'resolved_at'     => 'datetime',
+        'snoozed_until'   => 'datetime',
+        'planned_at'      => 'datetime',
         'meta'            => Json::class,
     ];
 
@@ -159,6 +167,16 @@ class Alert extends Model
         return $this->belongsTo(User::class, 'resolved_by_uuid', 'uuid');
     }
 
+    public function snoozedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'snoozed_by_uuid', 'uuid');
+    }
+
+    public function assignedTo(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_to_uuid', 'uuid');
+    }
+
     public function subject(): MorphTo
     {
         return $this->morphTo();
@@ -190,6 +208,22 @@ class Alert extends Model
     public function getResolvedByNameAttribute(): ?string
     {
         return $this->resolvedBy?->name;
+    }
+
+    /**
+     * Get the name of the user the alert is assigned to.
+     */
+    public function getAssignedToNameAttribute(): ?string
+    {
+        return $this->assignedTo?->name;
+    }
+
+    /**
+     * Whether the alert is snoozed right now.
+     */
+    public function getIsSnoozedAttribute(): bool
+    {
+        return $this->isSnoozed();
     }
 
     /**
@@ -303,6 +337,32 @@ class Alert extends Model
     }
 
     /**
+     * Scope to alerts whose snooze has not ended yet.
+     *
+     * @param \Illuminate\Database\Eloquent\Builder $query
+     *
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
+    public function scopeSnoozed($query)
+    {
+        return $query->whereNotNull('snoozed_until')->where('snoozed_until', '>', now());
+    }
+
+    /**
+     * Scope to alerts that still need someone: not resolved and not snoozed.
+     *
+     * @param \Illuminate\Database\Eloquent\Builder $query
+     *
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
+    public function scopeActive($query)
+    {
+        return $query->where('status', '!=', 'resolved')->where(function ($query) {
+            $query->whereNull('snoozed_until')->orWhere('snoozed_until', '<=', now());
+        });
+    }
+
+    /**
      * Scope to get critical alerts.
      *
      * @param \Illuminate\Database\Eloquent\Builder $query
@@ -337,10 +397,16 @@ class Alert extends Model
 
         $user = $user ?? auth()->user();
 
-        $updated = $this->update([
+        $updateData = [
             'acknowledged_at'      => now(),
             'acknowledged_by_uuid' => $user?->uuid,
-        ]);
+        ];
+
+        if ($this->status === 'open') {
+            $updateData['status'] = 'acknowledged';
+        }
+
+        $updated = $this->update($updateData);
 
         if ($updated) {
             activity('alert_acknowledged')
@@ -438,16 +504,25 @@ class Alert extends Model
 
     /**
      * Snooze the alert for a specified duration.
+     *
+     * The wake time lives in `snoozed_until` so a queue can exclude snoozed
+     * alerts in the query; the reason stays in `meta` as before.
      */
-    public function snooze(int $minutes, ?string $reason = null): bool
+    public function snooze(int $minutes, ?string $reason = null, ?User $user = null): bool
     {
         $snoozeUntil = now()->addMinutes($minutes);
+        $actor       = auth()->user();
+        $user        = $user ?? ($actor instanceof User ? $actor : null);
 
         $meta                  = $this->meta ?? [];
-        $meta['snoozed_until'] = $snoozeUntil;
         $meta['snooze_reason'] = $reason;
+        unset($meta['snoozed_until']);
 
-        $updated = $this->update(['meta' => $meta]);
+        $updated = $this->update([
+            'snoozed_until'   => $snoozeUntil,
+            'snoozed_by_uuid' => $user?->uuid,
+            'meta'            => $meta,
+        ]);
 
         if ($updated) {
             activity('alert_snoozed')
@@ -456,6 +531,7 @@ class Alert extends Model
                     'snoozed_for_minutes' => $minutes,
                     'snoozed_until'       => $snoozeUntil,
                     'reason'              => $reason,
+                    'snoozed_by'          => $user?->name,
                 ])
                 ->log('Alert snoozed');
         }
@@ -464,12 +540,54 @@ class Alert extends Model
     }
 
     /**
+     * End a snooze early so the alert is active again.
+     */
+    public function unsnooze(): bool
+    {
+        if (!$this->snoozed_until) {
+            return false;
+        }
+
+        $updated = $this->update([
+            'snoozed_until'   => null,
+            'snoozed_by_uuid' => null,
+        ]);
+
+        if ($updated) {
+            activity('alert_unsnoozed')
+                ->performedOn($this)
+                ->log('Alert snooze ended');
+        }
+
+        return $updated;
+    }
+
+    /**
+     * Give the alert an owner (or clear it with null).
+     */
+    public function assignTo(?User $user): bool
+    {
+        $updated = $this->update(['assigned_to_uuid' => $user?->uuid]);
+
+        if ($updated) {
+            activity('alert_assigned')
+                ->performedOn($this)
+                ->withProperties(['assigned_to' => $user?->name])
+                ->log($user ? 'Alert assigned' : 'Alert unassigned');
+        }
+
+        return $updated;
+    }
+
+    /**
      * Check if the alert is currently snoozed.
+     *
+     * Reads the column, falling back to the `meta.snoozed_until` value older
+     * rows were written with before the column existed.
      */
     public function isSnoozed(): bool
     {
-        $meta        = $this->meta ?? [];
-        $snoozeUntil = $meta['snoozed_until'] ?? null;
+        $snoozeUntil = $this->snoozed_until ?? ($this->meta['snoozed_until'] ?? null);
 
         if (!$snoozeUntil) {
             return false;

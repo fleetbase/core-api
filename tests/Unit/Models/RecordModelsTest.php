@@ -126,6 +126,30 @@ function record_models_database(): Capsule
         $table->timestamps();
         $table->softDeletes();
     });
+    $schema->create('custom_fields', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('public_id')->nullable()->unique();
+        $table->string('company_uuid')->nullable();
+        $table->string('category_uuid')->nullable();
+        $table->string('subject_uuid')->nullable();
+        $table->string('subject_type')->nullable();
+        $table->string('name')->nullable();
+        $table->string('label')->nullable();
+        $table->string('type')->nullable();
+        $table->string('for')->nullable();
+        $table->string('component')->nullable();
+        $table->text('options')->nullable();
+        $table->boolean('required')->default(false);
+        $table->boolean('editable')->default(true);
+        $table->text('default_value')->nullable();
+        $table->text('validation_rules')->nullable();
+        $table->text('meta')->nullable();
+        $table->text('description')->nullable();
+        $table->text('help_text')->nullable();
+        $table->integer('order')->default(0);
+        $table->timestamps();
+        $table->softDeletes();
+    });
     $schema->create('user_devices', function ($table) {
         $table->string('uuid')->primary();
         $table->string('public_id')->nullable()->unique();
@@ -247,6 +271,21 @@ it('generates user device public ids and preserves response-visible token metada
             'token'     => 'apns-token',
             'status'    => 'active',
         ]);
+});
+
+it('generates custom field public ids', function () {
+    record_models_database();
+
+    $field = CustomField::query()->create([
+        'company_uuid' => 'company-1',
+        'name'         => 'brakes',
+        'label'        => 'Brakes',
+        'type'         => 'pass-fail',
+    ]);
+
+    expect($field->public_id)->toStartWith('custom_field_')
+        ->and($field->public_id)->toHaveLength(strlen('custom_field_') + 10)
+        ->and($field->uuid)->not->toBeNull();
 });
 
 it('casts custom field configuration values and keeps relationship keys stable', function () {

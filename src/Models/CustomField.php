@@ -5,11 +5,13 @@ namespace Fleetbase\Models;
 use Fleetbase\Casts\Json;
 use Fleetbase\Casts\PolymorphicType;
 use Fleetbase\Traits\HasApiModelBehavior;
+use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasUuid;
 
 class CustomField extends Model
 {
     use HasUuid;
+    use HasPublicId;
     use HasApiModelBehavior;
 
     /**
@@ -20,11 +22,18 @@ class CustomField extends Model
     protected $table = 'custom_fields';
 
     /**
+     * The type of public Id to generate.
+     *
+     * @var string
+     */
+    protected $publicIdType = 'custom_field';
+
+    /**
      * The attributes that are mass assignable.
      *
      * @var array
      */
-    protected $fillable = ['company_uuid', 'category_uuid', 'subject_uuid', 'subject_type', 'name', 'label', 'type', 'for', 'component', 'options', 'required', 'editable', 'default_value', 'validation_rules', 'meta', 'description', 'help_text', 'order'];
+    protected $fillable = ['public_id', 'company_uuid', 'category_uuid', 'subject_uuid', 'subject_type', 'name', 'label', 'type', 'for', 'component', 'options', 'required', 'editable', 'default_value', 'validation_rules', 'meta', 'description', 'help_text', 'order'];
 
     /**
      * The attributes that are guarded.

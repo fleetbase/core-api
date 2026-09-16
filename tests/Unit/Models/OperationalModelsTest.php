@@ -201,6 +201,10 @@ function operational_models_database(): Capsule
         $table->timestamp('resolved_at')->nullable();
         $table->string('acknowledged_by_uuid')->nullable();
         $table->string('resolved_by_uuid')->nullable();
+        $table->string('snoozed_by_uuid')->nullable();
+        $table->string('assigned_to_uuid')->nullable();
+        $table->timestamp('snoozed_until')->nullable();
+        $table->timestamp('planned_at')->nullable();
         $table->text('meta')->nullable();
         $table->timestamps();
         $table->softDeletes();
@@ -292,8 +296,12 @@ it('exposes alert relationship contracts and nullable computed fallbacks', funct
     expect($alert->getActivitylogOptions()->logAttributes)->toBe(['*'])
         ->and($alert->acknowledgedBy()->getForeignKeyName())->toBe('acknowledged_by_uuid')
         ->and($alert->resolvedBy()->getForeignKeyName())->toBe('resolved_by_uuid')
+        ->and($alert->snoozedBy()->getForeignKeyName())->toBe('snoozed_by_uuid')
+        ->and($alert->assignedTo()->getForeignKeyName())->toBe('assigned_to_uuid')
         ->and($alert->subject()->getMorphType())->toBe('subject_type')
         ->and($alert->subject_name)->toBeNull()
+        ->and($alert->assigned_to_name)->toBeNull()
+        ->and($alert->is_snoozed)->toBeFalse()
         ->and($alert->duration_minutes)->toBeNull()
         ->and($alert->age_minutes)->toBe(15)
         ->and($alert->isSnoozed())->toBeFalse()
@@ -326,6 +334,7 @@ it('updates alerts through acknowledge resolve escalate snooze and rule helpers'
     expect($alert->acknowledge($user))->toBeTrue()
         ->and($alert->updates[0]['acknowledged_at']->toISOString())->toBe('2026-07-17T12:00:00.000000Z')
         ->and($alert->updates[0]['acknowledged_by_uuid'])->toBe('user-1')
+        ->and($alert->updates[0]['status'])->toBe('acknowledged')
         ->and($alert->acknowledge($user))->toBeFalse()
         ->and($alert->resolve($user, 'Sensor recalibrated'))->toBeTrue()
         ->and($alert->updates[1]['status'])->toBe('resolved')
@@ -350,9 +359,79 @@ it('updates alerts through acknowledge resolve escalate snooze and rule helpers'
         ->and($escalatingAlert->updates[0]['meta']['escalation_history'][0]['from'])->toBe('low')
         ->and($escalatingAlert->updates[0]['meta']['escalation_history'][0]['to'])->toBe('medium')
         ->and($escalatingAlert->updates[0]['meta']['escalation_history'][0]['escalated_by'])->toBe('session-user')
-        ->and($escalatingAlert->snooze(30, 'Awaiting technician'))->toBeTrue()
+        ->and($escalatingAlert->snooze(30, 'Awaiting technician', $user))->toBeTrue()
         ->and($escalatingAlert->updates[1]['meta']['snooze_reason'])->toBe('Awaiting technician')
-        ->and($escalatingAlert->isSnoozed())->toBeTrue();
+        ->and($escalatingAlert->updates[1]['snoozed_until']->toISOString())->toBe('2026-07-17T12:30:00.000000Z')
+        ->and($escalatingAlert->updates[1]['snoozed_by_uuid'])->toBe('user-1')
+        ->and($escalatingAlert->isSnoozed())->toBeTrue()
+        ->and($escalatingAlert->is_snoozed)->toBeTrue()
+        ->and($escalatingAlert->unsnooze())->toBeTrue()
+        ->and($escalatingAlert->updates[2])->toBe(['snoozed_until' => null, 'snoozed_by_uuid' => null])
+        ->and($escalatingAlert->isSnoozed())->toBeFalse()
+        ->and($escalatingAlert->unsnooze())->toBeFalse()
+        ->and($escalatingAlert->assignTo($user))->toBeTrue()
+        ->and($escalatingAlert->updates[3])->toBe(['assigned_to_uuid' => 'user-1'])
+        ->and($escalatingAlert->assignTo(null))->toBeTrue()
+        ->and($escalatingAlert->updates[4])->toBe(['assigned_to_uuid' => null]);
+
+    // Rows written before the column existed kept the wake time in meta.
+    $legacyAlert = new Alert();
+    $legacyAlert->setRawAttributes([
+        'uuid'   => 'alert-legacy',
+        'status' => 'open',
+        'meta'   => ['snoozed_until' => '2026-07-17 13:00:00'],
+    ], true);
+
+    expect($legacyAlert->isSnoozed())->toBeTrue();
+
+    Carbon::setTestNow();
+});
+
+it('filters alerts through the snoozed and active scopes', function () {
+    $capsule = operational_models_database();
+    Carbon::setTestNow(Carbon::parse('2026-07-17 12:00:00', 'UTC'));
+
+    $capsule->getConnection('mysql')->table('alerts')->insert([
+        [
+            'uuid'          => 'alert-open',
+            'type'          => 'temperature',
+            'severity'      => 'high',
+            'status'        => 'open',
+            'snoozed_until' => null,
+            'created_at'    => '2026-07-17 10:00:00',
+            'updated_at'    => '2026-07-17 10:00:00',
+        ],
+        [
+            'uuid'          => 'alert-snoozed',
+            'type'          => 'temperature',
+            'severity'      => 'high',
+            'status'        => 'acknowledged',
+            'snoozed_until' => '2026-07-17 14:00:00',
+            'created_at'    => '2026-07-17 10:00:00',
+            'updated_at'    => '2026-07-17 10:00:00',
+        ],
+        [
+            'uuid'          => 'alert-woken',
+            'type'          => 'temperature',
+            'severity'      => 'high',
+            'status'        => 'open',
+            'snoozed_until' => '2026-07-17 11:00:00',
+            'created_at'    => '2026-07-17 10:00:00',
+            'updated_at'    => '2026-07-17 10:00:00',
+        ],
+        [
+            'uuid'          => 'alert-resolved',
+            'type'          => 'temperature',
+            'severity'      => 'high',
+            'status'        => 'resolved',
+            'snoozed_until' => null,
+            'created_at'    => '2026-07-17 10:00:00',
+            'updated_at'    => '2026-07-17 10:00:00',
+        ],
+    ]);
+
+    expect(Alert::query()->snoozed()->pluck('uuid')->all())->toBe(['alert-snoozed'])
+        ->and(Alert::query()->active()->pluck('uuid')->all())->toBe(['alert-open', 'alert-woken']);
 
     Carbon::setTestNow();
 });

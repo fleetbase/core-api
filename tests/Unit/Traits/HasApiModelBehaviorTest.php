@@ -1,5 +1,6 @@
 <?php
 
+use Fleetbase\Exceptions\FleetbaseRequestValidationException;
 use Fleetbase\Http\Filter\Filter;
 use Fleetbase\Models\Model;
 use Fleetbase\Traits\HasApiModelBehavior;
@@ -296,6 +297,16 @@ class HasApiModelBehaviorFailingUpdateRecord extends HasApiModelBehaviorRecord
     public function update(array $attributes = [], array $options = [])
     {
         throw new RuntimeException('database update exploded');
+    }
+}
+
+class HasApiModelBehaviorRefusingUpdateRecord extends HasApiModelBehaviorRecord
+{
+    protected static function booted(): void
+    {
+        static::updating(function () {
+            throw new FleetbaseRequestValidationException(['Record is locked and cannot be updated.']);
+        });
     }
 }
 
@@ -881,6 +892,33 @@ test('api model behavior reports update persistence failures and propagates dele
         ->and($bulkDeleteFailure)->toBeInstanceOf(Exception::class)
         ->and($bulkDeleteFailure->getMessage())->toBe('bulk delete exploded')
         ->and(fn () => (new HasApiModelBehaviorRecord())->remove('record_alpha'))->toThrow(Exception::class);
+});
+
+test('api model behavior propagates observer update refusals without rewrapping them', function () {
+    $capsule = has_api_model_behavior_database();
+    has_api_model_behavior_seed_records($capsule);
+    session(['company' => 'company-a']);
+
+    $refusals = [];
+    foreach ([true, false] as $debug) {
+        config(['app.debug' => $debug]);
+
+        try {
+            (new HasApiModelBehaviorRefusingUpdateRecord())->updateRecordFromRequest(
+                has_api_model_behavior_request(['name' => 'Refused update'], method: 'PATCH'),
+                'record_alpha'
+            );
+        } catch (Exception $exception) {
+            $refusals[] = $exception;
+        }
+    }
+
+    expect($refusals)->toHaveCount(2)
+        ->and($refusals[0])->toBeInstanceOf(FleetbaseRequestValidationException::class)
+        ->and($refusals[0]->getErrors())->toBe(['Record is locked and cannot be updated.'])
+        ->and($refusals[1])->toBeInstanceOf(FleetbaseRequestValidationException::class)
+        ->and($refusals[1]->getErrors())->toBe(['Record is locked and cannot be updated.'])
+        ->and($capsule->getConnection('mysql')->table('api_model_behavior_records')->where('public_id', 'record_alpha')->value('name'))->toBe('Alpha Dispatch');
 });
 
 test('api model behavior exposes default searchable fields options and no-op query branches', function () {
