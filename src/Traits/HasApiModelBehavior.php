@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Traits;
 
+use Fleetbase\Exceptions\FleetbaseRequestValidationException;
 use Fleetbase\Support\ApiModelCache;
 use Fleetbase\Support\Auth;
 use Fleetbase\Support\Http;
@@ -416,6 +417,10 @@ trait HasApiModelBehavior
         $input = Arr::except($input, ['uuid', 'public_id', 'deleted_at', 'updated_at', 'created_at']);
         try {
             $record->update($input);
+        } catch (FleetbaseRequestValidationException $e) {
+            // An observer refusing the write is user-facing feedback, not an internal failure.
+            // Let it through untouched so the controller and global handler can render getErrors().
+            throw $e;
         } catch (\Exception $e) {
             throw new \Exception(app()->hasDebugModeEnabled() ? $e->getMessage() : 'Failed to update ' . $this->getApiHumanReadableName());
         }

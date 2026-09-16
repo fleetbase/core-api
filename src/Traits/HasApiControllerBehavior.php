@@ -627,17 +627,13 @@ trait HasApiControllerBehavior
 
         try {
             $count = $this->model->bulkRemove($ids);
-        } catch (\Exception $e) {
-            return response()->error($e->getMessage());
-            // QueryException and FleetbaseRequestValidationException are covered by
-            // the preceding Exception catch in PHP's current catch order.
-            // @codeCoverageIgnoreStart
-        } catch (QueryException $e) {
-            return response()->error($e->getMessage());
         } catch (FleetbaseRequestValidationException $e) {
             return response()->error($e->getErrors());
+        } catch (QueryException $e) {
+            return response()->error($e->getMessage());
+        } catch (\Exception $e) {
+            return response()->error($e->getMessage());
         }
-        // @codeCoverageIgnoreEnd
 
         return response()->json(
             [
