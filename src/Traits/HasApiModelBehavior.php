@@ -17,6 +17,21 @@ use Illuminate\Support\Str;
 
 /**
  * Adds API Model Behavior.
+ *
+ * Tenant isolation
+ * ----------------
+ * There is deliberately no global tenant scope behind this trait. Every lookup
+ * that can reach a tenant-owned record carries its own explicit `company_uuid`
+ * clause, and that clause is the whole protection — not a backup for something
+ * else. Do not remove one on the assumption that a scope covers it.
+ *
+ * A global `CompanyScope` was tried and removed: it could not apply during
+ * console execution (queue workers, scheduler, artisan) or when no session
+ * company was set, so it failed open exactly where isolation mattered; any of
+ * the many `withoutGlobalScopes()` call sites silently dropped it as a side
+ * effect of dropping an unrelated scope; and because global scopes also apply to
+ * relations and eager loads, legitimate cross-company references resolved to
+ * null instead of raising, which destabilised callers far from the query.
  */
 trait HasApiModelBehavior
 {
@@ -377,8 +392,9 @@ trait HasApiModelBehavior
             }
         });
 
-        // Defence-in-depth: scope update to the caller's company to prevent
-        // cross-tenant modification (GHSA-3wj9-hh56-7fw7).
+        // Tenant constraint: scope the update to the caller's company to prevent
+        // cross-tenant modification (GHSA-3wj9-hh56-7fw7). No global scope backs
+        // this up — removing it reopens that vulnerability.
         $companyUuid = session('company');
         if ($companyUuid && $this->isColumn('company_uuid')) {
             $builder->where($this->qualifyColumn('company_uuid'), $companyUuid);
@@ -501,8 +517,9 @@ trait HasApiModelBehavior
             }
         });
 
-        // Defence-in-depth: scope bulk delete to the caller's company to prevent
-        // cross-tenant deletion (GHSA-3wj9-hh56-7fw7).
+        // Tenant constraint: scope the bulk delete to the caller's company to
+        // prevent cross-tenant deletion (GHSA-3wj9-hh56-7fw7). No global scope
+        // backs this up — removing it reopens that vulnerability.
         $companyUuid = session('company');
         if ($companyUuid && $this->isColumn('company_uuid')) {
             $records->where($this->qualifyColumn('company_uuid'), $companyUuid);
@@ -754,11 +771,9 @@ trait HasApiModelBehavior
     /**
      * Retrieves a record based on primary key id.
      *
-     * The query is automatically scoped to the current company via the
-     * CompanyScope global scope registered on the base Model.  This method
-     * adds an explicit defence-in-depth company_uuid check as well so that
-     * the constraint is visible at the call-site and survives any future
-     * withoutGlobalScope() calls higher up the stack.
+     * The company_uuid clause below is the tenant constraint for this path.
+     * Nothing scopes the query before it reaches here, so the clause is visible
+     * at the call site on purpose and must not be removed.
      *
      * @param string  $id      - The ID
      * @param Request $request - HTTP Request
@@ -776,10 +791,10 @@ trait HasApiModelBehavior
             }
         });
 
-        // Defence-in-depth: explicitly scope to the caller's company when the
-        // model has a company_uuid column and a session company is available.
-        // The CompanyScope global scope provides the primary protection; this
-        // explicit clause ensures the constraint survives withoutGlobalScope().
+        // Tenant constraint: scope to the caller's company when the model has a
+        // company_uuid column and a session company is available. This clause is
+        // the only thing keeping the lookup inside the caller's tenant
+        // (GHSA-3wj9-hh56-7fw7).
         $companyUuid = session('company');
         if ($companyUuid && $this->isColumn('company_uuid')) {
             $builder->where($this->qualifyColumn('company_uuid'), $companyUuid);
@@ -1350,7 +1365,7 @@ trait HasApiModelBehavior
         // has internal id?
         $hasInternalId = in_array('internal_id', $instance->getFillable());
 
-        // create query — CompanyScope global scope is applied automatically
+        // create query
         $query = static::query()
             ->select($columns)
             ->with($with)
@@ -1364,8 +1379,10 @@ trait HasApiModelBehavior
                 }
             );
 
-        // Defence-in-depth: explicitly scope to the caller's company when the
-        // model's table has a company_uuid column and a session is active.
+        // Tenant constraint: scope to the caller's company when the model's table
+        // has a company_uuid column and a session is active. This clause is the
+        // only thing keeping the lookup inside the caller's tenant
+        // (GHSA-3wj9-hh56-7fw7).
         $companyUuid = session('company');
         if ($companyUuid && Schema::hasColumn($instance->getTable(), 'company_uuid')) {
             $query->where($instance->qualifyColumn('company_uuid'), $companyUuid);
