@@ -155,6 +155,7 @@ class CoreServiceProvider extends ServiceProvider
         $this->app->scoped(\Fleetbase\Services\OAuth\OAuthIdentityService::class);
         $this->app->scoped(\Fleetbase\Services\OAuth\OAuthConfigRepository::class);
         $this->app->scoped(\Fleetbase\Auth\OAuth\OAuthProviderRegistry::class);
+        $this->app->scoped(\Fleetbase\Services\OAuth\OAuthFlowService::class);
 
         // Stateless collaborators — safe to share for the lifetime of the worker.
         $this->app->singleton(\Fleetbase\Auth\OAuth\IdTokenVerifier::class);

@@ -1,0 +1,1055 @@
+<?php
+
+use Fleetbase\Auth\OAuth\Contracts\OAuthProviderDriver;
+use Fleetbase\Auth\OAuth\Exceptions\OAuthException;
+use Fleetbase\Auth\OAuth\IdTokenVerifier;
+use Fleetbase\Auth\OAuth\OAuthProviderConfig;
+use Fleetbase\Auth\OAuth\OAuthProviderRegistry;
+use Fleetbase\Auth\OAuth\OAuthUserProfile;
+use Fleetbase\Http\Controllers\Internal\v1\OAuthController;
+use Fleetbase\Http\Requests\Internal\OAuthExchangeRequest;
+use Fleetbase\Http\Requests\Internal\OAuthRedirectRequest;
+use Fleetbase\Models\OAuthIdentity;
+use Fleetbase\Models\OAuthState;
+use Fleetbase\Models\User;
+use Fleetbase\Services\OAuth\OAuthConfigRepository;
+use Fleetbase\Services\OAuth\OAuthFlowService;
+use Fleetbase\Services\OAuth\OAuthIdentityService;
+use Fleetbase\Services\OAuth\OAuthStateService;
+use Illuminate\Contracts\Encryption\Encrypter;
+use Illuminate\Database\Capsule\Manager as Capsule;
+use Illuminate\Database\Eloquent\Model as EloquentModel;
+use Illuminate\Events\Dispatcher;
+use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Facade;
+
+// redirect() likewise does not exist without illuminate/foundation.
+if (!function_exists('Fleetbase\\Http\\Controllers\\Internal\\v1\\redirect')) {
+    eval('namespace Fleetbase\\Http\\Controllers\\Internal\\v1; function redirect() { return new \\OAuthControllerRedirectorFake(); }');
+}
+
+// Shared event shim. core-api has no illuminate/foundation, so the global event()
+// helper does not exist under test; PHP resolves an unqualified call to the current
+// namespace first, so this intercepts the services' calls. It must be identical in
+// every test file that needs it — the first file Pest loads wins, and a non-recording
+// variant loading first would silently blind another file's event assertions.
+if (!function_exists('oauth_test_record_event')) {
+    function oauth_test_record_event(object $event): void
+    {
+        $GLOBALS['oauth_test_events'][] = $event;
+    }
+
+    /**
+     * @return array<int, object>
+     */
+    function oauth_test_events(): array
+    {
+        return $GLOBALS['oauth_test_events'] ?? [];
+    }
+
+    function oauth_test_reset_events(): void
+    {
+        $GLOBALS['oauth_test_events'] = [];
+    }
+}
+
+if (!function_exists('Fleetbase\\Services\\OAuth\\event')) {
+    eval('namespace Fleetbase\\Services\\OAuth; function event($event = null) { if (is_object($event)) { \\oauth_test_record_event($event); } return $event; }');
+}
+
+class OAuthControllerRedirectorFake
+{
+    public function away(string $url): self
+    {
+        $this->url = $url;
+
+        return $this;
+    }
+
+    public string $url = '';
+
+    public function getTargetUrl(): string
+    {
+        return $this->url;
+    }
+}
+
+class OAuthControllerEncrypterFake implements Encrypter
+{
+    public function encrypt($value, $serialize = true)
+    {
+        return 'enc:' . base64_encode($serialize ? serialize($value) : (string) $value);
+    }
+
+    public function decrypt($payload, $unserialize = true)
+    {
+        $value = base64_decode(substr((string) $payload, 4), true);
+
+        return $unserialize ? unserialize((string) $value) : (string) $value;
+    }
+
+    public function getKey()
+    {
+        return 'test-key';
+    }
+}
+
+class OAuthControllerCacheFake
+{
+    private array $values = [];
+
+    public function rememberForever(string $key, Closure $callback): mixed
+    {
+        return $this->values[$key] ??= $callback();
+    }
+
+    public function remember(string $key, mixed $ttl, Closure $callback): mixed
+    {
+        return $this->values[$key] ??= $callback();
+    }
+
+    public function get(string $key, mixed $default = null): mixed
+    {
+        return $this->values[$key] ?? $default;
+    }
+
+    public function put(string $key, mixed $value, mixed $ttl = null): bool
+    {
+        $this->values[$key] = $value;
+
+        return true;
+    }
+
+    public function forget(string $key): bool
+    {
+        unset($this->values[$key]);
+
+        return true;
+    }
+
+    public function increment(string $key, int $value = 1): int
+    {
+        return $this->values[$key] = (int) ($this->values[$key] ?? 0) + $value;
+    }
+
+    public function tags(array|string $tags): self
+    {
+        return $this;
+    }
+
+    public function flush(): bool
+    {
+        $this->values = [];
+
+        return true;
+    }
+
+    public function getPrefix(): string
+    {
+        return '';
+    }
+}
+
+class OAuthControllerHashFake
+{
+    public function make(string $value, array $options = []): string
+    {
+        return 'hashed:' . $value;
+    }
+
+    public function check(string $value, ?string $hashed = null): bool
+    {
+        return $hashed === 'hashed:' . $value;
+    }
+
+    public function info(string $hashed): array
+    {
+        return ['algo' => 'fake'];
+    }
+}
+
+class OAuthControllerRedisFake
+{
+    public array $values = [];
+
+    public function set(string $key, mixed $value, mixed ...$options): bool
+    {
+        $this->values[$key] = $value;
+
+        return true;
+    }
+
+    public function exists(string $key): bool
+    {
+        return array_key_exists($key, $this->values);
+    }
+
+    public function get(string $key): mixed
+    {
+        return $this->values[$key] ?? null;
+    }
+
+    public function del(?string $key): bool
+    {
+        unset($this->values[$key]);
+
+        return true;
+    }
+
+    public function connection(): self
+    {
+        return $this;
+    }
+}
+
+class OAuthControllerResponseCacheFake
+{
+    public function clear(): void
+    {
+    }
+}
+
+class OAuthControllerRateLimiterFake
+{
+    public array $hits = [];
+
+    public function __construct(public int $limitAfter = PHP_INT_MAX)
+    {
+    }
+
+    public function tooManyAttempts(string $key, int $maxAttempts): bool
+    {
+        return count($this->hits) >= $this->limitAfter;
+    }
+
+    public function hit(string $key, int $decaySeconds = 60): int
+    {
+        $this->hits[] = $key;
+
+        return count($this->hits);
+    }
+}
+
+/**
+ * A driver that returns a canned profile instead of talking to a provider.
+ *
+ * The real drivers are covered by ProviderProfileNormalizationTest; what matters
+ * here is the controller's behaviour around whatever a driver produces.
+ */
+class OAuthControllerFakeDriver implements OAuthProviderDriver
+{
+    /**
+     * Set per-test to steer the fake.
+     *
+     * @var array<string, mixed>
+     */
+    public static array $behaviour = [];
+
+    public function __construct(
+        protected OAuthProviderConfig $config,
+        protected Request $request,
+        protected IdTokenVerifier $verifier,
+    ) {
+    }
+
+    public static function id(): string
+    {
+        return 'fakeprovider';
+    }
+
+    public static function label(): string
+    {
+        return 'Fake Provider';
+    }
+
+    public static function icon(): string
+    {
+        return 'circle';
+    }
+
+    public static function configSchema(): array
+    {
+        return ['client_id' => ['label' => 'Client ID', 'required' => true]];
+    }
+
+    public function isConfigured(): bool
+    {
+        return true;
+    }
+
+    public function isEnabled(): bool
+    {
+        return (bool) (self::$behaviour['enabled'] ?? true);
+    }
+
+    public function usesFormPostCallback(): bool
+    {
+        return false;
+    }
+
+    public function authorizationUrl(string $state, string $codeVerifier, string $redirectUri): string
+    {
+        return 'https://provider.test/authorize?' . http_build_query([
+            'state'         => $state,
+            'redirect_uri'  => $redirectUri,
+            'verifier_hash' => hash('sha256', $codeVerifier),
+        ]);
+    }
+
+    public function exchange(string $code, string $codeVerifier, string $redirectUri, array $callbackPayload = []): OAuthUserProfile
+    {
+        if (isset(self::$behaviour['throw'])) {
+            throw self::$behaviour['throw'];
+        }
+
+        return self::$behaviour['profile'] ?? new OAuthUserProfile('fakeprovider', 'subject-1', 'ada@example.com', true, 'Ada Lovelace');
+    }
+}
+
+function oauth_controller_database(array $config = []): Capsule
+{
+    EloquentModel::clearBootedModels();
+    OAuthControllerFakeDriver::$behaviour = [];
+
+    $connection = ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => ''];
+
+    $container = bind_test_container(array_merge([
+        'app.env'                                      => 'testing',
+        'app.timezone'                                 => 'UTC',
+        'app.key'                                      => 'base64:' . base64_encode(str_repeat('a', 32)),
+        'app.url'                                      => 'https://api.fleetbase.test',
+        'api.cache.enabled'                            => false,
+        'activitylog.enabled'                          => false,
+        'database.default'                             => 'mysql',
+        'database.connections.mysql'                   => $connection,
+        'fleetbase.connection.db'                      => 'mysql',
+        'fleetbase.console.host'                       => 'console.fleetbase.test',
+        'fleetbase.console.secure'                     => true,
+        'fleetbase.api.routing.prefix'                 => '/',
+        'fleetbase.api.routing.internal_prefix'        => 'int',
+        'oauth.enabled'                                => true,
+        'oauth.allow_registration'                     => true,
+        'oauth.console_callback_path'                  => '/auth/oauth/callback',
+        'oauth.ttl'                                    => ['authorization' => 600, 'handoff' => 120, 'registration_intent' => 900],
+        'oauth.providers'                              => [
+            'fakeprovider' => ['driver' => OAuthControllerFakeDriver::class, 'enabled' => true, 'client_id' => 'cid'],
+        ],
+        'permission.models.permission'                 => Fleetbase\Models\Permission::class,
+        'permission.models.role'                       => Fleetbase\Models\Role::class,
+        'permission.table_names.permissions'           => 'permissions',
+        'permission.table_names.roles'                 => 'roles',
+        'permission.table_names.model_has_permissions' => 'model_has_permissions',
+        'permission.table_names.model_has_roles'       => 'model_has_roles',
+        'permission.column_names.model_morph_key'      => 'model_uuid',
+    ], $config));
+
+    $container->instance(Illuminate\Contracts\Config\Repository::class, $container->make('config'));
+
+    $cache = new OAuthControllerCacheFake();
+    $container->instance('cache', $cache);
+    $container->instance('hash', new OAuthControllerHashFake());
+    $container->instance('redis', new OAuthControllerRedisFake());
+    $container->instance('responsecache', new OAuthControllerResponseCacheFake());
+    $container->instance(Illuminate\Cache\RateLimiter::class, new OAuthControllerRateLimiterFake());
+    Cache::swap($cache);
+    foreach (['cache', 'hash', 'redis', 'responsecache', 'log'] as $facade) {
+        Facade::clearResolvedInstance($facade);
+    }
+    Facade::clearResolvedInstance(Illuminate\Cache\RateLimiter::class);
+
+    $capsule = new Capsule($container);
+    $capsule->addConnection($connection, 'mysql');
+    $capsule->setEventDispatcher(new Dispatcher($container));
+    $capsule->setAsGlobal();
+    $capsule->bootEloquent();
+
+    $databaseManager = $capsule->getDatabaseManager();
+    $databaseManager->setDefaultConnection('mysql');
+    $container->instance('db', $databaseManager);
+    Facade::clearResolvedInstance('db');
+
+    $schema = app('db')->connection('mysql')->getSchemaBuilder();
+
+    $schema->create('users', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('company_uuid')->nullable();
+        $table->string('name')->nullable();
+        $table->string('email')->nullable()->index();
+        $table->string('phone')->nullable();
+        $table->string('username')->nullable();
+        $table->string('slug')->nullable();
+        $table->string('password')->nullable();
+        $table->string('type')->nullable();
+        $table->string('status')->nullable();
+        $table->string('google_user_id')->nullable();
+        $table->timestamp('email_verified_at')->nullable();
+        $table->timestamp('phone_verified_at')->nullable();
+        $table->timestamp('last_login')->nullable();
+        $table->timestamp('deleted_at')->nullable();
+        $table->timestamps();
+    });
+    $schema->create('settings', function ($table) {
+        $table->increments('id');
+        $table->string('key')->unique();
+        $table->text('value')->nullable();
+    });
+    $schema->create('personal_access_tokens', function ($table) {
+        $table->increments('id');
+        $table->morphs('tokenable');
+        $table->string('name');
+        $table->string('token', 64)->unique();
+        $table->text('abilities')->nullable();
+        $table->timestamp('last_used_at')->nullable();
+        $table->timestamp('expires_at')->nullable();
+        $table->timestamps();
+    });
+    $schema->create('oauth_identities', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('user_uuid');
+        $table->string('provider', 40);
+        $table->string('provider_user_id', 191);
+        $table->string('provider_email')->nullable();
+        $table->boolean('email_verified')->default(false);
+        $table->text('meta')->nullable();
+        $table->timestamp('last_login_at')->nullable();
+        $table->timestamps();
+        $table->unique(['provider', 'provider_user_id']);
+    });
+    $schema->create('oauth_states', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('purpose', 24);
+        $table->string('token_hash', 64)->unique();
+        $table->string('provider', 40)->nullable();
+        $table->string('intent', 16)->nullable();
+        $table->string('user_uuid')->nullable();
+        $table->text('payload')->nullable();
+        $table->string('ip_hash', 64)->nullable();
+        $table->timestamp('expires_at')->nullable();
+        $table->timestamp('consumed_at')->nullable();
+        $table->timestamps();
+    });
+
+    return $capsule;
+}
+
+function oauth_controller_services(): array
+{
+    $encrypter  = new OAuthControllerEncrypterFake();
+    $states     = new OAuthStateService($encrypter);
+    $config     = new OAuthConfigRepository($encrypter);
+    $identities = new OAuthIdentityService();
+    $registry   = new OAuthProviderRegistry($config, Request::create('/'), new IdTokenVerifier());
+    $flow       = new OAuthFlowService($registry, $states, $config);
+
+    return [new OAuthController($registry, $flow, $states, $identities, $config), $states, $identities, $config, $flow];
+}
+
+function oauth_controller_user(array $attributes = []): User
+{
+    app('db')->connection('mysql')->table('users')->insert(array_merge([
+        'uuid'              => 'user-1',
+        'email'             => 'ada@example.com',
+        'name'              => 'Ada',
+        'type'              => 'user',
+        'status'            => 'active',
+        'email_verified_at' => '2024-01-01 00:00:00',
+        'created_at'        => Carbon::now(),
+        'updated_at'        => Carbon::now(),
+    ], $attributes));
+
+    return User::query()->findOrFail($attributes['uuid'] ?? 'user-1');
+}
+
+function oauth_controller_link(User $user, string $subject = 'subject-1', string $provider = 'fakeprovider'): OAuthIdentity
+{
+    return OAuthIdentity::query()->create([
+        'user_uuid'        => $user->uuid,
+        'provider'         => $provider,
+        'provider_user_id' => $subject,
+        'provider_email'   => $user->email,
+        'email_verified'   => true,
+    ]);
+}
+
+/**
+ * core-api has no illuminate/foundation, so tests/Pest.php polyfills FormRequest as a
+ * bare Request with no validation machinery. These build the request object the
+ * controller receives; the rules themselves are exercised for real against
+ * Illuminate's validator further down.
+ */
+function oauth_redirect_request(array $query = []): OAuthRedirectRequest
+{
+    return OAuthRedirectRequest::create('/int/v1/auth/oauth/fakeprovider/redirect', 'GET', $query);
+}
+
+function oauth_exchange_request(array $body): OAuthExchangeRequest
+{
+    return OAuthExchangeRequest::create('/int/v1/auth/oauth/exchange', 'POST', $body);
+}
+
+/**
+ * @param array<string, mixed> $rules
+ * @param array<string, mixed> $data
+ */
+function oauth_validator(array $rules, array $data): Illuminate\Contracts\Validation\Validator
+{
+    $translator = new Illuminate\Translation\Translator(new Illuminate\Translation\ArrayLoader(), 'en');
+
+    return (new Illuminate\Validation\Factory($translator))->make($data, $rules);
+}
+
+/**
+ * @return array<string, string>
+ */
+function oauth_fragment(string $url): array
+{
+    parse_str((string) parse_url($url, PHP_URL_FRAGMENT), $fragment);
+
+    /** @var array<string, string> $fragment */
+    return $fragment;
+}
+
+// ---------------------------------------------------------------------------
+// Discovery
+// ---------------------------------------------------------------------------
+
+it('advertises only enabled providers and leaks no credentials', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    $payload = $controller->providers()->getData(true);
+
+    expect($payload['providers'])->toBe([[
+        'id'    => 'fakeprovider',
+        'label' => 'Fake Provider',
+        'icon'  => 'circle',
+    ]])
+        ->and(json_encode($payload))->not->toContain('cid');
+});
+
+it('advertises nothing when oauth is switched off', function () {
+    oauth_controller_database(['oauth.enabled' => false]);
+    [$controller] = oauth_controller_services();
+
+    expect($controller->providers()->getData(true)['providers'])->toBe([]);
+});
+
+// ---------------------------------------------------------------------------
+// Redirect
+// ---------------------------------------------------------------------------
+
+it('redirects to the provider with state and a pkce challenge', function () {
+    oauth_controller_database();
+    [$controller, $states] = oauth_controller_services();
+
+    $response = $controller->redirect(oauth_redirect_request(), 'fakeprovider');
+    parse_str((string) parse_url($response->getTargetUrl(), PHP_URL_QUERY), $query);
+
+    $row = OAuthState::query()->first();
+
+    expect($response->getTargetUrl())->toStartWith('https://provider.test/authorize?')
+        ->and($row->purpose)->toBe(OAuthState::PURPOSE_AUTHORIZATION)
+        ->and($row->provider)->toBe('fakeprovider')
+        ->and($row->intent)->toBe('login')
+        // The state in the URL must be the token whose sha256 we stored, never the
+        // row's own identifier.
+        ->and($row->token_hash)->toBe(hash('sha256', $query['state']))
+        // redirect_uri is computed from config, never taken from the request.
+        ->and($query['redirect_uri'])->toBe('https://api.fleetbase.test/int/v1/auth/oauth/fakeprovider/callback');
+});
+
+it('stores the pkce verifier encrypted and never puts it in the url', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    $response = $controller->redirect(oauth_redirect_request(), 'fakeprovider');
+    parse_str((string) parse_url($response->getTargetUrl(), PHP_URL_QUERY), $query);
+
+    $row = OAuthState::query()->first();
+
+    expect($row->payload)->toStartWith('enc:')
+        ->and($row->payload)->not->toContain('code_verifier')
+        ->and($response->getTargetUrl())->not->toContain('code_verifier')
+        // The fake driver echoes a hash of the verifier it was handed, proving the
+        // controller generated one and passed it through.
+        ->and($query['verifier_hash'])->toBeString()->toHaveLength(64);
+});
+
+it('carries a signup intent through to the state row', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    $controller->redirect(oauth_redirect_request(['intent' => 'signup']), 'fakeprovider');
+
+    expect(OAuthState::query()->first()->intent)->toBe('signup');
+});
+
+it('rejects an unknown provider', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    $response = $controller->redirect(oauth_redirect_request(), 'nope');
+
+    expect($response->getStatusCode())->toBe(404)
+        ->and($response->getData(true)['code'])->toBe('unknown_provider');
+});
+
+it('refuses a disabled provider before issuing any state', function () {
+    oauth_controller_database();
+    OAuthControllerFakeDriver::$behaviour = ['enabled' => false];
+    [$controller]                         = oauth_controller_services();
+
+    $response = $controller->redirect(oauth_redirect_request(), 'fakeprovider');
+
+    expect($response->getStatusCode())->toBe(403)
+        ->and($response->getData(true)['code'])->toBe('provider_disabled')
+        ->and(OAuthState::query()->count())->toBe(0);
+});
+
+it('keeps a safe return path and rejects every unsafe one', function (string $returnTo, ?string $expected) {
+    oauth_controller_database();
+    [$controller, $states, $identities, $config, $flow] = oauth_controller_services();
+
+    expect($flow->sanitizeReturnPath($returnTo))->toBe($expected);
+})->with([
+    'plain path'        => ['/dashboard', '/dashboard'],
+    'path with query'   => ['/orders?status=open', '/orders?status=open'],
+    'absolute url'      => ['https://evil.tld/x', null],
+    'protocol relative' => ['//evil.tld', null],
+    'backslash trick'   => ['/\\evil.tld', null],
+    'scheme relative'   => ['http://evil.tld', null],
+    'crlf injection'    => ["/ok\r\nLocation: https://evil.tld", null],
+    'null byte'         => ["/ok\0", null],
+    'not rooted'        => ['dashboard', null],
+    'empty'             => ['', null],
+]);
+
+it('rejects an unsafe return path at the request boundary too', function () {
+    oauth_controller_database();
+    $rules = (new OAuthRedirectRequest())->rules();
+
+    // Defence in depth: the form request rejects these before the service ever
+    // sees them, and the service sanitizes again regardless.
+    expect(oauth_validator($rules, ['return_to' => 'https://evil.tld/x'])->fails())->toBeTrue()
+        ->and(oauth_validator($rules, ['return_to' => '//evil.tld'])->fails())->toBeTrue()
+        ->and(oauth_validator($rules, ['return_to' => 'dashboard'])->fails())->toBeTrue()
+        ->and(oauth_validator($rules, ['return_to' => str_repeat('/a', 400)])->fails())->toBeTrue()
+        ->and(oauth_validator($rules, ['return_to' => '/dashboard'])->fails())->toBeFalse()
+        ->and(oauth_validator($rules, [])->fails())->toBeFalse();
+});
+
+it('only accepts a login or signup intent', function () {
+    oauth_controller_database();
+    $rules = (new OAuthRedirectRequest())->rules();
+
+    expect(oauth_validator($rules, ['intent' => 'login'])->fails())->toBeFalse()
+        ->and(oauth_validator($rules, ['intent' => 'signup'])->fails())->toBeFalse()
+        // 'link' is a protected-route flow and must not be startable anonymously.
+        ->and(oauth_validator($rules, ['intent' => 'link'])->fails())->toBeTrue()
+        ->and(oauth_validator($rules, ['intent' => 'anything'])->fails())->toBeTrue();
+});
+
+// ---------------------------------------------------------------------------
+// Callback
+// ---------------------------------------------------------------------------
+
+it('completes a callback and returns a handoff code in the url fragment', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    $redirect = $controller->redirect(oauth_redirect_request(['return_to' => '/dashboard']), 'fakeprovider');
+    parse_str((string) parse_url($redirect->getTargetUrl(), PHP_URL_QUERY), $query);
+
+    $response = $controller->callback(
+        Request::create('/int/v1/auth/oauth/fakeprovider/callback', 'GET', ['code' => 'auth-code', 'state' => $query['state']]),
+        'fakeprovider'
+    );
+
+    $url      = $response->getTargetUrl();
+    $fragment = oauth_fragment($url);
+
+    expect($url)->toStartWith('https://console.fleetbase.test/auth/oauth/callback#')
+        // The code lives in the fragment, which is never sent to the console's web
+        // server — so it cannot land in an access log or a Referer header.
+        ->and($url)->not->toContain('?handoff=')
+        ->and($fragment['handoff'])->toBeString()->toHaveLength(64)
+        ->and($fragment['return_to'])->toBe('/dashboard')
+        ->and(OAuthState::query()->where('purpose', OAuthState::PURPOSE_HANDOFF)->count())->toBe(1);
+});
+
+it('accepts a form posted callback', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    $redirect = $controller->redirect(oauth_redirect_request(), 'fakeprovider');
+    parse_str((string) parse_url($redirect->getTargetUrl(), PHP_URL_QUERY), $query);
+
+    // Apple form-posts its callback whenever the name/email scopes are requested.
+    $response = $controller->callback(
+        Request::create('/int/v1/auth/oauth/fakeprovider/callback', 'POST', ['code' => 'auth-code', 'state' => $query['state']]),
+        'fakeprovider'
+    );
+
+    expect(oauth_fragment($response->getTargetUrl())['handoff'])->toBeString();
+});
+
+it('reports an invalid state without attempting an exchange', function (array $params) {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    OAuthControllerFakeDriver::$behaviour = ['throw' => new RuntimeException('should never be reached')];
+
+    $response = $controller->callback(
+        Request::create('/int/v1/auth/oauth/fakeprovider/callback', 'GET', $params),
+        'fakeprovider'
+    );
+
+    expect(oauth_fragment($response->getTargetUrl())['error'])->toBe('invalid_state');
+})->with([
+    'no state'      => [['code' => 'auth-code']],
+    'unknown state' => [['code' => 'auth-code', 'state' => str_repeat('z', 64)]],
+    'empty state'   => [['code' => 'auth-code', 'state' => '']],
+]);
+
+it('refuses to replay a state', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    $redirect = $controller->redirect(oauth_redirect_request(), 'fakeprovider');
+    parse_str((string) parse_url($redirect->getTargetUrl(), PHP_URL_QUERY), $query);
+
+    $request = fn () => Request::create('/int/v1/auth/oauth/fakeprovider/callback', 'GET', ['code' => 'auth-code', 'state' => $query['state']]);
+
+    expect(oauth_fragment($controller->callback($request(), 'fakeprovider')->getTargetUrl()))->toHaveKey('handoff')
+        ->and(oauth_fragment($controller->callback($request(), 'fakeprovider')->getTargetUrl())['error'])->toBe('invalid_state');
+});
+
+it('rejects a state issued for a different provider', function () {
+    oauth_controller_database([
+        'oauth.providers' => [
+            'fakeprovider'  => ['driver' => OAuthControllerFakeDriver::class, 'enabled' => true, 'client_id' => 'cid'],
+            'otherprovider' => ['driver' => OAuthControllerFakeDriver::class, 'enabled' => true, 'client_id' => 'cid2'],
+        ],
+    ]);
+    [$controller] = oauth_controller_services();
+
+    $redirect = $controller->redirect(oauth_redirect_request(), 'fakeprovider');
+    parse_str((string) parse_url($redirect->getTargetUrl(), PHP_URL_QUERY), $query);
+
+    $response = $controller->callback(
+        Request::create('/int/v1/auth/oauth/otherprovider/callback', 'GET', ['code' => 'c', 'state' => $query['state']]),
+        'otherprovider'
+    );
+
+    expect(oauth_fragment($response->getTargetUrl())['error'])->toBe('invalid_state');
+});
+
+it('surfaces a declined authorization', function (string $providerError, string $expected) {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    $redirect = $controller->redirect(oauth_redirect_request(), 'fakeprovider');
+    parse_str((string) parse_url($redirect->getTargetUrl(), PHP_URL_QUERY), $query);
+
+    $response = $controller->callback(
+        Request::create('/int/v1/auth/oauth/fakeprovider/callback', 'GET', ['error' => $providerError, 'state' => $query['state']]),
+        'fakeprovider'
+    );
+
+    expect(oauth_fragment($response->getTargetUrl())['error'])->toBe($expected);
+})->with([
+    'user cancelled' => ['access_denied', 'access_denied'],
+    'other failure'  => ['server_error', 'provider_error'],
+]);
+
+it('surfaces a policy failure from the driver', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    $redirect = $controller->redirect(oauth_redirect_request(), 'fakeprovider');
+    parse_str((string) parse_url($redirect->getTargetUrl(), PHP_URL_QUERY), $query);
+
+    OAuthControllerFakeDriver::$behaviour = ['throw' => new OAuthException('hosted_domain_mismatch')];
+
+    $response = $controller->callback(
+        Request::create('/int/v1/auth/oauth/fakeprovider/callback', 'GET', ['code' => 'c', 'state' => $query['state']]),
+        'fakeprovider'
+    );
+
+    expect(oauth_fragment($response->getTargetUrl())['error'])->toBe('hosted_domain_mismatch');
+});
+
+it('never leaks a provider exception message to the browser', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    $redirect = $controller->redirect(oauth_redirect_request(), 'fakeprovider');
+    parse_str((string) parse_url($redirect->getTargetUrl(), PHP_URL_QUERY), $query);
+
+    // Guzzle exception messages embed a truncated response body, which can contain a
+    // token. Only a fixed code may reach the URL.
+    OAuthControllerFakeDriver::$behaviour = ['throw' => new RuntimeException('500 response: {"access_token":"leaked-token"}')];
+
+    $response = $controller->callback(
+        Request::create('/int/v1/auth/oauth/fakeprovider/callback', 'GET', ['code' => 'c', 'state' => $query['state']]),
+        'fakeprovider'
+    );
+
+    expect(oauth_fragment($response->getTargetUrl())['error'])->toBe('exchange_failed')
+        ->and($response->getTargetUrl())->not->toContain('leaked-token');
+});
+
+// ---------------------------------------------------------------------------
+// Exchange
+// ---------------------------------------------------------------------------
+
+/**
+ * Run a full redirect → callback and return the handoff code.
+ */
+function oauth_controller_handoff(OAuthController $controller, array $redirectQuery = []): string
+{
+    $redirect = $controller->redirect(oauth_redirect_request($redirectQuery), 'fakeprovider');
+    parse_str((string) parse_url($redirect->getTargetUrl(), PHP_URL_QUERY), $query);
+
+    $callback = $controller->callback(
+        Request::create('/int/v1/auth/oauth/fakeprovider/callback', 'GET', ['code' => 'auth-code', 'state' => $query['state']]),
+        'fakeprovider'
+    );
+
+    return oauth_fragment($callback->getTargetUrl())['handoff'];
+}
+
+it('authenticates a known identity and issues a sanctum token', function () {
+    $capsule      = oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    $user = oauth_controller_user();
+    oauth_controller_link($user);
+
+    $response = $controller->exchange(oauth_exchange_request(['code' => oauth_controller_handoff($controller)]));
+    $payload  = $response->getData(true);
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($payload['token'])->toBeString()
+        ->and($payload['type'])->toBe('user')
+        ->and($capsule->getConnection('mysql')->table('personal_access_tokens')->count())->toBe(1)
+        ->and(OAuthIdentity::query()->first()->last_login_at)->not->toBeNull()
+        // The redeemed handoff row records who it resolved to, for the audit trail.
+        ->and(OAuthState::query()->where('purpose', OAuthState::PURPOSE_HANDOFF)->first()->user_uuid)->toBe('user-1');
+});
+
+it('refuses to redeem a handoff code twice', function () {
+    $capsule      = oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    oauth_controller_link(oauth_controller_user());
+    $handoff = oauth_controller_handoff($controller);
+
+    $controller->exchange(oauth_exchange_request(['code' => $handoff]));
+    $second = $controller->exchange(oauth_exchange_request(['code' => $handoff]));
+
+    expect($second->getStatusCode())->toBe(400)
+        ->and($second->getData(true)['code'])->toBe('invalid_exchange_code')
+        ->and($capsule->getConnection('mysql')->table('personal_access_tokens')->count())->toBe(1);
+});
+
+it('reports an expired handoff code the same way as an unknown one', function () {
+    oauth_controller_database();
+    Carbon::setTestNow(Carbon::parse('2026-09-18 10:00:00', 'UTC'));
+    [$controller] = oauth_controller_services();
+
+    oauth_controller_link(oauth_controller_user());
+    $handoff = oauth_controller_handoff($controller);
+
+    Carbon::setTestNow(Carbon::parse('2026-09-18 10:05:00', 'UTC'));
+
+    $response = $controller->exchange(oauth_exchange_request(['code' => $handoff]));
+
+    expect($response->getStatusCode())->toBe(400)
+        ->and($response->getData(true)['code'])->toBe('invalid_exchange_code');
+
+    Carbon::setTestNow();
+});
+
+it('challenges for two factor instead of issuing a token', function () {
+    $capsule      = oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    $user = oauth_controller_user();
+    oauth_controller_link($user);
+    $capsule->getConnection('mysql')->table('settings')->insert([
+        'key'   => 'user.user-1.2fa',
+        'value' => json_encode(['enabled' => true, 'method' => 'email']),
+    ]);
+
+    $response = $controller->exchange(oauth_exchange_request(['code' => oauth_controller_handoff($controller)]));
+    $payload  = $response->getData(true);
+
+    // Signing in through a provider does not exempt anyone from 2FA.
+    expect($payload['isEnabled'])->toBeTrue()
+        ->and($payload['twoFaSession'])->toBeString()
+        ->and($payload)->not->toHaveKey('token')
+        ->and($capsule->getConnection('mysql')->table('personal_access_tokens')->count())->toBe(0);
+});
+
+it('applies the same gates password login applies', function (array $attributes, int $status, string $code) {
+    $capsule      = oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    $user = oauth_controller_user($attributes);
+    oauth_controller_link($user);
+
+    $response = $controller->exchange(oauth_exchange_request(['code' => oauth_controller_handoff($controller)]));
+
+    expect($response->getStatusCode())->toBe($status)
+        ->and($response->getData(true)['code'])->toBe($code)
+        ->and($capsule->getConnection('mysql')->table('personal_access_tokens')->count())->toBe(0);
+})->with([
+    'customer accounts'  => [['type' => 'customer'], 403, 'customer_login_not_allowed'],
+    'unverified account' => [['email_verified_at' => null, 'type' => 'user'], 400, 'not_verified'],
+]);
+
+it('treats a soft deleted account as an unknown identity', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    $user = oauth_controller_user();
+    oauth_controller_link($user);
+    User::query()->where('uuid', 'user-1')->update(['deleted_at' => Carbon::now()]);
+
+    $response = $controller->exchange(oauth_exchange_request(['code' => oauth_controller_handoff($controller)]));
+
+    // Not a distinguishable error: telling a caller that an account exists but is
+    // deleted is an enumeration oracle.
+    expect($response->getData(true)['status'] ?? null)->toBe('registration_required');
+});
+
+it('offers registration for an unknown identity', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    $response = $controller->exchange(oauth_exchange_request(['code' => oauth_controller_handoff($controller)]));
+    $payload  = $response->getData(true);
+
+    expect($payload['status'])->toBe('registration_required')
+        ->and($payload['intent'])->toStartWith('rti_')
+        ->and($payload['prefill'])->toBe([
+            'name'           => 'Ada Lovelace',
+            'email'          => 'ada@example.com',
+            'email_verified' => true,
+        ])
+        ->and(OAuthState::query()->where('purpose', OAuthState::PURPOSE_REGISTRATION_INTENT)->count())->toBe(1);
+});
+
+it('refuses registration when sign-ups are closed', function () {
+    oauth_controller_database(['oauth.allow_registration' => false]);
+    [$controller] = oauth_controller_services();
+
+    $response = $controller->exchange(oauth_exchange_request(['code' => oauth_controller_handoff($controller)]));
+
+    expect($response->getStatusCode())->toBe(403)
+        ->and($response->getData(true)['code'])->toBe('registration_disabled')
+        ->and(OAuthState::query()->where('purpose', OAuthState::PURPOSE_REGISTRATION_INTENT)->count())->toBe(0);
+});
+
+it('requires linking when a verified address already has an account', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    // An account exists for this address but no identity is linked. Signing them in
+    // here would be account takeover by email address.
+    oauth_controller_user(['uuid' => 'user-1', 'email' => 'ada@example.com']);
+
+    $response = $controller->exchange(oauth_exchange_request(['code' => oauth_controller_handoff($controller)]));
+
+    expect($response->getStatusCode())->toBe(409)
+        ->and($response->getData(true)['code'])->toBe('link_required')
+        ->and(OAuthState::query()->where('purpose', OAuthState::PURPOSE_REGISTRATION_INTENT)->count())->toBe(0);
+});
+
+it('does not report link_required for an address the provider did not verify', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    oauth_controller_user(['uuid' => 'user-1', 'email' => 'ada@example.com']);
+    OAuthControllerFakeDriver::$behaviour = [
+        'profile' => new OAuthUserProfile('fakeprovider', 'subject-9', 'ada@example.com', false, 'Mallory'),
+    ];
+
+    $response = $controller->exchange(oauth_exchange_request(['code' => oauth_controller_handoff($controller)]));
+
+    // Otherwise anyone could probe whether an arbitrary address has a Fleetbase
+    // account simply by asserting it at a provider that does not verify addresses.
+    expect($response->getData(true)['status'] ?? null)->toBe('registration_required');
+});
+
+it('does not match an apple private relay alias against an existing account', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    oauth_controller_user(['uuid' => 'user-1', 'email' => 'abc@privaterelay.appleid.com']);
+    OAuthControllerFakeDriver::$behaviour = [
+        'profile' => new OAuthUserProfile('fakeprovider', 'subject-9', 'abc@privaterelay.appleid.com', true, 'Ada', null, ['private_relay' => true]),
+    ];
+
+    $response = $controller->exchange(oauth_exchange_request(['code' => oauth_controller_handoff($controller)]));
+
+    // Relay aliases are unique per application, so a match is never the same person.
+    expect($response->getData(true)['status'] ?? null)->toBe('registration_required');
+});
+
+it('refuses an exchange for a provider switched off mid flight', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    oauth_controller_link(oauth_controller_user());
+    $handoff = oauth_controller_handoff($controller);
+
+    OAuthControllerFakeDriver::$behaviour = ['enabled' => false];
+
+    $response = $controller->exchange(oauth_exchange_request(['code' => $handoff]));
+
+    expect($response->getStatusCode())->toBe(403)
+        ->and($response->getData(true)['code'])->toBe('provider_disabled');
+});
+
+it('never returns a provider token or the handoff code in any response', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    oauth_controller_link(oauth_controller_user());
+    $handoff = oauth_controller_handoff($controller);
+
+    $body = json_encode($controller->exchange(oauth_exchange_request(['code' => $handoff]))->getData(true));
+
+    expect($body)->not->toContain($handoff)
+        ->and($body)->not->toContain('access_token')
+        ->and($body)->not->toContain('refresh_token');
+});
+
+it('rejects a malformed handoff code at the request boundary', function () {
+    oauth_controller_database();
+    $rules = (new OAuthExchangeRequest())->rules();
+
+    // Rejecting on shape keeps malformed input away from a database lookup entirely.
+    expect(oauth_validator($rules, ['code' => 'too-short'])->fails())->toBeTrue()
+        ->and(oauth_validator($rules, [])->fails())->toBeTrue()
+        ->and(oauth_validator($rules, ['code' => str_repeat('a', 65)])->fails())->toBeTrue()
+        ->and(oauth_validator($rules, ['code' => str_repeat('a', 64)])->fails())->toBeFalse();
+});
+
+it('rate limits the exchange endpoint independently of the throttle middleware', function () {
+    oauth_controller_database();
+    app()->instance(Illuminate\Cache\RateLimiter::class, new OAuthControllerRateLimiterFake(0));
+    Facade::clearResolvedInstance(Illuminate\Cache\RateLimiter::class);
+    [$controller] = oauth_controller_services();
+
+    // Fleetbase's ThrottleRequests overwrites per-route limits from config, so the
+    // controller carries its own limiter.
+    $response = $controller->exchange(oauth_exchange_request(['code' => str_repeat('a', 64)]));
+
+    expect($response->getStatusCode())->toBe(429)
+        ->and($response->getData(true)['code'])->toBe('rate_limited');
+});
