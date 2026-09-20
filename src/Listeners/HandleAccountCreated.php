@@ -19,7 +19,11 @@ class HandleAccountCreated
         // Send user a verification email
         $user = $event->user;
 
-        if ($user && $user->isNotAdmin()) {
+        // isNotVerified() guards the OAuth signup case: a provider that vouched for the
+        // address means the account is already verified, and sending a code to it would
+        // be noise the user cannot act on. A password signup is never verified at this
+        // point, so this is a no-op there.
+        if ($user && $user->isNotAdmin() && $user->isNotVerified()) {
             // Create and send verification code
             try {
                 VerificationCode::generateEmailVerificationFor($user);

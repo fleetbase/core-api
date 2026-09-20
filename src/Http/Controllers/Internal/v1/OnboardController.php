@@ -8,6 +8,7 @@ use Fleetbase\Http\Requests\OnboardRequest;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\User;
 use Fleetbase\Models\VerificationCode;
+use Fleetbase\Support\OAuth;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
@@ -67,7 +68,13 @@ class OnboardController extends Controller
         $user = User::create($attributes);
 
         // set the user password
-        $user->password = $request->input('password');
+        //
+        // Guarded because an OAuth signup has no password: users.password is nullable
+        // and $guarded, and AuthController::login already treats a passwordless account
+        // as un-loginable by password, which is what keeps it from being guessable.
+        if ($request->filled('password')) {
+            $user->password = $request->input('password');
+        }
 
         // set the user type
         $user->setUserType($isAdmin ? 'admin' : 'user');
@@ -80,6 +87,11 @@ class OnboardController extends Controller
 
         // assign admin role
         $user->assignSingleRole('Administrator');
+
+        // Link the provider identity, if this signup started from one. Placed after the
+        // account is fully built and before AccountCreated fires, so the listener sees
+        // an already-verified email and skips the redundant verification code.
+        OAuth::redeemRegistrationIntent($request->input('oauth_intent'), $user);
 
         // send account created event
         event(new AccountCreated($user, $company));

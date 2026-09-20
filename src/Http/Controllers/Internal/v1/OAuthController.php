@@ -16,6 +16,7 @@ use Fleetbase\Services\OAuth\OAuthConfigRepository;
 use Fleetbase\Services\OAuth\OAuthFlowService;
 use Fleetbase\Services\OAuth\OAuthIdentityService;
 use Fleetbase\Services\OAuth\OAuthStateService;
+use Fleetbase\Support\OAuth;
 use Fleetbase\Support\TwoFactorAuth;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -193,13 +194,9 @@ class OAuthController extends Controller
             );
         }
 
-        $intent = $this->states->issue(
-            OAuthState::PURPOSE_REGISTRATION_INTENT,
-            ['profile' => $profile->jsonSerialize()],
-            $this->config->ttl('registration_intent', 900),
-            $profile->provider,
-            OAuthFlowService::INTENT_SIGNUP
-        );
+        // Issued through the facade so the intent's shape lives in exactly one place —
+        // the same place Fleetbase Cloud internals redeems it from.
+        $intent = OAuth::issueRegistrationIntent($profile);
 
         return response()->json([
             'status'  => 'registration_required',

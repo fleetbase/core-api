@@ -19,6 +19,33 @@ if (!function_exists('Fleetbase\\Http\\Controllers\\Internal\\v1\\event')) {
     eval('namespace Fleetbase\\Http\\Controllers\\Internal\\v1; function event($event = null) { return $event; }');
 }
 
+// Shared event shim — see the note in OAuthIdentityServiceTest. Must stay identical
+// across every file that declares it: the first one Pest loads wins, and a
+// non-recording variant loading first would blind another file's event assertions.
+if (!function_exists('oauth_test_record_event')) {
+    function oauth_test_record_event(object $event): void
+    {
+        $GLOBALS['oauth_test_events'][] = $event;
+    }
+
+    /**
+     * @return array<int, object>
+     */
+    function oauth_test_events(): array
+    {
+        return $GLOBALS['oauth_test_events'] ?? [];
+    }
+
+    function oauth_test_reset_events(): void
+    {
+        $GLOBALS['oauth_test_events'] = [];
+    }
+}
+
+if (!function_exists('Fleetbase\\Services\\OAuth\\event')) {
+    eval('namespace Fleetbase\\Services\\OAuth; function event($event = null) { if (is_object($event)) { \\oauth_test_record_event($event); } return $event; }');
+}
+
 class OnboardControllerTaggedCacheFake
 {
     public function tags(array|string $tags): self
@@ -578,4 +605,219 @@ test('onboard controller verifies phone codes without overwriting completed onbo
         ->and($user->phone_verified_at)->toBe('2026-07-18 10:30:00')
         ->and($company->onboarding_completed_at)->toBe('2026-07-17 08:00:00')
         ->and($company->onboarding_completed_by_uuid)->toBe('22222222-2222-4222-8222-222222222222');
+});
+
+/**
+ * Add the OAuth tables and bind the services Support\OAuth resolves.
+ *
+ * Kept out of onboard_controller_database() so the password-signup tests keep
+ * exercising a schema with no OAuth tables at all — which is what a self-hosted
+ * install that has never enabled OAuth actually looks like.
+ */
+function onboard_controller_oauth_setup(Capsule $capsule): void
+{
+    $schema = $capsule->getConnection('mysql')->getSchemaBuilder();
+
+    $schema->create('oauth_identities', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('user_uuid');
+        $table->string('provider', 40);
+        $table->string('provider_user_id', 191);
+        $table->string('provider_email')->nullable();
+        $table->boolean('email_verified')->default(false);
+        $table->text('meta')->nullable();
+        $table->timestamp('last_login_at')->nullable();
+        $table->timestamps();
+        $table->unique(['provider', 'provider_user_id']);
+    });
+    $schema->create('oauth_states', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('purpose', 24);
+        $table->string('token_hash', 64)->unique();
+        $table->string('provider', 40)->nullable();
+        $table->string('intent', 16)->nullable();
+        $table->string('user_uuid')->nullable();
+        $table->text('payload')->nullable();
+        $table->string('ip_hash', 64)->nullable();
+        $table->timestamp('expires_at')->nullable();
+        $table->timestamp('consumed_at')->nullable();
+        $table->timestamps();
+    });
+
+    config(['oauth.ttl' => ['registration_intent' => 900], 'oauth.providers' => []]);
+
+    $encrypter = new OnboardControllerOAuthEncrypterFake();
+    app()->instance(Fleetbase\Services\OAuth\OAuthStateService::class, new Fleetbase\Services\OAuth\OAuthStateService($encrypter));
+    app()->instance(Fleetbase\Services\OAuth\OAuthIdentityService::class, new Fleetbase\Services\OAuth\OAuthIdentityService());
+    app()->instance(Fleetbase\Services\OAuth\OAuthConfigRepository::class, new Fleetbase\Services\OAuth\OAuthConfigRepository($encrypter));
+}
+
+class OnboardControllerOAuthEncrypterFake implements Illuminate\Contracts\Encryption\Encrypter
+{
+    public function encrypt($value, $serialize = true)
+    {
+        return 'enc:' . base64_encode($serialize ? serialize($value) : (string) $value);
+    }
+
+    public function decrypt($payload, $unserialize = true)
+    {
+        $value = base64_decode(substr((string) $payload, 4), true);
+
+        return $unserialize ? unserialize((string) $value) : (string) $value;
+    }
+
+    public function getKey()
+    {
+        return 'test-key';
+    }
+}
+
+function onboard_controller_intent(array $overrides = []): string
+{
+    return Fleetbase\Support\OAuth::issueRegistrationIntent(new Fleetbase\Auth\OAuth\OAuthUserProfile(
+        $overrides['provider'] ?? 'google',
+        $overrides['providerUserId'] ?? 'subject-1',
+        $overrides['email'] ?? 'katherine@example.test',
+        $overrides['emailVerified'] ?? true,
+        $overrides['name'] ?? 'Katherine Johnson'
+    ));
+}
+
+test('onboard controller creates an oauth account identical to a password account', function () {
+    $capsule = onboard_controller_database();
+    onboard_controller_oauth_setup($capsule);
+    Carbon::setTestNow(Carbon::parse('2026-07-18 12:00:00', 'UTC'));
+    onboard_controller_seed_user($capsule);
+
+    $intent = onboard_controller_intent();
+
+    $response = onboard_controller()->createAccount(onboard_create_account_request([
+        'name'              => 'Katherine Johnson',
+        'email'             => 'katherine@example.test',
+        'organization_name' => 'Orbital Logistics',
+        'password'          => null,
+        'oauth_intent'      => $intent,
+    ]));
+
+    $user    = User::where('email', 'katherine@example.test')->first();
+    $company = Company::where('name', 'Orbital Logistics')->first();
+    $pivot   = $capsule->getConnection('mysql')->table('company_users')->where('user_uuid', $user->uuid)->first();
+
+    // Every side effect of a password signup must still be present: company created
+    // first, owner set, pivot row, Administrator role.
+    expect($response->getStatusCode())->toBe(200)
+        ->and($response->getData(true)['status'])->toBe('success')
+        ->and($user->type)->toBe('user')
+        ->and($user->status)->toBe('active')
+        ->and($user->company_uuid)->toBe($company->uuid)
+        ->and($company->owner_uuid)->toBe($user->uuid)
+        ->and($pivot->company_uuid)->toBe($company->uuid)
+        ->and($pivot->status)->toBe('active')
+        ->and($capsule->getConnection('mysql')->table('model_has_roles')->where('model_uuid', $pivot->uuid)->where('role_id', 'role-admin')->exists())->toBeTrue();
+});
+
+test('onboard controller leaves an oauth account passwordless and links the identity', function () {
+    $capsule = onboard_controller_database();
+    onboard_controller_oauth_setup($capsule);
+    onboard_controller_seed_user($capsule);
+
+    $intent = onboard_controller_intent();
+
+    onboard_controller()->createAccount(onboard_create_account_request([
+        'name'              => 'Katherine Johnson',
+        'email'             => 'katherine@example.test',
+        'organization_name' => 'Orbital Logistics',
+        'password'          => null,
+        'oauth_intent'      => $intent,
+    ]));
+
+    $user     = User::where('email', 'katherine@example.test')->first();
+    $identity = Fleetbase\Models\OAuthIdentity::query()->first();
+
+    expect($user->password)->toBeEmpty()
+        ->and($identity->user_uuid)->toBe($user->uuid)
+        ->and($identity->provider)->toBe('google')
+        ->and($identity->provider_user_id)->toBe('subject-1')
+        // A verified provider address is what lets the signup skip email verification.
+        ->and($user->email_verified_at)->not->toBeNull()
+        // Single use: the intent is spent.
+        ->and(Fleetbase\Support\OAuth::isValidRegistrationIntent($intent))->toBeFalse();
+});
+
+test('onboard controller still sets a password when one is supplied alongside an intent', function () {
+    $capsule = onboard_controller_database();
+    onboard_controller_oauth_setup($capsule);
+    onboard_controller_seed_user($capsule);
+
+    onboard_controller()->createAccount(onboard_create_account_request([
+        'name'              => 'Katherine Johnson',
+        'email'             => 'katherine@example.test',
+        'organization_name' => 'Orbital Logistics',
+        'oauth_intent'      => onboard_controller_intent(),
+    ]));
+
+    $user = User::where('email', 'katherine@example.test')->first();
+
+    expect($user->password)->not->toBeEmpty()
+        ->and(Fleetbase\Models\OAuthIdentity::query()->count())->toBe(1);
+});
+
+test('onboard controller completes a signup whose intent has already expired', function () {
+    $capsule = onboard_controller_database();
+    onboard_controller_oauth_setup($capsule);
+    onboard_controller_seed_user($capsule);
+
+    // The request-level rule rejects an expired intent before this point; if one ever
+    // reaches the controller the account must still be created rather than half-built.
+    onboard_controller()->createAccount(onboard_create_account_request([
+        'name'              => 'Katherine Johnson',
+        'email'             => 'katherine@example.test',
+        'organization_name' => 'Orbital Logistics',
+        'password'          => null,
+        'oauth_intent'      => 'rti_' . str_repeat('z', 64),
+    ]));
+
+    $user = User::where('email', 'katherine@example.test')->first();
+
+    expect($user)->not->toBeNull()
+        ->and($user->email_verified_at)->toBeNull()
+        ->and(Fleetbase\Models\OAuthIdentity::query()->count())->toBe(0);
+});
+
+test('onboard controller password signup is unaffected when oauth is not installed', function () {
+    $capsule = onboard_controller_database();
+    onboard_controller_seed_user($capsule);
+
+    // No OAuth tables, no bindings — a self-hosted install that never enabled OAuth.
+    $response = onboard_controller()->createAccount(onboard_create_account_request([
+        'name'              => 'Katherine Johnson',
+        'email'             => 'katherine@example.test',
+        'organization_name' => 'Orbital Logistics',
+    ]));
+
+    $user = User::where('email', 'katherine@example.test')->first();
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($user->password)->not->toBeEmpty()
+        ->and($user->email_verified_at)->toBeNull();
+});
+
+test('onboard request accepts either a password or an intent but not neither', function () {
+    onboard_controller_database();
+
+    $translator = new Illuminate\Translation\Translator(new Illuminate\Translation\ArrayLoader(), 'en');
+    $factory    = new Illuminate\Validation\Factory($translator);
+
+    // Only the credential rules matter here; the rest of the request is unchanged.
+    $rules = [
+        'password'              => ['required_without:oauth_intent', 'nullable', 'string'],
+        'password_confirmation' => ['required_with:password', 'nullable'],
+        'oauth_intent'          => ['required_without:password', 'nullable', 'string'],
+    ];
+
+    expect($factory->make(['password' => 'pw', 'password_confirmation' => 'pw'], $rules)->fails())->toBeFalse()
+        ->and($factory->make(['oauth_intent' => 'rti_abc'], $rules)->fails())->toBeFalse()
+        ->and($factory->make([], $rules)->fails())->toBeTrue()
+        // A password without its confirmation is still rejected.
+        ->and($factory->make(['password' => 'pw'], $rules)->fails())->toBeTrue();
 });

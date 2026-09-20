@@ -443,6 +443,15 @@ function oauth_controller_services(): array
     $registry   = new OAuthProviderRegistry($config, Request::create('/'), new IdTokenVerifier());
     $flow       = new OAuthFlowService($registry, $states, $config);
 
+    // Bound as well as injected: Support\OAuth resolves from the container, and in
+    // production CoreServiceProvider binds these scoped so the facade and the
+    // controller share one instance per request. Registering the same objects here
+    // keeps the test faithful to that rather than giving the facade a second set.
+    app()->instance(OAuthStateService::class, $states);
+    app()->instance(OAuthIdentityService::class, $identities);
+    app()->instance(OAuthConfigRepository::class, $config);
+    app()->instance(OAuthProviderRegistry::class, $registry);
+
     return [new OAuthController($registry, $flow, $states, $identities, $config), $states, $identities, $config, $flow];
 }
 
