@@ -138,6 +138,7 @@ class CoreServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__ . '/../../config/responsecache.php', 'responsecache');
         $this->mergeConfigFrom(__DIR__ . '/../../config/image.php', 'image');
         $this->mergeConfigFrom(__DIR__ . '/../../config/sms.php', 'sms');
+        $this->mergeConfigFrom(__DIR__ . '/../../config/oauth.php', 'oauth');
 
         // setup report schema registry
         $this->app->singleton(ReportSchemaRegistry::class, function () {
@@ -152,6 +153,12 @@ class CoreServiceProvider extends ServiceProvider
         // pre-save configuration) into the next.
         $this->app->scoped(\Fleetbase\Services\OAuth\OAuthStateService::class);
         $this->app->scoped(\Fleetbase\Services\OAuth\OAuthIdentityService::class);
+        $this->app->scoped(\Fleetbase\Services\OAuth\OAuthConfigRepository::class);
+        $this->app->scoped(\Fleetbase\Auth\OAuth\OAuthProviderRegistry::class);
+
+        // Stateless collaborators — safe to share for the lifetime of the worker.
+        $this->app->singleton(\Fleetbase\Auth\OAuth\IdTokenVerifier::class);
+        $this->app->singleton(\Fleetbase\Auth\OAuth\AppleClientSecretFactory::class);
 
         // register file resolver service
         $this->app->singleton(\Fleetbase\Services\FileResolverService::class, function ($app) {
