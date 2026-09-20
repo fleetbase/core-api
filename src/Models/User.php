@@ -319,6 +319,21 @@ class User extends Authenticatable
     }
 
     /**
+     * Retrieves all external OAuth/OIDC identities linked to this user.
+     *
+     * Deliberately not added to $appends: that array is evaluated on every user
+     * serialization, and exposing identities there would cost a query per user on hot paths.
+     *
+     * @return HasMany the HasMany relationship instance
+     *
+     * @see OAuthIdentity
+     */
+    public function oauthIdentities(): HasMany
+    {
+        return $this->hasMany(OAuthIdentity::class, 'user_uuid', 'uuid');
+    }
+
+    /**
      * Retrieves all companies associated with the user through the CompanyUser pivot table.
      *
      * This method defines a HasManyThrough relationship between the User model and the Company model
