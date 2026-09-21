@@ -2,10 +2,12 @@
 
 namespace Fleetbase\Support;
 
+use Fleetbase\Auth\OAuth\Contracts\OAuthProviderDriver;
 use Fleetbase\Auth\OAuth\Exceptions\OAuthException;
 use Fleetbase\Auth\OAuth\Exceptions\OAuthStateException;
 use Fleetbase\Auth\OAuth\OAuthProviderRegistry;
 use Fleetbase\Auth\OAuth\OAuthUserProfile;
+use Fleetbase\Events\OAuthIdentityLinked;
 use Fleetbase\Models\OAuthIdentity;
 use Fleetbase\Models\OAuthState;
 use Fleetbase\Models\User;
@@ -62,6 +64,21 @@ class OAuth
     // -----------------------------------------------------------------------
     // Registration intent — the entire API a signup implementation needs
     // -----------------------------------------------------------------------
+
+    /**
+     * A provider's display name, e.g. "Google" for `google`, for messages to people.
+     * Falls back to the capitalised id when the provider is no longer defined.
+     */
+    public static function providerLabel(string $provider): string
+    {
+        $class = app(OAuthConfigRepository::class)->driverClass($provider);
+
+        if ($class !== null && is_subclass_of($class, OAuthProviderDriver::class)) {
+            return $class::label();
+        }
+
+        return ucfirst($provider);
+    }
 
     /**
      * Issue an intent proving a verified provider identity.
@@ -143,7 +160,7 @@ class OAuth
         }
 
         try {
-            $identity = static::identities()->link($user, $profile);
+            $identity = static::identities()->link($user, $profile, OAuthIdentityLinked::METHOD_SIGNUP);
         } catch (OAuthException $e) {
             // identity_already_linked: another account claimed this provider subject
             // between the intent being issued and redeemed. The signup itself stands.

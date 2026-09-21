@@ -7,6 +7,7 @@ use Fleetbase\Auth\OAuth\Exceptions\OAuthStateException;
 use Fleetbase\Auth\OAuth\Exceptions\UnknownOAuthProviderException;
 use Fleetbase\Auth\OAuth\OAuthProviderRegistry;
 use Fleetbase\Auth\OAuth\OAuthUserProfile;
+use Fleetbase\Events\OAuthIdentityLinked;
 use Fleetbase\Http\Controllers\Controller;
 use Fleetbase\Http\Requests\Internal\OAuthExchangeRequest;
 use Fleetbase\Http\Requests\Internal\OAuthRedirectRequest;
@@ -27,12 +28,18 @@ use Illuminate\Support\Facades\RateLimiter;
  *
  * The rule the exchange enforces, and the reason this controller exists rather than
  * folding into AuthController: a Fleetbase user is resolved from an OAuth identity
- * ONLY through an existing (provider, provider_user_id) row. Never by email address.
- * An email match is used to tell a user "you already have an account, sign in and
- * link it" — it is never itself a credential.
+ * ONLY through an existing (provider, provider_user_id) row. An email match is never
+ * itself a credential: it either creates that row under the strict conditions in
+ * autoLinkCandidate() — after which sign-in runs every check a password sign-in
+ * does — or tells the user "you already have an account, sign in and link it".
  */
 class OAuthController extends Controller
 {
+    /**
+     * The only account types an identity is ever linked to automatically.
+     */
+    public const AUTO_LINK_USER_TYPES = ['admin', 'user'];
+
     public function __construct(
         protected OAuthProviderRegistry $registry,
         protected OAuthFlowService $flow,
@@ -137,6 +144,21 @@ class OAuthController extends Controller
 
         if ($user instanceof User) {
             return $this->authenticate($user, $profile, $state);
+        }
+
+        $match = $this->autoLinkCandidate($profile);
+
+        if ($match instanceof User) {
+            try {
+                $this->identities->link($match, $profile, OAuthIdentityLinked::METHOD_AUTOMATIC);
+            } catch (OAuthException $e) {
+                // Another account claimed this provider subject a moment ago.
+                return $this->registrationOutcome($profile);
+            }
+
+            // Linking does not skip anything authenticate() enforces — two-factor
+            // included. The link alone signs no one in.
+            return $this->authenticate($match, $profile, $state, true);
         }
 
         return $this->registrationOutcome($profile);
@@ -308,8 +330,11 @@ class OAuthController extends Controller
     /**
      * An identity we already know: run the same gates password login runs.
      */
-    protected function authenticate(User $user, OAuthUserProfile $profile, OAuthState $state)
+    protected function authenticate(User $user, OAuthUserProfile $profile, OAuthState $state, bool $autoLinked = false)
     {
+        // Tells the console to say the provider is now linked, whichever way sign-in ends.
+        $linked = $autoLinked ? ['linked' => $profile->provider, 'linked_label' => OAuth::providerLabel($profile->provider)] : [];
+
         // AuthController::login:86-88
         if ($user->type === 'customer') {
             return response()->error('Customer accounts must sign in through the customer portal.', 403, ['code' => 'customer_login_not_allowed']);
@@ -320,7 +345,7 @@ class OAuthController extends Controller
             return response()->json([
                 'twoFaSession' => TwoFactorAuth::start($user),
                 'isEnabled'    => true,
-            ]);
+            ] + $linked);
         }
 
         // AuthController::login:114-116. An OAuth sign-in does not by itself verify a
@@ -341,7 +366,7 @@ class OAuthController extends Controller
         $user->updateLastLogin();
         $token = $user->createToken($user->uuid);
 
-        return response()->json(['token' => $token->plainTextToken, 'type' => $user->getType()]);
+        return response()->json(['token' => $token->plainTextToken, 'type' => $user->getType()] + $linked);
     }
 
     /**
@@ -377,6 +402,51 @@ class OAuthController extends Controller
                 'email_verified' => $profile->emailVerified,
             ],
         ]);
+    }
+
+    /**
+     * The existing account an unlinked identity may be linked to automatically, if any.
+     *
+     * Every condition is required:
+     *
+     *   - the administrator has not switched automatic linking off;
+     *   - the provider vouched for the address (each driver decides that strictly —
+     *     Microsoft, for one, only for domain-verified addresses) and it is not an
+     *     Apple relay alias, which can never match a stored address;
+     *   - exactly one account holds that address;
+     *   - it is a console account (`admin` or `user`) — never a customer, contact or
+     *     driver, whose sign-in is governed elsewhere;
+     *   - the account's OWN email is confirmed. Without this, anyone could sign up
+     *     with someone else's address, never confirm it, and wait for the real owner
+     *     to sign in with a provider — landing the owner in an account whose
+     *     password the attacker already knows;
+     *   - no identity from this provider is linked to it yet: one provider account
+     *     per user, and a different one already linked is not replaced silently.
+     */
+    protected function autoLinkCandidate(OAuthUserProfile $profile): ?User
+    {
+        if (!$this->config->autoLinksVerifiedEmail() || !$profile->hasVerifiedEmail() || $profile->meta('private_relay') === true) {
+            return null;
+        }
+
+        $matches = User::where('email', $profile->email)->limit(2)->get();
+
+        if ($matches->count() !== 1) {
+            return null;
+        }
+
+        /** @var User $user */
+        $user = $matches->first();
+
+        if (!in_array($user->type, self::AUTO_LINK_USER_TYPES, true) || empty($user->email_verified_at)) {
+            return null;
+        }
+
+        if ($this->identities->findBySubjectForUser($user, $profile->provider) !== null) {
+            return null;
+        }
+
+        return $user;
     }
 
     /**

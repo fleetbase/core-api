@@ -22,6 +22,7 @@ class SaveOAuthConfigRequest extends AdminRequest
         return [
             'enabled'             => ['sometimes', 'boolean'],
             'allow_registration'  => ['sometimes', 'boolean'],
+            'auto_link'           => ['sometimes', 'boolean'],
             'providers'           => ['sometimes', 'array'],
             'providers.*'         => ['array'],
             'providers.*.enabled' => ['sometimes', 'boolean'],

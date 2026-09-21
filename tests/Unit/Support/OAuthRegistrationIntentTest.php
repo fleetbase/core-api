@@ -361,7 +361,9 @@ it('fires the linked event once', function () {
 
     $events = oauth_test_events();
     expect($events)->toHaveCount(1)
-        ->and($events[0])->toBeInstanceOf(Fleetbase\Events\OAuthIdentityLinked::class);
+        ->and($events[0])->toBeInstanceOf(Fleetbase\Events\OAuthIdentityLinked::class)
+        // Marked as a signup so the "provider linked" security email is not sent.
+        ->and($events[0]->method)->toBe(Fleetbase\Events\OAuthIdentityLinked::METHOD_SIGNUP);
 });
 
 it('is null safe so a caller never needs a guard', function () {

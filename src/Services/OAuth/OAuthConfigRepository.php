@@ -57,6 +57,16 @@ class OAuthConfigRepository
     }
 
     /**
+     * Whether a provider identity may be linked automatically to an existing
+     * account whose confirmed email it matches. See OAuthController::autoLinkCandidate()
+     * for the conditions; this only switches the behaviour on or off.
+     */
+    public function autoLinksVerifiedEmail(): bool
+    {
+        return (bool) $this->globalValue('auto_link', config('oauth.auto_link', true));
+    }
+
+    /**
      * The public origin of this API, used to build the redirect_uri handed to
      * providers. Must match what is registered in each provider's console.
      */
@@ -239,6 +249,7 @@ class OAuthConfigRepository
         return [
             'enabled'            => $this->isEnabled(),
             'allow_registration' => $this->allowsRegistration(),
+            'auto_link'          => $this->autoLinksVerifiedEmail(),
             'providers'          => $providers,
         ];
     }

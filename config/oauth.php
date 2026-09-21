@@ -42,6 +42,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Automatic linking
+    |--------------------------------------------------------------------------
+    |
+    | When a provider identity is not linked yet but its verified email matches
+    | exactly one existing console account (type `admin` or `user`) whose own
+    | email is confirmed, link it and sign them in instead of asking them to
+    | sign in some other way and link it by hand. Two-factor still applies, and
+    | the account holder is emailed. See OAuthController::autoLinkCandidate().
+    |
+    */
+    'auto_link' => env('OAUTH_AUTO_LINK', true),
+
+    /*
+    |--------------------------------------------------------------------------
     | Console landing path
     |--------------------------------------------------------------------------
     |

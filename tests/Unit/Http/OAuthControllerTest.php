@@ -336,6 +336,9 @@ function oauth_controller_database(array $config = []): Capsule
         'fleetbase.api.routing.internal_prefix'        => 'int',
         'oauth.enabled'                                => true,
         'oauth.allow_registration'                     => true,
+        // Explicit: the test container keeps config between tests, so one test
+        // switching this off would otherwise switch it off for every later one.
+        'oauth.auto_link'                              => true,
         'oauth.console_callback_path'                  => '/auth/oauth/callback',
         'oauth.ttl'                                    => ['authorization' => 600, 'handoff' => 120, 'registration_intent' => 900],
         'oauth.providers'                              => [
@@ -968,19 +971,96 @@ it('refuses registration when sign-ups are closed', function () {
         ->and(OAuthState::query()->where('purpose', OAuthState::PURPOSE_REGISTRATION_INTENT)->count())->toBe(0);
 });
 
-it('requires linking when a verified address already has an account', function () {
+it('links and signs in a console account whose confirmed email the provider verified', function (string $type) {
     oauth_controller_database();
-    [$controller] = oauth_controller_services();
+    [$controller, , $identities] = oauth_controller_services();
+    oauth_test_reset_events();
 
-    // An account exists for this address but no identity is linked. Signing them in
-    // here would be account takeover by email address.
+    $user = oauth_controller_user(['uuid' => 'user-1', 'email' => 'ada@example.com', 'type' => $type]);
+
+    $data = $controller->exchange(oauth_exchange_request(['code' => oauth_controller_handoff($controller)]))->getData(true);
+
+    $events = array_values(array_filter(oauth_test_events(), fn ($event) => $event instanceof Fleetbase\Events\OAuthIdentityLinked));
+
+    expect($data['token'] ?? null)->toBeString()
+        ->and($data['linked'])->toBe('fakeprovider')
+        ->and($data['linked_label'])->toBe('Fake Provider')
+        ->and($identities->findBySubjectForUser($user, 'fakeprovider')?->provider_user_id)->toBe('subject-1')
+        // The account holder is emailed about it, worded for an automatic link.
+        ->and($events)->toHaveCount(1)
+        ->and($events[0]->method)->toBe(Fleetbase\Events\OAuthIdentityLinked::METHOD_AUTOMATIC);
+})->with(['user', 'admin']);
+
+it('still asks for two-factor after linking automatically', function () {
+    $capsule      = oauth_controller_database();
+    [$controller] = oauth_controller_services();
     oauth_controller_user(['uuid' => 'user-1', 'email' => 'ada@example.com']);
+    $capsule->getConnection('mysql')->table('settings')->insert([
+        'key'   => 'user.user-1.2fa',
+        'value' => json_encode(['enabled' => true, 'method' => 'email']),
+    ]);
+
+    $data = $controller->exchange(oauth_exchange_request(['code' => oauth_controller_handoff($controller)]))->getData(true);
+
+    expect($data)->not->toHaveKey('token')
+        ->and($data['twoFaSession'])->toBeString()
+        ->and($data['linked'])->toBe('fakeprovider')
+        ->and($capsule->getConnection('mysql')->table('personal_access_tokens')->count())->toBe(0);
+});
+
+it('asks the user to link by hand when automatic linking does not apply', function (array $account, array $config, ?Closure $before = null) {
+    oauth_controller_database($config);
+    [$controller, , $identities] = oauth_controller_services();
+    oauth_test_reset_events();
+
+    $user = oauth_controller_user(array_merge(['uuid' => 'user-1', 'email' => 'ada@example.com'], $account));
+    if ($before) {
+        $before($user);
+    }
 
     $response = $controller->exchange(oauth_exchange_request(['code' => oauth_controller_handoff($controller)]));
 
+    // Not signed in, not linked, no signup offered for someone else's address.
     expect($response->getStatusCode())->toBe(409)
         ->and($response->getData(true)['code'])->toBe('link_required')
+        ->and(OAuthIdentity::query()->where('provider_user_id', 'subject-1')->exists())->toBeFalse()
         ->and(OAuthState::query()->where('purpose', OAuthState::PURPOSE_REGISTRATION_INTENT)->count())->toBe(0);
+})->with([
+    'switched off by the administrator' => [[], ['oauth.auto_link' => false]],
+    // Someone could have signed up with this address without owning it.
+    'account email never confirmed'     => [['email_verified_at' => null], []],
+    'customer account'                  => [['type' => 'customer'], []],
+    'contact account'                   => [['type' => 'contact'], []],
+    'driver account'                    => [['type' => 'driver'], []],
+    'no type'                           => [['type' => null], []],
+    // A different account from the same provider is already linked; not replaced silently.
+    'provider already linked'           => [[], [], fn (User $user) => oauth_controller_link($user, 'another-subject')],
+]);
+
+it('never links an address the provider did not verify, even to a confirmed account', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+    oauth_controller_user(['uuid' => 'user-1', 'email' => 'ada@example.com']);
+    OAuthControllerFakeDriver::$behaviour = [
+        'profile' => new OAuthUserProfile('fakeprovider', 'subject-9', 'ada@example.com', false, 'Mallory'),
+    ];
+
+    $data = $controller->exchange(oauth_exchange_request(['code' => oauth_controller_handoff($controller)]))->getData(true);
+
+    expect($data)->not->toHaveKey('token')
+        ->and(OAuthIdentity::query()->count())->toBe(0);
+});
+
+it('never links when two accounts share the address', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+    oauth_controller_user(['uuid' => 'user-1', 'email' => 'ada@example.com']);
+    oauth_controller_user(['uuid' => 'user-2', 'email' => 'ada@example.com']);
+
+    $response = $controller->exchange(oauth_exchange_request(['code' => oauth_controller_handoff($controller)]));
+
+    expect($response->getData(true))->not->toHaveKey('token')
+        ->and(OAuthIdentity::query()->count())->toBe(0);
 });
 
 it('does not report link_required for an address the provider did not verify', function () {

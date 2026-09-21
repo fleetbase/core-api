@@ -1073,7 +1073,7 @@ class SettingController extends Controller
     {
         $global = [];
 
-        foreach (['enabled', 'allow_registration'] as $key) {
+        foreach (['enabled', 'allow_registration', 'auto_link'] as $key) {
             if ($request->has($key)) {
                 $global[$key] = $request->boolean($key);
             }

@@ -249,7 +249,8 @@ it('describes every provider so the console can render the form without hardcodi
         ->and($payload['providers'][0]['schema']['client_secret']['secret'])->toBeTrue()
         // The exact callback URL the operator has to register at each provider.
         ->and($payload['redirect_uris']['google'])->toBe('https://api.fleetbase.test/int/v1/auth/oauth/google/callback')
-        ->and($payload['oauth']['enabled'])->toBeTrue();
+        ->and($payload['oauth']['enabled'])->toBeTrue()
+        ->and($payload['oauth']['auto_link'])->toBeTrue();
 });
 
 it('never returns a secret value, even to an administrator', function () {
@@ -344,11 +345,14 @@ it('persists the global switches and provider toggles', function () {
     (new SettingController())->saveOAuthConfig(setting_controller_oauth_save([
         'enabled'            => false,
         'allow_registration' => '0',
+        'auto_link'          => false,
         'providers'          => ['github' => ['enabled' => 'true', 'client_id' => 'gh-id', 'client_secret' => 'gh-secret']],
     ]), $registry, $config, $flow, new AppleClientSecretFactory());
 
     expect($config->isEnabled())->toBeFalse()
         ->and($config->allowsRegistration())->toBeFalse()
+        ->and($config->autoLinksVerifiedEmail())->toBeFalse()
+        ->and($config->toAdminArray([])['auto_link'])->toBeFalse()
         ->and($config->forProvider('github')->enabled())->toBeTrue();
 });
 
@@ -650,6 +654,8 @@ it('validates the shape of a save', function (array $body, bool $fails) {
 })->with([
     'toggles only'           => [['enabled' => true, 'allow_registration' => false], false],
     'non boolean toggle'     => [['enabled' => 'sometimes'], true],
+    'auto link toggle'       => [['auto_link' => false], false],
+    'non boolean auto link'  => [['auto_link' => 'maybe'], true],
     'full pem key'           => [['providers' => ['apple' => ['private_key' => "-----BEGIN PRIVATE KEY-----\nabc"]]], false],
     // Empty means "keep the stored key" and must not be rejected.
     'empty key keeps stored' => [['providers' => ['apple' => ['private_key' => '']]], false],

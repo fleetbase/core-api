@@ -94,7 +94,7 @@ class OAuthIdentityService
      *
      * @throws OAuthException identity_already_linked
      */
-    public function link(User $user, OAuthUserProfile $profile): OAuthIdentity
+    public function link(User $user, OAuthUserProfile $profile, string $method = OAuthIdentityLinked::METHOD_MANUAL): OAuthIdentity
     {
         $existing = $this->findByProfile($profile);
 
@@ -124,7 +124,7 @@ class OAuthIdentityService
 
         $this->backfillLegacyColumn($user, $profile);
 
-        event(new OAuthIdentityLinked($user, $identity));
+        event(new OAuthIdentityLinked($user, $identity, $method));
 
         return $identity;
     }
