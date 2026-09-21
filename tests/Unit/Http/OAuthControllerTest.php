@@ -1062,3 +1062,247 @@ it('rate limits the exchange endpoint independently of the throttle middleware',
     expect($response->getStatusCode())->toBe(429)
         ->and($response->getData(true)['code'])->toBe('rate_limited');
 });
+
+// ---------------------------------------------------------------------------
+// Account linking
+// ---------------------------------------------------------------------------
+
+function oauth_authed(User $user, string $uri = '/int/v1/auth/oauth/identities', string $method = 'GET', array $body = []): Request
+{
+    $request = Request::create($uri, $method, $body);
+    $request->setUserResolver(fn () => $user);
+
+    return $request;
+}
+
+function oauth_authed_complete(User $user, string $code): OAuthExchangeRequest
+{
+    $request = OAuthExchangeRequest::create('/int/v1/auth/oauth/link/complete', 'POST', ['code' => $code]);
+    $request->setUserResolver(fn () => $user);
+
+    return $request;
+}
+
+/**
+ * Start a link as $user and run the provider callback, returning the fragment the
+ * console receives.
+ *
+ * @return array<string, string>
+ */
+function oauth_link_callback(OAuthController $controller, User $user): array
+{
+    $started = $controller->link(oauth_authed($user, '/int/v1/auth/oauth/fakeprovider/link', 'POST'), 'fakeprovider')->getData(true);
+    parse_str((string) parse_url($started['redirect_url'], PHP_URL_QUERY), $query);
+
+    $callback = $controller->callback(
+        Request::create('/int/v1/auth/oauth/fakeprovider/callback', 'GET', ['code' => 'auth-code', 'state' => $query['state']]),
+        'fakeprovider'
+    );
+
+    return oauth_fragment($callback->getTargetUrl());
+}
+
+it('lists linked identities and the providers still available to link', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    $user = oauth_controller_user(['password' => 'hashed:secret']);
+    oauth_controller_link($user);
+
+    $payload = $controller->identities(oauth_authed($user))->getData(true);
+
+    expect($payload['identities'])->toHaveCount(1)
+        ->and($payload['identities'][0]['provider'])->toBe('fakeprovider')
+        ->and($payload['identities'][0]['label'])->toBe('Fake Provider')
+        ->and($payload['identities'][0]['provider_email'])->toBe('ada@example.com')
+        // The stable provider subject is never exposed.
+        ->and(json_encode($payload))->not->toContain('subject-1')
+        ->and($payload['has_password'])->toBeTrue()
+        ->and($payload['available'])->toBe([]);
+});
+
+it('offers an enabled provider the user has not linked yet', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    $payload = $controller->identities(oauth_authed(oauth_controller_user()))->getData(true);
+
+    expect($payload['identities'])->toBe([])
+        ->and($payload['has_password'])->toBeFalse()
+        ->and(array_column($payload['available'], 'id'))->toBe(['fakeprovider']);
+});
+
+it('starts a link bound to the signed in user', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    $user     = oauth_controller_user();
+    $response = $controller->link(oauth_authed($user, '/', 'POST'), 'fakeprovider');
+    $row      = OAuthState::query()->where('purpose', OAuthState::PURPOSE_AUTHORIZATION)->first();
+
+    // Returned, not redirected: this route is behind auth:sanctum and a top-level
+    // navigation cannot carry the bearer token.
+    expect($response->getData(true)['redirect_url'])->toStartWith('https://provider.test/authorize?')
+        ->and($row->intent)->toBe('link')
+        ->and($row->user_uuid)->toBe('user-1');
+});
+
+it('refuses to link a provider that is already linked', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    $user = oauth_controller_user();
+    oauth_controller_link($user);
+
+    $response = $controller->link(oauth_authed($user, '/', 'POST'), 'fakeprovider');
+
+    expect($response->getStatusCode())->toBe(409)
+        ->and($response->getData(true)['code'])->toBe('already_linked');
+});
+
+it('marks a link handoff so the console completes it through the protected endpoint', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    $fragment = oauth_link_callback($controller, oauth_controller_user());
+
+    expect($fragment['intent'])->toBe('link')
+        ->and($fragment['handoff'])->toBeString()->toHaveLength(64)
+        ->and($fragment['return_to'])->toBe('/account/auth');
+});
+
+it('does not link anything at the provider callback', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    oauth_link_callback($controller, oauth_controller_user());
+
+    expect(OAuthIdentity::query()->count())->toBe(0);
+});
+
+it('links the identity when the user who started the link completes it', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    $user     = oauth_controller_user(['password' => 'hashed:secret']);
+    $fragment = oauth_link_callback($controller, $user);
+
+    $payload = $controller->completeLink(oauth_authed_complete($user, $fragment['handoff']))->getData(true);
+
+    expect(OAuthIdentity::query()->where('user_uuid', 'user-1')->count())->toBe(1)
+        ->and($payload['identities'][0]['provider'])->toBe('fakeprovider')
+        ->and($payload['available'])->toBe([]);
+});
+
+it('refuses a link completed by a different user than the one who started it', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    // Account-linking CSRF: the attacker starts a link on their own account and gets
+    // the victim to complete the provider step. The victim's browser then completes
+    // the link as the victim — and must be refused, or the victim's provider identity
+    // would be attached to the attacker's account.
+    $attacker = oauth_controller_user(['uuid' => 'attacker', 'email' => 'attacker@example.com']);
+    $victim   = oauth_controller_user(['uuid' => 'victim', 'email' => 'victim@example.com']);
+
+    $fragment = oauth_link_callback($controller, $attacker);
+    $response = $controller->completeLink(oauth_authed_complete($victim, $fragment['handoff']));
+
+    expect($response->getStatusCode())->toBe(400)
+        // Indistinguishable from an expired code, so the attacker learns nothing.
+        ->and($response->getData(true)['code'])->toBe('invalid_exchange_code')
+        ->and(OAuthIdentity::query()->count())->toBe(0);
+});
+
+it('refuses to complete a login handoff as a link', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    $user    = oauth_controller_user();
+    $handoff = oauth_controller_handoff($controller);
+
+    $response = $controller->completeLink(oauth_authed_complete($user, $handoff));
+
+    expect($response->getStatusCode())->toBe(400)
+        ->and(OAuthIdentity::query()->count())->toBe(0);
+});
+
+it('refuses to redeem a link handoff through the public exchange', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    $fragment = oauth_link_callback($controller, oauth_controller_user());
+
+    // The public endpoint would skip the signed-in-user check entirely.
+    $response = $controller->exchange(oauth_exchange_request(['code' => $fragment['handoff']]));
+
+    expect($response->getStatusCode())->toBe(400)
+        ->and($response->getData(true)['code'])->toBe('invalid_exchange_code')
+        ->and(OAuthIdentity::query()->count())->toBe(0);
+});
+
+it('refuses to link a provider account already linked to someone else', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    $owner = oauth_controller_user(['uuid' => 'owner', 'email' => 'owner@example.com']);
+    oauth_controller_link($owner);
+
+    $other    = oauth_controller_user(['uuid' => 'other', 'email' => 'other@example.com']);
+    $fragment = oauth_link_callback($controller, $other);
+    $response = $controller->completeLink(oauth_authed_complete($other, $fragment['handoff']));
+
+    expect($response->getStatusCode())->toBe(409)
+        ->and($response->getData(true)['code'])->toBe('identity_already_linked')
+        ->and(OAuthIdentity::query()->first()->user_uuid)->toBe('owner');
+});
+
+it('unlinks a provider when the user still has another way to sign in', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    $user = oauth_controller_user(['password' => 'hashed:secret']);
+    oauth_controller_link($user);
+
+    $payload = $controller->unlink(oauth_authed($user, '/', 'DELETE'), 'fakeprovider')->getData(true);
+
+    expect(OAuthIdentity::query()->count())->toBe(0)
+        ->and($payload['identities'])->toBe([])
+        ->and(array_column($payload['available'], 'id'))->toBe(['fakeprovider']);
+});
+
+it('refuses to remove the last way a user can sign in', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    // No password and a single linked provider: removing it would lock them out.
+    $user = oauth_controller_user(['password' => null]);
+    oauth_controller_link($user);
+
+    $response = $controller->unlink(oauth_authed($user, '/', 'DELETE'), 'fakeprovider');
+
+    expect($response->getStatusCode())->toBe(409)
+        ->and($response->getData(true)['code'])->toBe('last_credential')
+        ->and(OAuthIdentity::query()->count())->toBe(1);
+});
+
+it('reports unlinking a provider that is not linked', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    $response = $controller->unlink(oauth_authed(oauth_controller_user(), '/', 'DELETE'), 'fakeprovider');
+
+    expect($response->getStatusCode())->toBe(404)
+        ->and($response->getData(true)['code'])->toBe('not_linked');
+});
+
+it('rate limits linking per user', function () {
+    oauth_controller_database();
+    app()->instance(Illuminate\Cache\RateLimiter::class, new OAuthControllerRateLimiterFake(0));
+    Facade::clearResolvedInstance(Illuminate\Cache\RateLimiter::class);
+    [$controller] = oauth_controller_services();
+
+    $response = $controller->link(oauth_authed(oauth_controller_user(), '/', 'POST'), 'fakeprovider');
+
+    expect($response->getStatusCode())->toBe(429);
+});

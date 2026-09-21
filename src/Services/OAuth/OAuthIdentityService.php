@@ -55,6 +55,17 @@ class OAuthIdentityService
     }
 
     /**
+     * The identity a user has linked for a provider, if any.
+     */
+    public function findBySubjectForUser(User $user, string $provider): ?OAuthIdentity
+    {
+        return OAuthIdentity::query()
+            ->where('user_uuid', $user->uuid)
+            ->where('provider', $provider)
+            ->first();
+    }
+
+    /**
      * Resolve the Fleetbase user behind a provider subject.
      *
      * Returns null for a soft-deleted user: `User` applies the SoftDeletes global scope, so a

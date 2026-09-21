@@ -120,6 +120,13 @@ class OAuthController extends Controller
             return response()->error('This sign-in session is no longer valid.', 400, ['code' => 'invalid_exchange_code']);
         }
 
+        // A link handoff is only ever completed by completeLink(), which checks it
+        // against the signed-in user. Refusing it here keeps the public endpoint from
+        // being a way to redeem one without that check.
+        if (($consumed['payload']['intent'] ?? null) === OAuthFlowService::INTENT_LINK) {
+            return response()->error('This sign-in session is no longer valid.', 400, ['code' => 'invalid_exchange_code']);
+        }
+
         // Re-checked at redemption, not just at redirect: an administrator may have
         // switched the provider off while this handshake was in flight.
         if (!$this->providerIsEnabled($profile->provider)) {
@@ -133,6 +140,169 @@ class OAuthController extends Controller
         }
 
         return $this->registrationOutcome($profile);
+    }
+
+    /**
+     * The signed-in user's linked identities, and the providers they could link.
+     */
+    public function identities(Request $request)
+    {
+        return response()->json($this->identitiesPayload($request->user()));
+    }
+
+    /**
+     * Begin linking a provider to the signed-in user.
+     *
+     * Returns the provider URL rather than redirecting: this route is behind
+     * auth:sanctum, and a top-level browser navigation cannot carry the bearer token,
+     * so the console fetches the URL and then navigates to it.
+     *
+     * The authorization row is stamped with this user. The identity is NOT linked at
+     * the callback — see completeLink() for why.
+     */
+    public function link(Request $request, string $provider)
+    {
+        $user = $request->user();
+
+        if ($limited = $this->rateLimit('link:' . $user->uuid, 10)) {
+            return $limited;
+        }
+
+        if ($this->identities->findBySubjectForUser($user, $provider) !== null) {
+            return response()->error('That provider is already linked to your account.', 409, ['code' => 'already_linked']);
+        }
+
+        try {
+            $url = $this->flow->startAuthorization(
+                $provider,
+                OAuthFlowService::INTENT_LINK,
+                '/account/auth',
+                $request->ip(),
+                (string) $user->uuid
+            );
+        } catch (UnknownOAuthProviderException $e) {
+            return response()->error('Unknown sign-in provider.', 404, ['code' => 'unknown_provider']);
+        } catch (OAuthException $e) {
+            return response()->error('That sign-in provider is not available.', 403, ['code' => $e->getMessage()]);
+        }
+
+        return response()->json(['redirect_url' => $url]);
+    }
+
+    /**
+     * Finish linking, from the signed-in console.
+     *
+     * The identity is linked here, behind authentication, and only if the signed-in
+     * user is the one who started the link. Linking at the provider callback instead
+     * would allow account-linking CSRF: an attacker starts a link on their own account
+     * and sends the victim the provider URL; the victim's provider identity is attached
+     * to the attacker's account, and the victim's next "Sign in with <provider>" lands
+     * them in the attacker's account. Here, the victim's browser would complete the link
+     * as the victim, the user check fails, and nothing is linked.
+     */
+    public function completeLink(OAuthExchangeRequest $request)
+    {
+        $user = $request->user();
+
+        if ($limited = $this->rateLimit('link:' . $user->uuid, 10)) {
+            return $limited;
+        }
+
+        try {
+            $consumed = $this->states->consume(OAuthState::PURPOSE_HANDOFF, $request->code(), $request->ip());
+        } catch (OAuthStateException $e) {
+            return response()->error('This link request is no longer valid.', 400, ['code' => 'invalid_exchange_code']);
+        }
+
+        /** @var OAuthState $state */
+        $state   = $consumed['state'];
+        $profile = $this->flow->profileFromPayload($consumed['payload']);
+
+        $isLink       = ($consumed['payload']['intent'] ?? null) === OAuthFlowService::INTENT_LINK;
+        $startedByYou = is_string($state->user_uuid) && hash_equals($state->user_uuid, (string) $user->uuid);
+
+        if (!$isLink || !$startedByYou || $profile->providerUserId === '') {
+            // Deliberately the same response as an expired code: telling the caller the
+            // link belongs to someone else would confirm the attack worked as far as it did.
+            return response()->error('This link request is no longer valid.', 400, ['code' => 'invalid_exchange_code']);
+        }
+
+        if (!$this->providerIsEnabled($profile->provider)) {
+            return response()->error('That sign-in provider is not available.', 403, ['code' => 'provider_disabled']);
+        }
+
+        try {
+            $this->identities->link($user, $profile);
+        } catch (OAuthException $e) {
+            // The provider account is already linked to a different Fleetbase user.
+            return response()->error('That account is already linked to another user.', 409, ['code' => $e->getMessage()]);
+        }
+
+        return response()->json($this->identitiesPayload($user));
+    }
+
+    /**
+     * Remove a linked provider from the signed-in user.
+     *
+     * Refused when it would leave the account with no way to sign in at all.
+     */
+    public function unlink(Request $request, string $provider)
+    {
+        $user = $request->user();
+
+        if ($this->identities->findBySubjectForUser($user, $provider) === null) {
+            return response()->error('That provider is not linked to your account.', 404, ['code' => 'not_linked']);
+        }
+
+        if ($this->identities->isLastCredential($user, $provider)) {
+            return response()->error(
+                'Set a password or link another provider before removing this one — otherwise you could not sign in.',
+                409,
+                ['code' => 'last_credential']
+            );
+        }
+
+        $this->identities->unlink($user, $provider);
+
+        return response()->json($this->identitiesPayload($user));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function identitiesPayload(User $user): array
+    {
+        $labels = [];
+
+        foreach ($this->registry->definitions() as $definition) {
+            $labels[$definition['id']] = ['label' => $definition['label'], 'icon' => $definition['icon']];
+        }
+
+        $identities = [];
+
+        foreach ($this->identities->forUser($user) as $identity) {
+            $identities[] = [
+                'provider'       => $identity->provider,
+                'label'          => $labels[$identity->provider]['label'] ?? ucfirst((string) $identity->provider),
+                'icon'           => $labels[$identity->provider]['icon'] ?? null,
+                'provider_email' => $identity->provider_email,
+                'email_verified' => (bool) $identity->email_verified,
+                'linked_at'      => $identity->created_at?->toIso8601String(),
+                'last_login_at'  => $identity->last_login_at?->toIso8601String(),
+            ];
+        }
+
+        $linked = array_column($identities, 'provider');
+
+        return [
+            'identities'   => $identities,
+            'has_password' => !empty($user->password),
+            // Enabled providers not yet linked — what the account page can offer.
+            'available'    => array_values(array_filter(
+                $this->registry->toDiscoveryArray(),
+                fn (array $provider): bool => !in_array($provider['id'], $linked, true)
+            )),
+        ];
     }
 
     /**

@@ -171,7 +171,15 @@ class OAuthFlowService
             $request->ip()
         );
 
-        return $this->consoleUrl(['handoff' => $handoff], $returnTo);
+        $fragment = ['handoff' => $handoff];
+
+        // A link handoff must be completed by the signed-in console through a protected
+        // endpoint, not the public exchange, so the console needs to know which it is.
+        if ($stateRow->intent === self::INTENT_LINK) {
+            $fragment['intent'] = self::INTENT_LINK;
+        }
+
+        return $this->consoleUrl($fragment, $returnTo);
     }
 
     /**

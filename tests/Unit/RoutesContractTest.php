@@ -280,6 +280,30 @@ namespace {
             ->and($post['middleware'])->not->toContain('fleetbase.protected');
     });
 
+    test('route file protects every account linking route', function () {
+        $routes = routes_contract_rows(routes_contract_router());
+
+        $controller = Fleetbase\Http\Controllers\Internal\v1\OAuthController::class;
+
+        // Every linking action acts on the signed-in user, and completeLink() is what
+        // defeats account-linking CSRF by checking that user — so none may be public.
+        foreach ([
+            ['GET', 'int/v1/auth/oauth/identities', 'identities'],
+            ['POST', 'int/v1/auth/oauth/link/complete', 'completeLink'],
+            ['POST', 'int/v1/auth/oauth/{provider}/link', 'link'],
+            ['DELETE', 'int/v1/auth/oauth/{provider}/unlink', 'unlink'],
+        ] as [$method, $uri, $action]) {
+            $route = routes_contract_find($routes, $method, $uri);
+
+            expect($route)->not->toBeNull()
+                ->and($route['action'])->toBe($controller . '@' . $action)
+                ->and($route['middleware'])->toContain('fleetbase.protected');
+        }
+
+        expect(routes_contract_index($routes, 'POST', 'int/v1/auth/oauth/link/complete'))
+            ->toBeLessThan(routes_contract_index($routes, 'POST', 'int/v1/auth/oauth/{provider}/link'));
+    });
+
     test('route file registers literal oauth routes before the provider wildcard', function () {
         $routes = routes_contract_rows(routes_contract_router());
 

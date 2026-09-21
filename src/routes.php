@@ -112,6 +112,16 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 // the name/email scopes are requested.
                                 $router->match(['GET', 'POST'], '{provider}/callback', [Fleetbase\Http\Controllers\Internal\v1\OAuthController::class, 'callback']);
                             });
+                        }, function ($router) {
+                            // Account linking. Protected: every action here acts on the
+                            // signed-in user, and completeLink() is what defeats
+                            // account-linking CSRF by checking that user.
+                            $router->group(['prefix' => 'oauth'], function ($router) {
+                                $router->get('identities', [Fleetbase\Http\Controllers\Internal\v1\OAuthController::class, 'identities']);
+                                $router->post('link/complete', [Fleetbase\Http\Controllers\Internal\v1\OAuthController::class, 'completeLink']);
+                                $router->post('{provider}/link', [Fleetbase\Http\Controllers\Internal\v1\OAuthController::class, 'link']);
+                                $router->delete('{provider}/unlink', [Fleetbase\Http\Controllers\Internal\v1\OAuthController::class, 'unlink']);
+                            });
                         });
                         $router->group(
                             ['prefix' => 'onboard', 'middleware' => [Fleetbase\Http\Middleware\ThrottleRequests::class]],
