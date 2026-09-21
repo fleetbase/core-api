@@ -164,6 +164,13 @@ class UserController extends FleetbaseController
      */
     public function createRecord(Request $request)
     {
+        // A driver/customer/contact account in this organisation with the same
+        // email or phone is promoted to a team member instead of duplicated.
+        $managedUser = $this->findPromotableAccount($request->input('user.email'), $request->input('user.phone'));
+        if ($managedUser) {
+            return $this->promoteManagedAccount($managedUser, $request);
+        }
+
         $this->validateRequest($request);
 
         // Detect whether the email already belongs to an existing user.
@@ -698,6 +705,13 @@ class UserController extends FleetbaseController
             return response()->error('The selected role is not available for this organisation.', 404);
         }
 
+        // A driver/customer/contact account in this organisation with the same
+        // email is promoted to a team member instead of invited.
+        $managedUser = $this->findPromotableAccount($email, data_get($data, 'phone'));
+        if ($managedUser) {
+            return $this->promoteManagedAccount($managedUser, $request);
+        }
+
         // Check if user already exists in the system.
         $user = User::where('email', $email)->whereNull('deleted_at')->first();
 
@@ -737,6 +751,89 @@ class UserController extends FleetbaseController
         }
 
         return response()->json(['user' => new $this->resource($user)]);
+    }
+
+    /**
+     * Find a profile-managed account (driver, customer or contact) in the
+     * current organisation matching the given email or phone.
+     */
+    private function findPromotableAccount(?string $email, ?string $phone): ?User
+    {
+        $email = $email ? strtolower(trim($email)) : null;
+        $phone = $phone ? trim($phone) : null;
+        if (!$email && !$phone) {
+            return null;
+        }
+
+        return User::managed()
+            ->where(function ($query) use ($email, $phone) {
+                if ($email) {
+                    $query->orWhere('email', $email);
+                }
+                if ($phone) {
+                    $query->orWhere('phone', $phone);
+                }
+            })
+            ->whereHas('companyUsers', function ($query) {
+                $query->where('company_uuid', session('company'));
+            })
+            ->first();
+    }
+
+    /**
+     * Promote a profile-managed account to a team member of the current
+     * organisation. Its driver/customer profiles stay linked, so the person
+     * keeps a single account for the console and their app. A join invite is
+     * sent so they can set a console password.
+     */
+    private function promoteManagedAccount(User $user, Request $request): \Illuminate\Http\JsonResponse
+    {
+        $company = Auth::getCompany();
+        if (!$company) {
+            return response()->error('Unable to determine the current organisation.');
+        }
+
+        $roleIdentifier = $request->input('user.role_uuid') ?? $request->input('user.role');
+        $role           = $roleIdentifier ? $this->resolveAssignableRole($roleIdentifier) : null;
+        if ($roleIdentifier && !$role) {
+            return response()->error('The selected role is not available for this organisation.', 404);
+        }
+
+        $previousType = $user->getType();
+        $user->meta   = array_merge((array) ($user->meta ?? []), ['promoted_from' => $previousType]);
+        $user->setUserType('user');
+        $user->assignSingleRole($role ? $role : 'Administrator');
+
+        if ($request->isArray('user.permissions')) {
+            $user->syncPermissions(Permission::whereIn('id', $request->array('user.permissions'))->get());
+        }
+
+        if ($request->isArray('user.policies')) {
+            $user->syncPolicies($this->getAssignablePolicies($request->array('user.policies')));
+        }
+
+        if ($user->email && !Invite::isAlreadySentToJoinCompany($user, $company)) {
+            $invitation = Invite::create([
+                'company_uuid'    => $company->uuid,
+                'created_by_uuid' => session('user'),
+                'subject_uuid'    => $company->uuid,
+                'subject_type'    => Utils::getMutationType($company),
+                'protocol'        => 'email',
+                'recipients'      => [$user->email],
+                'reason'          => 'join_company',
+                'meta'            => array_filter(['role_uuid' => $role?->id, 'promoted_from' => $previousType]),
+                'expires_at'      => now()->addHours(48),
+            ]);
+
+            $user->notify(new UserInvited($invitation));
+        }
+
+        UserCacheService::invalidateUser($user);
+
+        return response()->json([
+            'user'          => new $this->resource($user),
+            'promoted_from' => $previousType,
+        ]);
     }
 
     /**
@@ -857,6 +954,14 @@ class UserController extends FleetbaseController
 
         // determine if user needs to set password (when status pending)
         $isPending = $needsPassword = $user->status === 'pending';
+
+        // Invites come from IAM, so accepting one makes a profile-managed
+        // account (driver, customer, contact) a team member. Its password was
+        // generated for the app, so it sets a console password.
+        if ($user->isManagedAccount() || $invite->getMeta('promoted_from')) {
+            $user->setUserType('user');
+            $needsPassword = true;
+        }
 
         // Add user to company only if they are not already a member.
         // This guards against double-acceptance (e.g. clicking the invite

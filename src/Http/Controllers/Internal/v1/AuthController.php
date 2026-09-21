@@ -62,8 +62,8 @@ class AuthController extends Controller
                     $tokenOwner instanceof User
                     && ($tokenOwner->email === $identity || $tokenOwner->phone === $identity)
                 ) {
-                    if ($tokenOwner->type === 'customer') {
-                        return response()->error('Customer accounts must sign in through the customer portal.', 403, ['code' => 'customer_login_not_allowed']);
+                    if ($denied = Auth::denyConsoleLogin($tokenOwner)) {
+                        return $denied;
                     }
 
                     return response()->json([
@@ -83,8 +83,8 @@ class AuthController extends Controller
             $query->where('email', $identity)->orWhere('phone', $identity);
         })->first();
 
-        if ($user && $user->type === 'customer') {
-            return response()->error('Customer accounts must sign in through the customer portal.', 403, ['code' => 'customer_login_not_allowed']);
+        if ($denied = Auth::denyConsoleLogin($user)) {
+            return $denied;
         }
 
         // If the user exists but has no password set (e.g. SSO-invited or provisioned
@@ -138,7 +138,7 @@ class AuthController extends Controller
         $session = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($request) {
             $user = $request->user();
 
-            if (!$user) {
+            if (!$user || !$user->canHoldConsoleSession()) {
                 return null;
             }
 
@@ -196,6 +196,11 @@ class AuthController extends Controller
     {
         $user     = $request->user();
         $token    = $request->bearerToken();
+
+        if ($denied = Auth::denyConsoleSession($user)) {
+            return $denied;
+        }
+
         $cacheKey = "auth_bootstrap_{$user->uuid}_{$token}";
 
         // Cache for 5 minutes
@@ -491,7 +496,7 @@ class AuthController extends Controller
         $user->activate();
 
         // If authenticate is set, generate and return a token
-        if ($authenticate) {
+        if ($authenticate && $user->canHoldConsoleSession()) {
             $user->updateLastLogin();
             $token = $user->createToken($user->uuid);
 
@@ -1017,6 +1022,10 @@ class AuthController extends Controller
         $targetUser = User::where('uuid', $targetUserId)->first();
         if (!$targetUser) {
             return response()->error('The selected user to impersonate was not found.');
+        }
+
+        if ($denied = Auth::denyConsoleSession($targetUser)) {
+            return $denied;
         }
 
         try {

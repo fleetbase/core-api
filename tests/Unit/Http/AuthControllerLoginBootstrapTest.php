@@ -1345,3 +1345,41 @@ test('authenticate sms code authenticates a matching user and issues a token on 
         ->and(app('redis')->get($key))->toBeNull()
         ->and($capsule->getConnection('mysql')->table('personal_access_tokens')->count())->toBe(1);
 });
+
+test('login rejects driver and contact identities from the console', function (string $type) {
+    $capsule = auth_controller_login_bootstrap_database();
+    auth_controller_login_insert_user($capsule, [
+        'type' => $type,
+    ]);
+
+    $response = (new AuthController())->login(auth_controller_login_request([
+        'identity' => 'auth@example.test',
+        'password' => 'correct-password',
+    ]));
+
+    expect($response->getStatusCode())->toBe(403)
+        ->and($response->getData(true))->toBe([
+            'errors' => ['This account cannot sign in to the console.'],
+            'code'   => 'console_access_not_allowed',
+        ])
+        ->and($capsule->getConnection('mysql')->table('personal_access_tokens')->count())->toBe(0);
+})->with(['driver', 'contact']);
+
+test('bootstrap rejects driver and contact sessions but keeps customer portal sessions', function (string $type, int $status) {
+    $capsule = auth_controller_login_bootstrap_database();
+    auth_controller_login_insert_user($capsule, [
+        'type' => $type,
+    ]);
+
+    $user     = User::find('11111111-1111-4111-8111-111111111111');
+    $response = (new AuthController())->bootstrap(auth_controller_bootstrap_request($user, 'bootstrap-token'));
+
+    expect($response->getStatusCode())->toBe($status);
+    if ($status === 403) {
+        expect($response->getData(true)['code'])->toBe('console_access_not_allowed');
+    }
+})->with([
+    ['driver', 403],
+    ['contact', 403],
+    ['customer', 200],
+]);

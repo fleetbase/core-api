@@ -4,9 +4,11 @@ namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Http\Controllers\Controller;
 use Fleetbase\Http\Requests\TwoFaValidationRequest;
+use Fleetbase\Support\Auth;
 use Fleetbase\Support\TwoFactorAuth;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Laravel\Sanctum\PersonalAccessToken;
 
 /**
  * Class TwoFaController.
@@ -102,6 +104,15 @@ class TwoFaController extends Controller
 
         try {
             $authToken = TwoFactorAuth::verifyCode($code, $token, $clientToken);
+
+            // Driver and contact accounts cannot sign in to the console. Customers
+            // are left to the customer portal, which shares this route path.
+            $accessToken = PersonalAccessToken::findToken($authToken);
+            if ($denied = Auth::denyConsoleSession($accessToken?->tokenable)) {
+                $accessToken->delete();
+
+                return $denied;
+            }
 
             return response()->json([
                 'authToken' => $authToken,
