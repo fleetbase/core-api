@@ -1383,3 +1383,17 @@ test('bootstrap rejects driver and contact sessions but keeps customer portal se
     ['contact', 403],
     ['customer', 200],
 ]);
+
+test('admin impersonation refuses driver accounts', function () {
+    $capsule = auth_controller_login_bootstrap_database();
+    auth_controller_login_insert_user($capsule, ['uuid' => 'admin-user', 'email' => 'admin@example.test', 'type' => 'admin']);
+    auth_controller_login_insert_user($capsule, ['uuid' => 'driver-user', 'email' => 'driver@example.test', 'type' => 'driver']);
+
+    $response = (new AuthController())->impersonate(auth_controller_authenticated_request('POST', [
+        'user' => 'driver-user',
+    ], User::find('admin-user'), '/int/v1/auth/impersonate', AdminRequest::class));
+
+    expect($response->getStatusCode())->toBe(403)
+        ->and($response->getData(true)['code'])->toBe('console_access_not_allowed')
+        ->and($capsule->getConnection('mysql')->table('personal_access_tokens')->where('tokenable_id', 'driver-user')->count())->toBe(0);
+});

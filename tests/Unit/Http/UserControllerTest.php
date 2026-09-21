@@ -1969,3 +1969,44 @@ test('user controller accepting an invite promotes a managed driver account and 
         ->and($accepted->getData(true)['needs_password'])->toBeTrue()
         ->and($capsule->getConnection('mysql')->table('users')->where('uuid', 'driver-invitee')->value('type'))->toBe('user');
 });
+
+test('user controller promotion syncs permissions and policies and reports organization and role failures', function () {
+    $capsule = user_controller_database();
+    $db      = $capsule->getConnection('mysql');
+    EloquentModel::setEventDispatcher(new Dispatcher(app()));
+    $now = '2026-07-18 10:00:00';
+    $db->table('users')->insert(['uuid' => 'customer-1', 'public_id' => 'user_customer_1', 'company_uuid' => 'company-1', 'email' => 'customer@example.test', 'phone' => '+15555550188', 'name' => 'Customer One', 'type' => 'customer', 'status' => 'active', 'created_at' => $now, 'updated_at' => $now]);
+    $db->table('company_users')->insert(['uuid' => 'pivot-customer-1', 'company_uuid' => 'company-1', 'user_uuid' => 'customer-1', 'status' => 'active', 'created_at' => $now, 'updated_at' => $now]);
+    $db->table('permissions')->insert(['id' => 'permission-promote', 'name' => 'iam promote user', 'guard_name' => 'sanctum', 'description' => 'Promote', 'created_at' => $now, 'updated_at' => $now]);
+    $db->table('policies')->insert(['id' => 'policy-promote', 'company_uuid' => 'company-1', 'name' => 'Promote policy', 'guard_name' => 'sanctum', 'service' => 'iam', 'description' => 'Promote', 'created_at' => $now, 'updated_at' => $now]);
+
+    $findPromotable = new ReflectionMethod(UserController::class, 'findPromotableAccount');
+    $noIdentity     = $findPromotable->invoke(user_controller(), null, ' ');
+
+    $invalidRole = user_controller_without_request_validation()->createRecord(user_controller_request('POST', [
+        'user' => ['phone' => '+15555550188', 'role_uuid' => 'role-other-company'],
+    ], user_controller_user('owner-1'), 'createRecord'));
+
+    $promoted = user_controller_without_request_validation()->createRecord(user_controller_request('POST', [
+        'user' => [
+            'phone'       => '+15555550188',
+            'permissions' => ['permission-promote'],
+            'policies'    => ['policy-promote'],
+        ],
+    ], user_controller_user('owner-1'), 'createRecord'));
+
+    $db->table('users')->insert(['uuid' => 'driver-2', 'public_id' => 'user_driver_2', 'company_uuid' => 'company-1', 'email' => 'driver2@example.test', 'name' => 'Driver Two', 'type' => 'driver', 'status' => 'active', 'created_at' => $now, 'updated_at' => $now]);
+    $promote        = new ReflectionMethod(UserController::class, 'promoteManagedAccount');
+    $promoteRequest = user_controller_request('POST', ['user' => []], user_controller_user('owner-1'), 'createRecord');
+    session()->flush();
+    $noCompany = $promote->invoke(user_controller(), User::find('driver-2'), $promoteRequest);
+
+    expect($noIdentity)->toBeNull()
+        ->and($invalidRole->getStatusCode())->toBe(404)
+        ->and($promoted->getStatusCode())->toBe(200)
+        ->and($promoted->getData(true)['promoted_from'])->toBe('customer')
+        ->and(User::find('customer-1')->type)->toBe('user')
+        ->and($db->table('model_has_permissions')->where('model_uuid', 'pivot-customer-1')->where('permission_id', 'permission-promote')->exists())->toBeTrue()
+        ->and($db->table('model_has_policies')->where('model_uuid', 'pivot-customer-1')->where('policy_id', 'policy-promote')->exists())->toBeTrue()
+        ->and($noCompany->getData(true))->toBe(['errors' => ['Unable to determine the current organisation.']]);
+});

@@ -874,16 +874,6 @@ class User extends Authenticatable
     }
 
     /**
-     * Scope a query to staff accounts only.
-     */
-    public function scopeStaff(Builder $query): Builder
-    {
-        return $query->where(function ($query) {
-            $query->whereNotIn($this->qualifyColumn('type'), static::MANAGED_TYPES)->orWhereNull($this->qualifyColumn('type'));
-        });
-    }
-
-    /**
      * Scope a query to profile-managed accounts only.
      */
     public function scopeManaged(Builder $query): Builder
