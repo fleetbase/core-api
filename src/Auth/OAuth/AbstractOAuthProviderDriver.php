@@ -3,6 +3,10 @@
 namespace Fleetbase\Auth\OAuth;
 
 use Fleetbase\Auth\OAuth\Contracts\OAuthProviderDriver;
+use Fleetbase\Auth\OAuth\Exceptions\OAuthProviderNotConfiguredException;
+use GuzzleHttp\Client as HttpClient;
+use GuzzleHttp\Exception\GuzzleException;
+use GuzzleHttp\Exception\RequestException;
 use Illuminate\Http\Request;
 use Laravel\Socialite\Two\AbstractProvider as SocialiteProvider;
 use Laravel\Socialite\Two\User as SocialiteUser;
@@ -27,6 +31,19 @@ abstract class AbstractOAuthProviderDriver implements OAuthProviderDriver
         protected Request $request,
         protected IdTokenVerifier $idTokenVerifier,
     ) {
+    }
+
+    /**
+     * The HTTP client used to talk to the provider. Defaults to a fresh client with
+     * short timeouts; tests hand in one backed by canned responses.
+     */
+    protected ?HttpClient $http = null;
+
+    public function useHttpClient(?HttpClient $http): static
+    {
+        $this->http = $http;
+
+        return $this;
     }
 
     /**
@@ -108,6 +125,42 @@ abstract class AbstractOAuthProviderDriver implements OAuthProviderDriver
         return $this->normalize($socialiteUser, $callbackPayload)->withRawTokenResponse($tokenResponse);
     }
 
+    public function verifyCredentials(string $redirectUri): CredentialCheck
+    {
+        try {
+            // A code that cannot exist, and a throwaway verifier to go with it: the
+            // provider must authenticate the client before it can reject either.
+            $response = $this->build($redirectUri)
+                ->withServerSidePkce(bin2hex(random_bytes(32)))
+                ->exchangeAuthorizationCode('fleetbase-credential-check-' . bin2hex(random_bytes(8)));
+        } catch (OAuthProviderNotConfiguredException $e) {
+            return CredentialCheck::InvalidClient;
+        } catch (RequestException $e) {
+            $status = $e->getResponse()?->getStatusCode() ?? 0;
+
+            if ($status < 400 || $status >= 500) {
+                return CredentialCheck::Unreachable;
+            }
+
+            $body = json_decode((string) $e->getResponse()->getBody(), true);
+
+            return CredentialCheck::fromTokenError(is_array($body) && is_string($body['error'] ?? null) ? $body['error'] : null);
+        } catch (GuzzleException $e) {
+            return CredentialCheck::Unreachable;
+        }
+
+        // GitHub reports errors in a 200 response body.
+        $error = $response['error'] ?? null;
+
+        if (is_string($error)) {
+            return CredentialCheck::fromTokenError($error);
+        }
+
+        // A token for a code that was never issued would be a provider bug; there is
+        // nothing to conclude from it about these credentials.
+        return CredentialCheck::Inconclusive;
+    }
+
     /**
      * The configured client id, narrowed to a string.
      */
@@ -154,6 +207,7 @@ abstract class AbstractOAuthProviderDriver implements OAuthProviderDriver
         );
 
         $provider->stateless()->setScopes($this->scopes());
+        $provider->setHttpClient($this->http ?? new HttpClient(['timeout' => 10, 'connect_timeout' => 5]));
 
         return $this->configureProvider($provider);
     }

@@ -13,6 +13,13 @@ use Fleetbase\Models\Setting;
 use Fleetbase\Services\OAuth\OAuthConfigRepository;
 use Fleetbase\Services\OAuth\OAuthFlowService;
 use Fleetbase\Services\OAuth\OAuthStateService;
+use GuzzleHttp\Client as HttpClient;
+use GuzzleHttp\Exception\ConnectException;
+use GuzzleHttp\Handler\MockHandler;
+use GuzzleHttp\HandlerStack;
+use GuzzleHttp\Middleware;
+use GuzzleHttp\Psr7\Request as PsrRequest;
+use GuzzleHttp\Psr7\Response as PsrResponse;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Contracts\Encryption\Encrypter;
 use Illuminate\Database\Capsule\Manager as Capsule;
@@ -102,7 +109,55 @@ class SettingControllerOAuthCacheFake
 }
 
 /**
- * @return array{0: OAuthProviderRegistry, 1: OAuthConfigRepository, 2: OAuthFlowService, 3: AppleClientSecretFactory}
+ * Stands in for the providers' token endpoints. Queue what the provider answers;
+ * an unexpected call fails the test, because the queue is empty.
+ */
+class SettingControllerOAuthProviderFake
+{
+    public MockHandler $mock;
+
+    /** @var array<int, array{request: Psr\Http\Message\RequestInterface}> */
+    public array $history = [];
+
+    public function __construct()
+    {
+        $this->mock = new MockHandler();
+    }
+
+    public function client(): HttpClient
+    {
+        $stack = HandlerStack::create($this->mock);
+        $stack->push(Middleware::history($this->history));
+
+        return new HttpClient(['handler' => $stack]);
+    }
+
+    public function says(int $status, array $body): self
+    {
+        $this->mock->append(new PsrResponse($status, ['Content-Type' => 'application/json'], json_encode($body)));
+
+        return $this;
+    }
+
+    /** The provider authenticated the client and rejected only the made-up code. */
+    public function accepts(): self
+    {
+        return $this->says(400, ['error' => 'invalid_grant']);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function lastForm(): array
+    {
+        parse_str((string) end($this->history)['request']->getBody(), $form);
+
+        return $form;
+    }
+}
+
+/**
+ * @return array{0: OAuthProviderRegistry, 1: OAuthConfigRepository, 2: OAuthFlowService, 3: AppleClientSecretFactory, 4: SettingControllerOAuthProviderFake}
  */
 function setting_controller_oauth_services(array $config = []): array
 {
@@ -151,10 +206,11 @@ function setting_controller_oauth_services(array $config = []): array
 
     $encrypter = new SettingControllerOAuthEncrypterFake();
     $config    = new OAuthConfigRepository($encrypter);
-    $registry  = new OAuthProviderRegistry($config, Request::create('/'), new IdTokenVerifier());
+    $provider  = new SettingControllerOAuthProviderFake();
+    $registry  = new OAuthProviderRegistry($config, Request::create('/'), new IdTokenVerifier(), $provider->client());
     $flow      = new OAuthFlowService($registry, new OAuthStateService($encrypter), $config);
 
-    return [$registry, $config, $flow, new AppleClientSecretFactory()];
+    return [$registry, $config, $flow, new AppleClientSecretFactory(), $provider];
 }
 
 function setting_controller_oauth_save(array $body): SaveOAuthConfigRequest
@@ -197,11 +253,12 @@ it('describes every provider so the console can render the form without hardcodi
 });
 
 it('never returns a secret value, even to an administrator', function () {
-    [$registry, $config, $flow] = setting_controller_oauth_services();
+    [$registry, $config, $flow, , $provider] = setting_controller_oauth_services();
+    $provider->accepts();
 
     (new SettingController())->saveOAuthConfig(setting_controller_oauth_save([
         'providers' => ['google' => ['enabled' => true, 'client_id' => 'google-id', 'client_secret' => 'super-secret-value']],
-    ]), $registry, $config, $flow);
+    ]), $registry, $config, $flow, new AppleClientSecretFactory());
 
     $body = json_encode((new SettingController())
         ->getOAuthConfig(AdminRequest::create('/'), $registry, $config, $flow)
@@ -221,7 +278,7 @@ it('encrypts secrets at rest', function () {
 
     (new SettingController())->saveOAuthConfig(setting_controller_oauth_save([
         'providers' => ['google' => ['client_id' => 'google-id', 'client_secret' => 'super-secret-value']],
-    ]), $registry, $config, $flow);
+    ]), $registry, $config, $flow, new AppleClientSecretFactory());
 
     $stored = setting_controller_oauth_stored();
 
@@ -237,13 +294,13 @@ it('keeps the stored secret when the form submits an empty one', function () {
 
     $controller->saveOAuthConfig(setting_controller_oauth_save([
         'providers' => ['google' => ['client_id' => 'id-1', 'client_secret' => 'original']],
-    ]), $registry, $config, $flow);
+    ]), $registry, $config, $flow, new AppleClientSecretFactory());
 
     // The form renders a masked placeholder, so a save that did not touch the field
     // submits it empty. That must not wipe the credential.
     $controller->saveOAuthConfig(setting_controller_oauth_save([
         'providers' => ['google' => ['client_id' => 'id-2', 'client_secret' => '']],
-    ]), $registry, $config, $flow);
+    ]), $registry, $config, $flow, new AppleClientSecretFactory());
 
     expect($config->forProvider('google')->secret('client_secret'))->toBe('original')
         ->and($config->forProvider('google')->get('client_id'))->toBe('id-2');
@@ -254,7 +311,7 @@ it('ignores provider ids no driver defines', function () {
 
     (new SettingController())->saveOAuthConfig(setting_controller_oauth_save([
         'providers' => ['made-up' => ['client_id' => 'x', 'client_secret' => 'y']],
-    ]), $registry, $config, $flow);
+    ]), $registry, $config, $flow, new AppleClientSecretFactory());
 
     expect(setting_controller_oauth_stored()['providers'] ?? [])->not->toHaveKey('made-up');
 });
@@ -270,7 +327,7 @@ it('ignores fields a driver does not declare, including a driver class', functio
             'team_id'   => 'apple-only-field',
             'nonsense'  => 'value',
         ]],
-    ]), $registry, $config, $flow);
+    ]), $registry, $config, $flow, new AppleClientSecretFactory());
 
     $google = setting_controller_oauth_stored()['providers']['google'];
 
@@ -281,13 +338,14 @@ it('ignores fields a driver does not declare, including a driver class', functio
 });
 
 it('persists the global switches and provider toggles', function () {
-    [$registry, $config, $flow] = setting_controller_oauth_services();
+    [$registry, $config, $flow, , $provider] = setting_controller_oauth_services();
+    $provider->says(200, ['error' => 'bad_verification_code']);
 
     (new SettingController())->saveOAuthConfig(setting_controller_oauth_save([
         'enabled'            => false,
         'allow_registration' => '0',
-        'providers'          => ['github' => ['enabled' => 'true']],
-    ]), $registry, $config, $flow);
+        'providers'          => ['github' => ['enabled' => 'true', 'client_id' => 'gh-id', 'client_secret' => 'gh-secret']],
+    ]), $registry, $config, $flow, new AppleClientSecretFactory());
 
     expect($config->isEnabled())->toBeFalse()
         ->and($config->allowsRegistration())->toBeFalse()
@@ -298,8 +356,8 @@ it('leaves the global switches alone when a save does not mention them', functio
     [$registry, $config, $flow] = setting_controller_oauth_services();
     $controller                 = new SettingController();
 
-    $controller->saveOAuthConfig(setting_controller_oauth_save(['allow_registration' => false]), $registry, $config, $flow);
-    $controller->saveOAuthConfig(setting_controller_oauth_save(['providers' => ['google' => ['client_id' => 'x']]]), $registry, $config, $flow);
+    $controller->saveOAuthConfig(setting_controller_oauth_save(['allow_registration' => false]), $registry, $config, $flow, new AppleClientSecretFactory());
+    $controller->saveOAuthConfig(setting_controller_oauth_save(['providers' => ['google' => ['client_id' => 'x']]]), $registry, $config, $flow, new AppleClientSecretFactory());
 
     expect($config->allowsRegistration())->toBeFalse();
 });
@@ -309,7 +367,7 @@ it('responds with the refreshed configuration after saving', function () {
 
     $payload = (new SettingController())->saveOAuthConfig(setting_controller_oauth_save([
         'providers' => ['google' => ['client_id' => 'saved-id']],
-    ]), $registry, $config, $flow)->getData(true);
+    ]), $registry, $config, $flow, new AppleClientSecretFactory())->getData(true);
 
     expect($payload['oauth']['providers']['google']['client_id'])->toBe('saved-id')
         ->and($payload)->toHaveKeys(['oauth', 'providers', 'redirect_uris']);
@@ -329,25 +387,29 @@ it('reports a provider with missing credentials', function () {
     expect($payload)->toBe([
         'provider'     => 'google',
         'configured'   => false,
-        'enabled'      => false,
+        'verified'     => false,
         'problem'      => 'missing_credentials',
+        'missing'      => ['Client ID', 'Client Secret'],
+        'message'      => 'Missing: Client ID, Client Secret.',
         'redirect_uri' => 'https://api.fleetbase.test/int/v1/auth/oauth/google/callback',
     ]);
 });
 
 it('reports a fully configured provider', function () {
-    [$registry, $config, $flow, $apple] = setting_controller_oauth_services();
+    [$registry, $config, $flow, $apple, $provider] = setting_controller_oauth_services();
+    // GitHub answers token errors with HTTP 200: once for the save, once for the check.
+    $provider->says(200, ['error' => 'bad_verification_code'])->says(200, ['error' => 'bad_verification_code']);
 
     (new SettingController())->saveOAuthConfig(setting_controller_oauth_save([
         'providers' => ['github' => ['enabled' => true, 'client_id' => 'gh-id', 'client_secret' => 'gh-secret']],
-    ]), $registry, $config, $flow);
+    ]), $registry, $config, $flow, new AppleClientSecretFactory());
 
     $payload = (new SettingController())->testOAuthConfig(
         AdminRequest::create('/', 'POST', ['provider' => 'github']), $registry, $config, $flow, $apple
     )->getData(true);
 
     expect($payload['configured'])->toBeTrue()
-        ->and($payload['enabled'])->toBeTrue()
+        ->and($payload['verified'])->toBeTrue()
         ->and($payload['problem'])->toBeNull();
 });
 
@@ -363,7 +425,7 @@ it('catches an apple signing key that cannot mint a client secret', function () 
             'key_id'      => 'KEY',
             'private_key' => "-----BEGIN PRIVATE KEY-----\nnot-a-real-key\n-----END PRIVATE KEY-----",
         ]],
-    ]), $registry, $config, $flow);
+    ]), $registry, $config, $flow, new AppleClientSecretFactory());
 
     // The failure an operator is most likely to hit, and one that would otherwise only
     // surface at the first real sign-in.
@@ -376,7 +438,8 @@ it('catches an apple signing key that cannot mint a client secret', function () 
 });
 
 it('accepts an apple signing key that mints a client secret', function () {
-    [$registry, $config, $flow, $apple] = setting_controller_oauth_services();
+    [$registry, $config, $flow, $apple, $provider] = setting_controller_oauth_services();
+    $provider->accepts();
 
     (new SettingController())->saveOAuthConfig(setting_controller_oauth_save([
         'providers' => ['apple' => [
@@ -385,14 +448,176 @@ it('accepts an apple signing key that mints a client secret', function () {
             'key_id'      => 'KEY',
             'private_key' => setting_controller_oauth_ec_key(),
         ]],
-    ]), $registry, $config, $flow);
+    ]), $registry, $config, $flow, new AppleClientSecretFactory());
 
     $payload = (new SettingController())->testOAuthConfig(
         AdminRequest::create('/', 'POST', ['provider' => 'apple']), $registry, $config, $flow, $apple
     )->getData(true);
 
     expect($payload['configured'])->toBeTrue()
-        ->and($payload['problem'])->toBeNull();
+        ->and($payload['problem'])->toBeNull()
+        // The minted assertion, not the .p8, is what Apple receives.
+        ->and($provider->lastForm()['client_secret'])->toStartWith('eyJ');
+});
+
+it('checks the values in the form before they are saved', function () {
+    [$registry, $config, $flow, $apple, $provider] = setting_controller_oauth_services();
+    $provider->accepts();
+
+    // Nothing stored yet: the admin has typed credentials and not pressed save.
+    $payload = (new SettingController())->testOAuthConfig(AdminRequest::create('/', 'POST', [
+        'provider' => 'google',
+        'values'   => ['client_id' => 'typed-id', 'client_secret' => 'typed-secret', 'hosted_domain' => ''],
+    ]), $registry, $config, $flow, $apple)->getData(true);
+
+    expect($payload['verified'])->toBeTrue()
+        ->and($payload['problem'])->toBeNull()
+        ->and($provider->lastForm())->toMatchArray(['client_id' => 'typed-id', 'client_secret' => 'typed-secret', 'redirect_uri' => 'https://api.fleetbase.test/int/v1/auth/oauth/google/callback'])
+        ->and(setting_controller_oauth_stored())->toBe([]);
+});
+
+it('checks with the stored secret when the form leaves it blank', function () {
+    [$registry, $config, $flow, $apple, $provider] = setting_controller_oauth_services();
+    (new SettingController())->saveOAuthConfig(setting_controller_oauth_save([
+        'providers' => ['google' => ['client_id' => 'stored-id', 'client_secret' => 'stored-secret']],
+    ]), $registry, $config, $flow, $apple);
+    $provider->accepts();
+
+    (new SettingController())->testOAuthConfig(AdminRequest::create('/', 'POST', [
+        'provider' => 'google',
+        'values'   => ['client_id' => 'new-id', 'client_secret' => ''],
+    ]), $registry, $config, $flow, $apple);
+
+    expect($provider->lastForm())->toMatchArray(['client_id' => 'new-id', 'client_secret' => 'stored-secret'])
+        ->and($config->forProvider('google')->get('client_id'))->toBe('stored-id');
+});
+
+it('reports what the provider said about the credentials', function (int $status, array $body, string $problem) {
+    [$registry, $config, $flow, $apple, $provider] = setting_controller_oauth_services();
+    $provider->says($status, $body);
+
+    $payload = (new SettingController())->testOAuthConfig(AdminRequest::create('/', 'POST', [
+        'provider' => 'google',
+        'values'   => ['client_id' => 'id', 'client_secret' => 'secret'],
+    ]), $registry, $config, $flow, $apple)->getData(true);
+
+    expect($payload['problem'])->toBe($problem)
+        ->and($payload['verified'])->toBeFalse()
+        ->and($payload['configured'])->toBeTrue()
+        ->and($payload['message'])->toStartWith('Google');
+})->with([
+    'wrong secret'        => [401, ['error' => 'invalid_client'], 'invalid_client'],
+    'unknown app'         => [400, ['error' => 'unauthorized_client'], 'invalid_client'],
+    'unregistered url'    => [400, ['error' => 'redirect_uri_mismatch'], 'redirect_uri_mismatch'],
+    'provider outage'     => [503, [], 'unreachable'],
+    'unrecognised answer' => [400, ['error' => 'something_new'], 'inconclusive'],
+]);
+
+it('reports an unreachable provider', function () {
+    [$registry, $config, $flow, $apple, $provider] = setting_controller_oauth_services();
+    $provider->mock->append(new ConnectException('Connection refused', new PsrRequest('POST', 'https://oauth2.googleapis.com/token')));
+
+    $payload = (new SettingController())->testOAuthConfig(AdminRequest::create('/', 'POST', [
+        'provider' => 'google',
+        'values'   => ['client_id' => 'id', 'client_secret' => 'secret'],
+    ]), $registry, $config, $flow, $apple)->getData(true);
+
+    expect($payload['problem'])->toBe('unreachable');
+});
+
+it('does not call the provider while credentials are missing', function () {
+    [$registry, $config, $flow, $apple, $provider] = setting_controller_oauth_services();
+
+    $payload = (new SettingController())->testOAuthConfig(AdminRequest::create('/', 'POST', [
+        'provider' => 'google',
+        'values'   => ['client_id' => 'id'],
+    ]), $registry, $config, $flow, $apple)->getData(true);
+
+    expect($payload['missing'])->toBe(['Client Secret'])
+        ->and($provider->history)->toBe([]);
+});
+
+// ---------------------------------------------------------------------------
+// Enabling
+// ---------------------------------------------------------------------------
+
+it('refuses to offer a provider whose credentials the provider rejects', function () {
+    [$registry, $config, $flow, $apple, $provider] = setting_controller_oauth_services();
+    $provider->says(401, ['error' => 'invalid_client']);
+
+    $response = (new SettingController())->saveOAuthConfig(setting_controller_oauth_save([
+        'allow_registration' => false,
+        'providers'          => ['google' => ['enabled' => true, 'client_id' => 'id', 'client_secret' => 'wrong']],
+    ]), $registry, $config, $flow, $apple);
+
+    // Refused as a whole: not even the unrelated switch is written.
+    expect($response->getStatusCode())->toBe(422)
+        ->and($response->getData(true))->toMatchArray(['code' => 'oauth_provider_check_failed', 'provider' => 'google', 'problem' => 'invalid_client'])
+        ->and(setting_controller_oauth_stored())->toBe([]);
+});
+
+it('refuses to offer a provider with missing credentials', function () {
+    [$registry, $config, $flow, $apple, $provider] = setting_controller_oauth_services();
+
+    $response = (new SettingController())->saveOAuthConfig(setting_controller_oauth_save([
+        'providers' => ['github' => ['enabled' => true]],
+    ]), $registry, $config, $flow, $apple);
+
+    expect($response->getStatusCode())->toBe(422)
+        ->and($response->getData(true)['problem'])->toBe('missing_credentials')
+        ->and($provider->history)->toBe([]);
+});
+
+it('offers a provider once the provider accepts its credentials', function () {
+    [$registry, $config, $flow, $apple, $provider] = setting_controller_oauth_services();
+    $provider->accepts();
+
+    $response = (new SettingController())->saveOAuthConfig(setting_controller_oauth_save([
+        'providers' => ['google' => ['enabled' => true, 'client_id' => 'id', 'client_secret' => 'right']],
+    ]), $registry, $config, $flow, $apple);
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($registry->driver('google')->isEnabled())->toBeTrue();
+});
+
+it('rechecks a live provider only when its credentials change', function () {
+    [$registry, $config, $flow, $apple, $provider] = setting_controller_oauth_services();
+    $controller                                    = new SettingController();
+    $provider->accepts();
+    $controller->saveOAuthConfig(setting_controller_oauth_save([
+        'providers' => ['google' => ['enabled' => true, 'client_id' => 'id', 'client_secret' => 'right']],
+    ]), $registry, $config, $flow, $apple);
+
+    // The form resubmits every provider on each save; an untouched one is not re-asked.
+    $controller->saveOAuthConfig(setting_controller_oauth_save([
+        'providers' => ['google' => ['enabled' => true, 'client_id' => 'id', 'client_secret' => '', 'hosted_domain' => '']],
+    ]), $registry, $config, $flow, $apple);
+    expect($provider->history)->toHaveCount(1);
+
+    // A new secret on a live provider is checked before it replaces the working one.
+    $provider->says(401, ['error' => 'invalid_client']);
+    $response = $controller->saveOAuthConfig(setting_controller_oauth_save([
+        'providers' => ['google' => ['enabled' => true, 'client_id' => 'id', 'client_secret' => 'typo']],
+    ]), $registry, $config, $flow, $apple);
+
+    expect($response->getStatusCode())->toBe(422)
+        ->and($config->forProvider('google')->secret('client_secret'))->toBe('right');
+});
+
+it('switches a provider off without asking it anything', function () {
+    [$registry, $config, $flow, $apple, $provider] = setting_controller_oauth_services();
+    $provider->accepts();
+    (new SettingController())->saveOAuthConfig(setting_controller_oauth_save([
+        'providers' => ['google' => ['enabled' => true, 'client_id' => 'id', 'client_secret' => 'right']],
+    ]), $registry, $config, $flow, $apple);
+
+    $response = (new SettingController())->saveOAuthConfig(setting_controller_oauth_save([
+        'providers' => ['google' => ['enabled' => false, 'client_secret' => 'anything']],
+    ]), $registry, $config, $flow, $apple);
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($config->forProvider('google')->enabled())->toBeFalse()
+        ->and($provider->history)->toHaveCount(1);
 });
 
 it('rejects an unknown provider under test', function () {

@@ -5,6 +5,7 @@ namespace Fleetbase\Auth\OAuth;
 use Fleetbase\Auth\OAuth\Contracts\OAuthProviderDriver;
 use Fleetbase\Auth\OAuth\Exceptions\UnknownOAuthProviderException;
 use Fleetbase\Services\OAuth\OAuthConfigRepository;
+use GuzzleHttp\Client as HttpClient;
 use Illuminate\Http\Request;
 
 /**
@@ -21,6 +22,7 @@ class OAuthProviderRegistry
         private OAuthConfigRepository $config,
         private Request $request,
         private IdTokenVerifier $idTokenVerifier,
+        private ?HttpClient $http = null,
     ) {
     }
 
@@ -44,17 +46,30 @@ class OAuthProviderRegistry
      */
     public function driver(string $provider): OAuthProviderDriver
     {
+        return $this->driverWith($provider, $this->config->forProvider($provider));
+    }
+
+    /**
+     * A driver running on configuration supplied by the caller rather than what is
+     * stored — how the admin form checks credentials it has not saved yet.
+     *
+     * @throws UnknownOAuthProviderException
+     */
+    public function driverWith(string $provider, OAuthProviderConfig $config): OAuthProviderDriver
+    {
         $class = $this->driverClass($provider);
 
         if ($class === null) {
             throw new UnknownOAuthProviderException('unknown_provider');
         }
 
-        return new $class(
-            $this->config->forProvider($provider),
-            $this->request,
-            $this->idTokenVerifier
-        );
+        $driver = new $class($config, $this->request, $this->idTokenVerifier);
+
+        if ($driver instanceof AbstractOAuthProviderDriver) {
+            $driver->useHttpClient($this->http);
+        }
+
+        return $driver;
     }
 
     /**

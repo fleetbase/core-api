@@ -87,6 +87,42 @@ class OAuthConfigRepository
     }
 
     /**
+     * Configuration for one provider as it would be after saving $draft.
+     *
+     * Held in memory only: nothing is written. Draft secrets stay plaintext and
+     * replace any stored ciphertext; an empty draft secret keeps the stored one,
+     * exactly as save() treats it.
+     *
+     * @param array<string, mixed> $draft
+     * @param array<int, string>   $secretKeys
+     */
+    public function draftFor(string $provider, array $draft, array $secretKeys = []): OAuthProviderConfig
+    {
+        $values = $this->mergedValues($provider);
+
+        foreach ($draft as $key => $value) {
+            if ($key === 'driver') {
+                continue;
+            }
+
+            if (in_array($key, $secretKeys, true)) {
+                if (!is_string($value) || trim($value) === '') {
+                    continue;
+                }
+
+                $values[$key] = trim($value);
+                unset($values[$key . OAuthProviderConfig::ENCRYPTED_SUFFIX]);
+
+                continue;
+            }
+
+            $values[$key] = is_string($value) ? trim($value) : $value;
+        }
+
+        return new OAuthProviderConfig($provider, $values, $this->encrypter);
+    }
+
+    /**
      * The provider ids this installation defines.
      *
      * @return array<int, string>

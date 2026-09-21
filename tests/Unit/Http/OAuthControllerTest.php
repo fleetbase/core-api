@@ -306,6 +306,11 @@ class OAuthControllerFakeDriver implements OAuthProviderDriver
 
         return self::$behaviour['profile'] ?? new OAuthUserProfile('fakeprovider', 'subject-1', 'ada@example.com', true, 'Ada Lovelace');
     }
+
+    public function verifyCredentials(string $redirectUri): Fleetbase\Auth\OAuth\CredentialCheck
+    {
+        return Fleetbase\Auth\OAuth\CredentialCheck::Verified;
+    }
 }
 
 function oauth_controller_database(array $config = []): Capsule

@@ -71,4 +71,10 @@ interface OAuthProviderDriver
      *                                              outside the token response
      */
     public function exchange(string $code, string $codeVerifier, string $redirectUri, array $callbackPayload = []): OAuthUserProfile;
+
+    /**
+     * Ask the provider whether it accepts these client credentials, without signing
+     * anyone in. Makes one request to the provider's token endpoint.
+     */
+    public function verifyCredentials(string $redirectUri): \Fleetbase\Auth\OAuth\CredentialCheck;
 }

@@ -3,9 +3,12 @@
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
 use Fleetbase\Auth\OAuth\AppleClientSecretFactory;
+use Fleetbase\Auth\OAuth\Contracts\OAuthProviderDriver;
+use Fleetbase\Auth\OAuth\CredentialCheck;
 use Fleetbase\Auth\OAuth\Drivers\AppleDriver;
 use Fleetbase\Auth\OAuth\Exceptions\OAuthProviderNotConfiguredException;
 use Fleetbase\Auth\OAuth\Exceptions\UnknownOAuthProviderException;
+use Fleetbase\Auth\OAuth\OAuthProviderConfig;
 use Fleetbase\Auth\OAuth\OAuthProviderRegistry;
 use Fleetbase\Http\Controllers\Controller;
 use Fleetbase\Http\Requests\Admin\SaveOAuthConfigRequest;
@@ -1066,7 +1069,7 @@ class SettingController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse
      */
-    public function saveOAuthConfig(SaveOAuthConfigRequest $request, OAuthProviderRegistry $registry, OAuthConfigRepository $config, OAuthFlowService $flow)
+    public function saveOAuthConfig(SaveOAuthConfigRequest $request, OAuthProviderRegistry $registry, OAuthConfigRepository $config, OAuthFlowService $flow, AppleClientSecretFactory $apple)
     {
         $global = [];
 
@@ -1102,7 +1105,25 @@ class SettingController extends Controller
             }
 
             $providers[$id]  = $values;
-            $secretKeys[$id] = array_keys(array_filter($schema, fn (array $definition): bool => ($definition['secret'] ?? false) === true));
+            $secretKeys[$id] = $this->oauthSecretKeys($schema);
+        }
+
+        // A provider only goes live, or changes credentials while live, once the
+        // provider itself has accepted those credentials. Checked before anything is
+        // written, so a rejected save leaves every provider as it was.
+        foreach ($providers as $id => $values) {
+            $stored = $config->forProvider($id);
+            $draft  = $config->draftFor($id, $values, $secretKeys[$id]);
+
+            if (!$draft->enabled() || ($stored->enabled() && !$this->oauthCredentialsChanged($stored, $values, $secretKeys[$id]))) {
+                continue;
+            }
+
+            $check = $this->checkOAuthProvider($registry->driverWith($id, $draft), $draft, $registry->schemas()[$id], $flow->redirectUri($id), $apple);
+
+            if ($check['problem'] !== null) {
+                return response()->error($check['message'], 422, ['code' => 'oauth_provider_check_failed', 'provider' => $id, 'problem' => $check['problem']]);
+            }
         }
 
         $config->save($global, $providers, $secretKeys);
@@ -1113,13 +1134,13 @@ class SettingController extends Controller
     /**
      * Check a provider's configuration without signing anyone in.
      *
-     * Confirms every required credential is present and decryptable, and for Apple
-     * that the signing key actually mints a client secret — the failure an operator is
-     * most likely to hit, and one that would otherwise only surface at the first real
-     * sign-in. Also echoes the redirect URI to register with the provider.
+     * Runs against the form as it currently stands: `values` (the unsaved fields for
+     * this provider) are layered over what is stored, so an administrator can check
+     * credentials before saving them. Nothing is written.
      *
-     * This does not call the provider, so it cannot tell a revoked client secret from a
-     * valid one; that surfaces as an exchange failure on first sign-in.
+     * Confirms every required credential is present, that an Apple signing key
+     * actually mints a client secret, and then asks the provider itself whether it
+     * accepts the client credentials — see CredentialCheck.
      *
      * @return \Illuminate\Http\JsonResponse
      */
@@ -1128,30 +1149,125 @@ class SettingController extends Controller
         $id = (string) $request->input('provider');
 
         try {
-            $driver = $registry->driver($id);
+            $registry->driver($id);
         } catch (UnknownOAuthProviderException $e) {
             return response()->error('Unknown sign-in provider.', 404, ['code' => 'unknown_provider']);
         }
 
-        $configured = $driver->isConfigured();
-        $problem    = $configured ? null : 'missing_credentials';
+        $schema = $registry->schemas()[$id];
+        $input  = $request->input('values');
+        $values = [];
 
-        if ($configured && $driver instanceof AppleDriver) {
-            try {
-                $apple->make($config->forProvider($id));
-            } catch (OAuthProviderNotConfiguredException $e) {
-                $configured = false;
-                $problem    = 'invalid_signing_key';
+        // Same filtering as a save: only fields the driver declares, only strings.
+        foreach (array_keys($schema) as $field) {
+            if (is_array($input) && array_key_exists($field, $input)) {
+                $values[$field] = is_string($input[$field]) ? $input[$field] : null;
             }
         }
 
-        return response()->json([
-            'provider'     => $id,
-            'configured'   => $configured,
-            'enabled'      => $configured && $driver->isEnabled(),
-            'problem'      => $problem,
-            'redirect_uri' => $flow->redirectUri($id),
-        ]);
+        $draft       = $config->draftFor($id, $values, $this->oauthSecretKeys($schema));
+        $redirectUri = $flow->redirectUri($id);
+        $check       = $this->checkOAuthProvider($registry->driverWith($id, $draft), $draft, $schema, $redirectUri, $apple);
+
+        return response()->json(array_merge(['provider' => $id], $check, ['redirect_uri' => $redirectUri]));
+    }
+
+    /**
+     * Everything that has to be true before a provider can be offered on the sign-in
+     * page, cheapest first. Stops at the first problem.
+     *
+     * @param array<string, array{label?: string, secret?: bool, required?: bool}> $schema
+     *
+     * @return array{configured: bool, verified: bool, problem: ?string, missing: array<int, string>, message: string}
+     */
+    private function checkOAuthProvider(OAuthProviderDriver $driver, OAuthProviderConfig $config, array $schema, string $redirectUri, AppleClientSecretFactory $apple): array
+    {
+        $label   = $driver::label();
+        $missing = [];
+
+        foreach ($schema as $field => $definition) {
+            if (($definition['required'] ?? false) !== true) {
+                continue;
+            }
+
+            $present = ($definition['secret'] ?? false) === true ? $config->hasSecret($field) : $config->get($field) !== null;
+
+            if (!$present) {
+                $missing[] = $definition['label'] ?? $field;
+            }
+        }
+
+        if ($missing !== [] || !$driver->isConfigured()) {
+            return $this->oauthCheckResult(false, false, 'missing_credentials', $missing, 'Missing: ' . implode(', ', $missing ?: ['a required credential']) . '.');
+        }
+
+        if ($driver instanceof AppleDriver) {
+            try {
+                $apple->make($config);
+            } catch (OAuthProviderNotConfiguredException $e) {
+                return $this->oauthCheckResult(false, false, 'invalid_signing_key', [], 'The signing key could not be used to mint a client secret. Check that it is the full .p8 file for this Key ID.');
+            }
+        }
+
+        return match ($driver->verifyCredentials($redirectUri)) {
+            CredentialCheck::Verified            => $this->oauthCheckResult(true, true, null, [], $label . ' accepted these credentials.'),
+            CredentialCheck::InvalidClient       => $this->oauthCheckResult(true, false, 'invalid_client', [], $label . ' rejected these credentials. Check the Client ID and Client Secret.'),
+            CredentialCheck::RedirectUriMismatch => $this->oauthCheckResult(true, false, 'redirect_uri_mismatch', [], $label . ' does not recognise the callback URL. Register it exactly as shown below.'),
+            CredentialCheck::Unreachable         => $this->oauthCheckResult(true, false, 'unreachable', [], $label . ' could not be reached to check these credentials. Try again shortly.'),
+            CredentialCheck::Inconclusive        => $this->oauthCheckResult(true, false, 'inconclusive', [], $label . ' gave an unexpected answer, so these credentials could not be confirmed.'),
+        };
+    }
+
+    /**
+     * @param array<int, string> $missing
+     *
+     * @return array{configured: bool, verified: bool, problem: ?string, missing: array<int, string>, message: string}
+     */
+    private function oauthCheckResult(bool $configured, bool $verified, ?string $problem, array $missing, string $message): array
+    {
+        return ['configured' => $configured, 'verified' => $verified, 'problem' => $problem, 'missing' => $missing, 'message' => $message];
+    }
+
+    /**
+     * Whether a save changes anything the provider authenticates — a new secret, or a
+     * different value for any other field.
+     *
+     * @param array<string, mixed> $values
+     * @param array<int, string>   $secretKeys
+     */
+    private function oauthCredentialsChanged(OAuthProviderConfig $stored, array $values, array $secretKeys): bool
+    {
+        foreach ($values as $key => $value) {
+            if ($key === 'enabled') {
+                continue;
+            }
+
+            if (in_array($key, $secretKeys, true)) {
+                if (is_string($value) && trim($value) !== '') {
+                    return true;
+                }
+
+                continue;
+            }
+
+            $value = is_string($value) && trim($value) !== '' ? trim($value) : null;
+
+            if ($value !== $stored->get($key)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string, array{secret?: bool}> $schema
+     *
+     * @return array<int, string>
+     */
+    private function oauthSecretKeys(array $schema): array
+    {
+        return array_keys(array_filter($schema, fn (array $definition): bool => ($definition['secret'] ?? false) === true));
     }
 
     /**
