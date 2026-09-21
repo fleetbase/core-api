@@ -2,11 +2,19 @@
 
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
+use Fleetbase\Auth\OAuth\AppleClientSecretFactory;
+use Fleetbase\Auth\OAuth\Drivers\AppleDriver;
+use Fleetbase\Auth\OAuth\Exceptions\OAuthProviderNotConfiguredException;
+use Fleetbase\Auth\OAuth\Exceptions\UnknownOAuthProviderException;
+use Fleetbase\Auth\OAuth\OAuthProviderRegistry;
 use Fleetbase\Http\Controllers\Controller;
+use Fleetbase\Http\Requests\Admin\SaveOAuthConfigRequest;
 use Fleetbase\Http\Requests\AdminRequest;
 use Fleetbase\Models\File;
 use Fleetbase\Models\Setting;
 use Fleetbase\Notifications\TestPushNotification;
+use Fleetbase\Services\OAuth\OAuthConfigRepository;
+use Fleetbase\Services\OAuth\OAuthFlowService;
 use Fleetbase\Services\SmsService;
 use Fleetbase\Support\PlatformApi;
 use Fleetbase\Support\Utils;
@@ -1021,6 +1029,150 @@ class SettingController extends Controller
                 'response' => $response,
             ]
         );
+    }
+
+    /**
+     * OAuth configuration, as an administrator should see it.
+     *
+     * No secret value is ever returned — not even to an admin. Each secret is reduced
+     * to whether it is set plus a short trailing hint, which is enough to tell two
+     * credentials apart when rotating without disclosing either.
+     *
+     * The response carries the provider schemas and the computed redirect URIs so the
+     * console can render the form without hardcoding any provider, and so an operator
+     * can copy the exact callback URL each provider's console requires.
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getOAuthConfig(AdminRequest $request, OAuthProviderRegistry $registry, OAuthConfigRepository $config, OAuthFlowService $flow)
+    {
+        return response()->json($this->oauthConfigPayload($registry, $config, $flow));
+    }
+
+    /**
+     * Save OAuth configuration.
+     *
+     * Every field is filtered against the driver schemas before anything is written:
+     * an unknown provider id, or a field a driver does not declare, is ignored. That is
+     * what guarantees nothing but declared configuration — and in particular never a
+     * driver class name — can reach the settings row.
+     *
+     * Secrets are encrypted by the repository. An empty secret means "keep the stored
+     * one", because the form never receives the real value and so cannot echo it back.
+     *
+     * Deliberately does not call refreshConfigCache(): nothing here lives in config()
+     * at runtime, so rewriting the config cache mid-request under a booted Octane worker
+     * would be pure risk.
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function saveOAuthConfig(SaveOAuthConfigRequest $request, OAuthProviderRegistry $registry, OAuthConfigRepository $config, OAuthFlowService $flow)
+    {
+        $global = [];
+
+        foreach (['enabled', 'allow_registration'] as $key) {
+            if ($request->has($key)) {
+                $global[$key] = $request->boolean($key);
+            }
+        }
+
+        $providers  = [];
+        $secretKeys = [];
+
+        foreach ($registry->schemas() as $id => $schema) {
+            $input = $request->input('providers.' . $id);
+
+            if (!is_array($input)) {
+                continue;
+            }
+
+            $values = [];
+
+            if (array_key_exists('enabled', $input)) {
+                $values['enabled'] = filter_var($input['enabled'], FILTER_VALIDATE_BOOL);
+            }
+
+            foreach (array_keys($schema) as $field) {
+                if (!array_key_exists($field, $input)) {
+                    continue;
+                }
+
+                $value          = $input[$field];
+                $values[$field] = is_string($value) ? trim($value) : null;
+            }
+
+            $providers[$id]  = $values;
+            $secretKeys[$id] = array_keys(array_filter($schema, fn (array $definition): bool => ($definition['secret'] ?? false) === true));
+        }
+
+        $config->save($global, $providers, $secretKeys);
+
+        return response()->json($this->oauthConfigPayload($registry, $config, $flow));
+    }
+
+    /**
+     * Check a provider's configuration without signing anyone in.
+     *
+     * Confirms every required credential is present and decryptable, and for Apple
+     * that the signing key actually mints a client secret — the failure an operator is
+     * most likely to hit, and one that would otherwise only surface at the first real
+     * sign-in. Also echoes the redirect URI to register with the provider.
+     *
+     * This does not call the provider, so it cannot tell a revoked client secret from a
+     * valid one; that surfaces as an exchange failure on first sign-in.
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function testOAuthConfig(AdminRequest $request, OAuthProviderRegistry $registry, OAuthConfigRepository $config, OAuthFlowService $flow, AppleClientSecretFactory $apple)
+    {
+        $id = (string) $request->input('provider');
+
+        try {
+            $driver = $registry->driver($id);
+        } catch (UnknownOAuthProviderException $e) {
+            return response()->error('Unknown sign-in provider.', 404, ['code' => 'unknown_provider']);
+        }
+
+        $configured = $driver->isConfigured();
+        $problem    = $configured ? null : 'missing_credentials';
+
+        if ($configured && $driver instanceof AppleDriver) {
+            try {
+                $apple->make($config->forProvider($id));
+            } catch (OAuthProviderNotConfiguredException $e) {
+                $configured = false;
+                $problem    = 'invalid_signing_key';
+            }
+        }
+
+        return response()->json([
+            'provider'     => $id,
+            'configured'   => $configured,
+            'enabled'      => $configured && $driver->isEnabled(),
+            'problem'      => $problem,
+            'redirect_uri' => $flow->redirectUri($id),
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function oauthConfigPayload(OAuthProviderRegistry $registry, OAuthConfigRepository $config, OAuthFlowService $flow): array
+    {
+        $definitions  = $registry->definitions();
+        $schemas      = [];
+        $redirectUris = [];
+
+        foreach ($definitions as $definition) {
+            $schemas[$definition['id']]      = $definition['schema'];
+            $redirectUris[$definition['id']] = $flow->redirectUri($definition['id']);
+        }
+
+        return [
+            'oauth'         => $config->toAdminArray($schemas),
+            'providers'     => $definitions,
+            'redirect_uris' => $redirectUris,
+        ];
     }
 
     /**

@@ -111,6 +111,39 @@ class OAuthProviderRegistry
     }
 
     /**
+     * Every defined provider with its label, icon and config schema, for the admin
+     * settings form.
+     *
+     * Unlike toDiscoveryArray() this includes providers that are switched off or not
+     * yet configured — the admin needs to see them in order to configure them. The
+     * console renders the form entirely from this, which is what lets a provider be
+     * added later without a console change.
+     *
+     * @return array<int, array{id: string, label: string, icon: string, schema: array<string, array{label: string, secret?: bool, required?: bool, help?: string}>}>
+     */
+    public function definitions(): array
+    {
+        $definitions = [];
+
+        foreach ($this->ids() as $id) {
+            $class = $this->driverClass($id);
+
+            if ($class === null) {
+                continue;
+            }
+
+            $definitions[] = [
+                'id'     => $id,
+                'label'  => $class::label(),
+                'icon'   => $class::icon(),
+                'schema' => $class::configSchema(),
+            ];
+        }
+
+        return $definitions;
+    }
+
+    /**
      * The config schema for every defined provider, for the admin settings form.
      *
      * @return array<string, array<string, array{label: string, secret?: bool, required?: bool, help?: string}>>

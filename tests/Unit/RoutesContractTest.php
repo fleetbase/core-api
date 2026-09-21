@@ -291,6 +291,26 @@ namespace {
             ->toBeLessThan(routes_contract_index($routes, 'POST', 'int/v1/auth/oauth/{provider}/callback'));
     });
 
+    test('route file exposes oauth configuration as protected admin settings', function () {
+        $routes = routes_contract_rows(routes_contract_router());
+
+        $settings = 'Fleetbase\\Http\\Controllers\\Internal\\v1\\SettingController';
+
+        $get  = routes_contract_find($routes, 'GET', 'int/v1/settings/oauth-config');
+        $save = routes_contract_find($routes, 'POST', 'int/v1/settings/oauth-config');
+        $test = routes_contract_find($routes, 'POST', 'int/v1/settings/test-oauth-config');
+
+        // Provider credentials are configured here, so these must sit behind the
+        // authenticated group — the AdminRequest on each action then restricts them
+        // to administrators.
+        expect($get['action'])->toBe($settings . '@getOAuthConfig')
+            ->and($get['middleware'])->toContain('fleetbase.protected')
+            ->and($save['action'])->toBe($settings . '@saveOAuthConfig')
+            ->and($save['middleware'])->toContain('fleetbase.protected')
+            ->and($test['action'])->toBe($settings . '@testOAuthConfig')
+            ->and($test['middleware'])->toContain('fleetbase.protected');
+    });
+
     test('route file keeps critical internal custom routes before dynamic resource routes', function () {
         $routes = routes_contract_rows(routes_contract_router());
 
