@@ -44,17 +44,20 @@ class MicrosoftDriver extends AbstractOAuthProviderDriver
     {
         return [
             'client_id' => [
-                'label'    => 'Application (client) ID',
-                'required' => true,
+                'label'       => 'Application (client) ID',
+                'placeholder' => '00000000-0000-0000-0000-000000000000',
+                'required'    => true,
             ],
             'client_secret' => [
-                'label'    => 'Client Secret',
-                'secret'   => true,
-                'required' => true,
+                'label'       => 'Client Secret',
+                'placeholder' => 'Client secret value, not the secret ID',
+                'secret'      => true,
+                'required'    => true,
             ],
             'tenant' => [
-                'label' => 'Directory (tenant) ID',
-                'help'  => 'A tenant ID or domain restricts sign-in to that directory. "common" accepts any Microsoft account, but then only addresses Microsoft explicitly marks as domain-verified are trusted.',
+                'label'       => 'Directory (tenant) ID',
+                'placeholder' => 'common, or a tenant ID or domain such as contoso.onmicrosoft.com',
+                'help'        => 'A tenant ID or domain restricts sign-in to that directory. "common" accepts any Microsoft account, but then only addresses Microsoft explicitly marks as domain-verified are trusted.',
             ],
         ];
     }

@@ -195,3 +195,16 @@ it('marks apple as needing a form post callback and the others not', function ()
         ->and($registry->driver('microsoft')->usesFormPostCallback())->toBeFalse()
         ->and($registry->driver('github')->usesFormPostCallback())->toBeFalse();
 });
+
+it('gives every admin form field an example placeholder', function (string $driver) {
+    // The console renders the form straight from the schema, so a field without one
+    // shows up as an empty box beside fields that do have one.
+    foreach ($driver::configSchema() as $key => $definition) {
+        expect($definition['placeholder'] ?? '')->not->toBe('', $driver . '::' . $key);
+    }
+})->with([
+    GoogleDriver::class,
+    MicrosoftDriver::class,
+    GithubDriver::class,
+    AppleDriver::class,
+]);

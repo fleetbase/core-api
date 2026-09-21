@@ -32,17 +32,20 @@ class GoogleDriver extends AbstractOAuthProviderDriver
     {
         return [
             'client_id' => [
-                'label'    => 'Client ID',
-                'required' => true,
+                'label'       => 'Client ID',
+                'placeholder' => '123456789012-abc123def456.apps.googleusercontent.com',
+                'required'    => true,
             ],
             'client_secret' => [
-                'label'    => 'Client Secret',
-                'secret'   => true,
-                'required' => true,
+                'label'       => 'Client Secret',
+                'placeholder' => 'GOCSPX-…',
+                'secret'      => true,
+                'required'    => true,
             ],
             'hosted_domain' => [
-                'label' => 'Restrict to Workspace domain',
-                'help'  => 'Optional. Only accounts in this Google Workspace domain may sign in.',
+                'label'       => 'Restrict to Workspace domain',
+                'placeholder' => 'example.com',
+                'help'        => 'Optional. Only accounts in this Google Workspace domain may sign in.',
             ],
         ];
     }

@@ -35,8 +35,9 @@ interface OAuthProviderDriver
      * The credentials this provider accepts, for validation and the admin form.
      *
      * Keys marked `secret` are stored encrypted and are never returned to a client.
+     * Every field carries a `placeholder` showing what a value looks like.
      *
-     * @return array<string, array{label: string, secret?: bool, required?: bool, help?: string}>
+     * @return array<string, array{label: string, placeholder: string, secret?: bool, required?: bool, help?: string}>
      */
     public static function configSchema(): array;
 

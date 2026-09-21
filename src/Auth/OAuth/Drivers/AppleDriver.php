@@ -55,23 +55,27 @@ class AppleDriver extends AbstractOAuthProviderDriver
     {
         return [
             'client_id' => [
-                'label'    => 'Services ID',
-                'required' => true,
-                'help'     => 'The Services identifier, for example io.fleetbase.console — not an app bundle ID.',
+                'label'       => 'Services ID',
+                'placeholder' => 'com.example.signin',
+                'required'    => true,
+                'help'        => 'The Services identifier, for example io.fleetbase.console — not an app bundle ID.',
             ],
             'team_id' => [
-                'label'    => 'Team ID',
-                'required' => true,
+                'label'       => 'Team ID',
+                'placeholder' => 'A1B2C3D4E5',
+                'required'    => true,
             ],
             'key_id' => [
-                'label'    => 'Key ID',
-                'required' => true,
+                'label'       => 'Key ID',
+                'placeholder' => 'ABC123DEFG',
+                'required'    => true,
             ],
             'private_key' => [
-                'label'    => 'Signing key (.p8)',
-                'secret'   => true,
-                'required' => true,
-                'help'     => 'Contents of the AuthKey .p8 file. Apple has no static client secret; one is minted from this key for each token request.',
+                'label'       => 'Signing key (.p8)',
+                'placeholder' => '-----BEGIN PRIVATE KEY-----',
+                'secret'      => true,
+                'required'    => true,
+                'help'        => 'Contents of the AuthKey .p8 file. Apple has no static client secret; one is minted from this key for each token request.',
             ],
         ];
     }

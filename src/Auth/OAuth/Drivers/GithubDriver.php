@@ -31,13 +31,15 @@ class GithubDriver extends AbstractOAuthProviderDriver
     {
         return [
             'client_id' => [
-                'label'    => 'Client ID',
-                'required' => true,
+                'label'       => 'Client ID',
+                'placeholder' => 'Ov23li…',
+                'required'    => true,
             ],
             'client_secret' => [
-                'label'    => 'Client Secret',
-                'secret'   => true,
-                'required' => true,
+                'label'       => 'Client Secret',
+                'placeholder' => '40-character client secret',
+                'secret'      => true,
+                'required'    => true,
             ],
         ];
     }
