@@ -465,18 +465,22 @@ class OAuthController extends Controller
     }
 
     /**
-     * Whether this identity's address already belongs to a Fleetbase account.
+     * Whether this identity's address already belongs to a Fleetbase account, so the
+     * person should sign in and link the provider instead of signing up.
      *
-     * Only asked when the provider VOUCHED for the address. An unverified address is
-     * not evidence of anything, and letting it produce `link_required` would leak
-     * whether an arbitrary email has a Fleetbase account.
+     * Asked whether or not the provider verified the address. A match is never used to
+     * sign anyone in or link anything here (that needs a verified address, see
+     * autoLinkCandidate()); it only decides between "sign in and link it" and a sign-up
+     * form. Offering the form for an address that is already taken leads nowhere: the
+     * sign-up would be refused as a duplicate. It reveals nothing new either, since the
+     * sign-up form reports an address that is already in use.
      *
      * Apple private-relay aliases are excluded: they are unique per application, so
      * one can never match an address Fleetbase already holds.
      */
     protected function collidesWithExistingAccount(OAuthUserProfile $profile): bool
     {
-        if (!$profile->hasVerifiedEmail() || $profile->meta('private_relay') === true) {
+        if (!is_string($profile->email) || $profile->email === '' || $profile->meta('private_relay') === true) {
             return false;
         }
 

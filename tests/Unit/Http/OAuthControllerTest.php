@@ -1103,20 +1103,37 @@ it('never links when two accounts share the address', function () {
         ->and(OAuthIdentity::query()->count())->toBe(0);
 });
 
-it('does not report link_required for an address the provider did not verify', function () {
+it('asks to sign in and link for an unverified address that already has an account', function () {
     oauth_controller_database();
     [$controller] = oauth_controller_services();
 
     oauth_controller_user(['uuid' => 'user-1', 'email' => 'ada@example.com']);
     OAuthControllerFakeDriver::$behaviour = [
-        'profile' => new OAuthUserProfile('fakeprovider', 'subject-9', 'ada@example.com', false, 'Mallory'),
+        'profile' => new OAuthUserProfile('fakeprovider', 'subject-9', 'ada@example.com', false, 'Ada'),
     ];
 
     $response = $controller->exchange(oauth_exchange_request(['code' => oauth_controller_handoff($controller)]));
 
-    // Otherwise anyone could probe whether an arbitrary address has a Fleetbase
-    // account simply by asserting it at a provider that does not verify addresses.
-    expect($response->getData(true)['status'] ?? null)->toBe('registration_required');
+    // Not a sign-up form for an address that is already taken — that would be refused
+    // as a duplicate. And, unverified, never a sign-in or a link.
+    expect($response->getStatusCode())->toBe(409)
+        ->and($response->getData(true)['code'])->toBe('link_required')
+        ->and(OAuthIdentity::query()->count())->toBe(0)
+        ->and(OAuthState::query()->where('purpose', OAuthState::PURPOSE_REGISTRATION_INTENT)->count())->toBe(0);
+});
+
+it('offers a sign-up for an unverified address no account uses', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    OAuthControllerFakeDriver::$behaviour = [
+        'profile' => new OAuthUserProfile('fakeprovider', 'subject-9', 'new@example.com', false, 'New Person'),
+    ];
+
+    $data = $controller->exchange(oauth_exchange_request(['code' => oauth_controller_handoff($controller)]))->getData(true);
+
+    expect($data['status'] ?? null)->toBe('registration_required')
+        ->and($data['prefill']['email_verified'])->toBeFalse();
 });
 
 it('does not match an apple private relay alias against an existing account', function () {
