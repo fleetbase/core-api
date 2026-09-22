@@ -13,10 +13,22 @@
   - Customers are still allowed on those endpoints because the customer portal runs inside the console and restores its session through them.
 - Free a deleted user's email and phone so a new account can use them. On soft delete they move to `meta.deleted_identity`; restoring the user puts them back only if no other account has taken them.
 
+## Security
+
+- Never grant the Administrator role by default. Before this fix:
+  - Creating or inviting a user without a role gave them the Administrator role, and so full organization access. Reported for IAM › Customers › Add customer with a blank Role.
+  - Accepting an invite with no role also granted it, and `joinOrganization` ignored the invite's role altogether.
+
+  Now:
+  - A role is required when creating or inviting a user; without one the request returns 422.
+  - `Company::addUser`, `Company::assignUser` and `User::assignCompany` assign no role unless one is given.
+  - An invite without a role joins with no role.
+- Only admins or holders of the Administrator role may grant the Administrator role (403 otherwise), on create, invite and role update.
+
 ## Reliability
 
 - Cover the console guards for each account type, identity release and restore, and promotion through create, invite and invite acceptance.
 
 A database migration is not required. No configuration change is needed. The FleetOps side ships in fleetbase/fleetops#338.
 
-Changes: [#264](https://github.com/fleetbase/core-api/pull/264).
+Changes: [#264](https://github.com/fleetbase/core-api/pull/264), [#266](https://github.com/fleetbase/core-api/pull/266).
