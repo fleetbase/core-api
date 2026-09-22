@@ -208,3 +208,17 @@ it('gives every admin form field an example placeholder', function (string $driv
     GithubDriver::class,
     AppleDriver::class,
 ]);
+
+it('leaves a provider without a usable driver out of every listing', function () {
+    $registry = oauth_registry([
+        'google' => ['driver' => GoogleDriver::class, 'enabled' => true, 'client_id' => 'g', 'client_secret' => 'gs'],
+        // Defined in config but pointing at a class that is not installed, e.g. an
+        // extension that was removed: it is skipped rather than breaking the others.
+        'ghost' => ['driver' => 'Fleetbase\\Nope\\DoesNotExist', 'enabled' => true, 'client_id' => 'x', 'client_secret' => 'y'],
+    ]);
+
+    expect($registry->ids())->toBe(['google', 'ghost'])
+        ->and(array_keys($registry->enabled()))->toBe(['google'])
+        ->and(array_column($registry->definitions(), 'id'))->toBe(['google'])
+        ->and(array_keys($registry->schemas()))->toBe(['google']);
+});

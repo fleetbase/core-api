@@ -402,3 +402,23 @@ it('reports apple configured only once every part of the signing key is present'
 
     expect($repository->forProvider('apple')->isConfigured(['client_id', 'team_id', 'key_id'], ['private_key']))->toBeTrue();
 });
+
+it('never lets a draft swap the driver class', function () {
+    $repository = oauth_config_repository();
+
+    // The admin form's draft is caller input; a `driver` in it is dropped just as it is
+    // when stored, so a credential check can never instantiate an arbitrary class.
+    $draft = $repository->draftFor('google', ['driver' => stdClass::class, 'client_id' => ' draft-id '], ['client_secret']);
+
+    expect($draft->get('driver'))->toBeNull()
+        ->and($draft->get('client_id'))->toBe('draft-id');
+});
+
+it('refuses to store a secret without an encrypter rather than storing it in plaintext', function () {
+    oauth_config_repository();
+    $repository = new OAuthConfigRepository(null);
+
+    expect(fn () => $repository->save([], ['google' => ['client_secret' => 'plaintext']], ['google' => ['client_secret']]))
+        ->toThrow(RuntimeException::class, 'Cannot store an OAuth secret without an encrypter.')
+        ->and(Setting::query()->where('key', 'system.oauth')->exists())->toBeFalse();
+});

@@ -79,9 +79,13 @@ class IdTokenVerifier
             throw new OAuthIdTokenException('id_token_malformed');
         }
 
+        // @codeCoverageIgnoreStart
+        // Defensive narrowing for the type checker: the configured Token\Parser only
+        // ever returns a Plain token or throws, so this cannot be reached.
         if (!$token instanceof Plain) {
             throw new OAuthIdTokenException('id_token_malformed');
         }
+        // @codeCoverageIgnoreEnd
 
         $kid = $token->headers()->get('kid');
 
@@ -146,9 +150,13 @@ class IdTokenVerifier
 
         $details = openssl_pkey_get_details($keys[$kid]->getKeyMaterial());
 
+        // @codeCoverageIgnoreStart
+        // Defensive: an RSA JWK is parsed into an OpenSSL public key, whose details
+        // always carry the PEM under `key`. There is no input that reaches this.
         if (!is_array($details) || !isset($details['key']) || !is_string($details['key'])) {
             throw new OAuthIdTokenException('jwks_unreadable');
         }
+        // @codeCoverageIgnoreEnd
 
         return $details['key'];
     }
