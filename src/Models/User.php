@@ -898,6 +898,25 @@ class User extends Authenticatable
     }
 
     /**
+     * Scope a query to accounts managed in IAM, leaving out profile-managed ones.
+     */
+    public function scopeNotManaged(Builder $query): Builder
+    {
+        return static::whereNotManagedType($query, $this->qualifyColumn('type'));
+    }
+
+    /**
+     * Constrain a query on any table joined to users to accounts managed in IAM.
+     * A user with no type is an IAM account, and NOT IN alone would drop it.
+     */
+    public static function whereNotManagedType($query, string $typeColumn = 'users.type')
+    {
+        return $query->where(function ($query) use ($typeColumn) {
+            $query->whereNull($typeColumn)->orWhereNotIn($typeColumn, static::MANAGED_TYPES);
+        });
+    }
+
+    /**
      * Adds a boolean dynamic property to check if user is an admin.
      *
      * @return void

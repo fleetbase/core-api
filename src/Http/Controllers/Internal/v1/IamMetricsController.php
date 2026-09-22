@@ -67,7 +67,7 @@ class IamMetricsController extends Controller
     public function accessCoverage(Request $request): JsonResponse
     {
         $companyUuid      = session('company');
-        $companyUsers     = CompanyUser::where('company_uuid', $companyUuid)->whereNull('deleted_at')->get(['uuid', 'user_uuid']);
+        $companyUsers     = $this->companyUsersQuery($companyUuid)->get(['company_users.uuid', 'company_users.user_uuid']);
         $userUuids        = $companyUsers->pluck('user_uuid');
         $companyUserUuids = $companyUsers->pluck('uuid');
         $roleUserUuids    = $this->modelAssignmentUserUuids('model_has_roles', $companyUsers, $companyUserUuids);
@@ -156,7 +156,7 @@ class IamMetricsController extends Controller
     public function groupCoverage(Request $request): JsonResponse
     {
         $companyUuid = session('company');
-        $groups      = Group::where('company_uuid', $companyUuid)->withCount('users')->get(['uuid', 'name']);
+        $groups      = Group::where('company_uuid', $companyUuid)->withCount(['users' => fn ($query) => $query->notManaged()])->get(['uuid', 'name']);
 
         return response()->json([
             'total_groups'      => $groups->count(),
@@ -287,13 +287,19 @@ class IamMetricsController extends Controller
         return response()->json(['items' => $items]);
     }
 
+    /**
+     * The company's IAM users. Driver, customer and contact accounts are managed
+     * from their FleetOps profile, so none of the IAM metrics count them.
+     */
     private function companyUsersQuery(string $companyUuid)
     {
-        return CompanyUser::query()
+        $query = CompanyUser::query()
             ->join('users', 'company_users.user_uuid', '=', 'users.uuid')
             ->where('company_users.company_uuid', $companyUuid)
             ->whereNull('company_users.deleted_at')
             ->whereNull('users.deleted_at');
+
+        return User::whereNotManagedType($query, 'users.type');
     }
 
     private function dormantUsersQuery(string $companyUuid)
@@ -306,7 +312,7 @@ class IamMetricsController extends Controller
 
     private function companyUserIds(string $companyUuid): Collection
     {
-        return CompanyUser::where('company_uuid', $companyUuid)->whereNull('deleted_at')->pluck('uuid');
+        return $this->companyUsersQuery($companyUuid)->pluck('company_users.uuid');
     }
 
     private function modelAssignmentUserUuids(string $table, Collection $companyUsers, Collection $modelUuids): Collection
@@ -322,11 +328,14 @@ class IamMetricsController extends Controller
 
     private function groupMembershipsQuery(string $companyUuid)
     {
-        return DB::table('group_users')
+        $query = DB::table('group_users')
             ->join('groups', 'group_users.group_uuid', '=', 'groups.uuid')
+            ->join('users', 'group_users.user_uuid', '=', 'users.uuid')
             ->where('groups.company_uuid', $companyUuid)
             ->whereNull('group_users.deleted_at')
             ->whereNull('groups.deleted_at');
+
+        return User::whereNotManagedType($query, 'users.type');
     }
 
     private function directPrivilegedGrantCount(string $companyUuid): int
@@ -348,10 +357,9 @@ class IamMetricsController extends Controller
 
     private function statusCounts(string $companyUuid): array
     {
-        $counts = CompanyUser::where('company_uuid', $companyUuid)
-            ->whereNull('deleted_at')
-            ->selectRaw('status, COUNT(*) as count')
-            ->groupBy('status')
+        $counts = $this->companyUsersQuery($companyUuid)
+            ->selectRaw('company_users.status as status, COUNT(*) as count')
+            ->groupBy('company_users.status')
             ->pluck('count', 'status');
 
         return [
@@ -365,7 +373,7 @@ class IamMetricsController extends Controller
     {
         $system       = Setting::where('key', 'system.2fa')->first();
         $company      = Setting::where('key', 'company.' . $companyUuid . '.2fa')->first();
-        $userUuids    = CompanyUser::where('company_uuid', $companyUuid)->whereNull('deleted_at')->pluck('user_uuid');
+        $userUuids    = $this->companyUsersQuery($companyUuid)->pluck('company_users.user_uuid');
         $enabledUsers = Setting::where('key', 'like', 'user.%.2fa')
             ->get(['key', 'value'])
             ->filter(function ($setting) use ($userUuids) {
