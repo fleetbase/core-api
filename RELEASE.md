@@ -5,6 +5,10 @@
 - Treat `driver`, `customer` and `contact` users as managed accounts: the FleetOps profile owns them, not IAM. `User` gains `MANAGED_TYPES`, `isManagedAccount()`, `isStaffAccount()`, `canAccessConsole()`, `canHoldConsoleSession()` and a `managed()` scope.
 - Promote instead of duplicating. When IAM creates or invites a team member whose email or phone belongs to a managed account in the organization, that account becomes a `user`. It gets the chosen role, permissions and policies and a join invite, and keeps its driver and customer profiles. The response carries `promoted_from`. Accepting any IAM invite also promotes a managed account and asks it to set a console password.
 
+## Improvements for IAM
+
+- Let IAM admins ask a user to verify their email or phone. `POST users/{id}/send-verification` sends a one-click link by email or SMS; it lasts 48 hours. The public `auth/confirm-contact-verification` confirms it without signing in, and refuses the link if the address changed since. `users/verify/{id}` takes a `channel` (email by default, or phone). `UserFilter` adds `email_verified`, `phone_verified`, `country` and `timezone` for the new IAM columns.
+
 ## Fixes
 
 - Keep managed accounts out of the console:
@@ -31,4 +35,4 @@
 
 A database migration is not required. No configuration change is needed. The FleetOps side ships in fleetbase/fleetops#338.
 
-Changes: [#264](https://github.com/fleetbase/core-api/pull/264), [#266](https://github.com/fleetbase/core-api/pull/266).
+Changes: [#264](https://github.com/fleetbase/core-api/pull/264), [#266](https://github.com/fleetbase/core-api/pull/266), [#267](https://github.com/fleetbase/core-api/pull/267).

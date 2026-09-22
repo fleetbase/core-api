@@ -19,6 +19,7 @@ use Fleetbase\Mail\UserCredentialsMail;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\Invite;
+use Fleetbase\Models\Role;
 use Fleetbase\Models\User;
 use Fleetbase\Models\VerificationCode;
 use Fleetbase\Notifications\UserForgotPassword;
@@ -62,8 +63,8 @@ class AuthController extends Controller
                     $tokenOwner instanceof User
                     && ($tokenOwner->email === $identity || $tokenOwner->phone === $identity)
                 ) {
-                    if ($tokenOwner->type === 'customer') {
-                        return response()->error('Customer accounts must sign in through the customer portal.', 403, ['code' => 'customer_login_not_allowed']);
+                    if ($denied = Auth::denyConsoleLogin($tokenOwner)) {
+                        return $denied;
                     }
 
                     return response()->json([
@@ -83,8 +84,8 @@ class AuthController extends Controller
             $query->where('email', $identity)->orWhere('phone', $identity);
         })->first();
 
-        if ($user && $user->type === 'customer') {
-            return response()->error('Customer accounts must sign in through the customer portal.', 403, ['code' => 'customer_login_not_allowed']);
+        if ($denied = Auth::denyConsoleLogin($user)) {
+            return $denied;
         }
 
         // If the user exists but has no password set (e.g. SSO-invited or provisioned
@@ -138,7 +139,7 @@ class AuthController extends Controller
         $session = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($request) {
             $user = $request->user();
 
-            if (!$user) {
+            if (!$user || !$user->canHoldConsoleSession()) {
                 return null;
             }
 
@@ -196,6 +197,11 @@ class AuthController extends Controller
     {
         $user     = $request->user();
         $token    = $request->bearerToken();
+
+        if ($denied = Auth::denyConsoleSession($user)) {
+            return $denied;
+        }
+
         $cacheKey = "auth_bootstrap_{$user->uuid}_{$token}";
 
         // Cache for 5 minutes
@@ -491,7 +497,7 @@ class AuthController extends Controller
         $user->activate();
 
         // If authenticate is set, generate and return a token
-        if ($authenticate) {
+        if ($authenticate && $user->canHoldConsoleSession()) {
             $user->updateLastLogin();
             $token = $user->createToken($user->uuid);
 
@@ -912,8 +918,8 @@ class AuthController extends Controller
             $user    = Auth::getUserFromSession($request);
 
             // Make sure user has been invited to join organizations
-            $isAlreadyInvited = Invite::isAlreadySentToJoinCompany($user, $company);
-            if (!$isAlreadyInvited) {
+            $invite = Invite::findSentToJoinCompany($user, $company);
+            if (!$invite) {
                 return response()->error('User has not been invited to join this organization.');
             }
 
@@ -922,7 +928,8 @@ class AuthController extends Controller
                 return response()->error('User is already a member of this organization.');
             }
 
-            $company->assignUser($user);
+            // Join with the role the invite carries; never a default one
+            $company->assignUser($user, $this->inviteRoleId($invite, $company));
             Auth::setSession($user);
 
             return response()->json(['status' => 'ok']);
@@ -932,6 +939,24 @@ class AuthController extends Controller
             return response()->error(app()->hasDebugModeEnabled() ? $e->getMessage() : 'Unable to join organization.');
         }
         // @codeCoverageIgnoreEnd
+    }
+
+    /**
+     * The id of the role an invite grants in the organization, when it names one
+     * that belongs to the organization or is global.
+     */
+    private function inviteRoleId(Invite $invite, Company $company): ?string
+    {
+        $roleId = $invite->getMeta('role_uuid');
+        if (!$roleId) {
+            return null;
+        }
+
+        return Role::where(function ($query) use ($roleId) {
+            $query->where('id', $roleId)->orWhere('name', $roleId);
+        })->where(function ($query) use ($company) {
+            $query->where('company_uuid', $company->uuid)->orWhereNull('company_uuid');
+        })->value('id');
     }
 
     /**
@@ -1057,6 +1082,10 @@ class AuthController extends Controller
         $targetUser = User::where('uuid', $targetUserId)->first();
         if (!$targetUser) {
             return response()->error('The selected user to impersonate was not found.');
+        }
+
+        if ($denied = Auth::denyConsoleSession($targetUser)) {
+            return $denied;
         }
 
         try {

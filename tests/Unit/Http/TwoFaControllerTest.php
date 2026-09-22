@@ -448,3 +448,24 @@ test('two fa controller reports enforcement for the resolved request user', func
 
     expect($response->getData(true))->toBe(['shouldEnforce' => true]);
 });
+
+test('two fa controller verify does not issue console tokens to driver accounts', function () {
+    two_fa_controller_database();
+    app('db')->connection()->getSchemaBuilder()->table('users', fn ($table) => $table->string('type')->nullable());
+    app('db')->table('users')->where('uuid', '11111111-1111-4111-8111-111111111111')->update(['type' => 'driver']);
+    $user = two_fa_controller_user();
+    TwoFactorAuth::saveTwoFaSettingsForUser($user, ['enabled' => true, 'method' => 'email']);
+    $token            = TwoFactorAuth::start($user->email, 10);
+    $verificationCode = two_fa_controller_verification_code($user, Carbon::now()->addMinutes(5));
+    $clientToken      = TwoFactorAuth::createClientSessionToken($verificationCode);
+
+    $response = two_fa_controller()->verifyCode(Request::create('/int/v1/two-fa/verify', 'POST', [
+        'code'        => '123456',
+        'token'       => $token,
+        'clientToken' => $clientToken,
+    ]));
+
+    expect($response->getStatusCode())->toBe(403)
+        ->and($response->getData(true)['code'])->toBe('console_access_not_allowed')
+        ->and(app('db')->table('personal_access_tokens')->where('tokenable_id', $user->uuid)->count())->toBe(0);
+});

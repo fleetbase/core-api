@@ -70,6 +70,23 @@ class User extends Authenticatable
     use HasSessionAttributes;
 
     /**
+     * User types whose account is owned and managed by a profile record (a
+     * FleetOps driver, contact or customer) rather than managed in IAM.
+     *
+     * @var array<int, string>
+     */
+    public const MANAGED_TYPES = ['driver', 'customer', 'contact'];
+
+    /**
+     * Managed types that have no console surface at all. Customers are excluded
+     * because the customer portal runs inside the console and restores its
+     * session through the core session endpoints.
+     *
+     * @var array<int, string>
+     */
+    public const SESSIONLESS_TYPES = ['driver', 'contact'];
+
+    /**
      * The database connection to use.
      *
      * @var string
@@ -525,11 +542,12 @@ class User extends Authenticatable
      * will be notified that a user has been created.
      *
      * @param Company     $company the company to assign the user to
-     * @param string|null $role    The name or ID of the role to assign to the user. Defaults to the user's current role if null.
+     * @param string|null $role    The name or ID of the role to assign to the user. No role is assigned when null:
+     *                             access is only ever granted explicitly.
      *
      * @return self returns the current User instance
      */
-    public function assignCompany(Company $company, string $role = 'Administrator'): self
+    public function assignCompany(Company $company, ?string $role = null): self
     {
         $this->company_uuid = $company->uuid;
 
@@ -821,6 +839,47 @@ class User extends Authenticatable
     public function isNotType(string|array $type): bool
     {
         return !$this->isType($type);
+    }
+
+    /**
+     * Checks if the account is owned by a driver, contact or customer profile.
+     */
+    public function isManagedAccount(): bool
+    {
+        return $this->isType(static::MANAGED_TYPES);
+    }
+
+    /**
+     * Checks if the account is a staff account (managed in IAM).
+     */
+    public function isStaffAccount(): bool
+    {
+        return !$this->isManagedAccount();
+    }
+
+    /**
+     * Checks if the account may sign in to the console.
+     */
+    public function canAccessConsole(): bool
+    {
+        return $this->isStaffAccount();
+    }
+
+    /**
+     * Checks if the account may hold a console session. Customers hold one for
+     * the customer portal; drivers and contacts never do.
+     */
+    public function canHoldConsoleSession(): bool
+    {
+        return $this->isNotType(static::SESSIONLESS_TYPES);
+    }
+
+    /**
+     * Scope a query to profile-managed accounts only.
+     */
+    public function scopeManaged(Builder $query): Builder
+    {
+        return $query->whereIn($this->qualifyColumn('type'), static::MANAGED_TYPES);
     }
 
     /**
