@@ -605,6 +605,16 @@ function user_controller_database(): Capsule
     return $capsule;
 }
 
+/**
+ * Give the owner the Administrator role, as a real organization owner has.
+ */
+function user_controller_owner_is_administrator(Capsule $capsule): void
+{
+    $capsule->getConnection('mysql')->table('model_has_roles')->insert([
+        'role_id' => 'Administrator', 'model_type' => Fleetbase\Models\CompanyUser::class, 'model_uuid' => 'pivot-owner-1',
+    ]);
+}
+
 function user_controller(): UserController
 {
     return new UserController();
@@ -927,12 +937,14 @@ test('user controller creates users through the generic record endpoint with sco
 });
 
 test('user controller create record rejects duplicate active-company members and unavailable roles', function () {
-    user_controller_database();
+    $capsule = user_controller_database();
+    user_controller_owner_is_administrator($capsule);
 
     $duplicateMember = user_controller_without_request_validation()->createRecord(user_controller_request('POST', [
         'user' => [
-            'email' => 'member@example.test',
-            'name'  => 'Member One',
+            'email'     => 'member@example.test',
+            'name'      => 'Member One',
+            'role_uuid' => 'Administrator',
         ],
     ], user_controller_user('owner-1'), 'createRecord'));
     $invalidRole = user_controller_without_request_validation()->createRecord(user_controller_request('POST', [
@@ -951,6 +963,7 @@ test('user controller create record rejects duplicate active-company members and
 
 test('user controller create record invites existing users from another organization', function () {
     $capsule = user_controller_database();
+    user_controller_owner_is_administrator($capsule);
     EloquentModel::setEventDispatcher(new Dispatcher(app()));
 
     $invite = user_controller_without_request_validation()->createRecord(user_controller_request('POST', [
@@ -969,14 +982,17 @@ test('user controller create record invites existing users from another organiza
 });
 
 test('user controller create record reports existing-user invite precondition failures', function () {
-    user_controller_database();
+    $capsule = user_controller_database();
+    user_controller_owner_is_administrator($capsule);
 
-    session()->flush();
-    $missingCompany = user_controller_without_request_validation()->createRecord(user_controller_request('POST', [
+    $missingCompanyRequest = user_controller_request('POST', [
         'user' => [
-            'email' => 'foreign@example.test',
+            'email'     => 'foreign@example.test',
+            'role_uuid' => 'Administrator',
         ],
-    ], user_controller_user('owner-1'), 'createRecord'));
+    ], user_controller_user('owner-1'), 'createRecord');
+    session()->flush();
+    $missingCompany = user_controller_without_request_validation()->createRecord($missingCompanyRequest);
 
     session(['company' => 'company-1', 'user' => 'owner-1']);
     $invalidRole = user_controller_without_request_validation()->createRecord(user_controller_request('POST', [
@@ -1137,7 +1153,8 @@ test('user controller rejects update edge cases before mutating scoped users', f
 });
 
 test('user controller formats create and update exception responses by exception type', function () {
-    user_controller_database();
+    $capsule = user_controller_database();
+    user_controller_owner_is_administrator($capsule);
 
     $queryException = new Illuminate\Database\QueryException(
         'mysql',
@@ -1150,8 +1167,9 @@ test('user controller formats create and update exception responses by exception
     $createDatabaseFailure->model = new UserControllerThrowingModel($queryException);
     $createDatabaseResponse       = $createDatabaseFailure->createRecord(user_controller_request('POST', [
         'user' => [
-            'email' => 'database-failure@example.test',
-            'name'  => 'Database Failure',
+            'email'     => 'database-failure@example.test',
+            'name'      => 'Database Failure',
+            'role_uuid' => 'Administrator',
         ],
     ], user_controller_user('owner-1'), 'createRecord'));
 
@@ -1161,8 +1179,9 @@ test('user controller formats create and update exception responses by exception
     ]));
     $createValidationResponse       = $createValidationFailure->createRecord(user_controller_request('POST', [
         'user' => [
-            'email' => 'validation-failure@example.test',
-            'name'  => 'Validation Failure',
+            'email'     => 'validation-failure@example.test',
+            'name'      => 'Validation Failure',
+            'role_uuid' => 'Administrator',
         ],
     ], user_controller_user('owner-1'), 'createRecord'));
 
@@ -1170,8 +1189,9 @@ test('user controller formats create and update exception responses by exception
     $createGenericFailure->model = new UserControllerThrowingModel(new RuntimeException('generic create failure'));
     $createGenericResponse       = $createGenericFailure->createRecord(user_controller_request('POST', [
         'user' => [
-            'email' => 'generic-failure@example.test',
-            'name'  => 'Generic Failure',
+            'email'     => 'generic-failure@example.test',
+            'name'      => 'Generic Failure',
+            'role_uuid' => 'Administrator',
         ],
     ], user_controller_user('owner-1'), 'createRecord'));
 
@@ -1637,6 +1657,7 @@ test('user controller reports invite errors for missing company and unavailable 
 
 test('user controller invites a brand new user and prevents duplicate organization invitations', function () {
     $capsule = user_controller_database();
+    user_controller_owner_is_administrator($capsule);
     EloquentModel::setEventDispatcher(new Dispatcher(app()));
 
     $invite = user_controller()->inviteUser(user_controller_request('POST', [
@@ -1649,8 +1670,9 @@ test('user controller invites a brand new user and prevents duplicate organizati
     ], user_controller_user('owner-1'), 'inviteUser', InviteUserRequest::class));
     $duplicate = user_controller()->inviteUser(user_controller_request('POST', [
         'user' => [
-            'email' => 'fresh@example.test',
-            'name'  => 'Fresh User',
+            'email'     => 'fresh@example.test',
+            'name'      => 'Fresh User',
+            'role_uuid' => 'Administrator',
         ],
     ], user_controller_user('owner-1'), 'inviteUser', InviteUserRequest::class));
 
@@ -1675,6 +1697,7 @@ test('user controller invites a brand new user and prevents duplicate organizati
 
 test('user controller invites existing users from another organization without creating duplicates', function () {
     $capsule = user_controller_database();
+    user_controller_owner_is_administrator($capsule);
     EloquentModel::setEventDispatcher(new Dispatcher(app()));
 
     $invite = user_controller()->inviteUser(user_controller_request('POST', [
@@ -1685,7 +1708,8 @@ test('user controller invites existing users from another organization without c
     ], user_controller_user('owner-1'), 'inviteUser', InviteUserRequest::class));
     $duplicateInvite = user_controller()->inviteUser(user_controller_request('POST', [
         'user' => [
-            'email' => 'foreign@example.test',
+            'email'     => 'foreign@example.test',
+            'role_uuid' => 'Administrator',
         ],
     ], user_controller_user('owner-1'), 'inviteUser', InviteUserRequest::class));
 
@@ -1908,6 +1932,7 @@ test('user controller rejects unavailable and malformed company invitations', fu
 
 test('user controller promotes a managed driver account in the organization instead of inviting a duplicate', function (string $method) {
     $capsule    = user_controller_database();
+    user_controller_owner_is_administrator($capsule);
     $connection = $capsule->getConnection('mysql');
     EloquentModel::setEventDispatcher(new Dispatcher(app()));
     $now = '2026-07-18 10:00:00';
@@ -1972,6 +1997,7 @@ test('user controller accepting an invite promotes a managed driver account and 
 
 test('user controller promotion syncs permissions and policies and reports organization and role failures', function () {
     $capsule = user_controller_database();
+    user_controller_owner_is_administrator($capsule);
     $db      = $capsule->getConnection('mysql');
     EloquentModel::setEventDispatcher(new Dispatcher(app()));
     $now = '2026-07-18 10:00:00';
@@ -1990,6 +2016,7 @@ test('user controller promotion syncs permissions and policies and reports organ
     $promoted = user_controller_without_request_validation()->createRecord(user_controller_request('POST', [
         'user' => [
             'phone'       => '+15555550188',
+            'role_uuid'   => 'Administrator',
             'permissions' => ['permission-promote'],
             'policies'    => ['policy-promote'],
         ],
@@ -1999,7 +2026,7 @@ test('user controller promotion syncs permissions and policies and reports organ
     $promote        = new ReflectionMethod(UserController::class, 'promoteManagedAccount');
     $promoteRequest = user_controller_request('POST', ['user' => []], user_controller_user('owner-1'), 'createRecord');
     session()->flush();
-    $noCompany = $promote->invoke(user_controller(), User::find('driver-2'), $promoteRequest);
+    $noCompany = $promote->invoke(user_controller(), User::find('driver-2'), $promoteRequest, Role::find('Administrator'));
 
     expect($noIdentity)->toBeNull()
         ->and($invalidRole->getStatusCode())->toBe(404)
@@ -2009,4 +2036,64 @@ test('user controller promotion syncs permissions and policies and reports organ
         ->and($db->table('model_has_permissions')->where('model_uuid', 'pivot-customer-1')->where('permission_id', 'permission-promote')->exists())->toBeTrue()
         ->and($db->table('model_has_policies')->where('model_uuid', 'pivot-customer-1')->where('policy_id', 'policy-promote')->exists())->toBeTrue()
         ->and($noCompany->getData(true))->toBe(['errors' => ['Unable to determine the current organisation.']]);
+});
+
+test('user controller requires a role and only lets administrators grant the Administrator role', function () {
+    $capsule = user_controller_database();
+    $db      = $capsule->getConnection('mysql');
+    EloquentModel::setEventDispatcher(new Dispatcher(app()));
+    $db->table('roles')->insert(['id' => 'Dispatcher', 'company_uuid' => 'company-1', 'name' => 'Dispatcher', 'guard_name' => 'sanctum', 'created_at' => '2026-07-18 10:00:00', 'updated_at' => '2026-07-18 10:00:00']);
+
+    $createWithoutRole = user_controller_without_request_validation()->createRecord(user_controller_request('POST', [
+        'user' => ['email' => 'no-role@example.test', 'name' => 'No Role'],
+    ], user_controller_user('owner-1'), 'createRecord'));
+    $inviteWithoutRole = user_controller()->inviteUser(user_controller_request('POST', [
+        'user' => ['email' => 'no-role-invite@example.test', 'name' => 'No Role'],
+    ], user_controller_user('owner-1'), 'inviteUser', InviteUserRequest::class));
+
+    // owner-1 has no Administrator role in this organization, so it may not grant it
+    $createAdministrator = user_controller_without_request_validation()->createRecord(user_controller_request('POST', [
+        'user' => ['email' => 'escalate@example.test', 'name' => 'Escalate', 'role_uuid' => 'Administrator'],
+    ], user_controller_user('owner-1'), 'createRecord'));
+    $updateToAdministrator = user_controller_without_request_validation()->updateRecord(user_controller_request('PATCH', [
+        'user' => ['role' => 'Administrator'],
+    ], user_controller_user('owner-1'), 'updateRecord'), 'member-1');
+    $objectRole = user_controller_without_request_validation()->createRecord(user_controller_request('POST', [
+        'user' => ['email' => 'object-role@example.test', 'name' => 'Object Role', 'role' => ['id' => 'Dispatcher']],
+    ], user_controller_user('owner-1'), 'createRecord'));
+
+    expect($createWithoutRole->getStatusCode())->toBe(422)
+        ->and($createWithoutRole->getData(true))->toBe(['errors' => ['Select a role for this user.']])
+        ->and($inviteWithoutRole->getStatusCode())->toBe(422)
+        ->and(User::where('email', 'no-role-invite@example.test')->exists())->toBeFalse()
+        ->and($createAdministrator->getStatusCode())->toBe(403)
+        ->and($createAdministrator->getData(true))->toBe(['errors' => ['Only administrators can grant the Administrator role.']])
+        ->and(User::where('email', 'escalate@example.test')->exists())->toBeFalse()
+        ->and($updateToAdministrator->getStatusCode())->toBe(403)
+        ->and($objectRole)->not->toBeInstanceOf(JsonResponse::class);
+
+    $created = User::where('email', 'object-role@example.test')->first();
+    $pivot   = $db->table('company_users')->where(['company_uuid' => 'company-1', 'user_uuid' => $created->uuid])->value('uuid');
+
+    expect($db->table('model_has_roles')->where('model_uuid', $pivot)->pluck('role_id')->all())->toBe(['Dispatcher']);
+});
+
+test('user controller accepting an invite without a role joins without one', function () {
+    $capsule = user_controller_database();
+    EloquentModel::setEventDispatcher(new Dispatcher(app()));
+
+    $invitee = User::create(['uuid' => 'legacy-invitee', 'public_id' => 'user_legacy_invitee', 'email' => 'legacy@example.test', 'name' => 'Legacy Invitee', 'company_uuid' => 'company-2', 'status' => 'active']);
+    $capsule->getConnection('mysql')->table('invites')->insert([
+        'uuid'            => 'invite-legacy', 'public_id' => 'invite_public_legacy', 'code' => 'LEGACY1', 'uri' => 'legacy1', 'company_uuid' => 'company-1',
+        'created_by_uuid' => 'owner-1', 'subject_uuid' => 'company-1', 'subject_type' => Fleetbase\Support\Utils::getMutationType(Fleetbase\Models\Company::where('uuid', 'company-1')->first()),
+        'protocol'        => 'email', 'recipients' => json_encode(['legacy@example.test']), 'reason' => 'join_company', 'meta' => json_encode([]),
+        'expires_at'      => now()->addHours(48), 'created_at' => now(), 'updated_at' => now(),
+    ]);
+
+    $accepted = user_controller()->acceptCompanyInvite(user_controller_request('POST', ['code' => 'LEGACY1'], $invitee, 'acceptCompanyInvite', AcceptCompanyInvite::class));
+    $pivot    = $capsule->getConnection('mysql')->table('company_users')->where(['company_uuid' => 'company-1', 'user_uuid' => 'legacy-invitee'])->value('uuid');
+
+    expect($accepted->getStatusCode())->toBe(200)
+        ->and($pivot)->not->toBeNull()
+        ->and($capsule->getConnection('mysql')->table('model_has_roles')->where('model_uuid', $pivot)->count())->toBe(0);
 });

@@ -369,16 +369,14 @@ class Company extends Model
      * it defaults to the user's current role. The status can also be specified, defaulting to 'active'.
      *
      * @param User        $user   the user to be added to the company
-     * @param string|null $role   The name or ID of the role to assign to the user. Defaults to the user's current role if null.
+     * @param string|null $role   The name or ID of the role to assign to the user. No role is assigned when null:
+     *                            access is only ever granted explicitly.
      * @param string      $status The status of the user within the company. Defaults to 'active'.
      *
      * @return CompanyUser the CompanyUser instance representing the association between the user and the company
      */
-    public function addUser(User $user, string $role = 'Administrator', string $status = 'active'): CompanyUser
+    public function addUser(User $user, ?string $role = null, string $status = 'active'): CompanyUser
     {
-        // Get the currentuser role
-        $role = $role;
-
         $companyUser = CompanyUser::firstOrCreate(
             [
                 'company_uuid'     => $this->uuid,
@@ -392,7 +390,9 @@ class Company extends Model
         );
 
         // Assign the role to the new user
-        $companyUser->assignSingleRole($role);
+        if ($role) {
+            $companyUser->assignSingleRole($role);
+        }
 
         return $companyUser;
     }
@@ -461,7 +461,7 @@ class Company extends Model
      *
      * @return CompanyUser the CompanyUser instance representing the association between the user and the company
      */
-    public function assignUser(User $user, string $role = 'Administrator'): CompanyUser
+    public function assignUser(User $user, ?string $role = null): CompanyUser
     {
         $companyUser = $this->addUser($user, $role);
         $user->assignCompany($this);

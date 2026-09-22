@@ -1397,3 +1397,39 @@ test('admin impersonation refuses driver accounts', function () {
         ->and($response->getData(true)['code'])->toBe('console_access_not_allowed')
         ->and($capsule->getConnection('mysql')->table('personal_access_tokens')->where('tokenable_id', 'driver-user')->count())->toBe(0);
 });
+
+test('join organization grants the invite role and never a default one', function () {
+    $capsule = auth_controller_login_bootstrap_database();
+    auth_controller_insert_administrator_role($capsule, 'company-join');
+    auth_controller_insert_administrator_role($capsule, 'company-legacy');
+    $capsule->getConnection('mysql')->table('roles')->insert([
+        'id'         => '33333333-3333-4333-8333-333333333399', 'company_uuid' => 'company-join', 'name' => 'Dispatcher', 'guard_name' => 'sanctum',
+        'created_at' => '2026-07-18 10:00:00', 'updated_at' => '2026-07-18 10:00:00', 'deleted_at' => null,
+    ]);
+    auth_controller_login_insert_user($capsule, ['uuid' => 'joining-user', 'email' => 'joining@example.test', 'company_uuid' => 'company-current', 'type' => 'user']);
+    auth_controller_insert_company($capsule, ['uuid' => 'company-join', 'public_id' => 'company_join_public']);
+    auth_controller_insert_company($capsule, ['uuid' => 'company-legacy', 'public_id' => 'company_legacy_public', 'slug' => 'legacy-company']);
+    auth_controller_insert_join_invite($capsule, 'company-join', 'joining@example.test');
+    $capsule->getConnection('mysql')->getSchemaBuilder()->table('invites', fn ($table) => $table->text('meta')->nullable());
+    $capsule->getConnection('mysql')->table('invites')->where('company_uuid', 'company-join')->update(['meta' => json_encode(['role_uuid' => '33333333-3333-4333-8333-333333333399'])]);
+    $capsule->getConnection('mysql')->table('invites')->insert([
+        'uuid'            => 'invite-legacy', 'company_uuid' => 'company-legacy', 'subject_uuid' => 'company-legacy', 'subject_type' => Fleetbase\Models\Company::class,
+        'created_by_uuid' => 'owner-user', 'protocol' => 'email', 'reason' => 'join_company', 'recipients' => json_encode(['joining@example.test']),
+        'expires_at'      => Carbon::now()->addDay()->toDateTimeString(), 'deleted_at' => null, 'created_at' => '2026-07-18 10:00:00', 'updated_at' => '2026-07-18 10:00:00',
+    ]);
+
+    $joined = (new AuthController())->joinOrganization(auth_controller_join_organization_request(User::find('joining-user'), 'company_join_public'));
+    $legacy = (new AuthController())->joinOrganization(auth_controller_join_organization_request(User::find('joining-user'), 'company_legacy_public'));
+
+    $db          = $capsule->getConnection('mysql');
+    $joinPivot   = $db->table('company_users')->where(['user_uuid' => 'joining-user', 'company_uuid' => 'company-join'])->value('uuid');
+    $legacyPivot = $db->table('company_users')->where(['user_uuid' => 'joining-user', 'company_uuid' => 'company-legacy'])->value('uuid');
+
+    expect($joined->getStatusCode())->toBe(200)
+        ->and($db->table('model_has_roles')->where('model_uuid', $joinPivot)->pluck('role_id')->all())->toBe(['33333333-3333-4333-8333-333333333399'])
+        ->and($legacy->getStatusCode())->toBe(200)
+        ->and($legacyPivot)->not->toBeNull()
+        ->and($db->table('model_has_roles')->where('model_uuid', $legacyPivot)->count())->toBe(0)
+        // An account without an email can't have been sent an invite
+        ->and(Fleetbase\Models\Invite::findSentToJoinCompany(new User(), Fleetbase\Models\Company::find('company-join')))->toBeNull();
+});

@@ -76,7 +76,7 @@ class CompanyModelAssignUserSpy extends Company
         $this->setRawAttributes(['uuid' => 'company-1'], true);
     }
 
-    public function addUser(User $user, string $role = 'Administrator', string $status = 'active'): CompanyUser
+    public function addUser(User $user, ?string $role = null, string $status = 'active'): CompanyUser
     {
         $this->addedUsers[] = [$user->uuid, $role, $status];
 
@@ -348,7 +348,7 @@ it('assigns users through company membership and active company helpers', functi
     $user = new class extends User {
         public array $assignedCompanies = [];
 
-        public function assignCompany(Company $company, string $role = 'Administrator'): User
+        public function assignCompany(Company $company, ?string $role = null): User
         {
             $this->assignedCompanies[] = [$company->uuid, $role];
 
@@ -362,7 +362,7 @@ it('assigns users through company membership and active company helpers', functi
 
     expect($company->assignUser($user, 'Dispatcher'))->toBe($companyUser)
         ->and($company->addedUsers)->toBe([['user-1', 'Dispatcher', 'active']])
-        ->and($user->assignedCompanies)->toBe([['company-1', 'Administrator']]);
+        ->and($user->assignedCompanies)->toBe([['company-1', null]]);
 });
 
 it('resolves the current company from session using the configured connection', function () {
