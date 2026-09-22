@@ -690,6 +690,46 @@ class AuthController extends Controller
         ]);
     }
 
+    /**
+     * Confirm an email address or phone number from the link sent by an
+     * administrator's verification request. Works without signing in.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function confirmContactVerification(Request $request)
+    {
+        $verificationCode = VerificationCode::where('uuid', $request->input('link'))
+            ->where('code', $request->input('code'))
+            ->whereIn('for', ['email_verification', 'phone_verification'])
+            ->where('status', 'active')
+            ->where('meta->source', 'admin_request')
+            ->with(['subject'])
+            ->first();
+
+        // Expired codes are excluded by the model's expiry scope
+        if (!$verificationCode || !($verificationCode->subject instanceof User)) {
+            return response()->error('This verification link is invalid or has expired.');
+        }
+
+        $user    = $verificationCode->subject;
+        $channel = data_get($verificationCode->meta, 'channel') === 'phone' ? 'phone' : 'email';
+        $current = $channel === 'phone' ? $user->phone : $user->email;
+
+        // The email/phone changed after the request was sent
+        if ((string) $current !== (string) data_get($verificationCode->meta, 'value')) {
+            return response()->error('This verification link is no longer valid.');
+        }
+
+        $user->verify($verificationCode);
+        $verificationCode->delete();
+
+        return response()->json([
+            'status'      => 'ok',
+            'channel'     => $channel,
+            'verified_at' => $channel === 'phone' ? $user->phone_verified_at : $user->email_verified_at,
+        ]);
+    }
+
     private function getVerificationSession(Request $request): ?array
     {
         $email        = strtolower((string) $request->input('email'));

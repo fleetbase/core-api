@@ -1047,11 +1047,14 @@ class User extends Authenticatable
     }
 
     /**
-     * Manually verify the user's email .
+     * Manually verify the user's email or phone.
+     *
+     * @param string $channel `email` or `phone`
      */
-    public function manualVerify(): self
+    public function manualVerify(string $channel = 'email'): self
     {
-        $this->email_verified_at = Carbon::now();
+        $column          = $channel === 'phone' ? 'phone_verified_at' : 'email_verified_at';
+        $this->{$column} = Carbon::now();
         $this->save();
 
         return $this;

@@ -27,8 +27,10 @@ use Fleetbase\Models\Setting;
 use Fleetbase\Models\User;
 use Fleetbase\Models\VerificationCode;
 use Fleetbase\Notifications\UserAcceptedCompanyInvite;
+use Fleetbase\Notifications\UserContactVerificationRequested;
 use Fleetbase\Notifications\UserEmailChange;
 use Fleetbase\Notifications\UserInvited;
+use Fleetbase\Services\SmsService;
 use Fleetbase\Services\UserCacheService;
 use Fleetbase\Support\Auth;
 use Fleetbase\Support\NotificationRegistry;
@@ -1053,14 +1055,135 @@ class UserController extends FleetbaseController
             return response()->error('No user found', 401);
         }
 
-        $user->manualVerify();
+        $channel = $this->verificationChannel(request());
+        if ($error = $this->verificationChannelError($user, $channel)) {
+            return $error;
+        }
+
+        $user->manualVerify($channel);
         $user = $user->refresh();
 
         return response()->json([
             'message'           => 'User verified',
+            'channel'           => $channel,
             'email_verified_at' => $user->email_verified_at,
+            'phone_verified_at' => $user->phone_verified_at,
             'status'            => 'ok',
         ]);
+    }
+
+    /**
+     * Ask a user to verify their email address or phone number. The user gets a
+     * link, by email or SMS, that confirms it without signing in.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    #[SkipAuthorizationCheck]
+    public function sendVerification(Request $request, string $id)
+    {
+        if (!$this->canVerifyUsers(Auth::getUserFromSession($request))) {
+            return response()->error('Not authorized to verify users.', 403);
+        }
+        $actor = Auth::getUserFromSession($request);
+
+        $user = $this->resolveVisibleUser($id, $request);
+        if (!$user) {
+            return response()->error('No user found', 404);
+        }
+
+        $channel = $this->verificationChannel($request);
+        if ($error = $this->verificationChannelError($user, $channel)) {
+            return $error;
+        }
+
+        $for   = $channel === 'phone' ? 'phone_verification' : 'email_verification';
+        $value = $channel === 'phone' ? $user->phone : $user->email;
+
+        // A new request replaces any earlier one an administrator sent
+        VerificationCode::where('subject_uuid', $user->uuid)
+            ->where('for', $for)
+            ->where('status', 'active')
+            ->where('meta->source', 'admin_request')
+            ->delete();
+
+        $verificationCode = VerificationCode::create([
+            'subject_uuid' => $user->uuid,
+            'subject_type' => Utils::getModelClassName($user),
+            'for'          => $for,
+            'expires_at'   => Carbon::now()->addHours(48),
+            'meta'         => [
+                'source'            => 'admin_request',
+                'channel'           => $channel,
+                'value'             => $value,
+                'requested_by_uuid' => $actor->uuid,
+            ],
+            'status'       => 'active',
+        ]);
+
+        try {
+            if ($channel === 'phone') {
+                $url    = UserContactVerificationRequested::urlFor($verificationCode);
+                $result = app(SmsService::class)->send($value, 'Verify your ' . config('app.name') . ' phone number: ' . $url);
+                if (is_array($result) && array_key_exists('success', $result) && !$result['success']) {
+                    throw new \RuntimeException((string) ($result['error'] ?? $result['message'] ?? 'The SMS provider refused the message.'));
+                }
+            } else {
+                $user->notify(new UserContactVerificationRequested($verificationCode));
+            }
+        } catch (\Throwable $e) {
+            $verificationCode->delete();
+
+            return response()->error('Unable to send the verification request: ' . $e->getMessage());
+        }
+
+        return response()->json(['status' => 'ok', 'channel' => $channel]);
+    }
+
+    /**
+     * Whether the user may verify other users: admins, holders of the
+     * Administrator role, and anyone granted `iam verify user`.
+     */
+    private function canVerifyUsers(?User $actor): bool
+    {
+        if (!$actor) {
+            return false;
+        }
+
+        if ($actor->isAdmin() || $actor->hasRole('Administrator')) {
+            return true;
+        }
+
+        try {
+            return $actor->hasPermissionTo('iam verify user');
+        } catch (\Spatie\Permission\Exceptions\PermissionDoesNotExist $e) {
+            return false;
+        }
+    }
+
+    /**
+     * The verification channel requested: `email` (default) or `phone`.
+     */
+    private function verificationChannel(Request $request): string
+    {
+        return $request->input('channel') === 'phone' ? 'phone' : 'email';
+    }
+
+    /**
+     * An error when the user's email/phone can't be verified: it isn't set, or
+     * it's already verified.
+     */
+    private function verificationChannelError(User $user, string $channel): ?\Illuminate\Http\JsonResponse
+    {
+        $label = $channel === 'phone' ? 'phone number' : 'email address';
+        if (empty($channel === 'phone' ? $user->phone : $user->email)) {
+            return response()->error('This user has no ' . $label . ' to verify.', 422);
+        }
+
+        if (!empty($channel === 'phone' ? $user->phone_verified_at : $user->email_verified_at)) {
+            return response()->error('This user\'s ' . $label . ' is already verified.', 422);
+        }
+
+        return null;
     }
 
     /**

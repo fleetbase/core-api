@@ -1905,3 +1905,109 @@ test('user controller rejects unavailable and malformed company invitations', fu
         ->and($missingUser->getStatusCode())->toBe(400)
         ->and($missingUser->getData(true))->toBe(['errors' => ['Unable to locate the user for this invitation.']]);
 });
+
+if (!function_exists('__')) {
+    function __($key = null, $replace = [], $locale = null)
+    {
+        return $key;
+    }
+}
+
+class UserControllerSmsServiceFake
+{
+    public array $sent = [];
+
+    public function __construct(private array $result = ['success' => true])
+    {
+    }
+
+    public function send(string $to, string $text, array $options = [], ?string $provider = null): array
+    {
+        $this->sent[] = [$to, $text];
+
+        return $this->result;
+    }
+}
+
+function user_controller_grant_owner_administrator(Capsule $capsule): void
+{
+    $capsule->getConnection('mysql')->table('model_has_roles')->insert([
+        'role_id' => 'Administrator', 'model_type' => Fleetbase\Models\CompanyUser::class, 'model_uuid' => 'pivot-owner-1',
+    ]);
+}
+
+test('user controller marks a phone verified and refuses channels that are missing or already verified', function () {
+    $capsule = user_controller_database();
+    $db      = $capsule->getConnection('mysql');
+    $db->table('users')->where('uuid', 'member-1')->update(['phone' => '+15550009999', 'email_verified_at' => '2026-07-18 10:00:00']);
+    $db->table('users')->where('uuid', 'owner-1')->update(['phone' => null, 'phone_verified_at' => null]);
+
+    user_controller_request('PATCH', ['channel' => 'phone'], user_controller_user('owner-1'), 'verify');
+    $phone = user_controller()->verify('member-1');
+    user_controller_request('PATCH', ['channel' => 'email'], user_controller_user('owner-1'), 'verify');
+    $alreadyVerified = user_controller()->verify('member-1');
+    user_controller_request('PATCH', ['channel' => 'phone'], user_controller_user('owner-1'), 'verify');
+    $noPhone = user_controller()->verify('owner-1');
+
+    expect($phone->getStatusCode())->toBe(200)
+        ->and($phone->getData(true)['channel'])->toBe('phone')
+        ->and($db->table('users')->where('uuid', 'member-1')->value('phone_verified_at'))->not->toBeNull()
+        ->and($alreadyVerified->getStatusCode())->toBe(422)
+        ->and($alreadyVerified->getData(true))->toBe(['errors' => ["This user's email address is already verified."]])
+        ->and($noPhone->getStatusCode())->toBe(422)
+        ->and($noPhone->getData(true))->toBe(['errors' => ['This user has no phone number to verify.']]);
+});
+
+test('user controller sends email and phone verification requests with a one-click link', function () {
+    $capsule = user_controller_database();
+    $db      = $capsule->getConnection('mysql');
+    EloquentModel::setEventDispatcher(new Dispatcher(app()));
+    user_controller_grant_owner_administrator($capsule);
+    $db->table('users')->where('uuid', 'member-1')->update(['phone' => '+15550009999']);
+    app()->instance(Fleetbase\Services\SmsService::class, $sms = new UserControllerSmsServiceFake());
+
+    $email      = user_controller()->sendVerification(user_controller_request('POST', ['channel' => 'email'], user_controller_user('owner-1'), 'sendVerification'), 'member-1');
+    $emailAgain = user_controller()->sendVerification(user_controller_request('POST', ['channel' => 'email'], user_controller_user('owner-1'), 'sendVerification'), 'member-1');
+    $phone      = user_controller()->sendVerification(user_controller_request('POST', ['channel' => 'phone'], user_controller_user('owner-1'), 'sendVerification'), 'member-1');
+    $notifier   = app(Illuminate\Contracts\Notifications\Dispatcher::class);
+    $codes      = $db->table('verification_codes')->where('subject_uuid', 'member-1')->whereNull('deleted_at')->get()->keyBy('for');
+
+    expect($email->getData(true))->toBe(['status' => 'ok', 'channel' => 'email'])
+        ->and($emailAgain->getStatusCode())->toBe(200)
+        ->and($phone->getData(true))->toBe(['status' => 'ok', 'channel' => 'phone'])
+        // Sending again replaces the earlier request
+        ->and($db->table('verification_codes')->where('subject_uuid', 'member-1')->where('for', 'email_verification')->whereNull('deleted_at')->count())->toBe(1)
+        ->and(json_decode($codes['email_verification']->meta, true))->toMatchArray(['source' => 'admin_request', 'channel' => 'email', 'value' => 'member@example.test', 'requested_by_uuid' => 'owner-1'])
+        ->and($notifier->sent)->toHaveCount(2)
+        ->and($notifier->sent[1][1])->toBeInstanceOf(Fleetbase\Notifications\UserContactVerificationRequested::class)
+        ->and($notifier->sent[1][1]->url)->toContain('auth/verify-contact/' . $codes['email_verification']->uuid)
+        ->and($notifier->sent[1][1]->toMail(User::find('member-1'))->actionUrl)->toBe($notifier->sent[1][1]->url)
+        ->and($notifier->sent[1][1]->toArray(User::find('member-1')))->toEqual(['code' => $codes['email_verification']->code])
+        ->and($notifier->sent[1][1]->via(User::find('member-1')))->toBe(['mail'])
+        ->and($sms->sent[0][0])->toBe('+15550009999')
+        ->and($sms->sent[0][1])->toContain('auth/verify-contact/' . $codes['phone_verification']->uuid);
+});
+
+test('user controller verification requests are authorized scoped and report delivery failures', function () {
+    $capsule = user_controller_database();
+    $db      = $capsule->getConnection('mysql');
+    EloquentModel::setEventDispatcher(new Dispatcher(app()));
+    user_controller_grant_owner_administrator($capsule);
+    $db->table('users')->where('uuid', 'member-1')->update(['phone' => '+15550009999']);
+    app()->instance(Fleetbase\Services\SmsService::class, new UserControllerSmsServiceFake(['success' => false, 'error' => 'carrier refused']));
+
+    $unauthorized = user_controller()->sendVerification(user_controller_request('POST', ['channel' => 'email'], user_controller_user('member-1'), 'sendVerification'), 'owner-1');
+    $missing      = user_controller()->sendVerification(user_controller_request('POST', ['channel' => 'email'], user_controller_user('owner-1'), 'sendVerification'), 'missing-user');
+    $noPhone      = user_controller()->sendVerification(user_controller_request('POST', ['channel' => 'phone'], user_controller_user('owner-1'), 'sendVerification'), 'owner-1');
+    $smsFailure   = user_controller()->sendVerification(user_controller_request('POST', ['channel' => 'phone'], user_controller_user('owner-1'), 'sendVerification'), 'member-1');
+
+    $canVerify = new ReflectionMethod(UserController::class, 'canVerifyUsers');
+
+    expect($unauthorized->getStatusCode())->toBe(403)
+        ->and($canVerify->invoke(user_controller(), null))->toBeFalse()
+        ->and($missing->getStatusCode())->toBe(404)
+        ->and($noPhone->getStatusCode())->toBe(422)
+        ->and($smsFailure->getStatusCode())->toBe(400)
+        ->and($smsFailure->getData(true))->toBe(['errors' => ['Unable to send the verification request: carrier refused']])
+        ->and($db->table('verification_codes')->where('subject_uuid', 'member-1')->whereNull('deleted_at')->count())->toBe(0);
+});
