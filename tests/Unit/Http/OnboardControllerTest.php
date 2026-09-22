@@ -860,3 +860,39 @@ test('onboard request accepts either a password or an intent but not neither', f
         // A password without its confirmation is still rejected.
         ->and($factory->make(['password' => 'pw'], $rules)->fails())->toBeTrue();
 });
+
+test('an oauth signup cannot create a second account with an email that is already taken', function () {
+    $capsule = onboard_controller_database();
+    onboard_controller_oauth_setup($capsule);
+    onboard_controller_seed_user($capsule, ['email' => 'taken@example.test']);
+
+    // EmailDomainExcluded reads its disposable-domain list through base_path(), which the
+    // unit container does not define; point it at a copy laid out the way an install is.
+    $base = sys_get_temp_dir() . '/onboard-base-' . getmypid();
+    @mkdir($base . '/vendor/fleetbase/core-api/storage', 0777, true);
+    copy(__DIR__ . '/../../../storage/disposable_emails.txt', $base . '/vendor/fleetbase/core-api/storage/disposable_emails.txt');
+    $GLOBALS['onboard_test_base_path'] = $base;
+    if (!function_exists('Fleetbase\\Rules\\base_path')) {
+        eval('namespace Fleetbase\\Rules; function base_path($path = "") { return $GLOBALS["onboard_test_base_path"] . "/" . ltrim($path, "/"); }');
+    }
+
+    $translator = new Illuminate\Translation\Translator(new Illuminate\Translation\ArrayLoader(), 'en');
+    $factory    = new Illuminate\Validation\Factory($translator);
+    $factory->setPresenceVerifier(new Illuminate\Validation\DatabasePresenceVerifier(app('db')));
+
+    // The real email rule, exactly as a signup meets it. A provider identity stands in
+    // for the password only; it never relaxes the email rule.
+    $rules = ['email' => (new OnboardRequest())->rules()['email']];
+    $data  = ['email' => 'taken@example.test', 'oauth_intent' => onboard_controller_intent(['email' => 'taken@example.test'])];
+
+    $validator = $factory->make($data, $rules, (new OnboardRequest())->messages());
+
+    expect($validator->fails())->toBeTrue()
+        ->and($validator->errors()->first('email'))->toBe('An account with this email address already exists')
+        // The same address is free once its account is deleted.
+        ->and((function () use ($capsule, $factory, $data, $rules) {
+            $capsule->getConnection('mysql')->table('users')->where('email', 'taken@example.test')->update(['deleted_at' => '2026-07-18 00:00:00']);
+
+            return $factory->make($data, $rules)->fails();
+        })())->toBeFalse();
+});
