@@ -328,3 +328,89 @@ it('exposes the known purposes and hashes tokens for callers', function () {
     expect(OAuthStateService::purposes())->toBe(['authorization', 'handoff', 'registration_intent'])
         ->and($service->hash('abc'))->toBe(hash('sha256', 'abc'));
 });
+
+it('prunes only rows a full day past their expiry', function () {
+    oauth_state_service_database();
+    Carbon::setTestNow('2026-09-22 12:00:00');
+
+    $service = oauth_state_service();
+    $stale   = $service->issue(OAuthState::PURPOSE_HANDOFF, [], 120);
+    $recent  = $service->issue(OAuthState::PURPOSE_HANDOFF, [], 120);
+
+    // Expired over a day ago, and expired just now: only the first is prunable. An
+    // expired row is kept for a day of grace, so support can still see it.
+    OAuthState::query()->where('token_hash', $service->hash($stale))->update(['expires_at' => '2026-09-21 11:00:00']);
+    OAuthState::query()->where('token_hash', $service->hash($recent))->update(['expires_at' => '2026-09-22 11:00:00']);
+
+    $prunable = (new OAuthState())->prunable()->pluck('token_hash')->all();
+
+    Carbon::setTestNow();
+
+    expect($prunable)->toBe([$service->hash($stale)]);
+});
+
+it('belongs to the user it resolved to', function () {
+    oauth_state_service_database();
+
+    $relation = (new OAuthState())->user();
+
+    expect($relation)->toBeInstanceOf(Illuminate\Database\Eloquent\Relations\BelongsTo::class)
+        ->and($relation->getForeignKeyName())->toBe('user_uuid')
+        ->and($relation->getOwnerKeyName())->toBe('uuid')
+        ->and($relation->getRelated())->toBeInstanceOf(Fleetbase\Models\User::class);
+});
+
+it('refuses a token whose row disappears between redeeming and reading it', function () {
+    $capsule = oauth_state_service_database();
+    $service = oauth_state_service();
+
+    $token = $service->issue(OAuthState::PURPOSE_HANDOFF, ['profile' => ['provider' => 'google']], 120);
+
+    // The prune job deleting the row in the gap between the conditional UPDATE and the
+    // read that follows it.
+    $capsule->getConnection('mysql')->statement(
+        'CREATE TRIGGER oauth_states_pruned AFTER UPDATE OF consumed_at ON oauth_states BEGIN DELETE FROM oauth_states WHERE uuid = NEW.uuid; END'
+    );
+
+    expect(fn () => $service->consume(OAuthState::PURPOSE_HANDOFF, $token))
+        ->toThrow(OAuthStateException::class, 'invalid_or_expired')
+        ->and(OAuthState::query()->count())->toBe(0);
+});
+
+it('inspects an undecryptable payload as absent rather than failing', function () {
+    oauth_state_service_database();
+
+    $token   = oauth_state_service()->issue(OAuthState::PURPOSE_REGISTRATION_INTENT, ['profile' => ['provider' => 'google']], 900);
+    $rotated = new OAuthStateService(new OAuthStateServiceEncrypterFake(str_repeat('j', 32)));
+
+    expect($rotated->inspect(OAuthState::PURPOSE_REGISTRATION_INTENT, $token))->toBeNull()
+        // Inspecting never redeems, even when it cannot read the payload.
+        ->and(OAuthState::query()->whereNull('consumed_at')->count())->toBe(1);
+});
+
+it('reads a payload that does not decrypt to a string as empty', function () {
+    oauth_state_service_database();
+
+    $token = oauth_state_service()->issue(OAuthState::PURPOSE_HANDOFF, ['profile' => ['provider' => 'google']], 120);
+
+    // decrypt(..., false) is typed mixed; anything but a JSON string was not written by
+    // this service and is not coerced into one.
+    $service = new OAuthStateService(new class implements Encrypter {
+        public function encrypt($value, $serialize = true)
+        {
+            return 'unused';
+        }
+
+        public function decrypt($payload, $unserialize = true)
+        {
+            return ['not' => 'a string'];
+        }
+
+        public function getKey()
+        {
+            return 'key';
+        }
+    });
+
+    expect($service->consume(OAuthState::PURPOSE_HANDOFF, $token)['payload'])->toBe([]);
+});

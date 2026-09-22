@@ -428,3 +428,29 @@ it('validates an intent through the validation rule without consuming it', funct
         ->and($rule->message())->toBeString()
         ->and(OAuthState::query()->first()->consumed_at)->toBeNull();
 });
+
+it('lists the providers the console should offer', function () {
+    registration_intent_database();
+    config(['oauth.providers' => [
+        'google' => ['driver' => Fleetbase\Auth\OAuth\Drivers\GoogleDriver::class, 'enabled' => true, 'client_id' => 'g', 'client_secret' => 'gs'],
+        'github' => ['driver' => Fleetbase\Auth\OAuth\Drivers\GithubDriver::class, 'enabled' => false, 'client_id' => 'h', 'client_secret' => 'hs'],
+    ]]);
+    app()->instance(Fleetbase\Auth\OAuth\OAuthProviderRegistry::class, new Fleetbase\Auth\OAuth\OAuthProviderRegistry(
+        app(OAuthConfigRepository::class),
+        Illuminate\Http\Request::create('/'),
+        new Fleetbase\Auth\OAuth\IdTokenVerifier()
+    ));
+
+    expect(OAuth::enabledProviders())->toBe([['id' => 'google', 'label' => 'Google', 'icon' => 'google']]);
+});
+
+it('redeems nothing from an intent that carries no profile', function () {
+    registration_intent_database();
+
+    // Written by something other than issueRegistrationIntent(): the row is real and
+    // unexpired, but there is no identity in it to link.
+    $token = app(OAuthStateService::class)->issue(OAuthState::PURPOSE_REGISTRATION_INTENT, ['intent' => 'signup'], 900);
+
+    expect(OAuth::redeemRegistrationIntent($token, registration_intent_user()))->toBeNull()
+        ->and(OAuthIdentity::query()->count())->toBe(0);
+});

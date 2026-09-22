@@ -417,3 +417,61 @@ it('touches the login timestamp without a profile', function () {
 
     expect(OAuthIdentity::query()->first()->provider_email)->toBe('ada@example.com');
 });
+
+/**
+ * Reads nothing for the first $staleReads lookups, as a request does when a concurrent
+ * one inserts the same subject between its lookup and its insert.
+ */
+class OAuthIdentityServiceStaleReads extends OAuthIdentityService
+{
+    public function __construct(public int $staleReads)
+    {
+    }
+
+    public function findByProfile(OAuthUserProfile $profile): ?OAuthIdentity
+    {
+        if ($this->staleReads > 0) {
+            $this->staleReads--;
+
+            return null;
+        }
+
+        return parent::findByProfile($profile);
+    }
+}
+
+it('resolves a lost race for the same user to the row the other request wrote', function () {
+    oauth_identity_service_schema();
+    $user    = oauth_identity_service_user('user-1');
+    $winner  = (new OAuthIdentityService())->link($user, oauth_identity_service_profile());
+    oauth_test_reset_events();
+
+    $identity = (new OAuthIdentityServiceStaleReads(1))->link($user, oauth_identity_service_profile());
+
+    expect($identity->uuid)->toBe($winner->uuid)
+        ->and(OAuthIdentity::query()->count())->toBe(1)
+        // The request that lost the race linked nothing, so it announces nothing.
+        ->and(oauth_test_events())->toBe([]);
+});
+
+it('refuses a lost race when the other request linked the subject to someone else', function () {
+    oauth_identity_service_schema();
+    $owner    = oauth_identity_service_user('user-1');
+    $attacker = oauth_identity_service_user('user-2');
+    (new OAuthIdentityService())->link($owner, oauth_identity_service_profile());
+
+    expect(fn () => (new OAuthIdentityServiceStaleReads(1))->link($attacker, oauth_identity_service_profile()))
+        ->toThrow(OAuthException::class, 'identity_already_linked')
+        ->and(OAuthIdentity::query()->first()->user_uuid)->toBe('user-1');
+});
+
+it('rethrows an insert failure that no competing row explains', function () {
+    oauth_identity_service_schema();
+    $owner = oauth_identity_service_user('user-1');
+    (new OAuthIdentityService())->link($owner, oauth_identity_service_profile());
+
+    // Every lookup comes back empty, so the unique violation cannot be attributed to a
+    // concurrent link and must surface rather than be swallowed.
+    expect(fn () => (new OAuthIdentityServiceStaleReads(PHP_INT_MAX))->link(oauth_identity_service_user('user-2'), oauth_identity_service_profile()))
+        ->toThrow(Illuminate\Database\QueryException::class);
+});

@@ -181,3 +181,31 @@ it('is registered for both events', function () {
     expect($source)->toMatch('/Events\\\\OAuthIdentityLinked::class\s*=>\s*\[\\\\Fleetbase\\\\Listeners\\\\SendOAuthIdentityLinkedNotification::class\]/')
         ->and($source)->toMatch('/Events\\\\OAuthIdentityUnlinked::class\s*=>\s*\[\\\\Fleetbase\\\\Listeners\\\\SendOAuthIdentityUnlinkedNotification::class\]/');
 });
+
+it('sends both notices by mail only', function () {
+    oauth_notifications_setup();
+    $user = oauth_notifications_user();
+
+    expect((new OAuthProviderLinked('google', 'ada@gmail.com'))->via($user))->toBe(['mail'])
+        ->and((new OAuthProviderUnlinked('google'))->via($user))->toBe(['mail']);
+});
+
+it('records what was linked and removed, and when, in the array form', function () {
+    oauth_notifications_setup();
+    Carbon::setTestNow('2026-09-21 14:30:00');
+
+    $linked   = (new OAuthProviderLinked('google', 'ada@gmail.com', OAuthIdentityLinked::METHOD_AUTOMATIC))->toArray(oauth_notifications_user());
+    $unlinked = (new OAuthProviderUnlinked('google'))->toArray(oauth_notifications_user());
+
+    Carbon::setTestNow();
+
+    expect($linked)->toBe([
+        'provider'       => 'google',
+        'provider_email' => 'ada@gmail.com',
+        'method'         => OAuthIdentityLinked::METHOD_AUTOMATIC,
+        'linked_at'      => 'Mon, Sep 21, 2026 2:30 PM UTC',
+    ])->and($unlinked)->toBe([
+        'provider'    => 'google',
+        'unlinked_at' => 'Mon, Sep 21, 2026 2:30 PM UTC',
+    ]);
+});
