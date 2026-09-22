@@ -53,11 +53,17 @@ class OAuthController extends Controller
      * Providers the console should render sign-in buttons for.
      *
      * Unauthenticated by design — the console needs this before a session exists.
-     * Returns only {id, label, icon}: no client ids, no secrets, no redirect URIs.
+     * Returns only {id, label, icon} per provider and whether sign-ups are open: no client
+     * ids, no secrets, no redirect URIs.
      */
     public function providers()
     {
-        return response()->json(['providers' => $this->registry->toDiscoveryArray()]);
+        return response()->json([
+            'providers'          => $this->registry->toDiscoveryArray(),
+            // So the sign-up page can leave its provider buttons out when sign-ups are
+            // closed, instead of letting someone find out after the round trip.
+            'allow_registration' => $this->config->allowsRegistration(),
+        ]);
     }
 
     /**
@@ -140,10 +146,14 @@ class OAuthController extends Controller
             return response()->error('That sign-in provider is not available.', 403, ['code' => 'provider_disabled']);
         }
 
+        // Someone who pressed a provider button on the SIGN-UP page but already has an
+        // account is signed in, not signed up; the console tells them which happened.
+        $existingAccount = ($consumed['payload']['intent'] ?? null) === OAuthFlowService::INTENT_SIGNUP ? ['existing_account' => true] : [];
+
         $user = $this->identities->findUserByProfile($profile);
 
         if ($user instanceof User) {
-            return $this->authenticate($user, $profile, $state);
+            return $this->authenticate($user, $profile, $state, $existingAccount);
         }
 
         $match = $this->autoLinkCandidate($profile);
@@ -158,7 +168,10 @@ class OAuthController extends Controller
 
             // Linking does not skip anything authenticate() enforces — two-factor
             // included. The link alone signs no one in.
-            return $this->authenticate($match, $profile, $state, true);
+            return $this->authenticate($match, $profile, $state, [
+                'linked'       => $profile->provider,
+                'linked_label' => OAuth::providerLabel($profile->provider),
+            ] + $existingAccount);
         }
 
         return $this->registrationOutcome($profile);
@@ -330,11 +343,13 @@ class OAuthController extends Controller
     /**
      * An identity we already know: run the same gates password login runs.
      */
-    protected function authenticate(User $user, OAuthUserProfile $profile, OAuthState $state, bool $autoLinked = false)
+    /**
+     * @param array<string, mixed> $notices what the console should tell the user about how
+     *                                      they got here (`linked`, `existing_account`), added
+     *                                      to whichever response sign-in ends with
+     */
+    protected function authenticate(User $user, OAuthUserProfile $profile, OAuthState $state, array $notices = [])
     {
-        // Tells the console to say the provider is now linked, whichever way sign-in ends.
-        $linked = $autoLinked ? ['linked' => $profile->provider, 'linked_label' => OAuth::providerLabel($profile->provider)] : [];
-
         // AuthController::login:86-88
         if ($user->type === 'customer') {
             return response()->error('Customer accounts must sign in through the customer portal.', 403, ['code' => 'customer_login_not_allowed']);
@@ -345,7 +360,7 @@ class OAuthController extends Controller
             return response()->json([
                 'twoFaSession' => TwoFactorAuth::start($user),
                 'isEnabled'    => true,
-            ] + $linked);
+            ] + $notices);
         }
 
         // AuthController::login:114-116. An OAuth sign-in does not by itself verify a
@@ -366,7 +381,7 @@ class OAuthController extends Controller
         $user->updateLastLogin();
         $token = $user->createToken($user->uuid);
 
-        return response()->json(['token' => $token->plainTextToken, 'type' => $user->getType()] + $linked);
+        return response()->json(['token' => $token->plainTextToken, 'type' => $user->getType()] + $notices);
     }
 
     /**

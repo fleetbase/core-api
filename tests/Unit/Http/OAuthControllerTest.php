@@ -553,6 +553,13 @@ it('advertises nothing when oauth is switched off', function () {
     expect($controller->providers()->getData(true)['providers'])->toBe([]);
 });
 
+it('says whether sign-ups are open, so the sign-up page can leave its buttons out', function (bool $open) {
+    oauth_controller_database(['oauth.allow_registration' => $open]);
+    [$controller] = oauth_controller_services();
+
+    expect($controller->providers()->getData(true)['allow_registration'])->toBe($open);
+})->with(['open' => true, 'closed' => false]);
+
 // ---------------------------------------------------------------------------
 // Redirect
 // ---------------------------------------------------------------------------
@@ -990,6 +997,39 @@ it('links and signs in a console account whose confirmed email the provider veri
         ->and($events)->toHaveCount(1)
         ->and($events[0]->method)->toBe(Fleetbase\Events\OAuthIdentityLinked::METHOD_AUTOMATIC);
 })->with(['user', 'admin']);
+
+it('tells someone who pressed sign up that they already had an account', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+    oauth_controller_link(oauth_controller_user());
+
+    $data = $controller->exchange(oauth_exchange_request(['code' => oauth_controller_handoff($controller, ['intent' => 'signup'])]))->getData(true);
+
+    expect($data['token'] ?? null)->toBeString()
+        ->and($data['existing_account'])->toBeTrue();
+});
+
+it('says nothing about an existing account on an ordinary sign-in', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+    oauth_controller_link(oauth_controller_user());
+
+    $data = $controller->exchange(oauth_exchange_request(['code' => oauth_controller_handoff($controller)]))->getData(true);
+
+    expect($data['token'] ?? null)->toBeString()
+        ->and($data)->not->toHaveKey('existing_account');
+});
+
+it('reports both the automatic link and the existing account on a sign-up', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+    oauth_controller_user(['uuid' => 'user-1', 'email' => 'ada@example.com']);
+
+    $data = $controller->exchange(oauth_exchange_request(['code' => oauth_controller_handoff($controller, ['intent' => 'signup'])]))->getData(true);
+
+    expect($data['linked'])->toBe('fakeprovider')
+        ->and($data['existing_account'])->toBeTrue();
+});
 
 it('still asks for two-factor after linking automatically', function () {
     $capsule      = oauth_controller_database();
