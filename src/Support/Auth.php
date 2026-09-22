@@ -44,7 +44,7 @@ class Auth extends Authentication
             ->setOwner($owner)
             ->saveInstance();
 
-        $owner->assignCompany($company);
+        $owner->assignCompany($company, 'Administrator');
 
         return $owner;
     }
@@ -78,6 +78,20 @@ class Auth extends Authentication
         }
 
         return response()->error('This account cannot sign in to the console.', 403, ['code' => 'console_access_not_allowed', 'restore' => false]);
+    }
+
+    /**
+     * Whether the actor may grant the role to another user. The Administrator
+     * role gives full access to the organization, so only admins and users
+     * holding it may grant it.
+     */
+    public static function canGrantRole(Role $role, ?User $actor): bool
+    {
+        if ($role->name !== 'Administrator') {
+            return true;
+        }
+
+        return $actor instanceof User && ($actor->isAdmin() || $actor->hasRole('Administrator'));
     }
 
     /**

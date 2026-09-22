@@ -264,3 +264,35 @@ it('fixes users with a company uuid but no company user membership', function ()
         ])->exists())->toBeTrue()
         ->and($db->table('model_has_roles')->where('role_id', 'role-admin')->exists())->toBeTrue();
 });
+
+it('repairs a member who does not own the company without granting a role', function () {
+    $capsule = admin_maintenance_database();
+    $db      = $capsule->getConnection('mysql');
+
+    $db->table('users')->insert([
+        'uuid'         => 'user-missing-member',
+        'company_uuid' => 'company-1',
+        'name'         => 'Plain Member',
+        'email'        => 'member@example.test',
+        'type'         => 'admin',
+        'status'       => 'active',
+        'created_at'   => '2026-07-18 00:00:00',
+        'updated_at'   => '2026-07-18 00:00:00',
+    ]);
+    $db->table('companies')->insert([
+        'uuid'       => 'company-1',
+        'owner_id'   => 'someone-else',
+        'owner_uuid' => 'someone-else',
+        'name'       => 'Acme Logistics',
+        'created_at' => '2026-07-18 00:00:00',
+        'updated_at' => '2026-07-18 00:00:00',
+    ]);
+
+    $command = new FixUserCompanies();
+    $command->setLaravel(app());
+    $tester = new CommandTester($command);
+
+    expect($tester->execute([]))->toBe(0)
+        ->and($db->table('company_users')->where(['company_uuid' => 'company-1', 'user_uuid' => 'user-missing-member'])->exists())->toBeTrue()
+        ->and($db->table('model_has_roles')->count())->toBe(0);
+});

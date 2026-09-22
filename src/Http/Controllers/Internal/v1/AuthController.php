@@ -19,6 +19,7 @@ use Fleetbase\Mail\UserCredentialsMail;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\Invite;
+use Fleetbase\Models\Role;
 use Fleetbase\Models\User;
 use Fleetbase\Models\VerificationCode;
 use Fleetbase\Notifications\UserForgotPassword;
@@ -877,8 +878,8 @@ class AuthController extends Controller
             $user    = Auth::getUserFromSession($request);
 
             // Make sure user has been invited to join organizations
-            $isAlreadyInvited = Invite::isAlreadySentToJoinCompany($user, $company);
-            if (!$isAlreadyInvited) {
+            $invite = Invite::findSentToJoinCompany($user, $company);
+            if (!$invite) {
                 return response()->error('User has not been invited to join this organization.');
             }
 
@@ -887,7 +888,8 @@ class AuthController extends Controller
                 return response()->error('User is already a member of this organization.');
             }
 
-            $company->assignUser($user);
+            // Join with the role the invite carries; never a default one
+            $company->assignUser($user, $this->inviteRoleId($invite, $company));
             Auth::setSession($user);
 
             return response()->json(['status' => 'ok']);
@@ -897,6 +899,24 @@ class AuthController extends Controller
             return response()->error(app()->hasDebugModeEnabled() ? $e->getMessage() : 'Unable to join organization.');
         }
         // @codeCoverageIgnoreEnd
+    }
+
+    /**
+     * The id of the role an invite grants in the organization, when it names one
+     * that belongs to the organization or is global.
+     */
+    private function inviteRoleId(Invite $invite, Company $company): ?string
+    {
+        $roleId = $invite->getMeta('role_uuid');
+        if (!$roleId) {
+            return null;
+        }
+
+        return Role::where(function ($query) use ($roleId) {
+            $query->where('id', $roleId)->orWhere('name', $roleId);
+        })->where(function ($query) use ($company) {
+            $query->where('company_uuid', $company->uuid)->orWhereNull('company_uuid');
+        })->value('id');
     }
 
     /**

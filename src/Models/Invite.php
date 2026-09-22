@@ -168,6 +168,23 @@ class Invite extends Model
         return static::isAlreadySent($company, $user->email, 'join_company');
     }
 
+    /**
+     * The invite sent to the user to join the company, if any.
+     */
+    public static function findSentToJoinCompany(User $user, Company $company): ?self
+    {
+        if (!$user->email) {
+            return null;
+        }
+
+        return static::where([
+            'company_uuid' => $company->uuid,
+            'subject_uuid' => $company->uuid,
+            'protocol'     => 'email',
+            'reason'       => 'join_company',
+        ])->whereJsonContains('recipients', $user->email)->latest()->first();
+    }
+
     public static function isAlreadySent(Company $company, string $email, string $reason, string $protocol = 'email'): bool
     {
         return static::where([

@@ -164,11 +164,17 @@ class UserController extends FleetbaseController
      */
     public function createRecord(Request $request)
     {
+        // A role is always chosen explicitly: access is never granted by default.
+        $role = $this->resolveRequestedRole($request);
+        if ($role instanceof \Illuminate\Http\JsonResponse) {
+            return $role;
+        }
+
         // A driver/customer/contact account in this organisation with the same
         // email or phone is promoted to a team member instead of duplicated.
         $managedUser = $this->findPromotableAccount($request->input('user.email'), $request->input('user.phone'));
         if ($managedUser) {
-            return $this->promoteManagedAccount($managedUser, $request);
+            return $this->promoteManagedAccount($managedUser, $request, $role);
         }
 
         $this->validateRequest($request);
@@ -189,11 +195,7 @@ class UserController extends FleetbaseController
                 return response()->error('This user is already a member of your organisation.');
             }
 
-            return $this->inviteExistingUser($existingUser, $request);
-        }
-
-        if ($request->filled('user.role_uuid') && !$this->resolveAssignableRole($request->input('user.role_uuid'))) {
-            return response()->error('The selected role is not available for this organisation.', 404);
+            return $this->inviteExistingUser($existingUser, $request, $role);
         }
 
         try {
@@ -211,22 +213,15 @@ class UserController extends FleetbaseController
                     'ip_address'   => $request->ip(),
                     'timezone'     => $timezone,
                 ]));
-            }, function (&$request, &$user) {
+            }, function (&$request, &$user) use ($role) {
                 // Make sure to assign to current company
                 $company = Auth::getCompany();
 
                 // Set user type
                 $user->setUserType('user');
 
-                $role = $this->resolveAssignableRole($request->input('user.role_uuid'));
-
-                // Assign to user
-                $user->assignCompany($company, $role ? $role->id : 'Administrator');
-
-                // Assign role if set
-                if ($role) {
-                    $user->assignSingleRole($role);
-                }
+                // Assign to company with the chosen role
+                $user->assignCompany($company, $role->id);
 
                 // Sync Permissions
                 if ($request->isArray('user.permissions')) {
@@ -292,6 +287,10 @@ class UserController extends FleetbaseController
                 $roleToAssign = $this->resolveAssignableRole($request->input('user.role'));
                 if (!$roleToAssign) {
                     return response()->error('The selected role is not available for this organisation.', 404);
+                }
+
+                if ($denied = $this->denyRoleGrant($roleToAssign, $request)) {
+                    return $denied;
                 }
             }
 
@@ -444,6 +443,41 @@ class UserController extends FleetbaseController
     /**
      * Resolve a role assignable by the active company.
      */
+    /**
+     * Resolve the role a new or invited user joins with. A role is required and
+     * must be assignable by the current user.
+     */
+    private function resolveRequestedRole(Request $request): Role|\Illuminate\Http\JsonResponse
+    {
+        $roleIdentifier = $request->input('user.role_uuid') ?? $request->input('user.role');
+        if (is_array($roleIdentifier)) {
+            $roleIdentifier = data_get($roleIdentifier, 'id') ?? data_get($roleIdentifier, 'uuid');
+        }
+
+        if (!$roleIdentifier) {
+            return response()->error('Select a role for this user.', 422);
+        }
+
+        $role = $this->resolveAssignableRole($roleIdentifier);
+        if (!$role) {
+            return response()->error('The selected role is not available for this organisation.', 404);
+        }
+
+        return $this->denyRoleGrant($role, $request) ?? $role;
+    }
+
+    /**
+     * Only administrators may grant the Administrator role.
+     */
+    private function denyRoleGrant(Role $role, Request $request): ?\Illuminate\Http\JsonResponse
+    {
+        if (Auth::canGrantRole($role, Auth::getUserFromSession($request))) {
+            return null;
+        }
+
+        return response()->error('Only administrators can grant the Administrator role.', 403);
+    }
+
     private function resolveAssignableRole(string|Role|null $role, ?string $companyUuid = null): ?Role
     {
         $companyUuid ??= session('company');
@@ -701,15 +735,17 @@ class UserController extends FleetbaseController
             return response()->error('Unable to determine the current organisation.');
         }
 
-        if ($request->filled('user.role_uuid') && !$this->resolveAssignableRole($request->input('user.role_uuid'))) {
-            return response()->error('The selected role is not available for this organisation.', 404);
+        // A role is always chosen explicitly: access is never granted by default.
+        $role = $this->resolveRequestedRole($request);
+        if ($role instanceof \Illuminate\Http\JsonResponse) {
+            return $role;
         }
 
         // A driver/customer/contact account in this organisation with the same
         // email is promoted to a team member instead of invited.
         $managedUser = $this->findPromotableAccount($email, data_get($data, 'phone'));
         if ($managedUser) {
-            return $this->promoteManagedAccount($managedUser, $request);
+            return $this->promoteManagedAccount($managedUser, $request, $role);
         }
 
         // Check if user already exists in the system.
@@ -726,7 +762,7 @@ class UserController extends FleetbaseController
             }
 
             // Existing user from another org — issue a cross-org invite.
-            return $this->inviteExistingUser($user, $request);
+            return $this->inviteExistingUser($user, $request, $role);
         }
 
         // Brand-new user — create a pending record; assignCompany() below issues the join invite + notification.
@@ -740,15 +776,8 @@ class UserController extends FleetbaseController
         // Set user type
         $user->setUserType('user');
 
-        $role = $this->resolveAssignableRole($request->input('user.role_uuid'));
-
-        // Assign to user
-        $user->assignCompany($company, $role ? $role->id : 'Administrator');
-
-        // Assign role if set
-        if ($role) {
-            $user->assignSingleRole($role);
-        }
+        // Assign to company with the chosen role
+        $user->assignCompany($company, $role->id);
 
         return response()->json(['user' => new $this->resource($user)]);
     }
@@ -786,23 +815,17 @@ class UserController extends FleetbaseController
      * keeps a single account for the console and their app. A join invite is
      * sent so they can set a console password.
      */
-    private function promoteManagedAccount(User $user, Request $request): \Illuminate\Http\JsonResponse
+    private function promoteManagedAccount(User $user, Request $request, Role $role): \Illuminate\Http\JsonResponse
     {
         $company = Auth::getCompany();
         if (!$company) {
             return response()->error('Unable to determine the current organisation.');
         }
 
-        $roleIdentifier = $request->input('user.role_uuid') ?? $request->input('user.role');
-        $role           = $roleIdentifier ? $this->resolveAssignableRole($roleIdentifier) : null;
-        if ($roleIdentifier && !$role) {
-            return response()->error('The selected role is not available for this organisation.', 404);
-        }
-
         $previousType = $user->getType();
         $user->meta   = array_merge((array) ($user->meta ?? []), ['promoted_from' => $previousType]);
         $user->setUserType('user');
-        $user->assignSingleRole($role ? $role : 'Administrator');
+        $user->assignSingleRole($role);
 
         if ($request->isArray('user.permissions')) {
             $user->syncPermissions(Permission::whereIn('id', $request->array('user.permissions'))->get());
@@ -821,7 +844,7 @@ class UserController extends FleetbaseController
                 'protocol'        => 'email',
                 'recipients'      => [$user->email],
                 'reason'          => 'join_company',
-                'meta'            => array_filter(['role_uuid' => $role?->id, 'promoted_from' => $previousType]),
+                'meta'            => array_filter(['role_uuid' => $role->id, 'promoted_from' => $previousType]),
                 'expires_at'      => now()->addHours(48),
             ]);
 
@@ -847,8 +870,9 @@ class UserController extends FleetbaseController
      *
      * @param User    $user    the existing user to invite
      * @param Request $request the originating HTTP request
+     * @param Role    $role    the role the user joins with
      */
-    private function inviteExistingUser(User $user, Request $request): \Illuminate\Http\JsonResponse
+    private function inviteExistingUser(User $user, Request $request, Role $role): \Illuminate\Http\JsonResponse
     {
         $company = Auth::getCompany();
 
@@ -861,11 +885,6 @@ class UserController extends FleetbaseController
             return response()->error('This user has already been invited to join your organisation.');
         }
 
-        $roleIdentifier = $request->input('user.role_uuid') ?? $request->input('user.role');
-        if ($roleIdentifier && !$this->resolveAssignableRole($roleIdentifier)) {
-            return response()->error('The selected role is not available for this organisation.', 404);
-        }
-
         $invitation = Invite::create([
             'company_uuid'    => $company->uuid,
             'created_by_uuid' => session('user'),
@@ -874,7 +893,7 @@ class UserController extends FleetbaseController
             'protocol'        => 'email',
             'recipients'      => [$user->email],
             'reason'          => 'join_company',
-            'meta'            => array_filter(['role_uuid' => $roleIdentifier]),
+            'meta'            => ['role_uuid' => $role->id],
             'expires_at'      => now()->addHours(48),
         ]);
 
@@ -972,11 +991,11 @@ class UserController extends FleetbaseController
 
         if (!$alreadyMember) {
             // Use Company::addUser() so that role assignment is handled in
-            // one place. The role stored in the invite meta takes precedence;
-            // if none was set the default 'Administrator' role is used.
-            $role           = $this->resolveAssignableRole($invite->getMeta('role_uuid'), $company->uuid);
-            $roleIdentifier = $role ? $role->id : 'Administrator';
-            $companyUser    = $company->addUser($user, $roleIdentifier);
+            // one place. The user joins with the role stored in the invite; an
+            // invite without one (issued before roles were required) joins with
+            // no role, so access is never granted by default.
+            $role        = $this->resolveAssignableRole($invite->getMeta('role_uuid'), $company->uuid);
+            $companyUser = $company->addUser($user, $role?->id);
             $user->setRelation('companyUser', $companyUser);
         } else {
             // User is already a member — ensure the companyUser relation is

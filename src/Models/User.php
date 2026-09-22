@@ -542,11 +542,12 @@ class User extends Authenticatable
      * will be notified that a user has been created.
      *
      * @param Company     $company the company to assign the user to
-     * @param string|null $role    The name or ID of the role to assign to the user. Defaults to the user's current role if null.
+     * @param string|null $role    The name or ID of the role to assign to the user. No role is assigned when null:
+     *                             access is only ever granted explicitly.
      *
      * @return self returns the current User instance
      */
-    public function assignCompany(Company $company, string $role = 'Administrator'): self
+    public function assignCompany(Company $company, ?string $role = null): self
     {
         $this->company_uuid = $company->uuid;
 
