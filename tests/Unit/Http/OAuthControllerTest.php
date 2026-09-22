@@ -648,6 +648,7 @@ it('keeps a safe return path and rejects every unsafe one', function (string $re
     'null byte'         => ["/ok\0", null],
     'not rooted'        => ['dashboard', null],
     'empty'             => ['', null],
+    'too long'          => ['/' . str_repeat('a', 512), null],
 ]);
 
 it('rejects an unsafe return path at the request boundary too', function () {
@@ -1447,4 +1448,172 @@ it('rate limits linking per user', function () {
     $response = $controller->link(oauth_authed(oauth_controller_user(), '/', 'POST'), 'fakeprovider');
 
     expect($response->getStatusCode())->toBe(429);
+});
+
+// ---------------------------------------------------------------------------
+// Edge cases across the flow
+// ---------------------------------------------------------------------------
+
+/**
+ * Loses the race for a provider subject: another request links it between the
+ * controller's lookup and this link.
+ */
+class OAuthControllerRacingIdentityService extends OAuthIdentityService
+{
+    public function link(User $user, OAuthUserProfile $profile, string $method = Fleetbase\Events\OAuthIdentityLinked::METHOD_MANUAL): OAuthIdentity
+    {
+        throw new OAuthException('identity_already_linked');
+    }
+}
+
+function oauth_controller_rate_limited(): void
+{
+    app()->instance(Illuminate\Cache\RateLimiter::class, new OAuthControllerRateLimiterFake(0));
+    Facade::clearResolvedInstance(Illuminate\Cache\RateLimiter::class);
+}
+
+it('treats both public oauth requests as open to anyone', function () {
+    oauth_controller_database();
+
+    // There is no session yet on either: obtaining one is the point.
+    expect((new OAuthRedirectRequest())->authorize())->toBeTrue()
+        ->and((new OAuthExchangeRequest())->authorize())->toBeTrue()
+        ->and((new OAuthRedirectRequest())->messages())->toBe(['return_to.regex' => 'The return path must be a relative path within the console.']);
+});
+
+it('rate limits the redirect endpoint independently of the throttle middleware', function () {
+    oauth_controller_database();
+    oauth_controller_rate_limited();
+    [$controller] = oauth_controller_services();
+
+    $response = $controller->redirect(oauth_redirect_request(), 'fakeprovider');
+
+    expect($response->getStatusCode())->toBe(429)
+        ->and(OAuthState::query()->count())->toBe(0);
+});
+
+it('reports a callback that carries no authorization code', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    $redirect = $controller->redirect(oauth_redirect_request(), 'fakeprovider');
+    parse_str((string) parse_url($redirect->getTargetUrl(), PHP_URL_QUERY), $query);
+
+    $response = $controller->callback(Request::create('/int/v1/auth/oauth/fakeprovider/callback', 'GET', ['state' => $query['state']]), 'fakeprovider');
+
+    expect(oauth_fragment($response->getTargetUrl())['error'])->toBe('missing_code');
+});
+
+it('refuses a callback for a provider switched off mid flight', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    $redirect = $controller->redirect(oauth_redirect_request(), 'fakeprovider');
+    parse_str((string) parse_url($redirect->getTargetUrl(), PHP_URL_QUERY), $query);
+
+    OAuthControllerFakeDriver::$behaviour = ['enabled' => false, 'throw' => new RuntimeException('no exchange for a disabled provider')];
+
+    $response = $controller->callback(
+        Request::create('/int/v1/auth/oauth/fakeprovider/callback', 'GET', ['code' => 'auth-code', 'state' => $query['state']]),
+        'fakeprovider'
+    );
+
+    expect(oauth_fragment($response->getTargetUrl())['error'])->toBe('provider_disabled');
+});
+
+it('refuses a handoff that names no provider subject', function () {
+    oauth_controller_database();
+    [$controller, $states] = oauth_controller_services();
+
+    $handoff = $states->issue(OAuthState::PURPOSE_HANDOFF, ['profile' => ['provider' => 'fakeprovider', 'email' => 'ada@example.com']], 120, 'fakeprovider');
+
+    $response = $controller->exchange(oauth_exchange_request(['code' => $handoff]));
+
+    expect($response->getStatusCode())->toBe(400)
+        ->and($response->getData(true)['code'])->toBe('invalid_exchange_code');
+});
+
+it('refuses an exchange for a provider removed from the configuration mid flight', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    oauth_controller_link(oauth_controller_user());
+    $handoff = oauth_controller_handoff($controller);
+
+    config(['oauth.providers' => []]);
+
+    $response = $controller->exchange(oauth_exchange_request(['code' => $handoff]));
+
+    expect($response->getStatusCode())->toBe(403)
+        ->and($response->getData(true)['code'])->toBe('provider_disabled');
+});
+
+it('falls back to asking the user to link when an automatic link loses a race', function () {
+    oauth_controller_database();
+    [, $states, , $config, $flow] = oauth_controller_services();
+
+    $registry   = app(OAuthProviderRegistry::class);
+    $controller = new OAuthController($registry, $flow, $states, new OAuthControllerRacingIdentityService(), $config);
+
+    oauth_controller_user(['uuid' => 'user-1', 'email' => 'ada@example.com', 'type' => 'user']);
+
+    $response = $controller->exchange(oauth_exchange_request(['code' => oauth_controller_handoff($controller)]));
+
+    // Nobody is signed in on the strength of a link that did not happen.
+    expect($response->getStatusCode())->toBe(409)
+        ->and($response->getData(true)['code'])->toBe('link_required')
+        ->and(app('db')->connection('mysql')->table('personal_access_tokens')->count())->toBe(0);
+});
+
+it('refuses to start linking an unknown or switched off provider', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+    $user         = oauth_controller_user();
+
+    $unknown = $controller->link(oauth_authed($user, '/', 'POST'), 'nope');
+
+    OAuthControllerFakeDriver::$behaviour = ['enabled' => false];
+    $disabled                             = $controller->link(oauth_authed($user, '/', 'POST'), 'fakeprovider');
+
+    expect($unknown->getStatusCode())->toBe(404)
+        ->and($unknown->getData(true)['code'])->toBe('unknown_provider')
+        ->and($disabled->getStatusCode())->toBe(403)
+        ->and($disabled->getData(true)['code'])->toBe('provider_disabled')
+        ->and(OAuthState::query()->count())->toBe(0);
+});
+
+it('rate limits completing a link per user', function () {
+    oauth_controller_database();
+    oauth_controller_rate_limited();
+    [$controller] = oauth_controller_services();
+
+    $response = $controller->completeLink(oauth_authed_complete(oauth_controller_user(), str_repeat('a', 64)));
+
+    expect($response->getStatusCode())->toBe(429);
+});
+
+it('refuses to complete a link with an unknown code', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    $response = $controller->completeLink(oauth_authed_complete(oauth_controller_user(), str_repeat('z', 64)));
+
+    expect($response->getStatusCode())->toBe(400)
+        ->and($response->getData(true)['code'])->toBe('invalid_exchange_code');
+});
+
+it('refuses to complete a link for a provider switched off mid flight', function () {
+    oauth_controller_database();
+    [$controller] = oauth_controller_services();
+
+    $user     = oauth_controller_user();
+    $fragment = oauth_link_callback($controller, $user);
+
+    OAuthControllerFakeDriver::$behaviour = ['enabled' => false];
+
+    $response = $controller->completeLink(oauth_authed_complete($user, $fragment['handoff']));
+
+    expect($response->getStatusCode())->toBe(403)
+        ->and($response->getData(true)['code'])->toBe('provider_disabled')
+        ->and(OAuthIdentity::query()->count())->toBe(0);
 });

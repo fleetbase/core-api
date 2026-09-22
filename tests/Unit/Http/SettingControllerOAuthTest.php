@@ -662,3 +662,23 @@ it('validates the shape of a save', function (array $body, bool $fails) {
     'key without pem header' => [['providers' => ['apple' => ['private_key' => 'MIGTAgEAMBMGByqGSM49']]], true],
     'oversized client id'    => [['providers' => ['google' => ['client_id' => str_repeat('a', 513)]]], true],
 ]);
+
+it('rechecks a live provider when a field other than its secret changes', function () {
+    [$registry, $config, $flow, $apple, $provider] = setting_controller_oauth_services();
+    $controller                                    = new SettingController();
+    $provider->accepts();
+    $controller->saveOAuthConfig(setting_controller_oauth_save([
+        'providers' => ['google' => ['enabled' => true, 'client_id' => 'id', 'client_secret' => 'right']],
+    ]), $registry, $config, $flow, $apple);
+
+    // A different client id with the stored secret is a different credential pair, so
+    // the provider is asked again even though no secret was typed.
+    $provider->says(401, ['error' => 'invalid_client']);
+    $response = $controller->saveOAuthConfig(setting_controller_oauth_save([
+        'providers' => ['google' => ['enabled' => true, 'client_id' => 'another-id', 'client_secret' => '']],
+    ]), $registry, $config, $flow, $apple);
+
+    expect($provider->history)->toHaveCount(2)
+        ->and($response->getStatusCode())->toBe(422)
+        ->and($config->forProvider('google')->get('client_id'))->toBe('id');
+});
