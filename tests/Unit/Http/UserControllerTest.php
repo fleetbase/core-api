@@ -2035,3 +2035,182 @@ test('user controller verification requests are authorized scoped and report del
         ->and($smsFailure->getData(true))->toBe(['errors' => ['Unable to send the verification request: carrier refused']])
         ->and($db->table('verification_codes')->where('subject_uuid', 'member-1')->whereNull('deleted_at')->count())->toBe(0);
 });
+
+/**
+ * A company role anyone may grant, and a profile-managed account (a driver, say) in
+ * company-1 that a team-member request should promote rather than duplicate.
+ */
+function user_controller_managed_account(Capsule $capsule, array $attributes = []): void
+{
+    $db  = $capsule->getConnection('mysql');
+    $now = '2026-07-18 10:00:00';
+
+    $db->table('roles')->insert(['id' => 'Dispatcher', 'company_uuid' => 'company-1', 'name' => 'Dispatcher', 'guard_name' => 'sanctum', 'created_at' => $now, 'updated_at' => $now]);
+    $db->table('users')->insert(array_merge([
+        'uuid' => 'driver-1', 'public_id' => 'user_driver_1', 'company_uuid' => 'company-1', 'email' => 'driver@example.test', 'phone' => '+15550001111',
+        'name' => 'Driver One', 'password' => null, 'type' => 'driver', 'status' => 'active', 'created_at' => $now, 'updated_at' => $now,
+    ], $attributes));
+    $db->table('company_users')->insert(['uuid' => 'pivot-driver-1', 'company_uuid' => 'company-1', 'user_uuid' => 'driver-1', 'status' => 'active', 'created_at' => $now, 'updated_at' => $now]);
+}
+
+test('user controller promotes a managed account to a team member instead of creating a duplicate', function () {
+    $capsule = user_controller_database();
+    EloquentModel::setEventDispatcher(new Dispatcher(app()));
+    user_controller_managed_account($capsule);
+    $db = $capsule->getConnection('mysql');
+    $db->table('permissions')->insert(['id' => 'permission-view', 'name' => 'iam view user', 'guard_name' => 'sanctum', 'created_at' => '2026-07-18 10:00:00', 'updated_at' => '2026-07-18 10:00:00']);
+    $db->table('policies')->insert(['id' => 'policy-view', 'company_uuid' => 'company-1', 'name' => 'View policy', 'guard_name' => 'sanctum', 'service' => 'iam', 'created_at' => '2026-07-18 10:00:00', 'updated_at' => '2026-07-18 10:00:00']);
+
+    $response = user_controller_without_request_validation()->createRecord(user_controller_request('POST', [
+        'user' => [
+            // Matched case-insensitively, and the role may arrive as a serialized model.
+            'email'       => ' Driver@Example.test ',
+            'name'        => 'Driver One',
+            'role'        => ['id' => 'Dispatcher', 'name' => 'Dispatcher'],
+            'permissions' => ['permission-view'],
+            'policies'    => ['policy-view'],
+        ],
+    ], user_controller_user('owner-1'), 'createRecord'));
+
+    $payload  = $response->getData(true);
+    $invite   = $db->table('invites')->where('company_uuid', 'company-1')->where('reason', 'join_company')->first();
+    $notifier = app(Illuminate\Contracts\Notifications\Dispatcher::class);
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($payload['promoted_from'])->toBe('driver')
+        ->and($payload['user']['uuid'])->toBe('driver-1')
+        ->and(User::where('email', 'driver@example.test')->count())->toBe(1)
+        ->and(user_controller_user('driver-1')->type)->toBe('user')
+        ->and(user_controller_user('driver-1')->meta)->toMatchArray(['promoted_from' => 'driver'])
+        ->and($db->table('model_has_roles')->where('model_uuid', 'pivot-driver-1')->where('role_id', 'Dispatcher')->exists())->toBeTrue()
+        ->and($db->table('model_has_permissions')->where('model_uuid', 'pivot-driver-1')->where('permission_id', 'permission-view')->exists())->toBeTrue()
+        ->and($db->table('model_has_policies')->where('model_uuid', 'pivot-driver-1')->where('policy_id', 'policy-view')->exists())->toBeTrue()
+        // A join invite lets them set a console password; their app password was generated.
+        ->and(json_decode($invite->recipients, true))->toBe(['driver@example.test'])
+        ->and(json_decode($invite->meta, true))->toBe(['role_uuid' => 'Dispatcher', 'promoted_from' => 'driver'])
+        ->and($notifier->sent)->toHaveCount(1)
+        ->and($notifier->sent[0][1])->toBeInstanceOf(Fleetbase\Notifications\UserInvited::class);
+});
+
+test('user controller promotes a managed account through the invite endpoint without sending a second invite', function () {
+    $capsule = user_controller_database();
+    EloquentModel::setEventDispatcher(new Dispatcher(app()));
+    user_controller_managed_account($capsule);
+    $db = $capsule->getConnection('mysql');
+    $db->table('invites')->insert([
+        'uuid'            => 'invite-driver', 'public_id' => 'invite_public_driver', 'code' => 'DRIVER1', 'uri' => 'driver1', 'company_uuid' => 'company-1',
+        'created_by_uuid' => 'owner-1', 'subject_uuid' => 'company-1', 'subject_type' => Fleetbase\Support\Utils::getMutationType(Fleetbase\Models\Company::where('uuid', 'company-1')->first()),
+        'protocol'        => 'email', 'recipients' => json_encode(['driver@example.test']), 'reason' => 'join_company', 'meta' => null,
+        'expires_at'      => now()->addHours(48), 'created_at' => now(), 'updated_at' => now(),
+    ]);
+
+    $response = user_controller()->inviteUser(user_controller_request('POST', [
+        'user' => ['email' => 'driver@example.test', 'name' => 'Driver One', 'role_uuid' => 'Dispatcher'],
+    ], user_controller_user('owner-1'), 'inviteUser', InviteUserRequest::class));
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($response->getData(true)['promoted_from'])->toBe('driver')
+        ->and($db->table('invites')->where('company_uuid', 'company-1')->count())->toBe(1)
+        ->and(app(Illuminate\Contracts\Notifications\Dispatcher::class)->sent)->toBe([]);
+});
+
+test('user controller promotes a managed account matched by phone and sends no email invite without an address', function () {
+    $capsule = user_controller_database();
+    EloquentModel::setEventDispatcher(new Dispatcher(app()));
+    user_controller_managed_account($capsule, ['email' => null, 'type' => 'customer']);
+
+    $response = user_controller_without_request_validation()->createRecord(user_controller_request('POST', [
+        'user' => ['phone' => '+15550001111', 'name' => 'Driver One', 'role_uuid' => 'Dispatcher'],
+    ], user_controller_user('owner-1'), 'createRecord'));
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($response->getData(true)['promoted_from'])->toBe('customer')
+        ->and($capsule->getConnection('mysql')->table('invites')->count())->toBe(0);
+});
+
+test('user controller refuses to promote a managed account when the organisation cannot be resolved', function () {
+    $capsule = user_controller_database();
+    user_controller_managed_account($capsule);
+    // The membership row outlives its organisation.
+    $capsule->getConnection('mysql')->table('companies')->where('uuid', 'company-1')->delete();
+
+    $response = user_controller_without_request_validation()->createRecord(user_controller_request('POST', [
+        'user' => ['email' => 'driver@example.test', 'role_uuid' => 'Dispatcher'],
+    ], user_controller_user('owner-1'), 'createRecord'));
+
+    expect($response->getStatusCode())->toBe(400)
+        ->and($response->getData(true))->toBe(['errors' => ['Unable to determine the current organisation.']])
+        ->and(user_controller_user('driver-1')->type)->toBe('driver');
+});
+
+test('user controller requires a role and only lets administrators grant the administrator role', function () {
+    $capsule = user_controller_database();
+
+    $noRole = user_controller_without_request_validation()->createRecord(user_controller_request('POST', [
+        'user' => ['email' => 'new-person@example.test', 'name' => 'New Person'],
+    ], user_controller_user('owner-1'), 'createRecord'));
+    // The owner here does not hold the Administrator role.
+    $grantAdmin = user_controller_without_request_validation()->createRecord(user_controller_request('POST', [
+        'user' => ['email' => 'new-person@example.test', 'name' => 'New Person', 'role_uuid' => 'Administrator'],
+    ], user_controller_user('owner-1'), 'createRecord'));
+    $promoteToAdmin = user_controller_without_request_validation()->updateRecord(user_controller_request('PATCH', [
+        'user' => ['name' => 'Member One', 'role' => 'Administrator'],
+    ], user_controller_user('owner-1'), 'updateRecord'), 'member-1');
+
+    expect($noRole->getStatusCode())->toBe(422)
+        ->and($noRole->getData(true))->toBe(['errors' => ['Select a role for this user.']])
+        ->and($grantAdmin->getStatusCode())->toBe(403)
+        ->and($grantAdmin->getData(true))->toBe(['errors' => ['Only administrators can grant the Administrator role.']])
+        ->and($promoteToAdmin->getStatusCode())->toBe(403)
+        ->and($promoteToAdmin->getData(true))->toBe(['errors' => ['Only administrators can grant the Administrator role.']])
+        ->and(User::where('email', 'new-person@example.test')->exists())->toBeFalse()
+        ->and($capsule->getConnection('mysql')->table('model_has_roles')->where('model_uuid', 'pivot-member-1')->exists())->toBeFalse();
+});
+
+test('user controller creates a user with neither an email nor a phone without looking for an account to promote', function () {
+    $capsule = user_controller_database();
+    EloquentModel::setEventDispatcher(new Dispatcher(app()));
+    user_controller_managed_account($capsule);
+
+    $created = user_controller_without_request_validation()->createRecord(user_controller_request('POST', [
+        'user' => ['name' => 'No Contact', 'role_uuid' => 'Dispatcher'],
+    ], user_controller_user('owner-1'), 'createRecord'));
+
+    $resource = user_controller_assert_created_user_response($created);
+    $resource = is_array($resource) ? (object) $resource : $resource->resource;
+
+    expect($resource->name)->toBe('No Contact')
+        ->and($resource->type)->toBe('user')
+        ->and(user_controller_user('driver-1')->type)->toBe('driver');
+});
+
+test('user controller makes a managed account a team member when it accepts an invite', function (array $account, ?array $meta) {
+    $capsule = user_controller_database();
+    EloquentModel::setEventDispatcher(new Dispatcher(app()));
+    $db  = $capsule->getConnection('mysql');
+    $now = '2026-07-18 10:00:00';
+
+    $db->table('users')->insert(array_merge([
+        'uuid' => 'invitee-1', 'public_id' => 'user_invitee_1', 'company_uuid' => 'company-2', 'email' => 'invitee@example.test',
+        'name' => 'Invitee', 'password' => password_hash('app-password', PASSWORD_BCRYPT), 'status' => 'active', 'created_at' => $now, 'updated_at' => $now,
+    ], $account));
+    $db->table('invites')->insert([
+        'uuid'            => 'invite-invitee', 'public_id' => 'invite_public_invitee', 'code' => 'INVITEE1', 'uri' => 'invitee1', 'company_uuid' => 'company-1',
+        'created_by_uuid' => 'owner-1', 'subject_uuid' => 'company-1', 'subject_type' => Fleetbase\Support\Utils::getMutationType(Fleetbase\Models\Company::where('uuid', 'company-1')->first()),
+        'protocol'        => 'email', 'recipients' => json_encode(['invitee@example.test']), 'reason' => 'join_company', 'meta' => $meta === null ? null : json_encode($meta),
+        'expires_at'      => now()->addHours(48), 'created_at' => now(), 'updated_at' => now(),
+    ]);
+
+    $accepted = user_controller()->acceptCompanyInvite(user_controller_request('POST', [
+        'code' => 'INVITEE1',
+    ], user_controller_user('invitee-1'), 'acceptCompanyInvite', AcceptCompanyInvite::class));
+
+    // Active, so no password would otherwise be asked for; the app password does not
+    // carry over to the console.
+    expect($accepted->getStatusCode())->toBe(200)
+        ->and($accepted->getData(true)['needs_password'])->toBeTrue()
+        ->and($db->table('users')->where('uuid', 'invitee-1')->value('type'))->toBe('user');
+})->with([
+    'a driver account'                   => [['type' => 'driver'], null],
+    'an account promoted by an operator' => [['type' => 'user'], ['promoted_from' => 'contact']],
+]);
