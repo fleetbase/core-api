@@ -14,12 +14,20 @@ name: API Contract (Postman)
 #     fleetbase-ref: v0.7.53
 #     api-image: fleetbase/fleetbase-api:v0.7.53
 
+# Pushes run only for main. A release or dev branch always has a pull request, and
+# pull_request already runs on every push to it; triggering on push too ran the
+# ~11-minute contract twice for each commit.
 on:
   push:
-    branches: [main, 'dev-v*', 'release/v*']
+    branches: [main]
   pull_request:
     branches: [main, 'dev-v*', 'release/v*']
   workflow_dispatch:
+
+# A newer push to the same pull request or branch makes the running contract stale.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 

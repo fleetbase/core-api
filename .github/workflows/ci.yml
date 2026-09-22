@@ -3,13 +3,21 @@ name: PHP CI
 # Release work lands on a release/v* or dev-v* branch before reaching main via the release
 # PR, so a main-only filter leaves every PR targeting a release branch with no CI at
 # all — the release is then assembled from unverified commits.
+# Pushes run only for main and tags. A release or dev branch always has a pull
+# request, and pull_request already runs on every push to it; triggering on push too
+# ran the whole suite twice for each commit.
 on:
   push:
-    branches: [ main, 'dev-v*', 'release/v*' ]
+    branches: [ main ]
     tags:
       - 'v*'
   pull_request:
     branches: [ main, 'dev-v*', 'release/v*' ]
+
+# A newer push to the same pull request or branch makes the running check stale.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
