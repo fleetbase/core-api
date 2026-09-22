@@ -1,6 +1,6 @@
 {
     "name": "fleetbase/core-api",
-    "version": "1.6.62",
+    "version": "1.6.63",
     "description": "Core Framework and Resources for Fleetbase API",
     "keywords": [
         "fleetbase",
@@ -18,7 +18,7 @@
         }
     ],
     "require": {
-        "php": "^8.0",
+        "php": "^8.1",
         "aws/aws-sdk-php-laravel": "^3.7",
         "fleetbase/countries": "^0.8.3",
         "fleetbase/laravel-mysql-spatial": "^1.0.2",
@@ -42,23 +42,24 @@
         "laravel-notification-channels/fcm": "^4.1",
         "laravel-notification-channels/twilio": "^3.3",
         "laravel/sanctum": "3.2.4",
+        "laravel/socialite": "^5.31",
         "lcobucci/clock": "3.3.1",
         "lcobucci/jwt": "^5.4",
         "maatwebsite/excel": "^3.1",
+        "mossadal/math-parser": "^1.3",
         "phpoffice/phpspreadsheet": "^1.28",
         "phrity/websocket": "^1.7",
+        "rlanvin/php-rrule": "^2.4",
         "sentry/sentry-laravel": "*",
         "spatie/laravel-activitylog": "^4.7",
         "spatie/laravel-google-cloud-storage": "^2.2",
+        "spatie/laravel-pdf": "^1.9",
         "spatie/laravel-permission": "^6.3",
         "spatie/laravel-responsecache": "^7.5",
         "spatie/laravel-schedule-monitor": "^3.7",
         "spatie/laravel-sluggable": "^3.5",
         "sqids/sqids": "^0.4.1",
-        "xantios/mimey": "^2.2.0",
-        "spatie/laravel-pdf": "^1.9",
-        "mossadal/math-parser": "^1.3",
-        "rlanvin/php-rrule": "^2.4"
+        "xantios/mimey": "^2.2.0"
     },
     "require-dev": {
         "cknow/laravel-money": "^7.2",

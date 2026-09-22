@@ -202,9 +202,13 @@ function iam_metrics_seed(Capsule $capsule): void
 
     $db->table('users')->insert([
         ['uuid' => 'user-active', 'public_id' => 'user_active', 'name' => 'Active Dispatcher', 'type' => 'dispatcher', 'email' => 'active@example.test', 'email_verified_at' => '2026-07-01 08:00:00', 'last_login' => '2026-07-17 08:00:00', 'created_at' => '2026-07-12 08:00:00', 'updated_at' => '2026-07-12 08:00:00', 'deleted_at' => null],
-        ['uuid' => 'user-pending', 'public_id' => 'user_pending', 'name' => 'Pending Driver', 'type' => 'driver', 'email' => 'pending@example.test', 'email_verified_at' => null, 'last_login' => null, 'created_at' => '2026-07-13 08:00:00', 'updated_at' => '2026-07-13 08:00:00', 'deleted_at' => null],
+        ['uuid' => 'user-pending', 'public_id' => 'user_pending', 'name' => 'Pending Operator', 'type' => 'operator', 'email' => 'pending@example.test', 'email_verified_at' => null, 'last_login' => null, 'created_at' => '2026-07-13 08:00:00', 'updated_at' => '2026-07-13 08:00:00', 'deleted_at' => null],
         ['uuid' => 'user-inactive', 'public_id' => 'user_inactive', 'name' => 'Inactive Admin', 'type' => 'admin', 'email' => 'inactive@example.test', 'email_verified_at' => '2026-05-01 08:00:00', 'last_login' => '2026-03-01 08:00:00', 'created_at' => '2026-07-14 08:00:00', 'updated_at' => '2026-07-18 08:00:00', 'deleted_at' => null],
         ['uuid' => 'user-unassigned', 'public_id' => 'user_unassigned', 'name' => 'Unassigned User', 'type' => null, 'email' => 'unassigned@example.test', 'email_verified_at' => '2026-07-15 08:00:00', 'last_login' => '2026-07-16 08:00:00', 'created_at' => '2026-07-15 08:00:00', 'updated_at' => '2026-07-15 08:00:00', 'deleted_at' => null],
+        // Profile-managed accounts in the tenant: every metric must leave these out.
+        ['uuid' => 'user-driver', 'public_id' => 'user_driver', 'name' => 'Managed Driver', 'type' => 'driver', 'email' => 'driver@example.test', 'email_verified_at' => null, 'last_login' => null, 'created_at' => '2026-07-16 08:00:00', 'updated_at' => '2026-07-16 08:00:00', 'deleted_at' => null],
+        ['uuid' => 'user-customer', 'public_id' => 'user_customer', 'name' => 'Managed Customer', 'type' => 'customer', 'email' => 'customer@example.test', 'email_verified_at' => '2026-07-16 08:00:00', 'last_login' => '2026-07-17 08:00:00', 'created_at' => '2026-07-16 08:00:00', 'updated_at' => '2026-07-16 08:00:00', 'deleted_at' => null],
+        ['uuid' => 'user-contact', 'public_id' => 'user_contact', 'name' => 'Managed Contact', 'type' => 'contact', 'email' => 'contact@example.test', 'email_verified_at' => null, 'last_login' => null, 'created_at' => '2026-07-16 08:00:00', 'updated_at' => '2026-07-18 08:00:00', 'deleted_at' => null],
         ['uuid' => 'user-other', 'public_id' => 'user_other', 'name' => 'Other Tenant', 'type' => 'driver', 'email' => 'other@example.test', 'email_verified_at' => null, 'last_login' => null, 'created_at' => '2026-07-12 08:00:00', 'updated_at' => '2026-07-12 08:00:00', 'deleted_at' => null],
     ]);
 
@@ -213,6 +217,9 @@ function iam_metrics_seed(Capsule $capsule): void
         ['uuid' => 'cu-pending', 'company_uuid' => 'company-1', 'user_uuid' => 'user-pending', 'status' => 'pending', 'external' => 0, 'created_at' => '2026-07-13 08:00:00', 'updated_at' => '2026-07-13 08:00:00', 'deleted_at' => null],
         ['uuid' => 'cu-inactive', 'company_uuid' => 'company-1', 'user_uuid' => 'user-inactive', 'status' => 'inactive', 'external' => 0, 'created_at' => '2026-07-14 08:00:00', 'updated_at' => '2026-07-18 08:00:00', 'deleted_at' => null],
         ['uuid' => 'cu-unassigned', 'company_uuid' => 'company-1', 'user_uuid' => 'user-unassigned', 'status' => 'active', 'external' => 0, 'created_at' => '2026-07-15 08:00:00', 'updated_at' => '2026-07-15 08:00:00', 'deleted_at' => null],
+        ['uuid' => 'cu-driver', 'company_uuid' => 'company-1', 'user_uuid' => 'user-driver', 'status' => 'pending', 'external' => 0, 'created_at' => '2026-07-16 08:00:00', 'updated_at' => '2026-07-16 08:00:00', 'deleted_at' => null],
+        ['uuid' => 'cu-customer', 'company_uuid' => 'company-1', 'user_uuid' => 'user-customer', 'status' => 'active', 'external' => 0, 'created_at' => '2026-07-16 08:00:00', 'updated_at' => '2026-07-16 08:00:00', 'deleted_at' => null],
+        ['uuid' => 'cu-contact', 'company_uuid' => 'company-1', 'user_uuid' => 'user-contact', 'status' => 'inactive', 'external' => 0, 'created_at' => '2026-07-16 08:00:00', 'updated_at' => '2026-07-18 08:00:00', 'deleted_at' => null],
         ['uuid' => 'cu-other', 'company_uuid' => 'company-2', 'user_uuid' => 'user-other', 'status' => 'active', 'external' => 0, 'created_at' => '2026-07-12 08:00:00', 'updated_at' => '2026-07-12 08:00:00', 'deleted_at' => null],
     ]);
 
@@ -239,6 +246,7 @@ function iam_metrics_seed(Capsule $capsule): void
         ['role_id' => 'role-admin', 'model_type' => CompanyUser::class, 'model_uuid' => 'cu-active'],
         ['role_id' => 'role-dispatcher', 'model_type' => CompanyUser::class, 'model_uuid' => 'cu-pending'],
         ['role_id' => 'role-other-admin', 'model_type' => CompanyUser::class, 'model_uuid' => 'cu-other'],
+        ['role_id' => 'role-dispatcher', 'model_type' => CompanyUser::class, 'model_uuid' => 'cu-driver'],
     ]);
 
     $db->table('model_has_policies')->insert([
@@ -253,6 +261,7 @@ function iam_metrics_seed(Capsule $capsule): void
         ['permission_id' => 'perm-orders-read', 'model_type' => Policy::class, 'model_uuid' => 'policy-fleetops'],
         ['permission_id' => 'perm-admin-users', 'model_type' => CompanyUser::class, 'model_uuid' => 'cu-inactive'],
         ['permission_id' => 'perm-admin-users', 'model_type' => CompanyUser::class, 'model_uuid' => 'cu-other'],
+        ['permission_id' => 'perm-admin-users', 'model_type' => CompanyUser::class, 'model_uuid' => 'cu-customer'],
     ]);
 
     $db->table('groups')->insert([
@@ -264,6 +273,7 @@ function iam_metrics_seed(Capsule $capsule): void
     $db->table('group_users')->insert([
         ['group_uuid' => 'group-ops', 'user_uuid' => 'user-active', 'created_at' => '2026-07-01 00:00:00', 'updated_at' => '2026-07-01 00:00:00', 'deleted_at' => null],
         ['group_uuid' => 'group-ops', 'user_uuid' => 'user-unassigned', 'created_at' => '2026-07-01 00:00:00', 'updated_at' => '2026-07-01 00:00:00', 'deleted_at' => null],
+        ['group_uuid' => 'group-ops', 'user_uuid' => 'user-driver', 'created_at' => '2026-07-01 00:00:00', 'updated_at' => '2026-07-01 00:00:00', 'deleted_at' => null],
         ['group_uuid' => 'group-other', 'user_uuid' => 'user-other', 'created_at' => '2026-07-01 00:00:00', 'updated_at' => '2026-07-01 00:00:00', 'deleted_at' => null],
     ]);
 
@@ -272,6 +282,7 @@ function iam_metrics_seed(Capsule $capsule): void
         ['key' => 'company.company-1.2fa', 'value' => json_encode(['enabled' => true, 'enforced' => true])],
         ['key' => 'user.user-active.2fa', 'value' => json_encode(['enabled' => true])],
         ['key' => 'user.user-other.2fa', 'value' => json_encode(['enabled' => true])],
+        ['key' => 'user.user-customer.2fa', 'value' => json_encode(['enabled' => true])],
     ]);
 
     $db->table('activity_log')->insert([
@@ -427,10 +438,10 @@ test('iam metrics lifecycle and user type charts bucket tenant users by day', fu
         ->and($types['totals'])->toBe([
             'Admin'      => 1,
             'Dispatcher' => 1,
-            'Driver'     => 1,
+            'Operator'   => 1,
             'User'       => 1,
         ])
-        ->and(collect($types['datasets'])->pluck('label')->all())->toBe(['Admin', 'Dispatcher', 'Driver', 'User']);
+        ->and(collect($types['datasets'])->pluck('label')->all())->toBe(['Admin', 'Dispatcher', 'Operator', 'User']);
 });
 
 test('iam metrics handles empty tenant charts and assignment coverage without division errors', function () {

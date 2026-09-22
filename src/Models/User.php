@@ -70,6 +70,23 @@ class User extends Authenticatable
     use HasSessionAttributes;
 
     /**
+     * User types whose account is owned and managed by a profile record (a
+     * FleetOps driver, contact or customer) rather than managed in IAM.
+     *
+     * @var array<int, string>
+     */
+    public const MANAGED_TYPES = ['driver', 'customer', 'contact'];
+
+    /**
+     * Managed types that have no console surface at all. Customers are excluded
+     * because the customer portal runs inside the console and restores its
+     * session through the core session endpoints.
+     *
+     * @var array<int, string>
+     */
+    public const SESSIONLESS_TYPES = ['driver', 'contact'];
+
+    /**
      * The database connection to use.
      *
      * @var string
@@ -319,6 +336,21 @@ class User extends Authenticatable
     }
 
     /**
+     * Retrieves all external OAuth/OIDC identities linked to this user.
+     *
+     * Deliberately not added to $appends: that array is evaluated on every user
+     * serialization, and exposing identities there would cost a query per user on hot paths.
+     *
+     * @return HasMany the HasMany relationship instance
+     *
+     * @see OAuthIdentity
+     */
+    public function oauthIdentities(): HasMany
+    {
+        return $this->hasMany(OAuthIdentity::class, 'user_uuid', 'uuid');
+    }
+
+    /**
      * Retrieves all companies associated with the user through the CompanyUser pivot table.
      *
      * This method defines a HasManyThrough relationship between the User model and the Company model
@@ -525,11 +557,12 @@ class User extends Authenticatable
      * will be notified that a user has been created.
      *
      * @param Company     $company the company to assign the user to
-     * @param string|null $role    The name or ID of the role to assign to the user. Defaults to the user's current role if null.
+     * @param string|null $role    The name or ID of the role to assign to the user. No role is assigned when null:
+     *                             access is only ever granted explicitly.
      *
      * @return self returns the current User instance
      */
-    public function assignCompany(Company $company, string $role = 'Administrator'): self
+    public function assignCompany(Company $company, ?string $role = null): self
     {
         $this->company_uuid = $company->uuid;
 
@@ -824,6 +857,66 @@ class User extends Authenticatable
     }
 
     /**
+     * Checks if the account is owned by a driver, contact or customer profile.
+     */
+    public function isManagedAccount(): bool
+    {
+        return $this->isType(static::MANAGED_TYPES);
+    }
+
+    /**
+     * Checks if the account is a staff account (managed in IAM).
+     */
+    public function isStaffAccount(): bool
+    {
+        return !$this->isManagedAccount();
+    }
+
+    /**
+     * Checks if the account may sign in to the console.
+     */
+    public function canAccessConsole(): bool
+    {
+        return $this->isStaffAccount();
+    }
+
+    /**
+     * Checks if the account may hold a console session. Customers hold one for
+     * the customer portal; drivers and contacts never do.
+     */
+    public function canHoldConsoleSession(): bool
+    {
+        return $this->isNotType(static::SESSIONLESS_TYPES);
+    }
+
+    /**
+     * Scope a query to profile-managed accounts only.
+     */
+    public function scopeManaged(Builder $query): Builder
+    {
+        return $query->whereIn($this->qualifyColumn('type'), static::MANAGED_TYPES);
+    }
+
+    /**
+     * Scope a query to accounts managed in IAM, leaving out profile-managed ones.
+     */
+    public function scopeNotManaged(Builder $query): Builder
+    {
+        return static::whereNotManagedType($query, $this->qualifyColumn('type'));
+    }
+
+    /**
+     * Constrain a query on any table joined to users to accounts managed in IAM.
+     * A user with no type is an IAM account, and NOT IN alone would drop it.
+     */
+    public static function whereNotManagedType($query, string $typeColumn = 'users.type')
+    {
+        return $query->where(function ($query) use ($typeColumn) {
+            $query->whereNull($typeColumn)->orWhereNotIn($typeColumn, static::MANAGED_TYPES);
+        });
+    }
+
+    /**
      * Adds a boolean dynamic property to check if user is an admin.
      *
      * @return void
@@ -1047,11 +1140,14 @@ class User extends Authenticatable
     }
 
     /**
-     * Manually verify the user's email .
+     * Manually verify the user's email or phone.
+     *
+     * @param string $channel `email` or `phone`
      */
-    public function manualVerify(): self
+    public function manualVerify(string $channel = 'email'): self
     {
-        $this->email_verified_at = Carbon::now();
+        $column          = $channel === 'phone' ? 'phone_verified_at' : 'email_verified_at';
+        $this->{$column} = Carbon::now();
         $this->save();
 
         return $this;

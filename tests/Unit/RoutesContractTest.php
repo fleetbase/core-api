@@ -107,11 +107,15 @@ namespace {
             });
         });
 
-        Router::macro('fleetbaseAuthRoutes', function (?string $authControllerClass = null) {
+        // Mirrors src/Expansions/Route.php:121-160, including the two extension
+        // callbacks. Without them this local macro would silently drop every route
+        // src/routes.php registers through the seam, and the contract below would
+        // pass while asserting nothing about them.
+        Router::macro('fleetbaseAuthRoutes', function (?string $authControllerClass = null, ?callable $registerFn = null, ?callable $registerProtectedFn = null) {
             $authControllerClass ??= AuthController::class;
 
-            return $this->group(['prefix' => 'auth'], function (Router $router) use ($authControllerClass) {
-                $router->group(['middleware' => [ThrottleRequests::class]], function (Router $router) use ($authControllerClass) {
+            return $this->group(['prefix' => 'auth'], function (Router $router) use ($authControllerClass, $registerFn, $registerProtectedFn) {
+                $router->group(['middleware' => [ThrottleRequests::class]], function (Router $router) use ($authControllerClass, $registerFn) {
                     $router->post('login', [$authControllerClass, 'login']);
                     $router->post('sign-up', [$authControllerClass, 'signUp']);
                     $router->post('logout', [$authControllerClass, 'logout']);
@@ -123,15 +127,23 @@ namespace {
                     $router->post('send-verification-email', [$authControllerClass, 'sendVerificationEmail']);
                     $router->post('verify-email', [$authControllerClass, 'verifyEmail']);
                     $router->get('validate-verification', [$authControllerClass, 'validateVerificationCode']);
+
+                    if (is_callable($registerFn)) {
+                        $registerFn($router);
+                    }
                 });
 
-                $router->group(['middleware' => ['fleetbase.protected']], function (Router $router) use ($authControllerClass) {
+                $router->group(['middleware' => ['fleetbase.protected']], function (Router $router) use ($authControllerClass, $registerProtectedFn) {
                     $router->post('switch-organization', [$authControllerClass, 'switchOrganization']);
                     $router->post('join-organization', [$authControllerClass, 'joinOrganization']);
                     $router->post('create-organization', [$authControllerClass, 'createOrganization']);
                     $router->get('session', [$authControllerClass, 'session']);
                     $router->get('organizations', [$authControllerClass, 'getUserOrganizations']);
                     $router->get('services', [$authControllerClass, 'services']);
+
+                    if (is_callable($registerProtectedFn)) {
+                        $registerProtectedFn($router);
+                    }
                 });
             });
         });
@@ -225,6 +237,102 @@ namespace {
             ->and($session)->not->toBeNull()
             ->and($session['action'])->toBe(AuthController::class . '@session')
             ->and($session['middleware'])->toContain('fleetbase.protected');
+    });
+
+    test('route file exposes oauth sign-in as public throttled routes', function () {
+        $routes = routes_contract_rows(routes_contract_router());
+
+        $controller = Fleetbase\Http\Controllers\Internal\v1\OAuthController::class;
+
+        $providers = routes_contract_find($routes, 'GET', 'int/v1/auth/oauth/providers');
+        $exchange  = routes_contract_find($routes, 'POST', 'int/v1/auth/oauth/exchange');
+        $redirect  = routes_contract_find($routes, 'GET', 'int/v1/auth/oauth/{provider}/redirect');
+
+        expect($providers)->not->toBeNull()
+            ->and($providers['action'])->toBe($controller . '@providers')
+            ->and($providers['middleware'])->toContain(ThrottleRequests::class)
+            // These are how a user signs in — a session cannot be a precondition.
+            ->and($providers['middleware'])->not->toContain('fleetbase.protected')
+            ->and($exchange)->not->toBeNull()
+            ->and($exchange['action'])->toBe($controller . '@exchange')
+            ->and($exchange['middleware'])->toContain(ThrottleRequests::class)
+            ->and($exchange['middleware'])->not->toContain('fleetbase.protected')
+            ->and($redirect)->not->toBeNull()
+            ->and($redirect['action'])->toBe($controller . '@redirect')
+            ->and($redirect['middleware'])->not->toContain('fleetbase.protected');
+    });
+
+    test('route file accepts the oauth callback over both get and post', function () {
+        $routes = routes_contract_rows(routes_contract_router());
+
+        $controller = Fleetbase\Http\Controllers\Internal\v1\OAuthController::class;
+
+        // Apple requires response_mode=form_post whenever the name/email scopes are
+        // requested, so its callback arrives as a cross-site POST. Dropping POST here
+        // breaks Sign in with Apple and nothing else, which makes it easy to miss.
+        $get  = routes_contract_find($routes, 'GET', 'int/v1/auth/oauth/{provider}/callback');
+        $post = routes_contract_find($routes, 'POST', 'int/v1/auth/oauth/{provider}/callback');
+
+        expect($get)->not->toBeNull()
+            ->and($get['action'])->toBe($controller . '@callback')
+            ->and($post)->not->toBeNull()
+            ->and($post['action'])->toBe($controller . '@callback')
+            ->and($post['middleware'])->not->toContain('fleetbase.protected');
+    });
+
+    test('route file protects every account linking route', function () {
+        $routes = routes_contract_rows(routes_contract_router());
+
+        $controller = Fleetbase\Http\Controllers\Internal\v1\OAuthController::class;
+
+        // Every linking action acts on the signed-in user, and completeLink() is what
+        // defeats account-linking CSRF by checking that user — so none may be public.
+        foreach ([
+            ['GET', 'int/v1/auth/oauth/identities', 'identities'],
+            ['POST', 'int/v1/auth/oauth/link/complete', 'completeLink'],
+            ['POST', 'int/v1/auth/oauth/{provider}/link', 'link'],
+            ['DELETE', 'int/v1/auth/oauth/{provider}/unlink', 'unlink'],
+        ] as [$method, $uri, $action]) {
+            $route = routes_contract_find($routes, $method, $uri);
+
+            expect($route)->not->toBeNull()
+                ->and($route['action'])->toBe($controller . '@' . $action)
+                ->and($route['middleware'])->toContain('fleetbase.protected');
+        }
+
+        expect(routes_contract_index($routes, 'POST', 'int/v1/auth/oauth/link/complete'))
+            ->toBeLessThan(routes_contract_index($routes, 'POST', 'int/v1/auth/oauth/{provider}/link'));
+    });
+
+    test('route file registers literal oauth routes before the provider wildcard', function () {
+        $routes = routes_contract_rows(routes_contract_router());
+
+        // {provider} would otherwise swallow "providers" and "exchange", and the
+        // failure would look like an unknown-provider error rather than a routing bug.
+        expect(routes_contract_index($routes, 'GET', 'int/v1/auth/oauth/providers'))
+            ->toBeLessThan(routes_contract_index($routes, 'GET', 'int/v1/auth/oauth/{provider}/redirect'))
+            ->and(routes_contract_index($routes, 'POST', 'int/v1/auth/oauth/exchange'))
+            ->toBeLessThan(routes_contract_index($routes, 'POST', 'int/v1/auth/oauth/{provider}/callback'));
+    });
+
+    test('route file exposes oauth configuration as protected admin settings', function () {
+        $routes = routes_contract_rows(routes_contract_router());
+
+        $settings = 'Fleetbase\\Http\\Controllers\\Internal\\v1\\SettingController';
+
+        $get  = routes_contract_find($routes, 'GET', 'int/v1/settings/oauth-config');
+        $save = routes_contract_find($routes, 'POST', 'int/v1/settings/oauth-config');
+        $test = routes_contract_find($routes, 'POST', 'int/v1/settings/test-oauth-config');
+
+        // Provider credentials are configured here, so these must sit behind the
+        // authenticated group — the AdminRequest on each action then restricts them
+        // to administrators.
+        expect($get['action'])->toBe($settings . '@getOAuthConfig')
+            ->and($get['middleware'])->toContain('fleetbase.protected')
+            ->and($save['action'])->toBe($settings . '@saveOAuthConfig')
+            ->and($save['middleware'])->toContain('fleetbase.protected')
+            ->and($test['action'])->toBe($settings . '@testOAuthConfig')
+            ->and($test['middleware'])->toContain('fleetbase.protected');
     });
 
     test('route file keeps critical internal custom routes before dynamic resource routes', function () {

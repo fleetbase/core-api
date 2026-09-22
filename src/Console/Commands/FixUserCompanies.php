@@ -41,7 +41,8 @@ class FixUserCompanies extends Command
                 $this->line('Found user ' . $user->name . ' (' . $user->email . ') which doesnt have correct company assignment.');
                 $company = Company::where('uuid', $user->company_uuid)->first();
                 if ($company) {
-                    $user->assignCompany($company);
+                    // Only the company owner is restored as an Administrator
+                    $user->assignCompany($company, $company->owner_uuid === $user->uuid ? 'Administrator' : null);
                     $this->line('User ' . $user->email . ' was assigned to company: ' . $company->name);
                 }
             }

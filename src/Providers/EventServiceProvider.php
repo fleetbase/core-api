@@ -17,6 +17,8 @@ class EventServiceProvider extends ServiceProvider
          */
         \Fleetbase\Events\ResourceLifecycleEvent::class => [\Fleetbase\Listeners\SendResourceLifecycleWebhook::class],
         \Fleetbase\Events\AccountCreated::class         => [\Fleetbase\Listeners\HandleAccountCreated::class],
+        \Fleetbase\Events\OAuthIdentityLinked::class    => [\Fleetbase\Listeners\SendOAuthIdentityLinkedNotification::class],
+        \Fleetbase\Events\OAuthIdentityUnlinked::class  => [\Fleetbase\Listeners\SendOAuthIdentityUnlinkedNotification::class],
 
         /*
          * Framework Events

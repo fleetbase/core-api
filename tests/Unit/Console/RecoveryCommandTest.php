@@ -133,7 +133,7 @@ function recovery_user(array $attributes = [], array $throwOn = []): User
             return $this;
         }
 
-        public function assignCompany(Company $company, string $role = 'Administrator'): self
+        public function assignCompany(Company $company, ?string $role = null): self
         {
             if (in_array('assignCompany', $this->throwOn, true)) {
                 throw new RuntimeException('assign company failed');

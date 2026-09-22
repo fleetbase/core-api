@@ -68,6 +68,9 @@ function user_observer_database(): Capsule
     $schema = $capsule->getConnection('mysql')->getSchemaBuilder();
     $schema->create('users', function ($table) {
         $table->string('uuid')->primary();
+        $table->string('email')->nullable();
+        $table->string('phone')->nullable();
+        $table->json('meta')->nullable();
         $table->timestamp('updated_at')->nullable();
         $table->timestamp('deleted_at')->nullable();
     });
@@ -152,4 +155,36 @@ it('deletes only the active session company membership when a user is deleted', 
         ->and($remaining)->toContain('cache-company-1', 'cache-company-2')
         ->and($remaining)->not->toContain('session-company-user')
         ->and($deletedAt)->not->toBeNull();
+});
+
+it('frees the email and phone of a soft deleted user and keeps them in meta', function () {
+    [$user, , , $capsule, $observer] = user_observer_subject();
+    $capsule->getConnection('mysql')->table('users')->where('uuid', 'user-1')->update(['email' => 'driver@example.test', 'phone' => '+15555550100']);
+    $user->refresh();
+
+    $observer->deleted($user);
+
+    $row = $capsule->getConnection('mysql')->table('users')->where('uuid', 'user-1')->first();
+
+    expect($row->email)->toBeNull()
+        ->and($row->phone)->toBeNull()
+        ->and(json_decode($row->meta, true))->toBe(['deleted_identity' => ['email' => 'driver@example.test', 'phone' => '+15555550100']]);
+});
+
+it('restores a released identity only where no other account has taken it', function () {
+    [$user, , , $capsule, $observer] = user_observer_subject();
+    $connection                      = $capsule->getConnection('mysql');
+    $connection->table('users')->where('uuid', 'user-1')->update([
+        'meta' => json_encode(['deleted_identity' => ['email' => 'driver@example.test', 'phone' => '+15555550100']]),
+    ]);
+    $connection->table('users')->insert(['uuid' => 'user-2', 'phone' => '+15555550100']);
+    $user->refresh();
+
+    $observer->restored($user);
+
+    $row = $connection->table('users')->where('uuid', 'user-1')->first();
+
+    expect($row->email)->toBe('driver@example.test')
+        ->and($row->phone)->toBeNull()
+        ->and(json_decode($row->meta, true))->toBe([]);
 });

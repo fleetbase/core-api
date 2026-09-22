@@ -1,21 +1,38 @@
-# v1.6.62 — Custom fields get a public id
+# v1.6.63 — Driver, customer and contact accounts stay out of the console
 
 ## Improvements
 
-- Give every custom field a public id, so an API that hands one out names it the way the rest of the platform names a resource rather than exposing an internal uuid. `CustomField` takes `HasPublicId` with the `custom_field` prefix, and `public_id` becomes fillable.
-- Mint an id on the one path that would otherwise miss it: `HasCustomFields::setCustomField()` saves a field it creates on the fly with `saveQuietly()`, which skips the hook that assigns the id.
+- Treat `driver`, `customer` and `contact` users as managed accounts: the FleetOps profile owns them, not IAM. `User` gains `MANAGED_TYPES`, `isManagedAccount()`, `isStaffAccount()`, `canAccessConsole()`, `canHoldConsoleSession()` and a `managed()` scope.
+- Promote instead of duplicating. When IAM creates or invites a team member whose email or phone belongs to a managed account in the organization, that account becomes a `user`. It gets the chosen role, permissions and policies and a join invite, and keeps its driver and customer profiles. The response carries `promoted_from`. Accepting any IAM invite also promotes a managed account and asks it to set a console password.
+
+## Improvements for IAM
+
+- Let IAM admins ask a user to verify their email or phone. `POST users/{id}/send-verification` sends a one-click link by email or SMS; it lasts 48 hours. The public `auth/confirm-contact-verification` confirms it without signing in, and refuses the link if the address changed since. `users/verify/{id}` takes a `channel` (email by default, or phone). `UserFilter` adds `email_verified`, `phone_verified`, `country` and `timezone` for the new IAM columns.
 
 ## Fixes
 
-- Let an observer's refusal reach the caller on the update and bulk-delete paths. An observer that refused a write by throwing `FleetbaseRequestValidationException` had its explanation discarded: `HasApiModelBehavior::updateRecordFromRequest()` rewrapped every exception from the save as a plain `\Exception`, and `HasApiControllerBehavior::bulkDelete()` caught `\Exception` ahead of its dedicated handler, so callers saw `Invalid request` or a generic update error instead of the message the observer wrote. The exception now passes through untouched on both paths and is rendered with `getErrors()`, as it already was on create and single delete. Every other exception is wrapped exactly as before. Reported in [#256](https://github.com/fleetbase/core-api/issues/256).
+- Keep managed accounts out of the console:
+  - `auth/login` refuses drivers, contacts and customers. Customers keep the `customer_login_not_allowed` code; drivers and contacts get `console_access_not_allowed`.
+  - Session restore, bootstrap, 2FA verification, verify-email tokens and impersonation refuse drivers and contacts.
+  - Customers are still allowed on those endpoints because the customer portal runs inside the console and restores its session through them.
+- Free a deleted user's email and phone so a new account can use them. On soft delete they move to `meta.deleted_identity`; restoring the user puts them back only if no other account has taken them.
+
+## Security
+
+- Never grant the Administrator role by default. Before this fix:
+  - Creating or inviting a user without a role gave them the Administrator role, and so full organization access. Reported for IAM › Customers › Add customer with a blank Role.
+  - Accepting an invite with no role also granted it, and `joinOrganization` ignored the invite's role altogether.
+
+  Now:
+  - A role is required when creating or inviting a user; without one the request returns 422.
+  - `Company::addUser`, `Company::assignUser` and `User::assignCompany` assign no role unless one is given.
+  - An invite without a role joins with no role.
+- Only admins or holders of the Administrator role may grant the Administrator role (403 otherwise), on create, invite and role update.
 
 ## Reliability
 
-- Backfill existing rows in the migration, and add the column as nullable and indexed rather than unique-and-required, so it is safe on an already-populated `custom_fields` table.
-- Cover id generation for `CustomField`, and add the column to the in-memory schemas whose saves now probe it for uniqueness.
+- Cover the console guards for each account type, identity release and restore, and promotion through create, invite and invite acceptance.
 
-This is platform-wide: every custom field gains a public id, not only those used by inspections. Nothing reads the new column yet — `withCustomFields()`'s public projection emits field names and is unchanged — so the change is additive for existing consumers.
+A database migration is not required. No configuration change is needed. The FleetOps side ships in fleetbase/fleetops#338.
 
-A database migration is required. No configuration change is needed.
-
-Changes: [#254](https://github.com/fleetbase/core-api/pull/254), [#259](https://github.com/fleetbase/core-api/pull/259).
+Changes: [#264](https://github.com/fleetbase/core-api/pull/264), [#266](https://github.com/fleetbase/core-api/pull/266), [#267](https://github.com/fleetbase/core-api/pull/267).

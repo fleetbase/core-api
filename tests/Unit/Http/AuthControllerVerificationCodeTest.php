@@ -581,3 +581,53 @@ test('confirm email change rejects duplicate target emails and preserves the pen
         ->and(User::find('user-email-change')->email)->toBe('old@example.test')
         ->and(VerificationCode::where('uuid', 'email-change-code')->exists())->toBeTrue();
 });
+
+function auth_controller_contact_verification_code(Capsule $capsule, string $uuid, string $channel, string $value, array $attributes = []): void
+{
+    auth_controller_verification_code_insert($capsule, array_merge([
+        'uuid'         => $uuid,
+        'subject_uuid' => 'user-contact',
+        'subject_type' => User::class,
+        'code'         => '654321',
+        'for'          => $channel === 'phone' ? 'phone_verification' : 'email_verification',
+        'meta'         => json_encode(['source' => 'admin_request', 'channel' => $channel, 'value' => $value]),
+    ], $attributes));
+}
+
+test('confirm contact verification verifies the requested email or phone from the link', function () {
+    $capsule = auth_controller_verification_code_database();
+    $capsule->getConnection('mysql')->getSchemaBuilder()->table('users', function ($table) {
+        $table->string('phone')->nullable();
+        $table->timestamp('phone_verified_at')->nullable();
+    });
+    auth_controller_verification_code_insert_user($capsule, ['uuid' => 'user-contact', 'email' => 'contact@example.test', 'phone' => '+15550001111']);
+    auth_controller_contact_verification_code($capsule, 'email-link', 'email', 'contact@example.test');
+    auth_controller_contact_verification_code($capsule, 'phone-link', 'phone', '+15550001111', ['code' => '111222']);
+
+    $email = (new AuthController())->confirmContactVerification(auth_controller_verification_code_request(['link' => 'email-link', 'code' => '654321']));
+    $phone = (new AuthController())->confirmContactVerification(auth_controller_verification_code_request(['link' => 'phone-link', 'code' => '111222']));
+    $user  = User::find('user-contact');
+
+    expect($email->getStatusCode())->toBe(200)
+        ->and($email->getData(true)['channel'])->toBe('email')
+        ->and($phone->getData(true)['channel'])->toBe('phone')
+        ->and($user->email_verified_at)->not->toBeNull()
+        ->and($user->phone_verified_at)->not->toBeNull()
+        ->and(VerificationCode::whereIn('uuid', ['email-link', 'phone-link'])->count())->toBe(0);
+});
+
+test('confirm contact verification refuses invalid expired and outdated links', function () {
+    $capsule = auth_controller_verification_code_database();
+    auth_controller_verification_code_insert_user($capsule, ['uuid' => 'user-contact', 'email' => 'contact@example.test']);
+    auth_controller_contact_verification_code($capsule, 'expired-link', 'email', 'contact@example.test', ['expires_at' => Carbon::now()->subHour()->toDateTimeString()]);
+    auth_controller_contact_verification_code($capsule, 'outdated-link', 'email', 'previous@example.test', ['code' => '333444']);
+
+    $invalid  = (new AuthController())->confirmContactVerification(auth_controller_verification_code_request(['link' => 'expired-link', 'code' => '000000']));
+    $expired  = (new AuthController())->confirmContactVerification(auth_controller_verification_code_request(['link' => 'expired-link', 'code' => '654321']));
+    $outdated = (new AuthController())->confirmContactVerification(auth_controller_verification_code_request(['link' => 'outdated-link', 'code' => '333444']));
+
+    expect($invalid->getData(true))->toBe(['errors' => ['This verification link is invalid or has expired.']])
+        ->and($expired->getData(true))->toBe(['errors' => ['This verification link is invalid or has expired.']])
+        ->and($outdated->getData(true))->toBe(['errors' => ['This verification link is no longer valid.']])
+        ->and(User::find('user-contact')->email_verified_at)->toBeNull();
+});
