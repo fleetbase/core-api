@@ -127,7 +127,11 @@ class IdTokenVerifier
         $jwks = $this->fetchJwks($jwksUrl, $cacheKey, $jwksTtl);
 
         try {
-            $keys = JWK::parseKeySet($jwks);
+            // RS256 is only the fallback for keys that don't name an algorithm, and
+            // Microsoft's JWKS names none: without a default, php-jwt rejects the whole
+            // document. It loosens nothing: the signature is checked with RSA-SHA256
+            // below whatever the token or key claims.
+            $keys = JWK::parseKeySet($jwks, 'RS256');
         } catch (\Throwable $e) {
             throw new OAuthIdTokenException('jwks_unreadable');
         }
