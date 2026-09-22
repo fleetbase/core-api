@@ -40,6 +40,11 @@ class UserObserver
         if (session('company')) {
             CompanyUser::where(['company_uuid' => session('company'), 'user_uuid' => $user->uuid])->delete();
         }
+
+        // Free the email and phone so they can be used by a new account
+        if (!$user->isForceDeleting()) {
+            $this->releaseIdentity($user);
+        }
     }
 
     /**
@@ -47,11 +52,54 @@ class UserObserver
      */
     public function restored(User $user): void
     {
+        $this->restoreIdentity($user);
+
         // Invalidate user cache when user is restored
         UserCacheService::invalidateUser($user);
 
         // Invalidate organizations cache
         $this->invalidateOrganizationsCache($user);
+    }
+
+    /**
+     * Move a deleted user's email and phone into meta so they no longer block
+     * a new account, including lookups that include trashed users.
+     */
+    private function releaseIdentity(User $user): void
+    {
+        $identity = array_filter(['email' => $user->email, 'phone' => $user->phone]);
+        if (empty($identity)) {
+            return;
+        }
+
+        $meta                     = (array) ($user->meta ?? []);
+        $meta['deleted_identity'] = $identity;
+
+        $user->forceFill(['email' => null, 'phone' => null, 'meta' => $meta])->saveQuietly();
+    }
+
+    /**
+     * Put a restored user's email and phone back when no other account has
+     * taken them in the meantime.
+     */
+    private function restoreIdentity(User $user): void
+    {
+        $meta     = (array) ($user->meta ?? []);
+        $identity = (array) data_get($meta, 'deleted_identity', []);
+        if (empty($identity)) {
+            return;
+        }
+
+        foreach (['email', 'phone'] as $column) {
+            $value = $identity[$column] ?? null;
+            if ($value && !$user->{$column} && User::where($column, $value)->where('uuid', '!=', $user->uuid)->doesntExist()) {
+                $user->{$column} = $value;
+            }
+        }
+
+        unset($meta['deleted_identity']);
+        $user->meta = $meta;
+        $user->saveQuietly();
     }
 
     /**

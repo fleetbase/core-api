@@ -50,6 +50,37 @@ class Auth extends Authentication
     }
 
     /**
+     * Returns an error response when the user may not sign in to the console,
+     * or null when access is allowed. Driver, contact and customer accounts are
+     * managed through their profile and sign in through their own apps.
+     */
+    public static function denyConsoleLogin(?User $user): ?\Illuminate\Http\JsonResponse
+    {
+        if (!$user instanceof User || $user->canAccessConsole()) {
+            return null;
+        }
+
+        if ($user->isType('customer')) {
+            return response()->error('Customer accounts must sign in through the customer portal.', 403, ['code' => 'customer_login_not_allowed']);
+        }
+
+        return response()->error('This account cannot sign in to the console.', 403, ['code' => 'console_access_not_allowed']);
+    }
+
+    /**
+     * Returns an error response when the user may not hold a console session,
+     * or null when allowed. Customers keep sessions for the customer portal.
+     */
+    public static function denyConsoleSession(?User $user): ?\Illuminate\Http\JsonResponse
+    {
+        if (!$user instanceof User || $user->canHoldConsoleSession()) {
+            return null;
+        }
+
+        return response()->error('This account cannot sign in to the console.', 403, ['code' => 'console_access_not_allowed', 'restore' => false]);
+    }
+
+    /**
      * Set session variables for user.
      *
      * @param User|ApiCredential|null $user
