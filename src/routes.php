@@ -273,6 +273,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     $router->patch('deactivate/{id}', $controller('deactivate'));
                                     $router->patch('activate/{id}', $controller('activate'));
                                     $router->patch('verify/{id}', $controller('verify'));
+                                    $router->post('{id}/send-verification', $controller('sendVerification'));
                                     $router->delete('remove-from-company/{id}', $controller('removeFromCompany'));
                                     $router->post('change-email', $controller('changeCurrentUserEmail'));
                                     $router->post('{id}/change-email', $controller('changeEmail'));

@@ -2,6 +2,8 @@
 
 namespace Fleetbase\Http\Filter;
 
+use Fleetbase\Support\Utils;
+
 class UserFilter extends Filter
 {
     public function queryForInternal()
@@ -41,6 +43,26 @@ class UserFilter extends Filter
     public function isNotAdmin()
     {
         $this->builder->where('type', '!=', 'admin');
+    }
+
+    public function emailVerified($verified)
+    {
+        Utils::isTrue($verified) ? $this->builder->whereNotNull('email_verified_at') : $this->builder->whereNull('email_verified_at');
+    }
+
+    public function phoneVerified($verified)
+    {
+        Utils::isTrue($verified) ? $this->builder->whereNotNull('phone_verified_at') : $this->builder->whereNull('phone_verified_at');
+    }
+
+    public function country(?string $country)
+    {
+        $this->builder->where('country', $country);
+    }
+
+    public function timezone(?string $timezone)
+    {
+        $this->builder->where('timezone', $timezone);
     }
 
     public function isUser()

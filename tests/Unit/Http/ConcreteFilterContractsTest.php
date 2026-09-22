@@ -1177,3 +1177,31 @@ test('notification filter limits internal results to current user or company and
             'notification-company-unread',
         ]);
 });
+
+test('user filter narrows by verification state country and timezone', function () {
+    $capsule = concrete_filter_database();
+    $pdo     = $capsule->getConnection('mysql')->getPdo();
+    $pdo->sqliteCreateFunction('JSON_CONTAINS', fn ($json, $needle) => str_contains((string) $json, trim((string) $needle, '"')) ? 1 : 0, 2);
+    $capsule->getConnection('mysql')->getSchemaBuilder()->table('users', function ($table) {
+        $table->timestamp('email_verified_at')->nullable();
+        $table->timestamp('phone_verified_at')->nullable();
+        $table->string('country')->nullable();
+        $table->string('timezone')->nullable();
+    });
+
+    $capsule->getConnection('mysql')->table('users')->insert([
+        ['uuid' => 'user-verified', 'type' => 'user', 'email_verified_at' => '2026-07-18 10:00:00', 'phone_verified_at' => null, 'country' => 'SG', 'timezone' => 'Asia/Singapore'],
+        ['uuid' => 'user-unverified', 'type' => 'user', 'email_verified_at' => null, 'phone_verified_at' => '2026-07-18 10:00:00', 'country' => 'MN', 'timezone' => 'Asia/Ulaanbaatar'],
+    ]);
+    $capsule->getConnection('mysql')->table('company_users')->insert([
+        ['company_uuid' => 'company-1', 'user_uuid' => 'user-verified'],
+        ['company_uuid' => 'company-1', 'user_uuid' => 'user-unverified'],
+    ]);
+
+    expect(concrete_filter_uuids(UserFilter::class, User::class, ['email_verified' => '1'], 'int/v1/users'))->toBe(['user-verified'])
+        ->and(concrete_filter_uuids(UserFilter::class, User::class, ['email_verified' => 'false'], 'int/v1/users'))->toBe(['user-unverified'])
+        ->and(concrete_filter_uuids(UserFilter::class, User::class, ['phone_verified' => '1'], 'int/v1/users'))->toBe(['user-unverified'])
+        ->and(concrete_filter_uuids(UserFilter::class, User::class, ['phone_verified' => 'false'], 'int/v1/users'))->toBe(['user-verified'])
+        ->and(concrete_filter_uuids(UserFilter::class, User::class, ['country' => 'MN'], 'int/v1/users'))->toBe(['user-unverified'])
+        ->and(concrete_filter_uuids(UserFilter::class, User::class, ['timezone' => 'Asia/Singapore'], 'int/v1/users'))->toBe(['user-verified']);
+});
