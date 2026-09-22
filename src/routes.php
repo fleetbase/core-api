@@ -98,7 +98,31 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
             function ($router) {
                 $router->prefix('v1')->namespace('v1')->group(
                     function ($router) {
-                        $router->fleetbaseAuthRoutes();
+                        $router->fleetbaseAuthRoutes(null, function ($router) {
+                            // OAuth sign-in. Registered through the macro's public
+                            // callback so these inherit the same ThrottleRequests group
+                            // as login/sign-up rather than re-declaring middleware.
+                            $router->group(['prefix' => 'oauth'], function ($router) {
+                                // Literal segments first: otherwise {provider} would
+                                // swallow "providers" and "exchange".
+                                $router->get('providers', [Fleetbase\Http\Controllers\Internal\v1\OAuthController::class, 'providers']);
+                                $router->post('exchange', [Fleetbase\Http\Controllers\Internal\v1\OAuthController::class, 'exchange']);
+                                $router->get('{provider}/redirect', [Fleetbase\Http\Controllers\Internal\v1\OAuthController::class, 'redirect']);
+                                // GET and POST: Apple form-posts its callback whenever
+                                // the name/email scopes are requested.
+                                $router->match(['GET', 'POST'], '{provider}/callback', [Fleetbase\Http\Controllers\Internal\v1\OAuthController::class, 'callback']);
+                            });
+                        }, function ($router) {
+                            // Account linking. Protected: every action here acts on the
+                            // signed-in user, and completeLink() is what defeats
+                            // account-linking CSRF by checking that user.
+                            $router->group(['prefix' => 'oauth'], function ($router) {
+                                $router->get('identities', [Fleetbase\Http\Controllers\Internal\v1\OAuthController::class, 'identities']);
+                                $router->post('link/complete', [Fleetbase\Http\Controllers\Internal\v1\OAuthController::class, 'completeLink']);
+                                $router->post('{provider}/link', [Fleetbase\Http\Controllers\Internal\v1\OAuthController::class, 'link']);
+                                $router->delete('{provider}/unlink', [Fleetbase\Http\Controllers\Internal\v1\OAuthController::class, 'unlink']);
+                            });
+                        });
                         $router->group(
                             ['prefix' => 'onboard', 'middleware' => [Fleetbase\Http\Middleware\ThrottleRequests::class]],
                             function ($router) {
@@ -211,6 +235,9 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     $router->get('mail-config', $controller('getMailConfig'));
                                     $router->post('mail-config', $controller('saveMailConfig'));
                                     $router->post('test-mail-config', $controller('testMailConfig'));
+                                    $router->get('oauth-config', $controller('getOAuthConfig'));
+                                    $router->post('oauth-config', $controller('saveOAuthConfig'));
+                                    $router->post('test-oauth-config', $controller('testOAuthConfig'));
                                     $router->get('queue-config', $controller('getQueueConfig'));
                                     $router->post('queue-config', $controller('saveQueueConfig'));
                                     $router->post('test-queue-config', $controller('testQueueConfig'));

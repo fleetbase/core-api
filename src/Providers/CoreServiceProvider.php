@@ -138,11 +138,28 @@ class CoreServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__ . '/../../config/responsecache.php', 'responsecache');
         $this->mergeConfigFrom(__DIR__ . '/../../config/image.php', 'image');
         $this->mergeConfigFrom(__DIR__ . '/../../config/sms.php', 'sms');
+        $this->mergeConfigFrom(__DIR__ . '/../../config/oauth.php', 'oauth');
 
         // setup report schema registry
         $this->app->singleton(ReportSchemaRegistry::class, function () {
             return new ReportSchemaRegistry();
         });
+
+        // OAuth services.
+        //
+        // scoped() rather than singleton(): Octane keeps workers alive across requests and
+        // flushes scoped bindings between them. These services read settings and the current
+        // request, so a singleton would carry one request's state (and one admin's
+        // pre-save configuration) into the next.
+        $this->app->scoped(\Fleetbase\Services\OAuth\OAuthStateService::class);
+        $this->app->scoped(\Fleetbase\Services\OAuth\OAuthIdentityService::class);
+        $this->app->scoped(\Fleetbase\Services\OAuth\OAuthConfigRepository::class);
+        $this->app->scoped(\Fleetbase\Auth\OAuth\OAuthProviderRegistry::class);
+        $this->app->scoped(\Fleetbase\Services\OAuth\OAuthFlowService::class);
+
+        // Stateless collaborators — safe to share for the lifetime of the worker.
+        $this->app->singleton(\Fleetbase\Auth\OAuth\IdTokenVerifier::class);
+        $this->app->singleton(\Fleetbase\Auth\OAuth\AppleClientSecretFactory::class);
 
         // register file resolver service
         $this->app->singleton(\Fleetbase\Services\FileResolverService::class, function ($app) {
@@ -171,6 +188,10 @@ class CoreServiceProvider extends ServiceProvider
             $schedule->command('purge:webhook-logs --force --no-interaction --days 2 --keep-backups=30')->twiceDaily(1, 13);
             $schedule->command('purge:activity-logs --force --no-interaction --days 2 --keep-backups=30')->twiceDaily(1, 13);
             $schedule->command('purge:scheduled-task-logs --force --no-interaction --days 1 --keep-backups=30')->twiceDaily(1, 13);
+            // Expired OAuth state/handoff/registration-intent rows. Hourly because these
+            // are high-churn and short-lived; the model keeps a day's grace past expiry so a
+            // support investigation can still tell an expired token from one that never existed.
+            $schedule->command('model:prune', ['--model' => \Fleetbase\Models\OAuthState::class])->hourly();
             $schedule->command('telemetry:ping')->daily();
             $schedule->job(new \Fleetbase\Jobs\MaterializeSchedulesJob())->dailyAt('01:00')->name('materialize-schedules')->withoutOverlapping();
             // Keep sandbox users/companies in sync with production so that

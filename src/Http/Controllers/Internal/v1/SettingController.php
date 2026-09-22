@@ -2,11 +2,22 @@
 
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
+use Fleetbase\Auth\OAuth\AppleClientSecretFactory;
+use Fleetbase\Auth\OAuth\Contracts\OAuthProviderDriver;
+use Fleetbase\Auth\OAuth\CredentialCheck;
+use Fleetbase\Auth\OAuth\Drivers\AppleDriver;
+use Fleetbase\Auth\OAuth\Exceptions\OAuthProviderNotConfiguredException;
+use Fleetbase\Auth\OAuth\Exceptions\UnknownOAuthProviderException;
+use Fleetbase\Auth\OAuth\OAuthProviderConfig;
+use Fleetbase\Auth\OAuth\OAuthProviderRegistry;
 use Fleetbase\Http\Controllers\Controller;
+use Fleetbase\Http\Requests\Admin\SaveOAuthConfigRequest;
 use Fleetbase\Http\Requests\AdminRequest;
 use Fleetbase\Models\File;
 use Fleetbase\Models\Setting;
 use Fleetbase\Notifications\TestPushNotification;
+use Fleetbase\Services\OAuth\OAuthConfigRepository;
+use Fleetbase\Services\OAuth\OAuthFlowService;
 use Fleetbase\Services\SmsService;
 use Fleetbase\Support\PlatformApi;
 use Fleetbase\Support\Utils;
@@ -1021,6 +1032,263 @@ class SettingController extends Controller
                 'response' => $response,
             ]
         );
+    }
+
+    /**
+     * OAuth configuration, as an administrator should see it.
+     *
+     * No secret value is ever returned — not even to an admin. Each secret is reduced
+     * to whether it is set plus a short trailing hint, which is enough to tell two
+     * credentials apart when rotating without disclosing either.
+     *
+     * The response carries the provider schemas and the computed redirect URIs so the
+     * console can render the form without hardcoding any provider, and so an operator
+     * can copy the exact callback URL each provider's console requires.
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getOAuthConfig(AdminRequest $request, OAuthProviderRegistry $registry, OAuthConfigRepository $config, OAuthFlowService $flow)
+    {
+        return response()->json($this->oauthConfigPayload($registry, $config, $flow));
+    }
+
+    /**
+     * Save OAuth configuration.
+     *
+     * Every field is filtered against the driver schemas before anything is written:
+     * an unknown provider id, or a field a driver does not declare, is ignored. That is
+     * what guarantees nothing but declared configuration — and in particular never a
+     * driver class name — can reach the settings row.
+     *
+     * Secrets are encrypted by the repository. An empty secret means "keep the stored
+     * one", because the form never receives the real value and so cannot echo it back.
+     *
+     * Deliberately does not call refreshConfigCache(): nothing here lives in config()
+     * at runtime, so rewriting the config cache mid-request under a booted Octane worker
+     * would be pure risk.
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function saveOAuthConfig(SaveOAuthConfigRequest $request, OAuthProviderRegistry $registry, OAuthConfigRepository $config, OAuthFlowService $flow, AppleClientSecretFactory $apple)
+    {
+        $global = [];
+
+        foreach (['enabled', 'allow_registration', 'auto_link'] as $key) {
+            if ($request->has($key)) {
+                $global[$key] = $request->boolean($key);
+            }
+        }
+
+        $providers  = [];
+        $secretKeys = [];
+
+        foreach ($registry->schemas() as $id => $schema) {
+            $input = $request->input('providers.' . $id);
+
+            if (!is_array($input)) {
+                continue;
+            }
+
+            $values = [];
+
+            if (array_key_exists('enabled', $input)) {
+                $values['enabled'] = filter_var($input['enabled'], FILTER_VALIDATE_BOOL);
+            }
+
+            foreach (array_keys($schema) as $field) {
+                if (!array_key_exists($field, $input)) {
+                    continue;
+                }
+
+                $value          = $input[$field];
+                $values[$field] = is_string($value) ? trim($value) : null;
+            }
+
+            $providers[$id]  = $values;
+            $secretKeys[$id] = $this->oauthSecretKeys($schema);
+        }
+
+        // A provider only goes live, or changes credentials while live, once the
+        // provider itself has accepted those credentials. Checked before anything is
+        // written, so a rejected save leaves every provider as it was.
+        foreach ($providers as $id => $values) {
+            $stored = $config->forProvider($id);
+            $draft  = $config->draftFor($id, $values, $secretKeys[$id]);
+
+            if (!$draft->enabled() || ($stored->enabled() && !$this->oauthCredentialsChanged($stored, $values, $secretKeys[$id]))) {
+                continue;
+            }
+
+            $check = $this->checkOAuthProvider($registry->driverWith($id, $draft), $draft, $registry->schemas()[$id], $flow->redirectUri($id), $apple);
+
+            if ($check['problem'] !== null) {
+                return response()->error($check['message'], 422, ['code' => 'oauth_provider_check_failed', 'provider' => $id, 'problem' => $check['problem']]);
+            }
+        }
+
+        $config->save($global, $providers, $secretKeys);
+
+        return response()->json($this->oauthConfigPayload($registry, $config, $flow));
+    }
+
+    /**
+     * Check a provider's configuration without signing anyone in.
+     *
+     * Runs against the form as it currently stands: `values` (the unsaved fields for
+     * this provider) are layered over what is stored, so an administrator can check
+     * credentials before saving them. Nothing is written.
+     *
+     * Confirms every required credential is present, that an Apple signing key
+     * actually mints a client secret, and then asks the provider itself whether it
+     * accepts the client credentials — see CredentialCheck.
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function testOAuthConfig(AdminRequest $request, OAuthProviderRegistry $registry, OAuthConfigRepository $config, OAuthFlowService $flow, AppleClientSecretFactory $apple)
+    {
+        $id = (string) $request->input('provider');
+
+        try {
+            $registry->driver($id);
+        } catch (UnknownOAuthProviderException $e) {
+            return response()->error('Unknown sign-in provider.', 404, ['code' => 'unknown_provider']);
+        }
+
+        $schema = $registry->schemas()[$id];
+        $input  = $request->input('values');
+        $values = [];
+
+        // Same filtering as a save: only fields the driver declares, only strings.
+        foreach (array_keys($schema) as $field) {
+            if (is_array($input) && array_key_exists($field, $input)) {
+                $values[$field] = is_string($input[$field]) ? $input[$field] : null;
+            }
+        }
+
+        $draft       = $config->draftFor($id, $values, $this->oauthSecretKeys($schema));
+        $redirectUri = $flow->redirectUri($id);
+        $check       = $this->checkOAuthProvider($registry->driverWith($id, $draft), $draft, $schema, $redirectUri, $apple);
+
+        return response()->json(array_merge(['provider' => $id], $check, ['redirect_uri' => $redirectUri]));
+    }
+
+    /**
+     * Everything that has to be true before a provider can be offered on the sign-in
+     * page, cheapest first. Stops at the first problem.
+     *
+     * @param array<string, array{label?: string, secret?: bool, required?: bool}> $schema
+     *
+     * @return array{configured: bool, verified: bool, problem: ?string, missing: array<int, string>, message: string}
+     */
+    private function checkOAuthProvider(OAuthProviderDriver $driver, OAuthProviderConfig $config, array $schema, string $redirectUri, AppleClientSecretFactory $apple): array
+    {
+        $label   = $driver::label();
+        $missing = [];
+
+        foreach ($schema as $field => $definition) {
+            if (($definition['required'] ?? false) !== true) {
+                continue;
+            }
+
+            $present = ($definition['secret'] ?? false) === true ? $config->hasSecret($field) : $config->get($field) !== null;
+
+            if (!$present) {
+                $missing[] = $definition['label'] ?? $field;
+            }
+        }
+
+        if ($missing !== [] || !$driver->isConfigured()) {
+            return $this->oauthCheckResult(false, false, 'missing_credentials', $missing, 'Missing: ' . implode(', ', $missing ?: ['a required credential']) . '.');
+        }
+
+        if ($driver instanceof AppleDriver) {
+            try {
+                $apple->make($config);
+            } catch (OAuthProviderNotConfiguredException $e) {
+                return $this->oauthCheckResult(false, false, 'invalid_signing_key', [], 'The signing key could not be used to mint a client secret. Check that it is the full .p8 file for this Key ID.');
+            }
+        }
+
+        return match ($driver->verifyCredentials($redirectUri)) {
+            CredentialCheck::Verified            => $this->oauthCheckResult(true, true, null, [], $label . ' accepted these credentials.'),
+            CredentialCheck::InvalidClient       => $this->oauthCheckResult(true, false, 'invalid_client', [], $label . ' rejected these credentials. Check the Client ID and Client Secret.'),
+            CredentialCheck::RedirectUriMismatch => $this->oauthCheckResult(true, false, 'redirect_uri_mismatch', [], $label . ' does not recognise the callback URL. Register it exactly as shown below.'),
+            CredentialCheck::Unreachable         => $this->oauthCheckResult(true, false, 'unreachable', [], $label . ' could not be reached to check these credentials. Try again shortly.'),
+            CredentialCheck::Inconclusive        => $this->oauthCheckResult(true, false, 'inconclusive', [], $label . ' gave an unexpected answer, so these credentials could not be confirmed.'),
+        };
+    }
+
+    /**
+     * @param array<int, string> $missing
+     *
+     * @return array{configured: bool, verified: bool, problem: ?string, missing: array<int, string>, message: string}
+     */
+    private function oauthCheckResult(bool $configured, bool $verified, ?string $problem, array $missing, string $message): array
+    {
+        return ['configured' => $configured, 'verified' => $verified, 'problem' => $problem, 'missing' => $missing, 'message' => $message];
+    }
+
+    /**
+     * Whether a save changes anything the provider authenticates — a new secret, or a
+     * different value for any other field.
+     *
+     * @param array<string, mixed> $values
+     * @param array<int, string>   $secretKeys
+     */
+    private function oauthCredentialsChanged(OAuthProviderConfig $stored, array $values, array $secretKeys): bool
+    {
+        foreach ($values as $key => $value) {
+            if ($key === 'enabled') {
+                continue;
+            }
+
+            if (in_array($key, $secretKeys, true)) {
+                if (is_string($value) && trim($value) !== '') {
+                    return true;
+                }
+
+                continue;
+            }
+
+            $value = is_string($value) && trim($value) !== '' ? trim($value) : null;
+
+            if ($value !== $stored->get($key)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string, array{secret?: bool}> $schema
+     *
+     * @return array<int, string>
+     */
+    private function oauthSecretKeys(array $schema): array
+    {
+        return array_keys(array_filter($schema, fn (array $definition): bool => ($definition['secret'] ?? false) === true));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function oauthConfigPayload(OAuthProviderRegistry $registry, OAuthConfigRepository $config, OAuthFlowService $flow): array
+    {
+        $definitions  = $registry->definitions();
+        $schemas      = [];
+        $redirectUris = [];
+
+        foreach ($definitions as $definition) {
+            $schemas[$definition['id']]      = $definition['schema'];
+            $redirectUris[$definition['id']] = $flow->redirectUri($definition['id']);
+        }
+
+        return [
+            'oauth'         => $config->toAdminArray($schemas),
+            'providers'     => $definitions,
+            'redirect_uris' => $redirectUris,
+        ];
     }
 
     /**

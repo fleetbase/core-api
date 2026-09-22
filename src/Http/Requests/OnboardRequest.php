@@ -4,6 +4,7 @@ namespace Fleetbase\Http\Requests;
 
 use Fleetbase\Rules\EmailDomainExcluded;
 use Fleetbase\Rules\ExcludeWords;
+use Fleetbase\Rules\ValidOAuthRegistrationIntent;
 use Fleetbase\Rules\ValidPhoneNumber;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
@@ -38,8 +39,13 @@ class OnboardRequest extends FleetbaseRequest
             'name'                  => ['required', 'min:2', 'max:50', 'regex:/^(?!.*\b[a-z0-9]+(?:\.[a-z0-9]+){1,}\b)[a-zA-ZÀ-ÿ\'\-\s\.]+$/u', new ExcludeWords($this->excludedWords)],
             'email'                 => ['required', 'email', Rule::unique('users', 'email')->whereNull('deleted_at'), new EmailDomainExcluded()],
             'phone'                 => ['required', new ValidPhoneNumber(), Rule::unique('users', 'phone')->whereNull('deleted_at')],
-            'password'              => ['required', 'confirmed', 'string', Password::min(8)->mixedCase()->letters()->numbers()->symbols()->uncompromised()],
-            'password_confirmation' => ['required', 'min:4', 'max:64'],
+            // A signup proves itself either with a password or with an OAuth
+            // registration intent. Everything else — phone, organization name, the
+            // word blacklists — is unchanged, so an OAuth account is held to exactly
+            // the same standard as a password one.
+            'password'              => ['required_without:oauth_intent', 'nullable', 'confirmed', 'string', Password::min(8)->mixedCase()->letters()->numbers()->symbols()->uncompromised()],
+            'password_confirmation' => ['required_with:password', 'nullable', 'min:4', 'max:64'],
+            'oauth_intent'          => ['required_without:password', 'nullable', 'string', new ValidOAuthRegistrationIntent()],
             'organization_name'     => ['required', 'min:4', 'max:100', 'regex:/^(?!.*\b[a-z0-9]+(?:\.[a-z0-9]+){1,}\b)[a-zA-ZÀ-ÿ0-9\'\-\s\.]+$/u', new ExcludeWords($this->excludedWords)],
         ];
     }
