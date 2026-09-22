@@ -744,6 +744,45 @@ test('onboard controller leaves an oauth account passwordless and links the iden
         ->and(Fleetbase\Support\OAuth::isValidRegistrationIntent($intent))->toBeFalse();
 });
 
+test('onboard controller skips verification for an address the provider verified', function () {
+    $capsule = onboard_controller_database();
+    onboard_controller_oauth_setup($capsule);
+    onboard_controller_seed_user($capsule);
+
+    $payload = onboard_controller()->createAccount(onboard_create_account_request([
+        'name'              => 'Katherine Johnson',
+        'email'             => 'katherine@example.test',
+        'organization_name' => 'Orbital Logistics',
+        'password'          => null,
+        'oauth_intent'      => onboard_controller_intent(),
+    ]))->getData(true);
+
+    // Not the first account, so not an admin: verification is skipped only because the
+    // provider vouched for the address, and no code was sent to be entered.
+    expect($payload['skipVerification'])->toBeTrue()
+        ->and($payload['token'])->toBeString()->not->toBeEmpty();
+});
+
+test('onboard controller still asks to verify an address the provider did not', function (array $intent) {
+    $capsule = onboard_controller_database();
+    onboard_controller_oauth_setup($capsule);
+    onboard_controller_seed_user($capsule);
+
+    $payload = onboard_controller()->createAccount(onboard_create_account_request([
+        'name'              => 'Katherine Johnson',
+        'email'             => 'katherine@example.test',
+        'organization_name' => 'Orbital Logistics',
+        'password'          => 'Password123!',
+        'oauth_intent'      => onboard_controller_intent($intent),
+    ]))->getData(true);
+
+    expect($payload['skipVerification'])->toBeFalse()
+        ->and($payload['token'])->toBeNull();
+})->with([
+    'unverified at the provider' => [['emailVerified' => false]],
+    'a different address'        => [['email' => 'someone-else@example.test']],
+]);
+
 test('onboard controller still sets a password when one is supplied alongside an intent', function () {
     $capsule = onboard_controller_database();
     onboard_controller_oauth_setup($capsule);

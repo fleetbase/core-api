@@ -99,11 +99,17 @@ class OnboardController extends Controller
         // create auth token
         $token = $user->createToken($user->uuid);
 
+        // Nothing to verify when the provider already vouched for this exact address:
+        // redeemRegistrationIntent() marked it verified above, and AccountCreated sends
+        // no code for a verified account. Sending the console to the verification step
+        // anyway would leave the user waiting for an email that never comes.
+        $skipVerification = $isAdmin || !empty($user->email_verified_at);
+
         return response()->json([
             'status'           => 'success',
             'session'          => base64_encode($user->uuid),
-            'token'            => $isAdmin ? $token->plainTextToken : null,
-            'skipVerification' => $isAdmin,
+            'token'            => $skipVerification ? $token->plainTextToken : null,
+            'skipVerification' => $skipVerification,
         ]);
     }
 
