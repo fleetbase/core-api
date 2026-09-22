@@ -5,6 +5,7 @@ namespace Fleetbase\Auth\OAuth\Drivers;
 use Fleetbase\Auth\OAuth\AbstractOAuthProviderDriver;
 use Fleetbase\Auth\OAuth\OAuthUserProfile;
 use Fleetbase\Auth\OAuth\Socialite\MicrosoftProvider;
+use Illuminate\Support\Facades\Log;
 use Laravel\Socialite\Two\AbstractProvider as SocialiteProvider;
 use Laravel\Socialite\Two\User as SocialiteUser;
 
@@ -119,13 +120,22 @@ class MicrosoftDriver extends AbstractOAuthProviderDriver
      */
     protected function emailIsVerified(SocialiteUser $user): bool
     {
-        if ($this->rawClaim($user, 'xms_edov') === true) {
+        $edov = $this->rawClaim($user, 'xms_edov');
+
+        if (self::claimIsTrue($edov)) {
             return true;
         }
 
         $configuredTenant = $this->tenant();
 
         if (in_array($configuredTenant, self::MULTI_TENANT_ALIASES, true)) {
+            // Say why, without the token or the address: an operator who configured the
+            // optional claim needs to know whether it arrived at all.
+            Log::info('[OAuth] Microsoft email not treated as verified.', [
+                'tenant'   => $configuredTenant,
+                'xms_edov' => $edov === null ? 'absent' : (is_scalar($edov) ? var_export($edov, true) : gettype($edov)),
+            ]);
+
             return false;
         }
 
@@ -134,6 +144,16 @@ class MicrosoftDriver extends AbstractOAuthProviderDriver
         return is_string($tokenTenant)
             && $tokenTenant !== self::MSA_CONSUMER_TENANT
             && strcasecmp($tokenTenant, $configuredTenant) === 0;
+    }
+
+    /**
+     * Whether a boolean claim is set. Microsoft documents `xms_edov` as a boolean but
+     * does not always serialise it as one; the token is signed, so reading "true" or 1
+     * as true trusts nothing Microsoft did not assert.
+     */
+    private static function claimIsTrue(mixed $value): bool
+    {
+        return $value === true || $value === 1 || (is_string($value) && in_array(strtolower($value), ['true', '1'], true));
     }
 
     protected function tenant(): string

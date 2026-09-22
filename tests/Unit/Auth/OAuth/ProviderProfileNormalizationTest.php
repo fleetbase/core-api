@@ -127,6 +127,27 @@ it('trusts a microsoft address when the domain owner is verified', function () {
         ->and($profile->meta['tid'])->toBe('some-work-tenant');
 });
 
+it('reads the domain owner claim however microsoft serialises it', function (mixed $edov, bool $trusted) {
+    $driver = normalization_driver(MicrosoftDriver::class, ['tenant' => 'common']);
+
+    $profile = normalization_run($driver, normalization_user(
+        ['oid' => 'oid-1', 'tid' => 'some-work-tenant', 'xms_edov' => $edov, 'email' => 'ada@corp.example'],
+        ['id'  => 'oid-1', 'email' => 'ada@corp.example']
+    ));
+
+    expect($profile->emailVerified)->toBe($trusted);
+})->with([
+    'boolean true'  => [true, true],
+    'string true'   => ['true', true],
+    'string TRUE'   => ['TRUE', true],
+    'string one'    => ['1', true],
+    'integer one'   => [1, true],
+    'boolean false' => [false, false],
+    'string false'  => ['false', false],
+    'string zero'   => ['0', false],
+    'empty string'  => ['', false],
+]);
+
 it('does not trust a multi tenant microsoft address without the domain owner claim', function () {
     $driver = normalization_driver(MicrosoftDriver::class, ['tenant' => 'common']);
 
