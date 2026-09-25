@@ -149,7 +149,7 @@ class ReportQueryValidator
         }
 
         // Check if column exists
-        if (!in_array($column['name'], $availableColumns)) {
+        if (!in_array($column['name'], $availableColumns) && !$this->registry->isColumnAllowed($tableName, $column['name'])) {
             $this->errors[] = "Column '{$column['name']}' does not exist in table '{$tableName}'";
         }
 
@@ -356,7 +356,7 @@ class ReportQueryValidator
                 'groupBy'           => 'required|array',
                 'groupBy.name'      => 'required|string',
                 'aggregateFn'       => 'sometimes|array',
-                'aggregateFn.value' => 'required_with:aggregateFn|string|in:count,sum,avg,min,max,group_concat',
+                'aggregateFn.value' => 'required_with:aggregateFn|string|in:' . implode(',', ReportQueryConverter::AGGREGATE_FUNCTIONS),
                 'aggregateBy'       => 'sometimes|array',
                 'aggregateBy.name'  => 'required_with:aggregateBy|string',
             ]);
@@ -413,11 +413,11 @@ class ReportQueryValidator
                 }
             }
 
-            // Validate sort field exists
+            // Validate sort field exists (a grouped report may also sort by an aggregate's alias)
             $sortField = $sortItem['column']['name'];
             $tableName = $sortItem['column']['table'] ?? $queryConfig['table']['name'];
 
-            if (!$this->isFieldAvailable($sortField, $tableName, $queryConfig)) {
+            if (!$this->isFieldAvailable($sortField, $tableName, $queryConfig) && !$this->isAggregateAlias($sortField, $queryConfig)) {
                 $this->errors[] = "Sort By {$index}: Field '{$sortField}' is not available";
             }
         }
@@ -489,7 +489,13 @@ class ReportQueryValidator
         if ($tableName === $queryConfig['table']['name']) {
             $mainColumns     = $this->registry->getTableColumns($tableName);
             $mainColumnNames = array_column($mainColumns, 'name');
-            if (in_array($fieldName, $mainColumnNames)) {
+            if (in_array($fieldName, $mainColumnNames) || $this->registry->isColumnAllowed($tableName, $fieldName)) {
+                return true;
+            }
+
+            // Computed columns defined by the query can be grouped, aggregated, sorted and filtered
+            $computedNames = array_column($queryConfig['computed_columns'] ?? [], 'name');
+            if (in_array($fieldName, $computedNames, true)) {
                 return true;
             }
         }
@@ -504,6 +510,26 @@ class ReportQueryValidator
                         return true;
                     }
                 }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether a name is the select alias of one of the query's group-by aggregates.
+     */
+    protected function isAggregateAlias(string $name, array $queryConfig): bool
+    {
+        foreach ($queryConfig['groupBy'] ?? [] as $groupItem) {
+            $fn = strtolower($groupItem['aggregateFn']['value'] ?? '');
+            if ($fn === '') {
+                continue;
+            }
+
+            $by = $groupItem['aggregateBy']['name'] ?? $groupItem['aggregateBy']['full'] ?? '*';
+            if ($name === $fn . '_' . ($by === '*' ? 'all' : str_replace('.', '_', $by))) {
+                return true;
             }
         }
 

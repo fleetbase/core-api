@@ -16,6 +16,7 @@ class Table
     protected array $relationships      = [];
     protected array $excludedColumns    = [];
     protected bool $supportsAggregates  = true;
+    protected bool $softDeletes         = false;
     protected ?int $maxRows             = null;
     protected bool $cacheable           = true;
     protected int $cacheTtl             = 3600;
@@ -176,6 +177,16 @@ class Table
     }
 
     /**
+     * Mark the table as soft-deleting, so reports leave out rows whose `deleted_at` is set.
+     */
+    public function softDeletes(bool $softDeletes = true): self
+    {
+        $this->softDeletes = $softDeletes;
+
+        return $this;
+    }
+
+    /**
      * Set the maximum number of rows that can be returned.
      */
     public function maxRows(int $maxRows): self
@@ -279,6 +290,11 @@ class Table
     public function getSupportsAggregates(): bool
     {
         return $this->supportsAggregates;
+    }
+
+    public function usesSoftDeletes(): bool
+    {
+        return $this->softDeletes;
     }
 
     public function getMaxRows(): ?int
@@ -439,6 +455,7 @@ class Table
             'manual_join_relationships'  => array_map(fn ($rel) => $rel->toArray(), $this->getManualJoinRelationships()),
             'excluded_columns'           => $this->excludedColumns,
             'supports_aggregates'        => $this->supportsAggregates,
+            'soft_deletes'               => $this->softDeletes,
             'max_rows'                   => $this->maxRows,
             'cacheable'                  => $this->cacheable,
             'cache_ttl'                  => $this->cacheTtl,
@@ -452,7 +469,7 @@ class Table
      */
     protected function isForeignKeyColumn(string $name): bool
     {
-        return Str::endsWith($name, '_uuid') || Str::endsWith($name, '_id');
+        return Column::isForeignKeyName($name);
     }
 
     /**

@@ -7,6 +7,28 @@ use Fleetbase\Support\Reporting\Schema\Table;
 class ComputedColumnValidator
 {
     /**
+     * Keywords that are never column references.
+     */
+    public const SQL_KEYWORDS = [
+        'INTERVAL', 'AND', 'OR', 'XOR', 'NOT', 'IS', 'NULL', 'TRUE', 'FALSE',
+        'AS', 'FROM', 'WHERE', 'DIV', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END',
+        'DISTINCT', 'IN', 'LIKE', 'BETWEEN', 'ESCAPE', 'REGEXP',
+        'ORDER', 'BY', 'ASC', 'DESC', 'SEPARATOR',
+    ];
+
+    /**
+     * Cast types and interval units. These are keywords after `AS` / `INTERVAL <n>` (e.g.
+     * `CAST(x AS SIGNED)`, `INTERVAL 7 DAY`) but may also be real column names (e.g. `time`).
+     */
+    public const CONTEXTUAL_KEYWORDS = [
+        // CAST / CONVERT target types
+        'DECIMAL', 'SIGNED', 'UNSIGNED', 'INTEGER', 'INT', 'CHAR', 'NCHAR', 'BINARY',
+        'DATE', 'DATETIME', 'TIME', 'DOUBLE', 'FLOAT', 'REAL', 'JSON',
+        // INTERVAL units
+        'MICROSECOND', 'SECOND', 'MINUTE', 'HOUR', 'DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR',
+    ];
+
+    /**
      * Allowed SQL functions.
      */
     protected array $allowedFunctions = [
@@ -25,6 +47,8 @@ class ComputedColumnValidator
         'SECOND',
         'DATE_FORMAT',
         'LAST_DAY',           // Get last day of month
+        'DATE',               // Date part of a datetime, e.g. DATE(created_at)
+        'TIME',               // Time part of a datetime
         'DAYOFWEEK',          // Get day of week (1=Sunday, 7=Saturday)
         'DAYOFMONTH',         // Get day of month (1-31)
         'DAYOFYEAR',          // Get day of year (1-366)
@@ -118,6 +142,23 @@ class ComputedColumnValidator
         // Type Conversion
         'CAST',
         'CONVERT',
+        'DECIMAL',            // CAST(x AS DECIMAL(10,2))
+        'CHAR',               // CAST(x AS CHAR(20))
+        'BINARY',
+        'DOUBLE',
+        'FLOAT',
+
+        // JSON Functions, e.g. JSON_UNQUOTE(JSON_EXTRACT(meta, '$.total'))
+        'JSON_EXTRACT',
+        'JSON_UNQUOTE',
+        'JSON_VALUE',
+        'JSON_LENGTH',
+        'JSON_CONTAINS',
+        'JSON_CONTAINS_PATH',
+        'JSON_KEYS',
+        'JSON_TYPE',
+        'JSON_VALID',
+        'JSON_SEARCH',
 
         // Other Utility Functions
         'INTERVAL',           // For date arithmetic
@@ -141,7 +182,7 @@ class ComputedColumnValidator
         'ALTER', 'CREATE', 'GRANT', 'REVOKE',
         'EXEC', 'EXECUTE', 'UNION', 'INTO',
         'INFORMATION_SCHEMA', 'LOAD_FILE', 'OUTFILE',
-        'DUMPFILE', 'BENCHMARK', 'SLEEP',
+        'DUMPFILE', 'BENCHMARK', 'SLEEP', 'SELECT',
     ];
 
     protected ReportSchemaRegistry $registry;
@@ -221,7 +262,7 @@ class ComputedColumnValidator
         $errors = [];
 
         // Match function calls: FUNCTION_NAME(
-        preg_match_all('/([A-Z_]+)\s*\(/i', $expression, $matches);
+        preg_match_all('/\b([A-Z_][A-Z0-9_]*)\s*\(/i', $this->removeStringLiterals($expression), $matches);
 
         if (!empty($matches[1])) {
             foreach ($matches[1] as $function) {
@@ -342,10 +383,7 @@ class ComputedColumnValidator
      */
     protected function isKeywordOrLiteral(string $word): bool
     {
-        $keywords = array_merge($this->allowedFunctions, $this->allowedOperators, [
-            'TRUE', 'FALSE', 'NULL', 'AS', 'FROM', 'WHERE',
-            'INTERVAL', 'DAY', 'MONTH', 'YEAR', 'HOUR', 'MINUTE', 'SECOND',
-        ]);
+        $keywords = array_merge($this->allowedFunctions, $this->allowedOperators, static::SQL_KEYWORDS, static::CONTEXTUAL_KEYWORDS);
 
         return in_array(strtoupper($word), $keywords) || is_numeric($word);
     }
@@ -393,7 +431,7 @@ class ComputedColumnValidator
      */
     protected function columnExistsInTable(string $columnName, Table $table): bool
     {
-        $columns = $table->getColumns();
+        $columns = $table->getAllColumns();
 
         foreach ($columns as $column) {
             if ($column->getName() === $columnName) {

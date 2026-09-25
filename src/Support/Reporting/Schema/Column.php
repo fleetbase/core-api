@@ -6,6 +6,11 @@ use Illuminate\Support\Str;
 
 class Column
 {
+    /**
+     * Identifier columns that end in `_id` but are not foreign keys.
+     */
+    public const IDENTIFIER_COLUMNS = ['public_id', 'internal_id'];
+
     protected string $name;
     protected string $label;
     protected string $type;
@@ -18,6 +23,7 @@ class Column
     protected bool $aggregatable     = false;
     protected bool $hidden           = false;
     protected bool $computed         = false;
+    protected bool $aggregate        = false;
     protected ?string $computation   = null;
     protected ?\Closure $transformer = null;
     protected array $meta            = [];
@@ -40,15 +46,48 @@ class Column
 
     /**
      * Create a computed column.
+     *
+     * Whether the computation is an aggregate (COUNT/SUM/AVG/MIN/MAX/GROUP_CONCAT) is detected
+     * from the expression unless `$options['aggregate']` says otherwise.
      */
     public static function computed(string $name, string $computation, string $type = 'string', array $options = []): self
     {
         return static::make($name, $type)
             ->setComputed(true)
             ->setComputation($computation)
+            ->setAggregate(isset($options['aggregate']) ? (bool) $options['aggregate'] : static::isAggregateExpression($computation))
             ->setAggregatable(isset($options['aggregatable']) ? (bool) $options['aggregatable'] : false)
             ->setSortable(isset($options['sortable']) ? (bool) $options['sortable'] : false)
             ->setSearchable(isset($options['searchable']) ? (bool) $options['searchable'] : false);
+    }
+
+    /**
+     * Create a row-level expression column, such as a value read out of a JSON column.
+     *
+     * Bare column names in the expression resolve against the table or relationship that
+     * declares the column, so `JSON_EXTRACT(meta, '$.total')` declared on a nested
+     * `payload.entities` relationship reads the joined entity's meta. Unlike an aggregate
+     * computed column, an expression column behaves like a regular column: it can be
+     * selected, filtered, sorted, grouped by and aggregated.
+     */
+    public static function expression(string $name, string $expression, string $type = 'string'): self
+    {
+        $column = static::make($name, $type)
+            ->setComputed(true)
+            ->setComputation($expression)
+            ->setAggregate(false);
+
+        $column->aggregatable = $column->determineAggregatable($type);
+
+        return $column;
+    }
+
+    /**
+     * Whether an SQL expression is an aggregate, i.e. it starts with an aggregate function.
+     */
+    public static function isAggregateExpression(string $expression): bool
+    {
+        return (bool) preg_match('/^\s*\(?\s*(COUNT|SUM|AVG|MIN|MAX|GROUP_CONCAT)\s*\(/i', $expression);
     }
 
     /**
@@ -279,6 +318,22 @@ class Column
         return $this->computed;
     }
 
+    /**
+     * Whether this is a computed column whose computation aggregates rows (COUNT, SUM, ...).
+     */
+    public function isAggregate(): bool
+    {
+        return $this->computed && $this->aggregate;
+    }
+
+    /**
+     * Whether this is a computed column that yields a value per row (an expression column).
+     */
+    public function isExpression(): bool
+    {
+        return $this->computed && !$this->aggregate && $this->computation !== null;
+    }
+
     public function getComputation(): ?string
     {
         return $this->computation;
@@ -308,7 +363,22 @@ class Column
      */
     public function isForeignKey(): bool
     {
-        return Str::endsWith($this->name, '_uuid') || Str::endsWith($this->name, '_id');
+        return static::isForeignKeyName($this->name);
+    }
+
+    /**
+     * Whether a column name looks like a foreign key (`*_uuid` / `*_id`).
+     *
+     * A record's own identifiers (`public_id`, `internal_id`) end in `_id` but are not
+     * foreign keys; they are usually the first thing a report needs.
+     */
+    public static function isForeignKeyName(string $name): bool
+    {
+        if (in_array($name, static::IDENTIFIER_COLUMNS, true)) {
+            return false;
+        }
+
+        return Str::endsWith($name, '_uuid') || Str::endsWith($name, '_id');
     }
 
     /**
@@ -341,6 +411,7 @@ class Column
             'aggregatable' => $this->aggregatable,
             'hidden'       => $this->hidden,
             'computed'     => $this->computed,
+            'aggregate'    => $this->isAggregate(),
             'computation'  => $this->computation,
             'transformer'  => $this->hasTransformer(),
             'meta'         => $this->meta,
@@ -366,6 +437,13 @@ class Column
     protected function setComputation(string $computation): self
     {
         $this->computation = $computation;
+
+        return $this;
+    }
+
+    protected function setAggregate(bool $aggregate): self
+    {
+        $this->aggregate = $aggregate;
 
         return $this;
     }
