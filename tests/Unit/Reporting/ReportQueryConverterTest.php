@@ -1064,7 +1064,7 @@ test('report query converter aggregates computed group by metadata supplied by a
         ->and($result['data'])->toHaveCount(2)
         ->and((float) $result['data'][0]->sum_gross_total)->toBe(251.0)
         ->and((float) $result['data'][1]->sum_gross_total)->toBe(150.0)
-        ->and($result['meta']['query_sql'])->toContain('SUM(orders.total * 2)')
+        ->and($result['meta']['query_sql'])->toContain('SUM((orders.total * 2))')
         ->and($result['columns'])->toContainEqual([
             'name'        => 'gross_total',
             'column_name' => 'gross_total',
@@ -1076,7 +1076,7 @@ test('report query converter aggregates computed group by metadata supplied by a
         ->and($result['columns'])->toContainEqual([
             'name'           => 'sum_gross_total',
             'column_name'    => 'sum_gross_total',
-            'label'          => 'Sum (gross_total)',
+            'label'          => 'Sum (Gross Total)',
             'type'           => 'decimal',
             'auto_join_path' => null,
         ]);

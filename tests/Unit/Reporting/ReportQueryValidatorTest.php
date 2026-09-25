@@ -736,3 +736,34 @@ test('report query validator emits resource and cartesian warnings for large joi
         ->and($result['summary']['complexity'])->toBe('medium')
         ->and($result['summary']['estimated_performance'])->toBe('slow');
 });
+
+test('report query validator accepts computed group keys distinct counts and sorting by an aggregate alias', function () {
+    $validator = report_validator_fixture();
+
+    $result = $validator->validate([
+        'table'            => ['name' => 'orders'],
+        'columns'          => [['name' => 'status'], ['name' => 'total']],
+        'computed_columns' => [['name' => 'order_month', 'expression' => "DATE_FORMAT(created_at, '%Y-%m')"]],
+        'groupBy'          => [
+            ['groupBy' => ['name' => 'status']],
+            ['groupBy' => ['name' => 'order_month'], 'aggregateFn' => ['value' => 'count_distinct'], 'aggregateBy' => ['name' => 'public_id']],
+            ['groupBy' => ['name' => 'status'], 'aggregateFn' => ['value' => 'sum'], 'aggregateBy' => ['name' => 'payload.pickup.city']],
+        ],
+        'sortBy' => [
+            ['column' => ['name' => 'count_distinct_public_id'], 'direction' => ['value' => 'desc']],
+            ['column' => ['name' => 'sum_payload_pickup_city'], 'direction' => ['value' => 'asc']],
+        ],
+    ]);
+
+    expect($result['errors'])->toBe([])
+        ->and($result['valid'])->toBeTrue();
+
+    $unknownSort = $validator->validate([
+        'table'   => ['name' => 'orders'],
+        'columns' => [['name' => 'status']],
+        'groupBy' => [['groupBy' => ['name' => 'status'], 'aggregateFn' => ['value' => 'count'], 'aggregateBy' => ['name' => '*']]],
+        'sortBy'  => [['column' => ['name' => 'sum_total'], 'direction' => ['value' => 'asc']]],
+    ]);
+
+    expect($unknownSort['errors'])->toBe(["Sort By 0: Field 'sum_total' is not available"]);
+});

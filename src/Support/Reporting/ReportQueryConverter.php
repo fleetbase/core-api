@@ -2,13 +2,23 @@
 
 namespace Fleetbase\Support\Reporting;
 
-use Fleetbase\Support\Utils;
+use Fleetbase\Support\Reporting\Schema\Column;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class ReportQueryConverter
 {
+    /**
+     * Aggregate functions a grouped report can apply.
+     */
+    public const AGGREGATE_FUNCTIONS = ['count', 'count_distinct', 'sum', 'avg', 'min', 'max', 'group_concat'];
+
+    /**
+     * How deep computed and expression columns may reference one another.
+     */
+    protected const MAX_REFERENCE_DEPTH = 10;
+
     protected ReportSchemaRegistry $registry;
     protected array $queryConfig;
     protected array $autoJoins         = [];
@@ -29,6 +39,9 @@ class ReportQueryConverter
     /**
      * Extract computed columns from groupBy aggregates and add to computed_columns array.
      * This handles cases where the frontend sends computed column metadata in aggregateBy objects.
+     *
+     * Columns the schema declares (expression or summary columns) are left out: their SQL
+     * always comes from the registry, never from the client.
      */
     protected function extractComputedColumnsFromAggregates(): void
     {
@@ -57,10 +70,10 @@ class ReportQueryConverter
 
             // Check if this is a computed column
             $isComputed  = $aggregateBy['computed'] ?? false;
-            $computation = $aggregateBy['computation'] ?? null;
+            $computation = $aggregateBy['computation'] ?? $aggregateBy['expression'] ?? null;
             $name        = $aggregateBy['name'] ?? null;
 
-            if ($isComputed && $computation && $name && !isset($existingComputedColumns[$name])) {
+            if ($isComputed && $computation && $name && !isset($existingComputedColumns[$name]) && !$this->findSchemaColumn($name)) {
                 // Add to computed_columns array
                 $this->queryConfig['computed_columns'][] = [
                     'name'       => $name,
@@ -221,6 +234,11 @@ class ReportQueryConverter
         // Always scope by company
         $this->applyCompanyScope($query);
 
+        // Leave out soft-deleted rows of the root table
+        if ($table->usesSoftDeletes()) {
+            $query->whereNull("{$tableName}.deleted_at");
+        }
+
         // Process auto-joins first (based on selected columns)
         $this->processAutoJoins($query, $tableName);
 
@@ -286,27 +304,27 @@ class ReportQueryConverter
      */
     protected function processAutoJoins(Builder $query, string $tableName): void
     {
-        $table         = $this->registry->getTable($tableName);
         $autoJoinPaths = [];
 
         foreach ($this->queryConfig['columns'] ?? [] as $column) {
             if (!empty($column['auto_join_path'])) {
                 // already provided by your registry as full path like "payload.pickup"
                 $autoJoinPaths[] = $column['auto_join_path'];
-            } elseif (Str::contains($column['name'], '.')) {
-                // take all but the final segment as the relationship path
-                $parts = explode('.', $column['name']);
-                if (count($parts) >= 2) {
-                    $relPath         = implode('.', array_slice($parts, 0, -1));
-                    $autoJoinPaths[] = $relPath;
-                }
             }
+
+            $this->collectJoinPathsForReference($column['name'], $autoJoinPaths);
         }
 
         $this->collectAutoJoinPathsFromConditions($this->queryConfig['conditions'] ?? [], $autoJoinPaths);
         $this->collectAutoJoinPathsFromGroupBy($this->queryConfig['groupBy'] ?? [], $autoJoinPaths);
         $this->collectAutoJoinPathsFromSortBy($this->queryConfig['sortBy'] ?? [], $autoJoinPaths);
-        $this->collectAutoJoinPathsFromComputedColumns($this->queryConfig['computed_columns'] ?? [], $autoJoinPaths, $tableName);
+
+        // Every computed column is selected when the report is not grouped. A grouped report
+        // only uses the computed columns its group keys, aggregates, sorts and conditions
+        // reference, and those were collected above; joining the rest would multiply rows.
+        if (empty($this->queryConfig['groupBy'])) {
+            $this->collectAutoJoinPathsFromComputedColumns($this->queryConfig['computed_columns'] ?? [], $autoJoinPaths, $tableName);
+        }
 
         // dedupe and sort shortest->longest so parent joins first
         $autoJoinPaths = array_values(array_unique($autoJoinPaths));
@@ -327,11 +345,8 @@ class ReportQueryConverter
                 $this->collectAutoJoinPathsFromConditions($condition['conditions'], $autoJoinPaths);
             } elseif (!empty($condition['field']['auto_join_path'])) {
                 $autoJoinPaths[] = $condition['field']['auto_join_path'];
-            } elseif (!empty($condition['field']['name']) && Str::contains($condition['field']['name'], '.')) {
-                $parts = explode('.', $condition['field']['name']);
-                if (count($parts) >= 2) {
-                    $autoJoinPaths[] = implode('.', array_slice($parts, 0, -1));
-                }
+            } elseif (!empty($condition['field']['name'])) {
+                $this->collectJoinPathsForReference($condition['field']['name'], $autoJoinPaths);
             }
         }
     }
@@ -339,17 +354,11 @@ class ReportQueryConverter
     protected function collectAutoJoinPathsFromGroupBy(array $groupBy, array &$autoJoinPaths): void
     {
         foreach ($groupBy as $g) {
-            if (!empty($g['groupBy']['name']) && str_contains($g['groupBy']['name'], '.')) {
-                $parts = explode('.', $g['groupBy']['name']);
-                if (count($parts) >= 2) {
-                    $autoJoinPaths[] = implode('.', array_slice($parts, 0, -1));
-                }
+            if (!empty($g['groupBy']['name'])) {
+                $this->collectJoinPathsForReference($g['groupBy']['name'], $autoJoinPaths);
             }
-            if (!empty($g['aggregateBy']['name']) && str_contains($g['aggregateBy']['name'], '.')) {
-                $parts = explode('.', $g['aggregateBy']['name']);
-                if (count($parts) >= 2) {
-                    $autoJoinPaths[] = implode('.', array_slice($parts, 0, -1));
-                }
+            if (!empty($g['aggregateBy']['name']) && $g['aggregateBy']['name'] !== '*') {
+                $this->collectJoinPathsForReference($g['aggregateBy']['name'], $autoJoinPaths);
             }
         }
     }
@@ -357,11 +366,8 @@ class ReportQueryConverter
     protected function collectAutoJoinPathsFromSortBy(array $sortBy, array &$autoJoinPaths): void
     {
         foreach ($sortBy as $s) {
-            if (!empty($s['column']['name']) && str_contains($s['column']['name'], '.')) {
-                $parts = explode('.', $s['column']['name']);
-                if (count($parts) >= 2) {
-                    $autoJoinPaths[] = implode('.', array_slice($parts, 0, -1));
-                }
+            if (!empty($s['column']['name'])) {
+                $this->collectJoinPathsForReference($s['column']['name'], $autoJoinPaths);
             }
         }
     }
@@ -374,12 +380,64 @@ class ReportQueryConverter
                 continue;
             }
 
-            // Extract relationship paths from the expression
-            $paths = $this->extractRelationshipPathsFromExpression($expression, $rootTable);
-            foreach ($paths as $path) {
-                $autoJoinPaths[] = $path;
-            }
+            $this->collectJoinPathsFromExpression($expression, null, $autoJoinPaths);
         }
+    }
+
+    /**
+     * Collect the relationship paths a column reference needs joined.
+     *
+     * A computed column (from the query) or an expression/summary column (from the schema)
+     * contributes the joins its own expression needs, so `order_total` defined as
+     * `transaction.amount / 100` joins `transaction` even though its name has no dot.
+     */
+    protected function collectJoinPathsForReference(string $reference, array &$autoJoinPaths, int $depth = 0): void
+    {
+        if ($depth > static::MAX_REFERENCE_DEPTH) {
+            return;
+        }
+
+        $computed = $this->findQueryComputedColumn($reference);
+        if ($computed) {
+            $this->collectJoinPathsFromExpression($computed['expression'] ?? '', null, $autoJoinPaths, $depth + 1);
+
+            return;
+        }
+
+        $schemaColumn = $this->findSchemaColumn($reference);
+        if ($schemaColumn) {
+            [$column, $prefix] = $schemaColumn;
+
+            if ($prefix !== null) {
+                $autoJoinPaths[] = $prefix;
+            }
+
+            if ($column->isComputed() && $column->getComputation()) {
+                $this->collectJoinPathsFromExpression($column->getComputation(), $prefix, $autoJoinPaths, $depth + 1);
+            }
+
+            return;
+        }
+
+        if (str_contains($reference, '.')) {
+            $autoJoinPaths[] = implode('.', array_slice(explode('.', $reference), 0, -1));
+        }
+    }
+
+    /**
+     * Collect the relationship paths every column reference in an expression needs joined.
+     */
+    protected function collectJoinPathsFromExpression(string $expression, ?string $prefix, array &$autoJoinPaths, int $depth = 0): void
+    {
+        $this->rewriteColumnReferences($expression, function (string $reference, bool $keywordPosition) use ($prefix, &$autoJoinPaths, $depth) {
+            $path = $prefix !== null ? "{$prefix}.{$reference}" : $reference;
+
+            if (!$this->isSqlKeyword($reference, $keywordPosition, $path)) {
+                $this->collectJoinPathsForReference($path, $autoJoinPaths, $depth);
+            }
+
+            return null;
+        });
     }
 
     protected function applyAutoJoinPath(Builder $query, string $rootTable, string $fullPath): void
@@ -421,13 +479,23 @@ class ReportQueryConverter
             $joinType = $relationship->getType() ?: 'left';
 
             // Join: {current}.{localKey} = {alias}.{foreignKey}
-            $query->join(
-                "{$relationship->getTable()} as {$alias}",
-                "{$currentTableOrAlias}.{$relationship->getLocalKey()}",
-                '=',
-                "{$alias}.{$relationship->getForeignKey()}",
-                $joinType
-            );
+            $localColumn   = "{$currentTableOrAlias}.{$relationship->getLocalKey()}";
+            $foreignColumn = "{$alias}.{$relationship->getForeignKey()}";
+
+            if ($relationship->usesSoftDeletes()) {
+                // Constrain inside the ON clause so a LEFT join still keeps the parent row.
+                $query->join(
+                    "{$relationship->getTable()} as {$alias}",
+                    function ($join) use ($localColumn, $foreignColumn, $alias) {
+                        $join->on($localColumn, '=', $foreignColumn)->whereNull("{$alias}.deleted_at");
+                    },
+                    null,
+                    null,
+                    $joinType
+                );
+            } else {
+                $query->join("{$relationship->getTable()} as {$alias}", $localColumn, '=', $foreignColumn, $joinType);
+            }
 
             // record
             $this->autoJoins[] = [
@@ -629,17 +697,14 @@ class ReportQueryConverter
      */
     protected function buildSelectClause(Builder $query): void
     {
-        $rootTable   = $this->queryConfig['table']['name'];
         $hasGrouping = !empty($this->queryConfig['groupBy']);
 
         if (!$hasGrouping) {
-            // existing behavior
             $selects = [];
             foreach ($this->queryConfig['columns'] ?? [] as $column) {
-                $name             = $column['name'];
-                $alias            = $column['alias'] ?? str_replace('.', '_', $name);
-                [$tblAlias, $col] = $this->resolveAliasAndColumn($rootTable, $name);
-                $selects[]        = "{$tblAlias}.{$col} as `{$alias}`";
+                $name      = $column['name'];
+                $alias     = $column['alias'] ?? str_replace('.', '_', $name);
+                $selects[] = $this->columnSql($name) . " as `{$alias}`";
             }
 
             // Add computed columns
@@ -652,59 +717,53 @@ class ReportQueryConverter
             return;
         }
 
-        $selects = [];
+        $selects   = [];
+        $groupKeys = [];
 
         // Select grouped columns
-        $groupAliases = []; // track to validate orderBy later
         foreach ($this->queryConfig['groupBy'] as $g) {
-            $groupColName     = $g['groupBy']['name'];
-            $alias            = $g['groupBy']['alias'] ?? str_replace('.', '_', $groupColName);
-            [$tblAlias, $col] = $this->resolveAliasAndColumn($rootTable, $groupColName);
-            $selects[]        = "{$tblAlias}.{$col} as `{$alias}`";
-            $groupAliases[]   = $alias;
+            $groupColName = $g['groupBy']['name'];
+            $alias        = $g['groupBy']['alias'] ?? str_replace('.', '_', $groupColName);
+
+            if (isset($groupKeys[$alias])) {
+                continue;
+            }
+
+            $selects[]         = $this->columnSql($groupColName) . " as `{$alias}`";
+            $groupKeys[$alias] = true;
         }
 
-        // Add aggregates per groupBy rule (support count/sum/avg/min/max)
+        // Summary columns (e.g. "Total Orders") aggregate on their own and sit beside the group keys.
+        foreach ($this->queryConfig['columns'] ?? [] as $column) {
+            $alias = $column['alias'] ?? str_replace('.', '_', $column['name']);
+
+            if (!isset($groupKeys[$alias]) && $this->isAggregateColumn($column['name'])) {
+                $selects[]         = $this->columnSql($column['name']) . " as `{$alias}`";
+                $groupKeys[$alias] = true;
+            }
+        }
+
+        // Add aggregates per groupBy rule (support count/count_distinct/sum/avg/min/max/group_concat)
         foreach ($this->queryConfig['groupBy'] as $g) {
             $fn = strtolower($g['aggregateFn']['value'] ?? '');
             if (!$fn) {
                 continue;
             }
 
-            $by = $g['aggregateBy']['full'] ?? $g['aggregateBy']['name'] ?? '*';
+            $by       = $g['aggregateBy']['full'] ?? $g['aggregateBy']['name'] ?? '*';
+            $aggAlias = $this->deriveAggregateAlias($g);
 
-            if ($by === '*' || $by === 'count') {
-                $expr = 'COUNT(*)';
-            } else {
-                // Check if this is a computed column
-                $isComputed         = false;
-                $computedExpression = null;
-
-                foreach ($this->queryConfig['computed_columns'] ?? [] as $computedColumn) {
-                    if ($computedColumn['name'] === $by) {
-                        $isComputed         = true;
-                        $computedExpression = $computedColumn['expression'] ?? '';
-                        break;
-                    }
-                }
-
-                if ($isComputed && $computedExpression) {
-                    // For computed columns, use the resolved expression
-                    $resolvedExpression = $this->resolveComputedColumnReferences($computedExpression, $rootTable);
-                    $expr               = strtoupper($fn) . "({$resolvedExpression})";
-                } else {
-                    // For regular columns, use table.column format
-                    [$tblAlias, $col] = $this->resolveAliasAndColumn($rootTable, $by);
-                    $expr             = strtoupper($fn) . "({$tblAlias}.{$col})";
-                }
+            if (isset($groupKeys[$aggAlias])) {
+                continue;
             }
 
-            $aggAlias  = $this->deriveAggregateAlias($g);
-            $selects[] = "{$expr} as `{$aggAlias}`";
+            $selects[]            = $this->aggregateExpression($fn, $by) . " as `{$aggAlias}`";
+            $groupKeys[$aggAlias] = true;
 
             // decide a type/label
             $typeMap = [
                 'count'          => 'integer',
+                'count_distinct' => 'integer',
                 'sum'            => 'decimal',
                 'avg'            => 'decimal',
                 'min'            => 'string',   // could be numeric/datetime;
@@ -713,6 +772,7 @@ class ReportQueryConverter
             ];
             $labelMap = [
                 'count'          => 'Count',
+                'count_distinct' => 'Distinct Count',
                 'sum'            => 'Sum',
                 'avg'            => 'Average',
                 'min'            => 'Min',
@@ -721,24 +781,43 @@ class ReportQueryConverter
             ];
 
             $this->emittedAggregates[] = [
-                'alias' => $aggAlias,
-                'fn'    => $fn,
-                'by'    => $by,
-                'type'  => $typeMap[$fn] ?? 'decimal',
-                'label' => $labelMap[$fn] ?? strtoupper($fn),
+                'alias'    => $aggAlias,
+                'fn'       => $fn,
+                'by'       => $by,
+                'by_label' => $by === '*' ? null : ($g['aggregateBy']['label'] ?? null),
+                'type'     => $typeMap[$fn] ?? 'decimal',
+                'label'    => $labelMap[$fn] ?? strtoupper($fn),
             ];
         }
 
-        // (Optional) if user selected extra columns, drop them here OR auto-aggregate.
-        // We'll drop them to stay deterministic under ONLY_FULL_GROUP_BY.
-
-        // Note: In grouped mode, we do NOT add computed columns as standalone SELECT items
-        // because they would violate ONLY_FULL_GROUP_BY. Computed columns are only used
-        // when explicitly referenced in aggregates (handled above in lines 580-600).
+        // Other selected columns are neither grouped nor aggregated; validateQueryConfig()
+        // rejects them so the query stays deterministic under ONLY_FULL_GROUP_BY.
 
         if ($selects) {
             $query->selectRaw(implode(', ', $selects));
         }
+    }
+
+    /**
+     * Build the SQL for one aggregate of a grouped report.
+     */
+    protected function aggregateExpression(string $fn, string $by): string
+    {
+        if ($by === '*' || $by === 'count') {
+            return 'COUNT(*)';
+        }
+
+        if ($this->isAggregateColumn($by)) {
+            throw new \InvalidArgumentException("Column '{$by}' is already a summary value and cannot be aggregated again");
+        }
+
+        $sql = $this->columnSql($by);
+
+        if ($fn === 'count_distinct') {
+            return "COUNT(DISTINCT {$sql})";
+        }
+
+        return strtoupper($fn) . "({$sql})";
     }
 
     /**
@@ -791,14 +870,18 @@ class ReportQueryConverter
      */
     protected function applySingleCondition(Builder $query, array $condition, string $boolean = 'and'): void
     {
-        $field     = $condition['field']['name'];
+        $fieldName = $condition['field']['name'];
         $operator  = $condition['operator']['value'];
-        $value     = $condition['value'];
-        $tableName = $this->queryConfig['table']['name'];
+        $value     = $condition['value'] ?? null;
 
-        // Handle auto-join columns in conditions
-        [$tblAlias, $col] = $this->resolveAliasAndColumn($tableName, $field);
-        $field            = "{$tblAlias}.{$col}";
+        if ($this->isAggregateColumn($fieldName)) {
+            throw new \InvalidArgumentException("Column '{$fieldName}' is a summary value and cannot be used as a filter");
+        }
+
+        // Plain columns stay as identifiers (so the grammar quotes them); expression and
+        // computed columns are filtered on their SQL expression.
+        $sql   = $this->columnSql($fieldName);
+        $field = $this->isExpressionReference($fieldName) ? DB::raw($sql) : $sql;
 
         // Apply the condition based on operator
         switch ($operator) {
@@ -877,17 +960,13 @@ class ReportQueryConverter
             return;
         }
 
-        $rootTable = $this->queryConfig['table']['name'];
-        $groupBy   = [];
+        $groupBy = [];
 
         foreach ($this->queryConfig['groupBy'] as $g) {
-            [$tblAlias, $col] = $this->resolveAliasAndColumn($rootTable, $g['groupBy']['name']);
-            $groupBy[]        = "{$tblAlias}.{$col}";
+            $groupBy[] = $this->columnSql($g['groupBy']['name']);
         }
 
-        if ($groupBy) {
-            $query->groupBy($groupBy);
-        }
+        $query->groupByRaw(implode(', ', array_values(array_unique($groupBy))));
     }
 
     /**
@@ -899,49 +978,56 @@ class ReportQueryConverter
             return;
         }
 
-        $rootTable   = $this->queryConfig['table']['name'];
-        $hasGrouping = !empty($this->queryConfig['groupBy']);
-
-        // Build a whitelist for grouped mode
-        $allowedOrderExprs = [];
-        if ($hasGrouping) {
-            // Grouped aliases (as emitted in buildSelectClause)
-            foreach ($this->queryConfig['groupBy'] as $g) {
-                $groupColName                    = $g['groupBy']['name'];
-                $alias                           = $g['groupBy']['alias'] ?? str_replace('.', '_', $groupColName);
-                $allowedOrderExprs["`{$alias}`"] = true;
-            }
-            // Aggregate aliases (as emitted in buildSelectClause)
-            foreach ($this->queryConfig['groupBy'] as $g) {
-                $fn = strtolower($g['aggregateFn']['value'] ?? '');
-                if ($fn) {
-                    $aggAliasBase                       = $g['aggregateBy']['name'] ?? $g['aggregateBy']['full'] ?? 'all';
-                    $aggAlias                           = ($fn === 'count') ? "count_{$aggAliasBase}" : "{$fn}_" . str_replace('.', '_', $aggAliasBase);
-                    $allowedOrderExprs["`{$aggAlias}`"] = true;
-                }
-            }
-        }
+        $hasGrouping       = !empty($this->queryConfig['groupBy']);
+        $allowedOrderExprs = $hasGrouping ? $this->groupedSelectAliases() : [];
 
         foreach ($this->queryConfig['sortBy'] as $s) {
-            $dir     = $s['direction']['value'] ?? 'asc';
+            $dir     = strtolower((string) ($s['direction']['value'] ?? 'asc')) === 'desc' ? 'desc' : 'asc';
             $colName = $s['column']['name'];
 
             if ($hasGrouping) {
-                // Try to order by a select alias first
-                $alias     = $s['column']['alias'] ?? str_replace('.', '_', $colName);
-                $aliasExpr = "`{$alias}`";
-                if (isset($allowedOrderExprs[$aliasExpr])) {
-                    $query->orderByRaw("{$aliasExpr} {$dir}");
-                    continue;
+                // Only a group key or an aggregate can be ordered by in a grouped report.
+                $alias = $s['column']['alias'] ?? str_replace('.', '_', $colName);
+                if (isset($allowedOrderExprs[$alias])) {
+                    $query->orderByRaw("`{$alias}` {$dir}");
                 }
-                // Not allowed → skip (or convert to MIN/MAX if you prefer)
+
                 continue;
             }
 
-            // Non-grouped mode → original behavior
-            [$tblAlias, $col] = $this->resolveAliasAndColumn($rootTable, $colName);
+            if ($this->isExpressionReference($colName)) {
+                $query->orderByRaw($this->columnSql($colName) . " {$dir}");
+                continue;
+            }
+
+            [$tblAlias, $col] = $this->resolveAliasAndColumn($this->queryConfig['table']['name'], $colName);
             $query->orderBy("{$tblAlias}.{$col}", $dir);
         }
+    }
+
+    /**
+     * The select aliases of a grouped report: group keys, summary columns and aggregates.
+     */
+    protected function groupedSelectAliases(): array
+    {
+        $aliases = [];
+
+        foreach ($this->queryConfig['groupBy'] ?? [] as $g) {
+            $groupColName                                                            = $g['groupBy']['name'];
+            $aliases[$g['groupBy']['alias'] ?? str_replace('.', '_', $groupColName)] = true;
+
+            if (!empty($g['aggregateFn']['value'])) {
+                $aliases[$this->deriveAggregateAlias($g)] = true;
+            }
+        }
+
+        foreach ($this->queryConfig['columns'] ?? [] as $column) {
+            if ($this->isAggregateColumn($column['name'])) {
+                $aliases[$column['alias'] ?? str_replace('.', '_', $column['name'])] = true;
+            }
+        }
+
+        return $aliases;
     }
 
     /**
@@ -1018,7 +1104,7 @@ class ReportQueryConverter
             $cols[] = [
                 'name'           => $agg['alias'],
                 'column_name'    => $agg['alias'],
-                'label'          => $agg['label'] . ($agg['by'] === '*' ? '' : " ({$agg['by']})"),
+                'label'          => $agg['label'] . ($agg['by'] === '*' ? '' : ' (' . ($agg['by_label'] ?? $agg['by']) . ')'),
                 'type'           => $agg['type'],
                 'auto_join_path' => null,
             ];
@@ -1045,10 +1131,6 @@ class ReportQueryConverter
         $fn   = strtolower($g['aggregateFn']['value'] ?? '');
         $by   = $g['aggregateBy']['name'] ?? $g['aggregateBy']['full'] ?? '*';
         $base = ($by === '*' ? 'all' : str_replace('.', '_', $by));
-
-        if ($fn === 'count') {
-            return "count_{$base}";
-        }
 
         return "{$fn}_{$base}";
     }
@@ -1092,32 +1174,45 @@ class ReportQueryConverter
             return;
         }
 
-        $tableName = $this->queryConfig['table']['name'];
-        $validator = new ComputedColumnValidator($this->registry);
-
         foreach ($this->queryConfig['computed_columns'] as $computedColumn) {
-            $name       = $computedColumn['name'] ?? '';
-            $expression = $computedColumn['expression'] ?? '';
+            $name = $computedColumn['name'] ?? '';
 
-            if (empty($name) || empty($expression)) {
-                throw new \InvalidArgumentException('Computed column must have both name and expression');
-            }
-
-            // Validate the expression, passing all computed columns so they can reference each other
-            $validationResult = $validator->validate($expression, $tableName, $this->queryConfig['computed_columns']);
-            if (!$validationResult['valid']) {
-                $errors = implode('; ', $validationResult['errors']);
-                throw new \InvalidArgumentException("Invalid computed column '{$name}': {$errors}");
-            }
+            $this->validateComputedColumn($computedColumn);
 
             // Note: Auto-joins for computed column relationships are now created earlier in processAutoJoins()
             // This ensures joins exist before aggregate expressions are resolved
 
             // Resolve column references in the expression to use proper table aliases
-            $resolvedExpression = $this->resolveComputedColumnReferences($expression, $tableName);
+            $resolvedExpression = $this->resolveComputedColumnReferences($computedColumn['expression'], $this->queryConfig['table']['name']);
 
             // Add to selects
             $selects[] = "({$resolvedExpression}) as `{$name}`";
+        }
+    }
+
+    /**
+     * Validate a computed column's name and expression.
+     */
+    protected function validateComputedColumn(array $computedColumn): void
+    {
+        $name       = $computedColumn['name'] ?? '';
+        $expression = $computedColumn['expression'] ?? '';
+
+        if (empty($name) || empty($expression)) {
+            throw new \InvalidArgumentException('Computed column must have both name and expression');
+        }
+
+        // The name is interpolated raw as the select alias.
+        if (!$this->isSafeSqlIdentifier((string) $name)) {
+            throw new \InvalidArgumentException("Invalid computed column name '{$name}'");
+        }
+
+        // Validate the expression, passing all computed columns so they can reference each other
+        $validator        = new ComputedColumnValidator($this->registry);
+        $validationResult = $validator->validate($expression, $this->queryConfig['table']['name'], $this->queryConfig['computed_columns'] ?? []);
+        if (!$validationResult['valid']) {
+            $errors = implode('; ', $validationResult['errors']);
+            throw new \InvalidArgumentException("Invalid computed column '{$name}': {$errors}");
         }
     }
 
@@ -1126,120 +1221,204 @@ class ReportQueryConverter
      */
     protected function resolveComputedColumnReferences(string $expression, string $rootTable): string
     {
-        // Step 1: Recursively expand computed column references FIRST (before any protection)
-        $computedColumns   = $this->queryConfig['computed_columns'] ?? [];
-        $computedColumnMap = [];
-        foreach ($computedColumns as $col) {
-            $computedColumnMap[$col['name']] = $col['expression'];
+        return $this->resolveExpression($expression, null);
+    }
+
+    /**
+     * Resolve every column reference in an expression to SQL.
+     *
+     * With a `$prefix` (the relationship path that declares an expression column), bare
+     * column names resolve against that relationship's join alias instead of the root table.
+     */
+    protected function resolveExpression(string $expression, ?string $prefix, int $depth = 0): string
+    {
+        return $this->rewriteColumnReferences($expression, function (string $reference, bool $keywordPosition) use ($prefix, $depth) {
+            $path = $prefix !== null ? "{$prefix}.{$reference}" : $reference;
+
+            if ($this->isSqlKeyword($reference, $keywordPosition, $path)) {
+                return null;
+            }
+
+            return $this->columnSql($path, $depth + 1);
+        });
+    }
+
+    /**
+     * Resolve a column reference to the SQL that reads it.
+     *
+     * - a computed column from the query resolves to its (parenthesised) expression;
+     * - an expression or summary column declared in the schema resolves to its computation,
+     *   with bare names read from the table or relationship that declares it;
+     * - anything else is a physical column on the root table or a joined relationship.
+     */
+    protected function columnSql(string $reference, int $depth = 0): string
+    {
+        if ($depth > static::MAX_REFERENCE_DEPTH) {
+            throw new \InvalidArgumentException("Column reference '{$reference}' is circular or nested too deeply");
         }
 
-        $maxDepth = 10; // Prevent infinite recursion
-        $depth    = 0;
-        while ($depth < $maxDepth) {
-            $changed = false;
-            foreach ($computedColumnMap as $name => $expr) {
-                if (preg_match('/\b' . preg_quote($name, '/') . '\b/', $expression)) {
-                    $expression = preg_replace('/\b' . preg_quote($name, '/') . '\b/', '(' . $expr . ')', $expression);
-                    $changed    = true;
-                }
-            }
-            if (!$changed) {
-                break;
-            }
-            $depth++;
+        $computed = $this->findQueryComputedColumn($reference);
+        if ($computed) {
+            return '(' . $this->resolveExpression($computed['expression'] ?? '', null, $depth) . ')';
         }
 
-        // Step 2: Now protect ALL string literals in the fully expanded expression
-        $stringLiterals      = [];
-        $protectedExpression = preg_replace_callback(
-            "/'([^']*)'/",
-            function ($matches) use (&$stringLiterals) {
-                $placeholder                  = '___STRING_LITERAL_' . count($stringLiterals) . '___';
-                $stringLiterals[$placeholder] = $matches[0]; // Keep the quotes
+        $schemaColumn = $this->findSchemaColumn($reference);
+        if ($schemaColumn && $schemaColumn[0]->isComputed() && $schemaColumn[0]->getComputation()) {
+            return '(' . $this->resolveExpression($schemaColumn[0]->getComputation(), $schemaColumn[1], $depth) . ')';
+        }
 
-                return $placeholder;
-            },
-            $expression
-        );
+        [$tblAlias, $col] = $this->resolveAliasAndColumn($this->queryConfig['table']['name'], $reference);
 
-        // Also protect double-quoted strings
-        $protectedExpression = preg_replace_callback(
-            '/"([^"]*)"/',
-            function ($matches) use (&$stringLiterals) {
-                $placeholder                  = '___STRING_LITERAL_' . count($stringLiterals) . '___';
-                $stringLiterals[$placeholder] = $matches[0]; // Keep the quotes
+        return "{$tblAlias}.{$col}";
+    }
 
-                return $placeholder;
-            },
-            $protectedExpression
-        );
+    /**
+     * Whether a reference resolves to an SQL expression rather than a physical column.
+     */
+    protected function isExpressionReference(string $reference): bool
+    {
+        if ($this->findQueryComputedColumn($reference)) {
+            return true;
+        }
 
-        // Step 3: Protect SQL function calls (word followed by opening parenthesis)
-        $sqlFunctions        = [];
-        $protectedExpression = preg_replace_callback(
-            '/\b([A-Z_][A-Z0-9_]*)\s*\(/i',
-            function ($matches) use (&$sqlFunctions) {
-                $placeholder                = '___SQL_FUNCTION_' . count($sqlFunctions) . '___(';
-                $sqlFunctions[$placeholder] = $matches[1] . '(';
+        $schemaColumn = $this->findSchemaColumn($reference);
 
-                return $placeholder;
-            },
-            $protectedExpression
-        );
+        return $schemaColumn !== null && $schemaColumn[0]->isComputed() && $schemaColumn[0]->getComputation() !== null;
+    }
 
-        // Step 4: Now resolve column references in the protected expression
-        $resolvedExpression = preg_replace_callback(
+    /**
+     * Whether a reference is a summary value that aggregates rows (e.g. `COUNT(id)`).
+     */
+    protected function isAggregateColumn(string $reference): bool
+    {
+        $computed = $this->findQueryComputedColumn($reference);
+        if ($computed) {
+            return Column::isAggregateExpression($computed['expression'] ?? '');
+        }
+
+        $schemaColumn = $this->findSchemaColumn($reference);
+
+        return $schemaColumn !== null && $schemaColumn[0]->isAggregate();
+    }
+
+    /**
+     * Find a computed column defined by the query.
+     */
+    protected function findQueryComputedColumn(string $name): ?array
+    {
+        foreach ($this->queryConfig['computed_columns'] ?? [] as $computedColumn) {
+            if (($computedColumn['name'] ?? null) === $name) {
+                return $computedColumn;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Find a column the schema declares, on the root table or along an auto-join path.
+     *
+     * @return array{0: Column, 1: ?string}|null the column and the relationship path that declares it
+     */
+    protected function findSchemaColumn(string $path): ?array
+    {
+        $table = $this->registry->getTable($this->queryConfig['table']['name'] ?? '');
+        if (!$table) {
+            return null;
+        }
+
+        $segments = explode('.', $path);
+        $name     = array_pop($segments);
+
+        if (!$segments) {
+            $column = $table->getColumn($name);
+
+            return $column ? [$column, null] : null;
+        }
+
+        $context = $table;
+        foreach ($segments as $segment) {
+            $context = $this->getRelationshipFromContext($context, $segment);
+            if (!$context) {
+                return null;
+            }
+        }
+
+        $column = $context->getColumn($name);
+
+        return $column ? [$column, implode('.', $segments)] : null;
+    }
+
+    /**
+     * Whether an identifier in an expression is an SQL keyword rather than a column.
+     *
+     * Cast types and interval units (DATE, TIME, YEAR, DAY, ...) are only keywords where
+     * they cannot be a column: right after `AS` or `INTERVAL <n>`, or when no column of
+     * that name exists.
+     */
+    protected function isSqlKeyword(string $identifier, bool $keywordPosition, string $path): bool
+    {
+        $upper = strtoupper($identifier);
+
+        if (in_array($upper, ComputedColumnValidator::SQL_KEYWORDS, true)) {
+            return true;
+        }
+
+        if (!in_array($upper, ComputedColumnValidator::CONTEXTUAL_KEYWORDS, true)) {
+            return false;
+        }
+
+        if ($keywordPosition) {
+            return true;
+        }
+
+        return !$this->findQueryComputedColumn($path) && !$this->findSchemaColumn($path);
+    }
+
+    /**
+     * Rewrite each column reference in an SQL expression.
+     *
+     * String literals, function names and numbers are left alone. The callback receives the
+     * reference and whether it sits in a keyword position (after `AS` or `INTERVAL <n>`),
+     * and returns its replacement, or null to keep it.
+     */
+    protected function rewriteColumnReferences(string $expression, callable $rewrite): string
+    {
+        $placeholders = [];
+        $protect      = function (string $text) use (&$placeholders): string {
+            $placeholder                = '___PROTECTED_' . count($placeholders) . '___';
+            $placeholders[$placeholder] = $text;
+
+            return $placeholder;
+        };
+
+        // String literals first, so nothing inside them is mistaken for a column or function
+        $protected = (string) preg_replace_callback('/\'(?:[^\'\\\\]|\\\\.)*\'|"(?:[^"\\\\]|\\\\.)*"/s', fn ($m) => $protect($m[0]), $expression);
+
+        // Then function names (an identifier followed by an opening parenthesis)
+        $protected = (string) preg_replace_callback('/\b([A-Z_][A-Z0-9_]*)(\s*\()/i', fn ($m) => $protect($m[1]) . $m[2], $protected);
+
+        $rewritten = (string) preg_replace_callback(
             '/\b([a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)*)\b/i',
-            function ($matches) use ($rootTable) {
-                $columnRef = $matches[1];
+            function ($m) use ($rewrite, $protected) {
+                [$reference, $offset] = $m[1];
 
-                // Skip SQL keywords (non-function keywords)
-                $keywords = [
-                    'INTERVAL', 'AND', 'OR', 'NOT', 'IS', 'NULL', 'TRUE', 'FALSE',
-                    'AS', 'FROM', 'WHERE', 'DIV', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END',
-                ];
-
-                if (in_array(strtoupper($columnRef), $keywords) || is_numeric($columnRef)) {
-                    return $columnRef;
+                if (str_starts_with($reference, '___PROTECTED_')) {
+                    return $reference;
                 }
 
-                // Skip string literal placeholders
-                if (strpos($columnRef, '___STRING_LITERAL_') === 0) {
-                    return $columnRef;
-                }
+                $before          = substr($protected, 0, $offset);
+                $keywordPosition = (bool) preg_match('/\bAS\s+$/i', $before) || (bool) preg_match('/\bINTERVAL\s+\S+\s+$/i', $before);
 
-                // Skip SQL function placeholders
-                if (strpos($columnRef, '___SQL_FUNCTION_') === 0) {
-                    return $columnRef;
-                }
-
-                // Try to resolve the column reference
-                try {
-                    [$tblAlias, $col] = $this->resolveAliasAndColumn($rootTable, $columnRef);
-
-                    return "{$tblAlias}.{$col}";
-                    // resolveAliasAndColumn() falls back instead of throwing for unknown references; this is defensive only.
-                    // @codeCoverageIgnoreStart
-                } catch (\Exception $e) {
-                    // If resolution fails, return as-is (might be a literal or string)
-                    return $columnRef;
-                }
-                // @codeCoverageIgnoreEnd
+                return $rewrite($reference, $keywordPosition) ?? $reference;
             },
-            $protectedExpression
+            $protected,
+            -1,
+            $count,
+            PREG_OFFSET_CAPTURE
         );
 
-        // Restore SQL functions
-        foreach ($sqlFunctions as $placeholder => $original) {
-            $resolvedExpression = str_replace($placeholder, $original, $resolvedExpression);
-        }
-
-        // Restore string literals
-        foreach ($stringLiterals as $placeholder => $original) {
-            $resolvedExpression = str_replace($placeholder, $original, $resolvedExpression);
-        }
-
-        return $resolvedExpression;
+        return strtr($rewritten, $placeholders);
     }
 
     /**
@@ -1270,7 +1449,7 @@ class ReportQueryConverter
         }
 
         // Validate columns
-        foreach ($this->queryConfig['columns'] as $column) {
+        foreach ($this->queryConfig['columns'] ?? [] as $column) {
             if (!$this->isConfiguredColumnAllowed($tableName, $column['name'])) {
                 throw new \InvalidArgumentException("Column '{$column['name']}' is not allowed for table '{$tableName}'");
             }
@@ -1283,12 +1462,45 @@ class ReportQueryConverter
             }
         }
 
+        // Computed columns are validated up front: a grouped report resolves them inside
+        // aggregates and group keys without ever selecting them on their own.
+        foreach ($this->queryConfig['computed_columns'] ?? [] as $computedColumn) {
+            $this->validateComputedColumn($computedColumn);
+        }
+
         foreach ($this->queryConfig['groupBy'] ?? [] as $g) {
             $groupAlias = $g['groupBy']['alias'] ?? null;
             if ($groupAlias !== null && !$this->isSafeSqlIdentifier((string) $groupAlias)) {
                 throw new \InvalidArgumentException("Invalid group-by alias '{$groupAlias}'");
             }
+
+            $this->assertReferenceAllowed($g['groupBy']['name'] ?? '', 'Group by column');
+
+            if ($this->isAggregateColumn($g['groupBy']['name'])) {
+                throw new \InvalidArgumentException("Column '{$g['groupBy']['name']}' is a summary value and cannot be grouped by");
+            }
+
+            $fn = strtolower($g['aggregateFn']['value'] ?? '');
+            if ($fn !== '' && !in_array($fn, static::AGGREGATE_FUNCTIONS, true)) {
+                throw new \InvalidArgumentException("Aggregate function '{$fn}' is not supported");
+            }
+
+            $by = $g['aggregateBy']['full'] ?? $g['aggregateBy']['name'] ?? '*';
+            if ($fn !== '' && $by !== '*' && $by !== 'count') {
+                $this->assertReferenceAllowed($by, 'Aggregate column');
+            }
         }
+
+        foreach ($this->queryConfig['sortBy'] ?? [] as $s) {
+            $sortColumn = $s['column']['name'] ?? '';
+            if (empty($this->queryConfig['groupBy'])) {
+                $this->assertReferenceAllowed($sortColumn, 'Sort column');
+            } elseif (!$this->isSafeSqlIdentifier((string) ($s['column']['alias'] ?? str_replace('.', '_', $sortColumn)))) {
+                throw new \InvalidArgumentException("Invalid sort column '{$sortColumn}'");
+            }
+        }
+
+        $this->validateConditionReferences($this->queryConfig['conditions'] ?? []);
 
         // Validate manual joins: the join target must be a registered table, and every
         // identifier interpolated raw into the JOIN clause (table/alias/keys/localTable)
@@ -1315,33 +1527,61 @@ class ReportQueryConverter
                 $this->queryConfig['groupBy']
             );
 
-            foreach ($this->queryConfig['columns'] as $col) {
-                $isGrouped   = in_array($col['name'], $groupCols, true);
-                $isComputed  = !empty($col['computed']) && $col['computed'] === true;
-                if (!$isGrouped && !$isComputed) {
+            // A column picked only to be aggregated (e.g. the "distance" in SUM(distance)) is fine.
+            $aggregatedCols = [];
+            foreach ($this->queryConfig['groupBy'] as $g) {
+                if (!empty($g['aggregateFn']['value'])) {
+                    $aggregatedCols[] = $g['aggregateBy']['name'] ?? null;
+                    $aggregatedCols[] = $g['aggregateBy']['full'] ?? null;
+                }
+            }
+
+            foreach ($this->queryConfig['columns'] ?? [] as $col) {
+                $isGrouped    = in_array($col['name'], $groupCols, true);
+                $isAggregated = in_array($col['name'], $aggregatedCols, true) || $this->isAggregateColumn($col['name']);
+                if (!$isGrouped && !$isAggregated) {
                     throw new \InvalidArgumentException("Column '{$col['name']}' must be grouped or aggregated when GROUP BY is used");
                 }
             }
+        } else {
+            // Without grouping, summary columns (e.g. "Total Orders") collapse the result to one
+            // row, so they cannot sit beside per-row columns.
+            $columns    = $this->queryConfig['columns'] ?? [];
+            $summary    = array_filter($columns, fn ($col) => $this->isAggregateColumn($col['name']));
+            $perRow     = array_filter($columns, fn ($col) => !$this->isAggregateColumn($col['name']));
+            if ($summary && $perRow) {
+                $summaryNames = implode(', ', array_map(fn ($col) => $col['name'], $summary));
+                throw new \InvalidArgumentException("Summary columns ({$summaryNames}) can only be combined with other columns when the report is grouped");
+            }
+        }
+    }
+
+    /**
+     * Assert that a referenced column is a computed column of the query or an allowed schema column.
+     */
+    protected function assertReferenceAllowed(string $reference, string $context): void
+    {
+        if ($this->findQueryComputedColumn($reference) || $this->isConfiguredColumnAllowed($this->queryConfig['table']['name'], $reference)) {
+            return;
         }
 
-        // Autostrip non grouped columns (optional) - we can add this as an option later
-        // if (!empty($this->queryConfig['groupBy'])) {
-        //     $groupCols = array_map(
-        //         fn ($g) => $g['groupBy']['name'],
-        //         $this->queryConfig['groupBy']
-        //     );
+        throw new \InvalidArgumentException("{$context} '{$reference}' is not allowed for table '{$this->queryConfig['table']['name']}'");
+    }
 
-        //     // Keep only grouped or computed (aggregated) columns
-        //     $this->queryConfig['columns'] = array_values(array_filter(
-        //         $this->queryConfig['columns'],
-        //         function ($col) use ($groupCols) {
-        //             $isGrouped  = in_array($col['name'], $groupCols, true);
-        //             $isComputed = !empty($col['computed']); // e.g. COUNT(...), AVG(...), etc.
-        //             return $isGrouped || $isComputed;
-        //         }
-        //     ));
-        //     // (Optional) log/warn that some columns were dropped
-        // }
+    /**
+     * Assert that every condition field is an allowed reference.
+     */
+    protected function validateConditionReferences(array $conditions): void
+    {
+        foreach ($conditions as $condition) {
+            if (isset($condition['conditions'])) {
+                $this->validateConditionReferences($condition['conditions']);
+
+                continue;
+            }
+
+            $this->assertReferenceAllowed($condition['field']['name'] ?? '', 'Condition column');
+        }
     }
 
     /**
@@ -1396,58 +1636,10 @@ class ReportQueryConverter
      */
     protected function extractRelationshipPathsFromExpression(string $expression, string $rootTable): array
     {
-        // First, expand any computed column references in the expression
-        $computedColumns   = $this->queryConfig['computed_columns'] ?? [];
-        $computedColumnMap = [];
-        foreach ($computedColumns as $col) {
-            $computedColumnMap[$col['name']] = $col['expression'];
-        }
+        $paths = [];
+        $this->collectJoinPathsFromExpression($expression, null, $paths);
 
-        // Recursively expand computed column references
-        $maxDepth           = 10;
-        $depth              = 0;
-        $expandedExpression = $expression;
-        while ($depth < $maxDepth) {
-            $changed = false;
-            foreach ($computedColumnMap as $name => $expr) {
-                if (preg_match('/\b' . preg_quote($name, '/') . '\b/', $expandedExpression)) {
-                    $expandedExpression = preg_replace('/\b' . preg_quote($name, '/') . '\b/', '(' . $expr . ')', $expandedExpression);
-                    $changed            = true;
-                }
-            }
-            if (!$changed) {
-                break;
-            }
-            $depth++;
-        }
-
-        // Now extract all column references that look like relationship paths
-        // We need to match patterns like: word.word.word (but not inside string literals)
-
-        // First, remove string literals to avoid matching inside them
-        $cleanedExpression = preg_replace("/'[^']*'/", '', $expandedExpression);
-        $cleanedExpression = preg_replace('/"[^"]*"/', '', $cleanedExpression);
-
-        // Match column references with dots (relationship paths)
-        preg_match_all('/\b([a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)*)\b/i', $cleanedExpression, $matches);
-
-        if (empty($matches[1])) {
-            return [];
-        }
-
-        // Extract unique relationship paths (everything except the final column name)
-        $relationshipPaths = [];
-        foreach ($matches[1] as $columnPath) {
-            $parts = explode('.', $columnPath);
-            if (count($parts) >= 2) {
-                // Remove the last part (column name) to get the relationship path
-                array_pop($parts);
-                $relationshipPath                     = implode('.', $parts);
-                $relationshipPaths[$relationshipPath] = true;
-            }
-        }
-
-        return array_keys($relationshipPaths);
+        return array_values(array_unique($paths));
     }
 
     /**

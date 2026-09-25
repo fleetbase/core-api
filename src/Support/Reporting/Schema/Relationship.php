@@ -14,6 +14,7 @@ class Relationship
     protected string $foreignKey;
     protected bool $enabled              = true;
     protected bool $autoJoin             = false; // Optional auto-join feature
+    protected bool $softDeletes          = false;
     protected ?string $description       = null;
     protected array $columns             = [];
     protected array $nestedRelationships = [];
@@ -142,6 +143,16 @@ class Relationship
     }
 
     /**
+     * Mark the related table as soft-deleting, so joins leave out rows whose `deleted_at` is set.
+     */
+    public function softDeletes(bool $softDeletes = true): self
+    {
+        $this->softDeletes = $softDeletes;
+
+        return $this;
+    }
+
+    /**
      * Add columns to the relationship.
      */
     public function columns(array $columns): self
@@ -251,9 +262,28 @@ class Relationship
         return $this->autoJoin;
     }
 
+    public function usesSoftDeletes(): bool
+    {
+        return $this->softDeletes;
+    }
+
     public function getColumns(): array
     {
         return $this->columns;
+    }
+
+    /**
+     * Get a column declared directly on this relationship.
+     */
+    public function getColumn(string $name): ?Column
+    {
+        foreach ($this->columns as $column) {
+            if ($column->getName() === $name) {
+                return $column;
+            }
+        }
+
+        return null;
     }
 
     public function getNestedRelationships(): array
@@ -350,6 +380,7 @@ class Relationship
             'foreign_key'          => $this->foreignKey,
             'enabled'              => $this->enabled,
             'auto_join'            => $this->autoJoin,
+            'soft_deletes'         => $this->softDeletes,
             'description'          => $this->description,
             'columns'              => array_map(fn ($column) => $column->toArray(), $this->columns),
             'nested_relationships' => array_map(fn ($rel) => $rel->toArray(), $this->nestedRelationships),
