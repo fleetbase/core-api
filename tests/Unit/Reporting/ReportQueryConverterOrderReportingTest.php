@@ -177,7 +177,7 @@ function order_reporting_call(object $target, string $method, mixed ...$argument
 $septemberCondition = [
     'field'    => ['name' => 'created_at'],
     'operator' => ['value' => 'between'],
-    'value'    => ['2026-09-01 00:00:00', '2026-09-30 23:59:59'],
+    'value'    => ['2026-09-01 00:00:00', '2026-09-30 23:59:59'], // date-drift-ok: filters fixture rows by their own created_at, never compared to now()
 ];
 
 test('order reporting ranks the products sold this month through payload entities', function () use ($septemberCondition) {
