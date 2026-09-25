@@ -334,6 +334,7 @@ class Table
         return array_filter($this->getAllColumns(), function ($column) {
             return !$column->isHidden()
                    && !in_array($column->getName(), $this->excludedColumns)
+                   && !Column::isSystemColumnName($column->getName())
                    && !$this->isForeignKeyColumn($column->getName());
         });
     }
@@ -414,7 +415,8 @@ class Table
         }
 
         return !$column->isHidden()
-               && !in_array($name, $this->excludedColumns);
+               && !in_array($name, $this->excludedColumns)
+               && !Column::isSystemColumnName($name);
     }
 
     /**

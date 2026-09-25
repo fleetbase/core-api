@@ -11,6 +11,19 @@ class Column
      */
     public const IDENTIFIER_COLUMNS = ['public_id', 'internal_id'];
 
+    /**
+     * Internal bookkeeping columns that are never reportable, whatever a schema declares.
+     */
+    public const SYSTEM_COLUMNS = ['_key', '_import_id'];
+
+    /**
+     * Whether a column name is internal bookkeeping that reports must never expose.
+     */
+    public static function isSystemColumnName(string $name): bool
+    {
+        return in_array($name, static::SYSTEM_COLUMNS, true);
+    }
+
     protected string $name;
     protected string $label;
     protected string $type;

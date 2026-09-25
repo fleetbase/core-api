@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Support\Reporting;
 
+use Fleetbase\Support\Reporting\Schema\Column;
 use Fleetbase\Support\Reporting\Schema\Table;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
@@ -167,18 +168,22 @@ class ReportSchemaRegistry
     {
         $out = [];
 
-        $shortPrefix = $this->shortRelationshipLabel(end($labelTrail)); // "Pickup Location" → "Pickup"
+        $prefix = $this->shortRelationshipLabel(end($labelTrail)); // "Pickup Location" → "Pickup"
 
         // Columns directly on this relationship
         foreach ($relationship->getColumns() as $column) {
+            // Internal bookkeeping columns are never reportable
+            if (Column::isSystemColumnName($column->getName())) {
+                continue;
+            }
+
             $arr = $column->toArray();
 
             // Ensure the machine name carries the full path (so filters/queries work unambiguously)
             $arr['name'] = "{$path}.{$column->getName()}";
 
-            // Human label with context
-            // e.g., "Pickup Street 1" or "Dropoff City"
-            $arr['label'] = trim($shortPrefix . ' ' . $arr['label']);
+            // Human label with context, e.g. "Pickup Street 1" or "Order Config Namespace"
+            $arr['label'] = $this->relationshipColumnLabel($prefix, (string) $arr['label']);
 
             // Useful metadata
             $arr['auto_join_path']      = $path;            // e.g., "payload.pickup"
@@ -199,34 +204,45 @@ class ReportSchemaRegistry
     }
 
     /**
-     * Normalize relationship label into a short prefix for columns.
+     * Label a relationship column with its relationship, without repeating words.
+     *
+     * Examples:
+     *   "Order Config" + "Namespace"       → "Order Config Namespace"
+     *   "Transaction"  + "Transaction ID"  → "Transaction ID"
+     *   "Tracking"     + "Tracking"        → "Tracking"
+     */
+    private function relationshipColumnLabel(string $prefix, string $label): string
+    {
+        if ($prefix === '' || $label === '') {
+            return trim($prefix . ' ' . $label);
+        }
+
+        // The column label already names its relationship (e.g. "Transaction ID")
+        if (stripos($label . ' ', $prefix . ' ') === 0) {
+            return $label;
+        }
+
+        return $prefix . ' ' . $label;
+    }
+
+    /**
+     * Normalize relationship label into a prefix for its columns.
      * Examples:
      *   "Pickup Location"  → "Pickup"
-     *   "Dropoff Location" → "Dropoff"
+     *   "Order Config"     → "Order Config"
      *   "Order Payload"    → "Payload".
      */
     private function shortRelationshipLabel(string $label): string
     {
         // Remove common suffixes like "Location"
-        $label = preg_replace('/\s+Location$/i', '', $label);
+        $label = trim(preg_replace('/\s+Location$/i', '', $label));
 
-        // If the label has multiple words, prefer the first ("Pickup Location" → "Pickup")
-        // But for "Order Payload" we prefer the last ("Payload") so nested pickup/dropoff can still prepend naturally
-        $parts = preg_split('/\s+/', trim($label));
-        if (!$parts || count($parts) === 0) {
-            // @codeCoverageIgnoreStart
-            // preg_split() on a string returns at least one part unless the PCRE call fails.
-            return trim($label);
-            // @codeCoverageIgnoreEnd
-        }
-
-        // Special case: if it contains "Payload", keep "Payload"
+        // Special case: payload columns read as "Payload ..." however the relationship is labelled
         if (stripos($label, 'payload') !== false) {
             return 'Payload';
         }
 
-        // Default: first word
-        return $parts[0];
+        return $label;
     }
 
     /**
@@ -310,7 +326,7 @@ class ReportSchemaRegistry
         $finalCol = array_pop($segments); // e.g. "street1"
         $table    = $this->getTable($tableName);
 
-        if (!$table) {
+        if (!$table || Column::isSystemColumnName($finalCol)) {
             return false;
         }
 

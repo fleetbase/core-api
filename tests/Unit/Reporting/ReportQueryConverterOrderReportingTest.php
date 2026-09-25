@@ -501,3 +501,75 @@ test('order reporting emits a repeated aggregate once and reports an unregistere
     expect($missing['success'])->toBeFalse()
         ->and($missing['error'])->toBe("Table 'invoices' is not registered");
 });
+
+test('report schema registry labels relationship columns with the whole relationship name without repeating it', function () {
+    $registry = new ReportSchemaRegistry();
+    $registry->setCacheEnabled(false);
+    $registry->registerTable(
+        Table::make('orders')
+            ->columns([Column::make('public_id')->label('ID')])
+            ->relationships([
+                Relationship::hasAutoJoin('order_config', 'order_configs')
+                    ->label('Order Config')
+                    ->localKey('order_config_uuid')
+                    ->columns([Column::make('namespace')->label('Namespace')]),
+                Relationship::hasAutoJoin('transaction', 'transactions')
+                    ->label('Transaction')
+                    ->columns([
+                        Column::make('public_id')->label('Transaction ID'),
+                        Column::make('gateway')->label('Payment Gateway'),
+                        Column::make('memo')->label('Transactions Memo'),
+                    ]),
+                Relationship::hasAutoJoin('tracking', 'tracking_numbers')
+                    ->label('Tracking')
+                    ->columns([Column::make('tracking_number')->label('Tracking')])
+                    ->with([
+                        Relationship::hasAutoJoin('status', 'tracking_statuses')
+                            ->label('Tracking Status')
+                            ->localKey('status_uuid')
+                            ->columns([Column::make('city')->label('City')]),
+                    ]),
+                Relationship::hasAutoJoin('pickup', 'places')
+                    ->label('Pickup Location')
+                    ->columns([Column::make('city')->label('City')]),
+            ])
+    );
+
+    $labels = collect($registry->getTableColumns('orders'))->pluck('label', 'name');
+
+    expect($labels['order_config.namespace'])->toBe('Order Config Namespace')
+        ->and($labels['transaction.public_id'])->toBe('Transaction ID')
+        ->and($labels['transaction.gateway'])->toBe('Transaction Payment Gateway')
+        ->and($labels['transaction.memo'])->toBe('Transaction Transactions Memo', 'a longer word is not mistaken for the relationship name')
+        ->and($labels['tracking.tracking_number'])->toBe('Tracking')
+        ->and($labels['tracking.status.city'])->toBe('Tracking Status City')
+        ->and($labels['pickup.city'])->toBe('Pickup City');
+});
+
+test('report schemas never expose internal bookkeeping columns', function () {
+    $registry = new ReportSchemaRegistry();
+    $registry->setCacheEnabled(false);
+    $registry->registerTable(
+        Table::make('orders')
+            ->columns([Column::make('_key'), Column::make('_import_id'), Column::make('status')])
+            ->relationships([
+                Relationship::hasAutoJoin('payload', 'payloads')
+                    ->columns([Column::make('_key'), Column::make('type')]),
+            ])
+    );
+
+    $names = collect($registry->getTableColumns('orders'))->pluck('name')->all();
+
+    expect($names)->toBe(['status', 'payload.type'])
+        ->and($registry->isColumnAllowed('orders', '_key'))->toBeFalse()
+        ->and($registry->isColumnAllowed('orders', '_import_id'))->toBeFalse()
+        ->and($registry->isColumnAllowed('orders', 'payload._key'))->toBeFalse()
+        ->and($registry->isColumnAllowed('orders', 'payload.type'))->toBeTrue()
+        ->and(Column::isSystemColumnName('_key'))->toBeTrue()
+        ->and(Column::isSystemColumnName('key'))->toBeFalse();
+
+    order_reporting_database();
+    $result = (new ReportQueryConverter($registry, ['table' => ['name' => 'orders'], 'columns' => [['name' => '_key']]]))->execute();
+    expect($result['success'])->toBeFalse()
+        ->and($result['error'])->toContain("Column '_key' is not allowed");
+});
