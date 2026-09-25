@@ -47,7 +47,9 @@ function setting_controller_external_probe_request(array $input = []): AdminRequ
 }
 
 afterEach(function () {
-    app()->forgetInstance('twilio');
+    // Unbind rather than just forget the instance: a binding left behind by these tests
+    // would satisfy later files that expect twilio to be unbound.
+    app()->offsetUnset('twilio');
     Facade::clearResolvedInstances();
 });
 
@@ -210,4 +212,109 @@ test('test sentry config accepts an empty dsn as a local no op probe', function 
             'message' => 'Sentry configuration is successful, test Exception sent.',
         ])
         ->and(config('sentry.dsn'))->toBeNull();
+});
+
+/**
+ * A real Twilio manager that records which credentials a send would use instead of
+ * calling Twilio.
+ */
+class SettingControllerRecordingTwilioManager extends Fleetbase\Twilio\Manager
+{
+    public static array $sent = [];
+
+    public function message(string $to, string $message, array $mediaUrls = [], array $params = []): Twilio\Rest\Api\V2010\Account\MessageInstance
+    {
+        $connection     = (new ReflectionProperty(Fleetbase\Twilio\Manager::class, 'settings'))->getValue($this)['twilio'];
+        static::$sent[] = ['to' => $to, 'sid' => $connection['sid'], 'token' => $connection['token'], 'from' => $connection['from']];
+
+        throw new RuntimeException('recorded');
+    }
+}
+
+function setting_controller_bind_recording_twilio(): void
+{
+    SettingControllerRecordingTwilioManager::$sent = [];
+
+    // Bound the way the Twilio service provider binds the real manager. Under Octane its
+    // closure reads the config of the worker's base application, not the request's copy,
+    // so it is modelled here with the config captured when the binding was registered.
+    $bootConfig = config('twilio.twilio');
+    app()->singleton('twilio', fn () => new SettingControllerRecordingTwilioManager($bootConfig['default'] ?? 'twilio', $bootConfig['connections']));
+
+    // Resolved before the test runs with the saved credentials, as happens at boot or in an
+    // earlier request handled by the same Octane worker.
+    app('twilio');
+    Fleetbase\Twilio\Support\Laravel\Facade::getFacadeRoot();
+}
+
+function setting_controller_twilio_facade_is_cached(): bool
+{
+    $resolved = (new ReflectionProperty(Facade::class, 'resolvedInstance'))->getValue();
+
+    return isset($resolved['twilio']);
+}
+
+test('test twilio config sends with the credentials entered, not those the client was built with', function () {
+    setting_controller_external_probe_fixtures(['twilio.twilio.default' => 'twilio']);
+    setting_controller_bind_recording_twilio();
+
+    $response = (new SettingController())->testTwilioConfig(setting_controller_external_probe_request([
+        'sid'   => 'entered-sid',
+        'token' => 'entered-token',
+        'from'  => '+15555550999',
+        'phone' => '+15555550123',
+    ]));
+
+    expect($response->getData(true)['message'])->toBe('recorded')
+        ->and(SettingControllerRecordingTwilioManager::$sent)->toBe([
+            ['to' => '+15555550123', 'sid' => 'entered-sid', 'token' => 'entered-token', 'from' => '+15555550999'],
+        ])
+        ->and(setting_controller_twilio_facade_is_cached())->toBeFalse('the credentials under test do not outlive the request');
+});
+
+test('test sms provider config sends through twilio with the credentials entered', function () {
+    setting_controller_external_probe_fixtures(['twilio.twilio.default' => 'twilio']);
+    setting_controller_bind_recording_twilio();
+
+    $response = (new SettingController())->testSmsProviderConfig(setting_controller_external_probe_request([
+        'provider' => 'twilio',
+        'phone'    => '+15555550123',
+        'config'   => ['sid' => 'entered-sid', 'token' => 'entered-token', 'from' => '+15555550999'],
+    ]));
+
+    expect($response->getData(true))->toMatchArray(['status' => 'error', 'message' => 'recorded'])
+        ->and(SettingControllerRecordingTwilioManager::$sent)->toBe([
+            ['to' => '+15555550123', 'sid' => 'entered-sid', 'token' => 'entered-token', 'from' => '+15555550999'],
+        ])
+        ->and(setting_controller_twilio_facade_is_cached())->toBeFalse();
+});
+
+test('a stand-in bound in place of the twilio manager is left in place', function () {
+    setting_controller_external_probe_fixtures();
+    $twilio = new SettingControllerTwilioFake();
+    app()->instance('twilio', $twilio);
+
+    (new SettingController())->testTwilioConfig(setting_controller_external_probe_request([
+        'sid'   => 'entered-sid',
+        'token' => 'entered-token',
+        'from'  => '+15555550999',
+        'phone' => '+15555550123',
+    ]));
+
+    expect(app('twilio'))->toBe($twilio)
+        ->and($twilio->messages)->toBe([['+15555550123', 'This is a Twilio test from Fleetbase']]);
+});
+
+test('a twilio manager bound but not yet built is built from the config just applied', function () {
+    setting_controller_external_probe_fixtures(['twilio.twilio.default' => 'twilio']);
+    $bootConfig = config('twilio.twilio');
+    app()->singleton('twilio', fn () => new SettingControllerRecordingTwilioManager($bootConfig['default'], $bootConfig['connections']));
+    config(['twilio.twilio.connections.twilio.sid' => 'entered-sid']);
+
+    $refresh = new ReflectionMethod(SettingController::class, 'refreshTwilioClient');
+    $refresh->invoke(new SettingController());
+
+    $manager = app('twilio');
+    expect(get_class($manager))->toBe(Fleetbase\Twilio\Manager::class)
+        ->and((new ReflectionProperty(Fleetbase\Twilio\Manager::class, 'settings'))->getValue($manager)['twilio']['sid'])->toBe('entered-sid');
 });

@@ -21,6 +21,9 @@ use Fleetbase\Services\OAuth\OAuthFlowService;
 use Fleetbase\Services\SmsService;
 use Fleetbase\Support\PlatformApi;
 use Fleetbase\Support\Utils;
+use Fleetbase\Twilio\Manager as TwilioManager;
+use Fleetbase\Twilio\Support\Laravel\Facade as TwilioFacade;
+use Fleetbase\Twilio\TwilioInterface;
 use Illuminate\Http\Request;
 use Illuminate\Notifications\AnonymousNotifiable;
 use Illuminate\Support\Arr;
@@ -594,6 +597,8 @@ class SettingController extends Controller
         } catch (\Throwable $e) {
             $responseMessage = $e->getMessage();
             $status          = 'error';
+        } finally {
+            $this->releaseTwilioClient();
         }
 
         return response()->json([
@@ -843,12 +848,13 @@ class SettingController extends Controller
 
         // Set config from request
         config(['twilio.twilio.connections.twilio.sid' => $sid, 'twilio.twilio.connections.twilio.token' => $token, 'twilio.twilio.connections.twilio.from' => $from]);
+        $this->refreshTwilioClient();
 
         $message = 'Twilio configuration is successful, SMS sent to ' . $phone . '.';
         $status  = 'success';
 
         try {
-            \Fleetbase\Twilio\Support\Laravel\Facade::message($phone, 'This is a Twilio test from Fleetbase');
+            TwilioFacade::message($phone, 'This is a Twilio test from Fleetbase');
         } catch (\Twilio\Exceptions\RestException $e) {
             $message = $e->getMessage();
             $status  = 'error';
@@ -861,6 +867,8 @@ class SettingController extends Controller
         } catch (\Error $e) {
             $message = $e->getMessage();
             $status  = 'error';
+        } finally {
+            $this->releaseTwilioClient();
         }
 
         return response()->json(['status' => $status, 'message' => $message]);
@@ -899,6 +907,7 @@ class SettingController extends Controller
                 'services.twilio'                  => array_replace_recursive(config('services.twilio', []), $providerConfig),
                 'twilio.twilio.connections.twilio' => array_replace_recursive(config('twilio.twilio.connections.twilio', []), $providerConfig),
             ]);
+            $this->refreshTwilioClient();
         }
 
         if ($provider === SmsService::PROVIDER_CALLPRO) {
@@ -906,6 +915,49 @@ class SettingController extends Controller
                 'services.callpromn' => array_replace_recursive(config('services.callpromn', []), $providerConfig),
             ]);
         }
+    }
+
+    /**
+     * Rebuild the Twilio client from the config just applied.
+     *
+     * The Twilio manager copies its connection settings when it is built, and both the
+     * container singleton and the facade's static cache keep the built manager. Under
+     * Octane the facade cache outlives the request, so a test send kept using the
+     * credentials the worker first saw: it failed with "Credentials are required to create
+     * a Client" when none were saved, or quietly used the saved ones instead of those just
+     * entered. A stand-in bound in place of the real manager is left alone.
+     */
+    protected function refreshTwilioClient(): void
+    {
+        TwilioFacade::clearResolvedInstance('twilio');
+
+        if (!app()->bound('twilio')) {
+            return;
+        }
+
+        $current = app()->resolved('twilio') ? app('twilio') : null;
+        if ($current !== null && !($current instanceof TwilioManager)) {
+            return;
+        }
+
+        // Build it here from this request's config: the provider's singleton closure reads
+        // the config of the application it was registered on, which under Octane is the
+        // worker's base application, not the copy this request just changed.
+        $manager = $current ? get_class($current) : TwilioManager::class;
+        $config  = config('twilio.twilio', []);
+
+        app()->instance('twilio', new $manager($config['default'] ?? 'twilio', $config['connections'] ?? []));
+        app()->forgetInstance(TwilioInterface::class);
+    }
+
+    /**
+     * Forget the facade's cached Twilio client once a test send is done, so the credentials
+     * under test don't outlive this request in a long-running worker and get used for real
+     * messages (verification codes, notifications) sent by later requests.
+     */
+    protected function releaseTwilioClient(): void
+    {
+        TwilioFacade::clearResolvedInstance('twilio');
     }
 
     /**
