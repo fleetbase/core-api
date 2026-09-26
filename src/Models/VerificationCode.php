@@ -65,7 +65,7 @@ class VerificationCode extends Model
     {
         parent::boot();
         static::creating(function ($model) {
-            $model->code = mt_rand(100000, 999999);
+            $model->code = random_int(100000, 999999);
         });
     }
 

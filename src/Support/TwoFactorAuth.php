@@ -18,6 +18,16 @@ use Illuminate\Support\Str;
 class TwoFactorAuth
 {
     /**
+     * Lifetime of a 2FA session in seconds.
+     */
+    public const SESSION_TTL = 600;
+
+    /**
+     * Failed code attempts allowed per 2FA session before it is invalidated.
+     */
+    public const MAX_VERIFY_ATTEMPTS = 5;
+
+    /**
      * Save Two-Factor Authentication settings for System wide usage.
      *
      * @param array $twoFaSettings an array containing Two-Factor Authentication settings
@@ -313,6 +323,10 @@ class TwoFactorAuth
     /**
      * Create a Two-Factor Authentication session if enabled.
      *
+     * @deprecated a 2FA session must only be started once the user's first factor (password or
+     *             OAuth provider) has been verified, otherwise the code alone is enough to sign in.
+     *             Use start() with the authenticated user instead.
+     *
      * @param string $identity the user identity
      *
      * @return string|null the Two-Factor Authentication session key, or null if not enabled
@@ -470,15 +484,27 @@ class TwoFactorAuth
                     }
 
                     // Check if verification code matches user provided code
-                    $verificationCodeMatches = $verificationCode->code === $code;
+                    $verificationCodeMatches = hash_equals((string) $verificationCode->code, $code);
                     if ($verificationCodeMatches) {
                         // Kill the two fa session
-                        Redis::del($twoFaSessionKey);
+                        Redis::del($twoFaSessionKey, static::attemptsKey($twoFaSessionKey));
 
                         // Authenticate the user
                         $token = $user->createToken($user->uuid);
 
                         return $token->plainTextToken;
+                    }
+
+                    // Count the failure against the 2FA session, which outlives any single
+                    // code, so resending codes does not reset the budget.
+                    $attemptsKey = static::attemptsKey($twoFaSessionKey);
+                    $attempts    = (int) Redis::incr($attemptsKey);
+                    Redis::expire($attemptsKey, static::SESSION_TTL);
+
+                    if ($attempts >= static::MAX_VERIFY_ATTEMPTS) {
+                        Redis::del($twoFaSessionKey, $attemptsKey);
+
+                        throw new \Exception('Too many failed verification attempts. Please sign in again.');
                     }
 
                     throw new \Exception('Verification code does not match.');
@@ -594,15 +620,24 @@ class TwoFactorAuth
      *
      * @return string the Two-Factor Authentication session key
      */
-    private static function createTwoFaSessionKey(User $user, string $token, bool $storeInCache = true, int $expiresAfter = 600): string
+    private static function createTwoFaSessionKey(User $user, string $token, bool $storeInCache = true, int $expiresAfter = self::SESSION_TTL): string
     {
         $twoFaSessionKey = 'two_fa_session:' . $user->uuid . ':' . $token;
 
         if ($storeInCache) {
-            Redis::set($twoFaSessionKey, $user->uuid, 'EX', now()->addSeconds($expiresAfter)->timestamp);
+            // EX takes a TTL in seconds, not an absolute timestamp.
+            Redis::set($twoFaSessionKey, $user->uuid, 'EX', $expiresAfter);
         }
 
         return $twoFaSessionKey;
+    }
+
+    /**
+     * Redis key holding the failed verification attempts for a 2FA session.
+     */
+    private static function attemptsKey(string $twoFaSessionKey): string
+    {
+        return $twoFaSessionKey . ':attempts';
     }
 
     /**
