@@ -281,6 +281,8 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 $router->fleetbaseRoutes('companies', null, [], function ($router, $controller) {
                                     $router->get('two-fa', $controller('getTwoFactorSettings'));
                                     $router->post('two-fa', $controller('saveTwoFactorSettings'));
+                                    $router->get('auth-settings', $controller('getAuthSettings'));
+                                    $router->post('auth-settings', $controller('saveAuthSettings'));
                                     $router->post('transfer-ownership', $controller('transferOwnership'));
                                     $router->post('leave', $controller('leaveOrganization'));
                                     $router->match(['get', 'post'], 'export', $controller('export'));
@@ -307,8 +309,9 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     $router->post('invite-user', $controller('inviteUser'));
                                     $router->post('resend-invite', $controller('resendInvitation'));
                                     $router->post('set-password', $controller('setCurrentUserPassword'));
-                                    $router->post('validate-password', $controller('validatePassword'));
-                                    $router->post('change-password', $controller('changeUserPassword'));
+                                    $router->post('validate-password', $controller('validatePassword'))->middleware(Illuminate\Routing\Middleware\ThrottleRequests::class . ':10,1');
+                                    $router->post('change-password', $controller('changeUserPassword'))->middleware(Illuminate\Routing\Middleware\ThrottleRequests::class . ':10,1');
+                                    $router->get('password-policy', $controller('getPasswordPolicy'));
                                     $router->post('two-fa', $controller('saveTwoFactorSettings'));
                                     $router->get('two-fa', $controller('getTwoFactorSettings'));
                                     $router->post('locale', $controller('setUserLocale'));

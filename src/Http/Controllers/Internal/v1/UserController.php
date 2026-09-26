@@ -10,6 +10,7 @@ use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Http\Requests\CreateUserRequest;
 use Fleetbase\Http\Requests\ExportRequest;
 use Fleetbase\Http\Requests\Internal\AcceptCompanyInvite;
+use Fleetbase\Http\Requests\Internal\ChangeCurrentPasswordRequest;
 use Fleetbase\Http\Requests\Internal\ChangeCurrentUserEmailRequest;
 use Fleetbase\Http\Requests\Internal\ChangeUserEmailRequest;
 use Fleetbase\Http\Requests\Internal\InviteUserRequest;
@@ -1026,6 +1027,11 @@ class UserController extends FleetbaseController
             $user->activate();
         }
 
+        // allow the user to set their first password without a current password
+        if ($needsPassword) {
+            Auth::markPasswordSetupPending($user);
+        }
+
         // create authentication token for user
         $token = $user->createToken($invite->code);
 
@@ -1365,10 +1371,15 @@ class UserController extends FleetbaseController
     }
 
     /**
-     * Updates the current users password.
+     * Sets the current user's first password, e.g. right after accepting an invite.
+     *
+     * No IAM permission is required because the user cannot skip this step, but it is
+     * only allowed once, while the password setup allowance is pending. Afterwards the
+     * password must be changed with `changeUserPassword`.
      *
      * @return \Illuminate\Http\Response
      */
+    #[SkipAuthorizationCheck]
     public function setCurrentUserPassword(UpdatePasswordRequest $request)
     {
         $password = $request->input('password');
@@ -1379,7 +1390,14 @@ class UserController extends FleetbaseController
             return response()->error('User not authenticated');
         }
 
+        if (!Auth::isPasswordSetupPending($user)) {
+            return response()->error('Your password has already been set. Use change password instead.', 403);
+        }
+
         $user->changePassword($password);
+        Auth::clearPasswordSetupPending($user);
+
+        activity('auth')->causedBy($user)->performedOn($user)->event('password_set')->log('Password set');
 
         return response()->json(['status' => 'ok']);
     }
@@ -1417,31 +1435,55 @@ class UserController extends FleetbaseController
     /**
      * Validate the user's current password.
      *
+     * Only checks the user's own password, so no IAM permission is required.
+     *
      * @return \Illuminate\Http\Response
      */
+    #[SkipAuthorizationCheck]
     public function validatePassword(ValidatePasswordRequest $request)
     {
         return response()->json(['status' => 'ok']);
     }
 
     /**
-     * Change the user's password.
+     * Change the current user's password.
+     *
+     * Requires the current password, and that the user may change their own password
+     * (see `Auth::canChangeOwnPassword`). The generic resource check is skipped because
+     * it would require the `create user` permission for this POST.
      *
      * @return \Illuminate\Http\Response
      */
-    public function changeUserPassword(UpdatePasswordRequest $request)
+    #[SkipAuthorizationCheck]
+    public function changeUserPassword(ChangeCurrentPasswordRequest $request)
     {
-        $user               = $request->user();
-        $newPassword        = $request->input('password');
-        $newConfirmPassword = $request->input('password_confirmation');
+        $user = $request->user();
 
-        if ($newPassword !== $newConfirmPassword) {
-            return response()->error('Password is not matching');
+        if (!Auth::canChangeOwnPassword($user)) {
+            return response()->error('You are not allowed to change your password. Ask an administrator.', 403);
         }
 
-        $user->changePassword($newPassword);
+        $user->changePassword($request->input('password'));
+        Auth::clearPasswordSetupPending($user);
+
+        activity('auth')->causedBy($user)->performedOn($user)->event('password_changed')->log('Password changed');
 
         return response()->json(['status' => 'ok']);
+    }
+
+    /**
+     * Get the current user's password policy.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    #[SkipAuthorizationCheck]
+    public function getPasswordPolicy(Request $request)
+    {
+        $user = $request->user();
+
+        return response()->json([
+            'can_change_password' => Auth::canChangeOwnPassword($user),
+        ]);
     }
 
     /**

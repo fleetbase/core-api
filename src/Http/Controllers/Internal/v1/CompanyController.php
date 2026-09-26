@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
+use Fleetbase\Attributes\SkipAuthorizationCheck;
 use Fleetbase\Events\UserRemovedFromCompany;
 use Fleetbase\Exceptions\FleetbaseRequestValidationException;
 use Fleetbase\Exports\CompanyExport;
@@ -14,6 +15,7 @@ use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\ExtensionInstall;
 use Fleetbase\Models\Invite;
+use Fleetbase\Models\Setting;
 use Fleetbase\Models\User;
 use Fleetbase\Support\Auth;
 use Fleetbase\Support\TwoFactorAuth;
@@ -163,6 +165,63 @@ class CompanyController extends FleetbaseController
         TwoFactorAuth::saveTwoFaSettingsForCompany($company, $twoFaSettings);
 
         return response()->json(['message' => 'Two-Factor Authentication saved successfully']);
+    }
+
+    /**
+     * Get the current organization's authentication settings.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    #[SkipAuthorizationCheck]
+    public function getAuthSettings()
+    {
+        $company = Auth::getCompany();
+
+        if (!$company) {
+            return response()->error('No company session found', 401);
+        }
+
+        return response()->json(Auth::getCompanyAuthSettings($company->uuid));
+    }
+
+    /**
+     * Save the current organization's authentication settings. Only admins and users
+     * holding the Administrator role may change them.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    #[SkipAuthorizationCheck]
+    public function saveAuthSettings(Request $request)
+    {
+        $user    = $request->user();
+        $company = Auth::getCompany();
+
+        if (!$company) {
+            return response()->error('No company session found', 401);
+        }
+
+        if (!$user || !($user->isAdmin() || $user->hasRole('Administrator'))) {
+            return response()->error('Only administrators can change authentication settings.', 403);
+        }
+
+        if (!$request->has('allow_users_change_password')) {
+            return response()->error('No authentication settings provided.', 422);
+        }
+
+        $settings = array_merge(Auth::getCompanyAuthSettings($company->uuid), [
+            'allow_users_change_password' => $request->boolean('allow_users_change_password'),
+        ]);
+
+        Setting::configure('company.' . $company->uuid . '.auth', $settings);
+
+        activity('auth')
+            ->causedBy($user)
+            ->performedOn($company)
+            ->withProperties($settings)
+            ->event('auth_settings_updated')
+            ->log('Authentication settings updated');
+
+        return response()->json($settings);
     }
 
     /**
