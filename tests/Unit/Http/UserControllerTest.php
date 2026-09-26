@@ -5,6 +5,7 @@ use Fleetbase\Exports\UserExport;
 use Fleetbase\Http\Controllers\Internal\v1\UserController;
 use Fleetbase\Http\Requests\ExportRequest;
 use Fleetbase\Http\Requests\Internal\AcceptCompanyInvite;
+use Fleetbase\Http\Requests\Internal\ChangeCurrentPasswordRequest;
 use Fleetbase\Http\Requests\Internal\ChangeCurrentUserEmailRequest;
 use Fleetbase\Http\Requests\Internal\ChangeUserEmailRequest;
 use Fleetbase\Http\Requests\Internal\InviteUserRequest;
@@ -13,6 +14,7 @@ use Fleetbase\Http\Requests\Internal\UpdatePasswordRequest;
 use Fleetbase\Http\Requests\Internal\ValidatePasswordRequest;
 use Fleetbase\Models\Role;
 use Fleetbase\Models\User;
+use Fleetbase\Support\Auth;
 use Illuminate\Container\Container;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
@@ -24,6 +26,8 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Facade;
 use PHPUnit\Framework\Assert;
+use Spatie\Activitylog\ActivityLogger;
+use Spatie\Activitylog\PendingActivityLog;
 
 if (!function_exists('base_path')) {
     function base_path(string $path = ''): string
@@ -324,6 +328,73 @@ class UserControllerCamelPayloadModel extends UserControllerInvalidParamModel
     }
 }
 
+class UserControllerActivityLoggerFake extends ActivityLogger
+{
+    public static array $logged = [];
+
+    private array $entry = [];
+
+    public function __construct(private ?string $logName = null)
+    {
+    }
+
+    public function causedBy(EloquentModel|int|string|null $modelOrId): static
+    {
+        $this->entry['causer'] = $modelOrId instanceof EloquentModel ? $modelOrId->getKey() : $modelOrId;
+
+        return $this;
+    }
+
+    public function performedOn(EloquentModel $model): static
+    {
+        $this->entry['subject'] = $model->getKey();
+
+        return $this;
+    }
+
+    public function event(string $event): static
+    {
+        $this->entry['event'] = $event;
+
+        return $this;
+    }
+
+    public function withProperties(mixed $properties): static
+    {
+        $this->entry['properties'] = $properties;
+
+        return $this;
+    }
+
+    public function log(string $description): ?Spatie\Activitylog\Contracts\Activity
+    {
+        static::$logged[] = array_merge(['log' => $this->logName, 'description' => $description], $this->entry);
+
+        return null;
+    }
+}
+
+class UserControllerPendingActivityLogFake extends PendingActivityLog
+{
+    private ?string $logName = null;
+
+    public function __construct()
+    {
+    }
+
+    public function useLog(?string $logName): static
+    {
+        $this->logName = $logName;
+
+        return $this;
+    }
+
+    public function logger(): ActivityLogger
+    {
+        return new UserControllerActivityLoggerFake($this->logName);
+    }
+}
+
 function user_controller_database(): Capsule
 {
     EloquentModel::clearBootedModels();
@@ -601,6 +672,9 @@ function user_controller_database(): Capsule
     $capsule->getConnection('mysql')->table('roles')->insert([
         ['id' => 'Administrator', 'company_uuid' => null, 'name' => 'Administrator', 'guard_name' => 'sanctum', 'created_at' => $now, 'updated_at' => $now],
     ]);
+
+    UserControllerActivityLoggerFake::$logged = [];
+    app()->instance(PendingActivityLog::class, new UserControllerPendingActivityLogFake());
 
     return $capsule;
 }
@@ -1355,22 +1429,17 @@ test('user controller covers current-user password locale and simple validation 
     $missingPassword = user_controller()->setCurrentUserPassword(user_controller_request('POST', [
         'password' => 'new-password',
     ], null, 'setCurrentUserPassword', UpdatePasswordRequest::class));
-    $passwordMismatch = user_controller()->changeUserPassword(user_controller_request('POST', [
-        'password'              => 'new-password',
-        'password_confirmation' => 'different-password',
-    ], $user, 'changeUserPassword', UpdatePasswordRequest::class));
 
     expect($missingCurrent->getStatusCode())->toBe(401)
         ->and($missingCurrent->getData(true))->toBe(['errors' => ['No user session found']])
         ->and($missingPassword->getStatusCode())->toBe(400)
-        ->and($missingPassword->getData(true))->toBe(['errors' => ['User not authenticated']])
-        ->and($passwordMismatch->getStatusCode())->toBe(400)
-        ->and($passwordMismatch->getData(true))->toBe(['errors' => ['Password is not matching']]);
+        ->and($missingPassword->getData(true))->toBe(['errors' => ['User not authenticated']]);
 
     $changedPassword = user_controller()->changeUserPassword(user_controller_request('POST', [
+        'current_password'      => 'old-password',
         'password'              => 'new-password',
         'password_confirmation' => 'new-password',
-    ], $user, 'changeUserPassword', UpdatePasswordRequest::class));
+    ], $user, 'changeUserPassword', ChangeCurrentPasswordRequest::class));
     $setLocale = user_controller()->setUserLocale(user_controller_request('POST', [
         'locale' => 'fr-fr',
     ], $user));
@@ -1572,6 +1641,8 @@ test('user controller current password and permission endpoints expose scoped re
         'model_type'    => Fleetbase\Models\CompanyUser::class,
         'model_uuid'    => 'pivot-owner-1',
     ]);
+
+    Auth::markPasswordSetupPending($user);
 
     $setPassword = user_controller()->setCurrentUserPassword(user_controller_request('POST', [
         'password' => 'current-new-password',
@@ -1798,6 +1869,7 @@ test('user controller accepts company invitations and activates pending users wi
     expect($accepted->getStatusCode())->toBe(200)
         ->and($accepted->getData(true)['status'])->toBe('ok')
         ->and($accepted->getData(true)['needs_password'])->toBeTrue()
+        ->and(Auth::isPasswordSetupPending($pending))->toBeTrue()
         ->and($accepted->getData(true)['token'])->toContain('|')
         ->and($capsule->getConnection('mysql')->table('company_users')->where('company_uuid', 'company-1')->where('user_uuid', 'pending-1')->exists())->toBeTrue()
         ->and($capsule->getConnection('mysql')->table('users')->where('uuid', 'pending-1')->value('company_uuid'))->toBe('company-1')
@@ -2214,3 +2286,169 @@ test('user controller makes a managed account a team member when it accepts an i
     'a driver account'                   => [['type' => 'driver'], null],
     'an account promoted by an operator' => [['type' => 'user'], ['promoted_from' => 'contact']],
 ]);
+
+function user_controller_disallow_changing_own_password(Capsule $capsule, string $companyUuid = 'company-1'): void
+{
+    $capsule->getConnection('mysql')->table('settings')->insert([
+        'key'   => 'company.' . $companyUuid . '.auth',
+        'value' => json_encode(['allow_users_change_password' => false]),
+    ]);
+}
+
+function user_controller_grant_permission(Capsule $capsule, string $companyUserUuid, string $permission): void
+{
+    $id = 'permission-' . Illuminate\Support\Str::slug($permission);
+    if ($capsule->getConnection('mysql')->table('permissions')->where('id', $id)->doesntExist()) {
+        $capsule->getConnection('mysql')->table('permissions')->insert([
+            'id'         => $id,
+            'name'       => $permission,
+            'guard_name' => 'sanctum',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    $capsule->getConnection('mysql')->table('model_has_permissions')->insert([
+        'permission_id' => $id,
+        'model_type'    => Fleetbase\Models\CompanyUser::class,
+        'model_uuid'    => $companyUserUuid,
+    ]);
+}
+
+test('user controller self-service password endpoints skip the generic resource permission check', function (string $method) {
+    user_controller_database();
+
+    $attributes = (new ReflectionMethod(UserController::class, $method))->getAttributes(Fleetbase\Attributes\SkipAuthorizationCheck::class);
+
+    expect($attributes)->toHaveCount(1);
+})->with(['setCurrentUserPassword', 'validatePassword', 'changeUserPassword', 'getPasswordPolicy']);
+
+test('user controller lets an invited non-admin set their first password only once', function () {
+    $capsule = user_controller_database();
+    session(['company' => 'company-1']);
+    $member = user_controller_user('member-1');
+
+    $request = fn (string $password) => user_controller_request('POST', [
+        'password'              => $password,
+        'password_confirmation' => $password,
+    ], $member, 'setCurrentUserPassword', UpdatePasswordRequest::class);
+
+    $withoutAllowance = user_controller()->setCurrentUserPassword($request('First-password-1!'));
+
+    Auth::markPasswordSetupPending($member);
+    $firstPassword = user_controller()->setCurrentUserPassword($request('First-password-1!'));
+    $secondAttempt = user_controller()->setCurrentUserPassword($request('Second-password-1!'));
+
+    expect($withoutAllowance->getStatusCode())->toBe(403)
+        ->and($firstPassword->getStatusCode())->toBe(200)
+        ->and($firstPassword->getData(true))->toBe(['status' => 'ok'])
+        ->and($secondAttempt->getStatusCode())->toBe(403)
+        ->and(Auth::isPasswordSetupPending($member))->toBeFalse()
+        ->and(UserControllerActivityLoggerFake::$logged)->toBe([
+            ['log' => 'auth', 'description' => 'Password set', 'causer' => 'member-1', 'subject' => 'member-1', 'event' => 'password_set'],
+        ])
+        ->and(password_verify('First-password-1!', $capsule->getConnection('mysql')->table('users')->where('uuid', 'member-1')->value('password')))->toBeTrue();
+});
+
+test('user controller password setup allowance expires', function () {
+    user_controller_database();
+    $member = user_controller_user('member-1');
+
+    Carbon::setTestNow('2026-09-26 10:00:00');
+    Auth::markPasswordSetupPending($member, 24);
+
+    Carbon::setTestNow('2026-09-27 09:59:00');
+    expect(Auth::isPasswordSetupPending($member))->toBeTrue();
+
+    Carbon::setTestNow('2026-09-27 10:01:00');
+    $expired = user_controller()->setCurrentUserPassword(user_controller_request('POST', [
+        'password' => 'Late-password-1!',
+    ], $member, 'setCurrentUserPassword', UpdatePasswordRequest::class));
+
+    expect($expired->getStatusCode())->toBe(403);
+});
+
+test('user controller lets non-admins change their own password when the organization allows it', function () {
+    $capsule = user_controller_database();
+    session(['company' => 'company-1']);
+    $member = user_controller_user('member-1');
+
+    $policy  = user_controller()->getPasswordPolicy(user_controller_request('GET', [], $member, 'getPasswordPolicy'));
+    $changed = user_controller()->changeUserPassword(user_controller_request('POST', [
+        'current_password'      => 'old-password',
+        'password'              => 'Changed-password-1!',
+        'password_confirmation' => 'Changed-password-1!',
+    ], $member, 'changeUserPassword', ChangeCurrentPasswordRequest::class));
+
+    expect($policy->getData(true))->toBe(['can_change_password' => true])
+        ->and($changed->getStatusCode())->toBe(200)
+        ->and(array_column(UserControllerActivityLoggerFake::$logged, 'event'))->toBe(['password_changed'])
+        ->and(password_verify('Changed-password-1!', $capsule->getConnection('mysql')->table('users')->where('uuid', 'member-1')->value('password')))->toBeTrue();
+});
+
+test('user controller requires the change-password permission when the organization disallows changing own password', function () {
+    $capsule = user_controller_database();
+    session(['company' => 'company-1']);
+    user_controller_disallow_changing_own_password($capsule);
+    $member = user_controller_user('member-1');
+
+    $request = fn () => user_controller_request('POST', [
+        'current_password'      => 'old-password',
+        'password'              => 'Changed-password-1!',
+        'password_confirmation' => 'Changed-password-1!',
+    ], $member, 'changeUserPassword', ChangeCurrentPasswordRequest::class);
+
+    $denied = user_controller()->changeUserPassword($request());
+    $policy = user_controller()->getPasswordPolicy(user_controller_request('GET', [], $member, 'getPasswordPolicy'));
+
+    expect($denied->getStatusCode())->toBe(403)
+        ->and($policy->getData(true))->toBe(['can_change_password' => false])
+        ->and(password_verify('old-password', $capsule->getConnection('mysql')->table('users')->where('uuid', 'member-1')->value('password')))->toBeTrue();
+
+    user_controller_grant_permission($capsule, 'pivot-member-1', 'iam change-password');
+    $member  = user_controller_user('member-1');
+    $allowed = user_controller()->changeUserPassword($request());
+
+    expect($allowed->getStatusCode())->toBe(200);
+});
+
+test('user controller always lets admins and administrators change their own password', function () {
+    $capsule = user_controller_database();
+    session(['company' => 'company-1']);
+    user_controller_disallow_changing_own_password($capsule);
+    user_controller_owner_is_administrator($capsule);
+
+    expect(Auth::canChangeOwnPassword(user_controller_user('owner-1')))->toBeTrue()
+        ->and(Auth::canChangeOwnPassword(user_controller_user('admin-1')))->toBeTrue()
+        ->and(Auth::canChangeOwnPassword(user_controller_user('member-1')))->toBeFalse();
+});
+
+test('user controller accepts the iam wildcard permission for changing own password', function () {
+    $capsule = user_controller_database();
+    session(['company' => 'company-1']);
+    user_controller_disallow_changing_own_password($capsule);
+    user_controller_grant_permission($capsule, 'pivot-member-1', 'iam *');
+
+    expect(Auth::canChangeOwnPassword(user_controller_user('member-1')))->toBeTrue();
+});
+
+test('change current password request checks the current password in the same request', function () {
+    user_controller_database();
+    $member  = user_controller_user('member-1');
+    $request = ChangeCurrentPasswordRequest::create('/int/v1/users/change-password', 'POST');
+    $request->setUserResolver(fn () => $member);
+
+    $rules = ['current_password' => $request->rules()['current_password']];
+
+    $translator = new Illuminate\Translation\Translator(new Illuminate\Translation\ArrayLoader(), 'en');
+    $validate   = fn (array $input) => new Illuminate\Validation\Validator($translator, $input, $rules);
+
+    $wrong = $validate(['current_password' => 'not-my-password']);
+    $right = $validate(['current_password' => 'old-password']);
+    $none  = $validate([]);
+
+    expect($wrong->fails())->toBeTrue()
+        ->and($wrong->errors()->first('current_password'))->toBe('The current password provided is invalid.')
+        ->and($right->fails())->toBeFalse()
+        ->and($none->fails())->toBeTrue();
+});
