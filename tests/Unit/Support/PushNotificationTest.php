@@ -350,6 +350,7 @@ it('creates fcm messages with notification data custom options and configured cl
                 'screen'     => 'orders.show',
             ],
             'android' => [
+                'priority'     => 'high',
                 'notification' => [
                     'color' => '#4391EA',
                     'sound' => 'default',

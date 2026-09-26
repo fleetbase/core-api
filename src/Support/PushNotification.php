@@ -52,6 +52,8 @@ class PushNotification
             ->data($data)
             ->custom([
                 'android' => [
+                    // High priority so the push is delivered while the device is in Doze
+                    'priority'     => 'high',
                     'notification' => [
                         'color' => '#4391EA',
                         'sound' => 'default',
