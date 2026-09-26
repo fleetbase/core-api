@@ -279,7 +279,26 @@ class Setting extends EloquentModel
             return $defaultValue;
         }
 
-        return static::lookup('company.' . session('company') . '.' . $key, $defaultValue);
+        return static::lookupForCompany(session('company'), $key, $defaultValue);
+    }
+
+    /**
+     * Retrieves a setting for the given company. Use this where there is no company session,
+     * such as queued jobs and console commands.
+     *
+     * @param string|null $companyUuid  the company the setting belongs to
+     * @param string      $key          the setting key associated with the company
+     * @param mixed|null  $defaultValue the default value to return if the setting or company is not found
+     *
+     * @return mixed returns the value of the setting if found, or the default value if not
+     */
+    public static function lookupForCompany(?string $companyUuid, string $key, $defaultValue = null)
+    {
+        if (!$companyUuid) {
+            return $defaultValue;
+        }
+
+        return static::lookup('company.' . $companyUuid . '.' . $key, $defaultValue);
     }
 
     /**
