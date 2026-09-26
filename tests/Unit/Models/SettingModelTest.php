@@ -329,6 +329,19 @@ it('configures and looks up company settings from session context', function () 
         ->and(Setting::getByKey('company.' . $companyUuid . '.dispatch.enabled'))->toBeInstanceOf(Setting::class);
 });
 
+it('looks up company settings by company uuid without a session', function () {
+    setting_model_database();
+    session()->flush();
+
+    $companyUuid = '8b5cc964-2d67-4d9f-8b5d-0aa3070a5b5d';
+    Setting::configure('company.' . $companyUuid . '.dispatch.enabled', true);
+
+    expect(Setting::lookupForCompany($companyUuid, 'dispatch.enabled', false))->toBeTrue()
+        ->and(Setting::lookupForCompany($companyUuid, 'missing.key', 'fallback'))->toBe('fallback')
+        ->and(Setting::lookupForCompany(null, 'dispatch.enabled', 'fallback'))->toBe('fallback')
+        ->and(Setting::lookupCompany('dispatch.enabled', 'default'))->toBe('default');
+});
+
 it('exposes JSON value helpers and database connection checks', function () {
     setting_model_database();
 
