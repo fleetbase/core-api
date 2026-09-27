@@ -19,4 +19,9 @@ class WebhookRequestLogController extends FleetbaseController
      * @var string
      */
     public $service = 'developers';
+
+    /**
+     * The IAM schema resource this controller's permissions use.
+     */
+    public string $permissionResource = 'log';
 }

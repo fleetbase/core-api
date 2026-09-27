@@ -395,7 +395,7 @@ class Auth extends Authentication
         }
 
         $service    = $controller->getService();
-        $resource   = str_replace('_', '-', $controller->getResourceSingularName());
+        $resource   = static::getPermissionResourceFromController($controller);
         $action     = ActionMapper::resolve($request, $resource);
 
         // If the resource is not guarded at all
@@ -522,10 +522,22 @@ class Auth extends Authentication
     public static function getRequiredPermissionNameFromRequest(Request $request): string
     {
         $controller = $request->getController();
-        $resource   = str_replace('_', '-', $controller->getResourceSingularName());
+        $resource   = static::getPermissionResourceFromController($controller);
         $action     = ActionMapper::resolve($request, $resource);
 
         return implode(' ', [$action, $resource]);
+    }
+
+    /**
+     * Resolves the permission resource name for a resource controller.
+     */
+    public static function getPermissionResourceFromController($controller): string
+    {
+        if (method_exists($controller, 'getPermissionResourceName')) {
+            return $controller->getPermissionResourceName();
+        }
+
+        return str_replace('_', '-', $controller->getResourceSingularName());
     }
 
     /**
@@ -567,6 +579,28 @@ class Auth extends Authentication
         return $permissionRecords->contains(function ($permissionRecord) use ($user) {
             return $user->hasPermissionTo($permissionRecord);
         });
+    }
+
+    /**
+     * Determines if the current user lacks the specified permission, treating platform
+     * administrators (and a missing session user) the way AuthorizationGuard does.
+     *
+     * For explicit checks in controllers that the guard cannot resolve on its own.
+     *
+     * @param string $permission the permission string in the format '{service} {action} {resource}'
+     */
+    public static function cannotUnlessAdmin(string $permission): bool
+    {
+        $user = static::getUserFromSession();
+        if (!$user) {
+            return true;
+        }
+
+        if ($user->isAdmin()) {
+            return false;
+        }
+
+        return static::cannot($permission);
     }
 
     /**

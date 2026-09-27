@@ -33,6 +33,26 @@ class CompanyController extends FleetbaseController
     public $resource = 'company';
 
     /**
+     * Company attributes only platform administrators may change through updateRecord().
+     */
+    private const PLATFORM_MANAGED_FIELDS = ['owner_uuid', 'stripe_customer_id', 'stripe_connect_id', 'plan', 'status', 'trial_ends_at', 'type'];
+
+    public function __construct()
+    {
+        parent::__construct();
+
+        // Organization settings and the organization's 2FA policy: owner, Administrator role or system admin.
+        $this->middleware(function ($request, $next) {
+            $company = Company::where('uuid', session('company'))->first();
+            if (!$company || !$this->currentUserManagesOrganization($company)) {
+                return response()->error('Only the organization owner or an Administrator can change organization settings.', 401);
+            }
+
+            return $next($request);
+        })->only(['updateRecord', 'saveTwoFactorSettings']);
+    }
+
+    /**
      * Find an organization visible to the current session company.
      *
      * @return \Illuminate\Http\Response|array
@@ -63,6 +83,11 @@ class CompanyController extends FleetbaseController
 
         try {
             $input = $this->model->getApiPayloadFromRequest($request);
+
+            // Ownership moves through transferOwnership(); billing and lifecycle fields are platform-managed.
+            if (!$request->user()?->isAdmin()) {
+                $input = Arr::except($input, self::PLATFORM_MANAGED_FIELDS);
+            }
             $input = $this->model->fillSessionAttributes($input, [], ['updated_by_uuid']);
 
             if ($this->model->isColumn('slug')) {
@@ -157,6 +182,7 @@ class CompanyController extends FleetbaseController
         if (!$company) {
             return response()->error('No company session found', 401);
         }
+
         if (isset($twoFaSettings['enabled']) && $twoFaSettings['enabled'] === false) {
             $twoFaSettings['enforced'] = false;
         }
@@ -259,6 +285,26 @@ class CompanyController extends FleetbaseController
                 $query->where('uuid', $id)->orWhere('public_id', $id);
             })
             ->first();
+    }
+
+    /**
+     * Whether the session user may manage the organization: platform admins, the owner,
+     * and members holding the Administrator role in it.
+     */
+    private function currentUserManagesOrganization(Company $company): bool
+    {
+        $user = Auth::getUserFromSession();
+        if (!$user) {
+            return false;
+        }
+
+        if ($user->isAdmin() || $company->owner_uuid === $user->uuid) {
+            return true;
+        }
+
+        $companyUser = CompanyUser::where('company_uuid', $company->uuid)->where('user_uuid', $user->uuid)->first();
+
+        return $companyUser !== null && $companyUser->roles()->where('name', 'Administrator')->exists();
     }
 
     private function resolveVisibleCompany(string $id): ?Company

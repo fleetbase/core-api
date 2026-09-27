@@ -2,8 +2,10 @@
 
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
+use Fleetbase\Attributes\SkipAuthorizationCheck;
 use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Models\Report;
+use Fleetbase\Support\Auth;
 use Fleetbase\Support\Reporting\ComputedColumnValidator;
 use Fleetbase\Support\Reporting\ReportQueryConverter;
 use Fleetbase\Support\Reporting\ReportQueryErrorHandler;
@@ -22,12 +24,30 @@ class ReportController extends FleetbaseController
      */
     public $resource = 'report';
 
+    /**
+     * The IAM schema service for report permissions (`iam list report`, `iam execute report`, ...).
+     *
+     * @var string
+     */
+    public $service = 'iam';
+
     protected ReportQueryValidator $queryValidator;
     protected ReportQueryErrorHandler $errorHandler;
 
     public function __construct()
     {
         parent::__construct();
+
+        // These endpoints skip AuthorizationGuard (their method names do not map to a schema action).
+        foreach (['execute' => ['executeQuery'], 'export' => ['exportQuery', 'download']] as $action => $methods) {
+            $this->middleware(function ($request, $next) use ($action) {
+                if (Auth::cannotUnlessAdmin("iam {$action} report")) {
+                    return response()->error("User is not authorized to {$action} report", 401);
+                }
+
+                return $next($request);
+            })->only($methods);
+        }
         $this->queryValidator = new ReportQueryValidator(app(ReportSchemaRegistry::class));
         $this->errorHandler   = new ReportQueryErrorHandler();
     }
@@ -238,6 +258,7 @@ class ReportController extends FleetbaseController
     /**
      * Execute a query directly without saving as report.
      */
+    #[SkipAuthorizationCheck]
     public function executeQuery(Request $request): JsonResponse
     {
         try {
@@ -368,6 +389,7 @@ class ReportController extends FleetbaseController
     /**
      * Export query results directly without saving as report.
      */
+    #[SkipAuthorizationCheck]
     public function exportQuery(Request $request): JsonResponse
     {
         try {
@@ -431,6 +453,7 @@ class ReportController extends FleetbaseController
     /**
      * Download exported file.
      */
+    #[SkipAuthorizationCheck]
     public function download(Request $request, string $filename)
     {
         try {

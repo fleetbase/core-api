@@ -469,3 +469,17 @@ test('two fa controller verify does not issue console tokens to driver accounts'
         ->and($response->getData(true)['code'])->toBe('console_access_not_allowed')
         ->and(app('db')->table('personal_access_tokens')->where('tokenable_id', $user->uuid)->count())->toBe(0);
 });
+
+test('two fa controller restricts the system-wide policy save to system administrators', function () {
+    two_fa_controller_database();
+
+    $middleware = two_fa_controller()->getMiddleware();
+    expect($middleware)->toHaveCount(1)
+        ->and($middleware[0]['options']['only'])->toBe(['saveSystemConfig']);
+
+    session()->flush();
+    $refused = ($middleware[0]['middleware'])(Request::create('/int/v1/two-fa/config', 'POST'), fn () => 'allowed');
+
+    expect($refused->getStatusCode())->toBe(401)
+        ->and($refused->getData(true))->toBe(['errors' => ['Only system administrators can change the system two-factor policy.']]);
+});
