@@ -311,6 +311,11 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     $router->post('change-password', $controller('changeUserPassword'));
                                     $router->post('two-fa', $controller('saveTwoFactorSettings'));
                                     $router->get('two-fa', $controller('getTwoFactorSettings'));
+                                    $router->get('two-fa/authenticator', $controller('getAuthenticatorApp'));
+                                    $router->post('two-fa/authenticator/setup', $controller('setupAuthenticatorApp'))->middleware(Illuminate\Routing\Middleware\ThrottleRequests::class . ':10,1');
+                                    $router->post('two-fa/authenticator/confirm', $controller('confirmAuthenticatorApp'))->middleware(Illuminate\Routing\Middleware\ThrottleRequests::class . ':10,1');
+                                    $router->post('two-fa/authenticator/disable', $controller('disableAuthenticatorApp'))->middleware(Illuminate\Routing\Middleware\ThrottleRequests::class . ':10,1');
+                                    $router->post('two-fa/recovery-codes', $controller('regenerateRecoveryCodes'))->middleware(Illuminate\Routing\Middleware\ThrottleRequests::class . ':10,1');
                                     $router->post('locale', $controller('setUserLocale'));
                                     $router->get('locale', $controller('getUserLocale'));
                                 }
