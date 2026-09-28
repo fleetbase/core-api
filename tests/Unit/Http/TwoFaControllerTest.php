@@ -31,6 +31,11 @@ class TwoFaControllerRedisFake
         return array_key_exists($key, $this->values);
     }
 
+    public function get(string $key): mixed
+    {
+        return $this->values[$key] ?? null;
+    }
+
     public function del(?string ...$keys): bool
     {
         foreach ($keys as $key) {
@@ -423,6 +428,7 @@ test('two fa controller validates sessions returning existing client tokens expi
 
     expect($valid->getData(true))->toBe([
         'clientToken' => $clientToken,
+        'method'      => 'email',
         'expired'     => false,
     ])
         ->and($expired->getData(true))->toBe(['expired' => true])
@@ -513,4 +519,24 @@ test('two fa controller verify does not issue console tokens to driver accounts'
     expect($response->getStatusCode())->toBe(403)
         ->and($response->getData(true)['code'])->toBe('console_access_not_allowed')
         ->and(app('db')->table('personal_access_tokens')->where('tokenable_id', $user->uuid)->count())->toBe(0);
+});
+
+test('two fa controller tells the console when to ask for a code from the authenticator app', function () {
+    two_fa_controller_database();
+    $user       = two_fa_controller_user();
+    $enrollment = @TwoFactorAuth::beginAuthenticatorEnrollment($user);
+    TwoFactorAuth::confirmAuthenticatorEnrollment($user, (new PragmaRX\Google2FA\Google2FA())->getCurrentOtp($enrollment['secret']));
+    $token = TwoFactorAuth::start($user);
+
+    $challenge = two_fa_controller()->validateSession(two_fa_controller_validation_request([
+        'token'    => $token,
+        'identity' => $user->email,
+    ]));
+    $fallback = two_fa_controller()->resendCode(Request::create('/int/v1/two-fa/resend', 'POST', [
+        'identity' => $user->email,
+        'token'    => $token,
+    ]));
+
+    expect($challenge->getData(true))->toMatchArray(['method' => 'authenticator_app', 'expired' => false])
+        ->and($fallback->getData(true)['method'])->toBe('email');
 });

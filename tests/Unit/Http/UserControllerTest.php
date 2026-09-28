@@ -13,6 +13,7 @@ use Fleetbase\Http\Requests\Internal\UpdatePasswordRequest;
 use Fleetbase\Http\Requests\Internal\ValidatePasswordRequest;
 use Fleetbase\Models\Role;
 use Fleetbase\Models\User;
+use Fleetbase\Support\TwoFactorAuth;
 use Illuminate\Container\Container;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
@@ -2214,3 +2215,68 @@ test('user controller makes a managed account a team member when it accepts an i
     'a driver account'                   => [['type' => 'driver'], null],
     'an account promoted by an operator' => [['type' => 'user'], ['promoted_from' => 'contact']],
 ]);
+
+test('user controller authenticator app endpoints skip the generic resource permission check', function (string $method) {
+    user_controller_database();
+
+    expect((new ReflectionMethod(UserController::class, $method))->getAttributes(Fleetbase\Attributes\SkipAuthorizationCheck::class))->toHaveCount(1);
+})->with(['getAuthenticatorApp', 'setupAuthenticatorApp', 'confirmAuthenticatorApp', 'disableAuthenticatorApp', 'regenerateRecoveryCodes']);
+
+test('user controller sets up an authenticator app after checking the current password', function () {
+    user_controller_database();
+    $user = user_controller_user('owner-1');
+
+    $wrongPassword = user_controller()->setupAuthenticatorApp(user_controller_request('POST', ['password' => 'nope'], $user, 'setupAuthenticatorApp'));
+    $setup         = @user_controller()->setupAuthenticatorApp(user_controller_request('POST', ['password' => 'old-password'], $user, 'setupAuthenticatorApp'));
+    $secret        = $setup->getData(true)['secret'];
+    $wrongCode     = user_controller()->confirmAuthenticatorApp(user_controller_request('POST', ['code' => '000000'], $user, 'confirmAuthenticatorApp'));
+    $confirmed     = user_controller()->confirmAuthenticatorApp(user_controller_request('POST', [
+        'code' => (new PragmaRX\Google2FA\Google2FA())->getCurrentOtp($secret),
+    ], $user, 'confirmAuthenticatorApp'));
+
+    expect($wrongPassword->getStatusCode())->toBe(422)
+        ->and($setup->getStatusCode())->toBe(200)
+        ->and(array_keys($setup->getData(true)))->toBe(['secret', 'otpauth_url', 'qr_code', 'expires_at'])
+        ->and($wrongCode->getStatusCode())->toBe(422)
+        ->and($wrongCode->getData(true))->toBe(['errors' => ['The code from your authenticator app is not correct.']])
+        ->and($confirmed->getStatusCode())->toBe(200)
+        ->and($confirmed->getData(true)['recovery_codes'])->toHaveCount(8)
+        ->and($confirmed->getData(true)['status'])->toMatchArray(['enabled' => true, 'recovery_codes_remaining' => 8])
+        ->and($confirmed->getData(true)['settings'])->toBe(['enabled' => true, 'method' => 'authenticator_app'])
+        ->and(user_controller()->getAuthenticatorApp(user_controller_request('GET', [], $user, 'getAuthenticatorApp'))->getData(true)['enabled'])->toBeTrue();
+});
+
+test('user controller only accepts the authenticator app as the two factor method once it is set up', function () {
+    user_controller_database();
+    $user = user_controller_user('owner-1');
+
+    $rejected = user_controller()->saveTwoFactorSettings(user_controller_request('POST', [
+        'twoFaSettings' => ['enabled' => true, 'method' => 'authenticator_app'],
+    ], $user, 'saveTwoFactorSettings'));
+
+    expect($rejected->getStatusCode())->toBe(422)
+        ->and(TwoFactorAuth::getTwoFaSettingsForUser($user)->value)->toBe(['enabled' => false, 'method' => 'email']);
+});
+
+test('user controller disables the authenticator app and replaces recovery codes only with the current password', function () {
+    user_controller_database();
+    $user       = user_controller_user('owner-1');
+    $enrollment = @TwoFactorAuth::beginAuthenticatorEnrollment($user);
+    TwoFactorAuth::confirmAuthenticatorEnrollment($user, (new PragmaRX\Google2FA\Google2FA())->getCurrentOtp($enrollment['secret']));
+
+    $codesDenied = user_controller()->regenerateRecoveryCodes(user_controller_request('POST', ['password' => 'nope'], $user, 'regenerateRecoveryCodes'));
+    $codes       = user_controller()->regenerateRecoveryCodes(user_controller_request('POST', ['password' => 'old-password'], $user, 'regenerateRecoveryCodes'));
+    $denied      = user_controller()->disableAuthenticatorApp(user_controller_request('POST', ['password' => 'nope'], $user, 'disableAuthenticatorApp'));
+    $disabled    = user_controller()->disableAuthenticatorApp(user_controller_request('POST', ['password' => 'old-password'], $user, 'disableAuthenticatorApp'));
+    $noApp       = user_controller()->regenerateRecoveryCodes(user_controller_request('POST', ['password' => 'old-password'], $user, 'regenerateRecoveryCodes'));
+
+    expect($codesDenied->getStatusCode())->toBe(422)
+        ->and($codes->getData(true)['recovery_codes'])->toHaveCount(8)
+        ->and($denied->getStatusCode())->toBe(422)
+        ->and(TestActivityLogger::$logged)->not->toBeEmpty()
+        ->and($disabled->getData(true))->toBe([
+            'status'   => ['enabled' => false, 'confirmed_at' => null, 'recovery_codes_remaining' => 0],
+            'settings' => ['enabled' => false, 'method' => 'email'],
+        ])
+        ->and($noApp->getStatusCode())->toBe(422);
+});

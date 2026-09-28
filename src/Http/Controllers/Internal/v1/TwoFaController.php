@@ -77,6 +77,7 @@ class TwoFaController extends Controller
 
             return response()->json([
                 'clientToken' => $validClientToken,
+                'method'      => TwoFactorAuth::getChallengeMethod($identity, $validClientToken),
                 'expired'     => false,
             ]);
         } catch (\Exception $e) {
@@ -138,6 +139,7 @@ class TwoFaController extends Controller
 
             return response()->json([
                 'clientToken' => $clientToken,
+                'method'      => TwoFactorAuth::getChallengeMethod($identity, $clientToken),
             ]);
         } catch (\Exception $e) {
             return response()->error($e->getMessage());
