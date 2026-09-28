@@ -10,8 +10,10 @@ use Fleetbase\Models\Directive;
 use Fleetbase\Models\Permission;
 use Fleetbase\Models\Policy;
 use Fleetbase\Models\Role;
+use Fleetbase\Models\Setting;
 use Fleetbase\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth as Authentication;
 use Illuminate\Support\Facades\Hash;
@@ -92,6 +94,70 @@ class Auth extends Authentication
         }
 
         return $actor instanceof User && ($actor->isAdmin() || $actor->hasRole('Administrator'));
+    }
+
+    /**
+     * Get the organization's authentication settings, with defaults applied.
+     */
+    public static function getCompanyAuthSettings(?string $companyUuid): array
+    {
+        $settings = Setting::lookupForCompany($companyUuid, 'auth', []);
+
+        return [
+            'allow_users_change_password' => Utils::castBoolean(data_get($settings, 'allow_users_change_password', true)),
+        ];
+    }
+
+    /**
+     * Whether the user may change their own password. Admins and users holding the
+     * Administrator role always can. Everyone else can when the organization allows
+     * users to change their own password, or when they hold the
+     * `iam change-password` permission.
+     */
+    public static function canChangeOwnPassword(User $user): bool
+    {
+        if ($user->isAdmin() || $user->hasRole('Administrator')) {
+            return true;
+        }
+
+        $settings = static::getCompanyAuthSettings(session('company', $user->company_uuid));
+        if ($settings['allow_users_change_password']) {
+            return true;
+        }
+
+        $permissions = Permission::findByNames(['iam change-password', 'iam *']);
+
+        return $permissions->isNotEmpty() && $user->companyUser && $user->hasPermissions($permissions);
+    }
+
+    /**
+     * Allow the user to set their first password without the current password, for
+     * example right after accepting an invite. The allowance expires after the given
+     * number of hours and is used up once the password is set.
+     */
+    public static function markPasswordSetupPending(User $user, int $expiresInHours = 24): void
+    {
+        Setting::configure('user.' . $user->uuid . '.password_setup_pending', [
+            'expires_at' => now()->addHours($expiresInHours)->toIso8601String(),
+        ]);
+    }
+
+    /**
+     * Whether the user may still set their first password.
+     */
+    public static function isPasswordSetupPending(User $user): bool
+    {
+        $expiresAt = data_get(Setting::lookup('user.' . $user->uuid . '.password_setup_pending'), 'expires_at');
+
+        return $expiresAt && now()->lt(Carbon::parse($expiresAt));
+    }
+
+    /**
+     * Use up the user's allowance to set their first password.
+     */
+    public static function clearPasswordSetupPending(User $user): void
+    {
+        Setting::where('key', 'user.' . $user->uuid . '.password_setup_pending')->delete();
     }
 
     /**

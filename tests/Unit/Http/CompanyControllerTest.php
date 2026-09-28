@@ -1427,3 +1427,45 @@ test('company controller leave organization rejects missing sessions missing com
         ->and($notMember->getStatusCode())->toBe(400)
         ->and($notMember->getData(true))->toBe(['errors' => ['User selected to leave organization is not a member of this organization.']]);
 });
+
+test('company controller reads and saves organization authentication settings', function () {
+    $capsule  = company_controller_fixtures();
+    $activity = company_controller_bind_activity();
+    $capsule->getConnection('mysql')->table('model_has_roles')->insert([
+        'role_id' => 'Administrator', 'model_type' => Fleetbase\Models\CompanyUser::class, 'model_uuid' => 'pivot-owner-1',
+    ]);
+
+    $defaults = company_controller()->getAuthSettings();
+
+    expect($defaults->getStatusCode())->toBe(200)
+        ->and($defaults->getData(true))->toBe(['allow_users_change_password' => true]);
+
+    $saved = company_controller()->saveAuthSettings(company_controller_request('POST', [
+        'allow_users_change_password' => false,
+    ], company_controller_user('owner-1')));
+
+    expect($saved->getStatusCode())->toBe(200)
+        ->and($saved->getData(true))->toBe(['allow_users_change_password' => false])
+        ->and(json_decode($capsule->getConnection('mysql')->table('settings')->where('key', 'company.company-1.auth')->value('value'), true))->toBe(['allow_users_change_password' => false])
+        ->and(company_controller()->getAuthSettings()->getData(true))->toBe(['allow_users_change_password' => false])
+        ->and(array_column($activity->entries, 'event'))->toBe(['auth_settings_updated']);
+});
+
+test('company controller only lets administrators change organization authentication settings', function () {
+    $capsule = company_controller_fixtures();
+    company_controller_bind_activity();
+
+    $member = company_controller()->saveAuthSettings(company_controller_request('POST', [
+        'allow_users_change_password' => false,
+    ], company_controller_user('member-1')));
+    $admin = company_controller()->saveAuthSettings(company_controller_request('POST', [
+        'allow_users_change_password' => false,
+    ], company_controller_user('admin-1')));
+
+    $missing = company_controller()->saveAuthSettings(company_controller_request('POST', [], company_controller_user('admin-1')));
+
+    expect($member->getStatusCode())->toBe(403)
+        ->and($admin->getStatusCode())->toBe(200)
+        ->and($missing->getStatusCode())->toBe(422)
+        ->and(json_decode($capsule->getConnection('mysql')->table('settings')->where('key', 'company.company-1.auth')->value('value'), true))->toBe(['allow_users_change_password' => false]);
+});
