@@ -6,6 +6,7 @@ use Fleetbase\Http\Requests\ChangePasswordRequest;
 use Fleetbase\Http\Requests\JoinOrganizationRequest;
 use Fleetbase\Http\Requests\LoginRequest;
 use Fleetbase\Models\User;
+use Fleetbase\Support\TwoFactorAuth;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Events\Dispatcher;
@@ -717,7 +718,33 @@ test('login starts two factor authentication without issuing a sanctum token whe
         ->and($redis->sets)->toHaveCount(1)
         ->and($redis->sets[0]['key'])->toStartWith('two_fa_session:11111111-1111-4111-8111-111111111111:')
         ->and($redis->sets[0]['value'])->toBe('11111111-1111-4111-8111-111111111111')
+        // A relative TTL in seconds, not an absolute timestamp.
+        ->and($redis->sets[0]['options'])->toBe(['EX', TwoFactorAuth::SESSION_TTL])
         ->and($capsule->getConnection('mysql')->table('personal_access_tokens')->count())->toBe(0);
+});
+
+test('login does not start two factor authentication or reveal it when the password is wrong', function () {
+    $capsule = auth_controller_login_bootstrap_database();
+    auth_controller_login_insert_user($capsule, [
+        'type'              => 'dispatcher',
+        'email_verified_at' => '2026-07-18 10:00:00',
+    ]);
+    $capsule->getConnection('mysql')->table('settings')->insert([
+        'key'   => 'user.11111111-1111-4111-8111-111111111111.2fa',
+        'value' => json_encode(['enabled' => true, 'method' => 'email']),
+    ]);
+
+    $response = (new AuthController())->login(auth_controller_login_request([
+        'identity' => 'auth@example.test',
+        'password' => 'not-the-password',
+    ]));
+    $payload = $response->getData(true);
+
+    expect($response->getStatusCode())->toBe(401)
+        ->and($payload['code'])->toBe('invalid_credentials')
+        ->and($payload)->not->toHaveKey('twoFaSession')
+        ->and($payload)->not->toHaveKey('isEnabled')
+        ->and(app('redis')->sets)->toBe([]);
 });
 
 test('bootstrap returns cached session and organization response contracts', function () {

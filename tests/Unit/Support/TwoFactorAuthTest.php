@@ -44,12 +44,26 @@ class TwoFactorAuthRedisFake
         return array_key_exists($key, $this->values);
     }
 
-    public function del(?string $key): bool
+    public function del(?string ...$keys): bool
     {
-        $this->deleted[] = $key;
-        unset($this->values[$key]);
+        foreach ($keys as $key) {
+            $this->deleted[] = $key;
+            unset($this->values[$key]);
+        }
 
         return true;
+    }
+
+    public function incr(string $key): int
+    {
+        $this->values[$key] = (int) ($this->values[$key] ?? 0) + 1;
+
+        return $this->values[$key];
+    }
+
+    public function expire(string $key, int $seconds): bool
+    {
+        return array_key_exists($key, $this->values);
     }
 
     public function connection(): self
@@ -384,6 +398,7 @@ test('two factor auth starts encrypted redis backed sessions and validates ident
         ->and($redis->sets)->toHaveCount(1)
         ->and($redis->sets[0]['key'])->toStartWith('two_fa_session:' . $user->uuid . ':')
         ->and($redis->sets[0]['value'])->toBe($user->uuid)
+        ->and($redis->sets[0]['options'])->toBe(['EX', TwoFactorAuth::SESSION_TTL])
         ->and(TwoFactorAuth::validateSessionToken($token, $user->email))->toBeTrue()
         ->and(TwoFactorAuth::validateSessionToken($token, '+19999999999'))->toBeFalse()
         ->and(TwoFactorAuth::createTwoFaSessionIfEnabled('missing@example.com'))->toBeNull();
@@ -583,7 +598,53 @@ test('two factor auth verifies matching codes creates access tokens and forgets 
 
     expect($accessToken)->toContain('|')
         ->and(app('db')->table('personal_access_tokens')->where('tokenable_id', $user->uuid)->count())->toBe(1)
-        ->and($redis->deleted)->toBe([$redis->sets[0]['key']]);
+        ->and($redis->deleted)->toBe([$redis->sets[0]['key'], $redis->sets[0]['key'] . ':attempts']);
+});
+
+test('two factor auth invalidates the session after too many failed codes', function () {
+    [$user, , $redis] = two_factor_auth_fixtures();
+    TwoFactorAuth::saveTwoFaSettingsForUser($user, ['enabled' => true, 'method' => 'email']);
+
+    $token            = TwoFactorAuth::start($user->email, 10);
+    $sessionKey       = $redis->sets[0]['key'];
+    $verificationCode = two_factor_auth_verification_code($user, Carbon::now()->addMinutes(5));
+    $clientToken      = TwoFactorAuth::createClientSessionToken($verificationCode);
+
+    for ($i = 1; $i < TwoFactorAuth::MAX_VERIFY_ATTEMPTS; $i++) {
+        expect(fn () => TwoFactorAuth::verifyCode('000000', $token, $clientToken))
+            ->toThrow(Exception::class, 'Verification code does not match.');
+    }
+
+    expect($redis->values[$sessionKey . ':attempts'])->toBe(TwoFactorAuth::MAX_VERIFY_ATTEMPTS - 1)
+        ->and(fn () => TwoFactorAuth::verifyCode('000000', $token, $clientToken))
+        ->toThrow(Exception::class, 'Too many failed verification attempts. Please sign in again.')
+        ->and($redis->exists($sessionKey))->toBeFalse()
+        ->and($redis->exists($sessionKey . ':attempts'))->toBeFalse()
+        // The correct code no longer works once the session is gone.
+        ->and(fn () => TwoFactorAuth::verifyCode('123456', $token, $clientToken))
+        ->toThrow(Exception::class, 'Verification code is invalid.')
+        ->and(app('db')->table('personal_access_tokens')->count())->toBe(0);
+});
+
+test('two factor auth keeps counting failed codes across resent codes', function () {
+    [$user, , $redis] = two_factor_auth_fixtures();
+    TwoFactorAuth::saveTwoFaSettingsForUser($user, ['enabled' => true, 'method' => 'email']);
+
+    $token      = TwoFactorAuth::start($user->email, 10);
+    $sessionKey = $redis->sets[0]['key'];
+
+    for ($i = 1; $i < TwoFactorAuth::MAX_VERIFY_ATTEMPTS; $i++) {
+        $clientToken = TwoFactorAuth::resendCode($user->email, $token);
+
+        expect(fn () => TwoFactorAuth::verifyCode('not-the-code', $token, $clientToken))
+            ->toThrow(Exception::class, 'Verification code does not match.');
+    }
+
+    $clientToken = TwoFactorAuth::resendCode($user->email, $token);
+
+    expect(fn () => TwoFactorAuth::verifyCode('not-the-code', $token, $clientToken))
+        ->toThrow(Exception::class, 'Too many failed verification attempts. Please sign in again.')
+        ->and($redis->exists($sessionKey))->toBeFalse();
 });
 
 test('two factor auth verify code rejects invalid and mismatched codes', function () {

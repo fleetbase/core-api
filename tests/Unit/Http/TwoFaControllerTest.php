@@ -31,12 +31,26 @@ class TwoFaControllerRedisFake
         return array_key_exists($key, $this->values);
     }
 
-    public function del(?string $key): bool
+    public function del(?string ...$keys): bool
     {
-        $this->deleted[] = $key;
-        unset($this->values[$key]);
+        foreach ($keys as $key) {
+            $this->deleted[] = $key;
+            unset($this->values[$key]);
+        }
 
         return true;
+    }
+
+    public function incr(string $key): int
+    {
+        $this->values[$key] = (int) ($this->values[$key] ?? 0) + 1;
+
+        return $this->values[$key];
+    }
+
+    public function expire(string $key, int $seconds): bool
+    {
+        return array_key_exists($key, $this->values);
     }
 
     public function connection(): self
@@ -328,27 +342,58 @@ test('two fa controller saves disabled system config with enforcement cleared an
         ->and(Setting::where('key', 'system.2fa')->value('value'))->not->toBeNull();
 });
 
-test('two fa controller reports enabled sessions only when user level two factor is enabled', function () {
-    two_fa_controller_database();
+test('two fa controller check never starts a session or reveals whether two factor is enabled', function () {
+    $redis      = two_fa_controller_database();
     $user       = two_fa_controller_user();
     $controller = two_fa_controller();
 
-    $disabled = $controller->checkTwoFactor(Request::create('/int/v1/two-fa/check', 'POST', [
+    $disabled = $controller->checkTwoFactor(Request::create('/int/v1/two-fa/check', 'GET', [
         'identity' => $user->email,
     ]));
 
     TwoFactorAuth::saveTwoFaSettingsForUser($user, ['enabled' => true, 'method' => 'email']);
-    $enabled = $controller->checkTwoFactor(Request::create('/int/v1/two-fa/check', 'POST', [
+    $enabled = $controller->checkTwoFactor(Request::create('/int/v1/two-fa/check', 'GET', [
         'identity' => $user->email,
     ]));
+    $missing = $controller->checkTwoFactor(Request::create('/int/v1/two-fa/check', 'GET', [
+        'identity' => 'missing@example.test',
+    ]));
 
-    expect($disabled->getData(true))->toBe([
-        'twoFaSession'   => null,
-        'isTwoFaEnabled' => false,
-    ])
-        ->and($enabled->getData(true)['isTwoFaEnabled'])->toBeTrue()
-        ->and($enabled->getData(true)['twoFaSession'])->toBeString()
-        ->and($enabled->getData(true)['twoFaSession'])->not->toContain('two_fa_session');
+    // A 2FA session is only started by auth/login once the password has been checked.
+    $expected = ['twoFaSession' => null, 'isTwoFaEnabled' => false];
+
+    expect($disabled->getData(true))->toBe($expected)
+        ->and($enabled->getData(true))->toBe($expected)
+        ->and($missing->getData(true))->toBe($expected)
+        ->and($redis->values)->toBe([]);
+});
+
+test('two fa controller verify invalidates the session after too many wrong codes', function () {
+    $redis = two_fa_controller_database();
+    $user  = two_fa_controller_user();
+    TwoFactorAuth::saveTwoFaSettingsForUser($user, ['enabled' => true, 'method' => 'email']);
+    $token            = TwoFactorAuth::start($user->email, 10);
+    $verificationCode = two_fa_controller_verification_code($user, Carbon::now()->addMinutes(5));
+    $clientToken      = TwoFactorAuth::createClientSessionToken($verificationCode);
+
+    $verify = fn (string $code) => two_fa_controller()->verifyCode(Request::create('/int/v1/two-fa/verify', 'POST', [
+        'code'        => $code,
+        'token'       => $token,
+        'clientToken' => $clientToken,
+    ]));
+
+    $failures = [];
+    for ($i = 0; $i < TwoFactorAuth::MAX_VERIFY_ATTEMPTS; $i++) {
+        $failures[] = $verify('000000')->getData(true);
+    }
+    $afterLockout = $verify('123456');
+
+    expect(array_slice($failures, 0, -1))->each->toBe(['errors' => ['Verification code does not match.']])
+        ->and(end($failures))->toBe(['errors' => ['Too many failed verification attempts. Please sign in again.']])
+        ->and($afterLockout->getStatusCode())->toBe(400)
+        ->and($afterLockout->getData(true))->toBe(['errors' => ['Verification code is invalid.']])
+        ->and($redis->values)->toBe([])
+        ->and(app('db')->table('personal_access_tokens')->count())->toBe(0);
 });
 
 test('two fa controller validates sessions returning existing client tokens expired states and errors', function () {
