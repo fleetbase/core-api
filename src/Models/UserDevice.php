@@ -31,7 +31,16 @@ class UserDevice extends Model
      *
      * @var array
      */
-    protected $fillable = ['user_uuid', 'platform', 'token', 'status'];
+    protected $fillable = ['user_uuid', 'platform', 'app_identifier', 'environment', 'token', 'status', 'last_seen_at'];
+
+    /**
+     * The attributes that should be cast to native types.
+     *
+     * @var array
+     */
+    protected $casts = [
+        'last_seen_at' => 'datetime',
+    ];
 
     /**
      * Dynamic attributes that are appended to object.
