@@ -1596,3 +1596,17 @@ it('sorts organizations by current membership count without counting removed use
     $resource = new Fleetbase\Http\Resources\Organization($companies->last());
     expect($resource->resolve($request))->toMatchArray(['users_count' => 1, 'website_url' => 'https://organization.example.test']);
 });
+
+it('rejects missing sessions before reading or changing organization authentication settings', function () {
+    company_controller_fixtures();
+    session()->remove('company');
+    $controller = company_controller();
+    expect($controller->getAuthSettings()->getStatusCode())->toBe(401)
+        ->and($controller->saveAuthSettings(company_controller_request('POST'))->getStatusCode())->toBe(401)
+        ->and($controller->updateRecord(company_controller_request('PATCH'), 'company_public_1')->getStatusCode())->toBe(404);
+
+    session(['company' => 'company-1']);
+    session()->remove('user');
+    $middleware = collect($controller->getMiddleware())->first(fn ($entry) => ($entry['options']['only'] ?? null) === ['updateRecord', 'saveTwoFactorSettings'])['middleware'];
+    expect($middleware(company_controller_request('PATCH'), fn () => 'allowed')->getStatusCode())->toBe(401);
+});

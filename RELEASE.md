@@ -2,6 +2,7 @@
 
 ## Improvements
 
+- Organization administration supports company and owner identity search, country/timezone/owner-IP and registration/update-date filters, and sorting by current user count. Admins can open organizations outside their own memberships, inspect organization-scoped usage totals, and see members' 2FA methods and linked OAuth providers without exposing authentication secrets.
 - Sign in with an authenticator app (TOTP, RFC 6238), next to email and SMS 2FA (#163). It works with Authy, Google Authenticator, Microsoft Authenticator and 1Password.
   - New `users/two-fa/authenticator` endpoints to set up, confirm, disable and inspect the app. Setup, disable and regenerating recovery codes need the current password.
   - Confirming the app returns 8 single-use recovery codes. `two-fa/verify` accepts an app code (±1 step for clock drift, each code once) or a recovery code.

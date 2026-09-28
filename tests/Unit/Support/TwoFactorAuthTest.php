@@ -872,3 +872,13 @@ test('two factor auth replaces recovery codes', function () {
 
     expect(fn () => TwoFactorAuth::regenerateRecoveryCodes($user))->toThrow(Exception::class, 'Set up an authenticator app first.');
 });
+
+test('two factor auth rejects a pending authenticator challenge after its user is removed', function () {
+    [$user] = two_factor_auth_fixtures();
+    two_factor_auth_enroll_authenticator($user);
+    $token       = TwoFactorAuth::start($user);
+    $clientToken = TwoFactorAuth::getClientSessionTokenFromTwoFaSession($token, $user->email);
+    app('db')->table('users')->where('uuid', $user->uuid)->delete();
+
+    expect(fn () => TwoFactorAuth::verifyCode('123456', $token, $clientToken))->toThrow(Exception::class, 'Verification code is invalid.');
+});

@@ -2448,10 +2448,18 @@ test('change current password request checks the current password in the same re
     $right = $validate(['current_password' => 'old-password']);
     $none  = $validate([]);
 
-    expect($wrong->fails())->toBeTrue()
+    $missing = new Illuminate\Validation\Validator($translator, [], $rules, $request->messages());
+
+    expect($request->authorize())->toBeTrue()
+        ->and($missing->fails())->toBeTrue()
+        ->and($missing->errors()->first('current_password'))->toBe('The current password is required.')
+        ->and($request->messages()['password.uncompromised'])->toContain('data breach')
+        ->and($wrong->fails())->toBeTrue()
         ->and($wrong->errors()->first('current_password'))->toBe('The current password provided is invalid.')
         ->and($right->fails())->toBeFalse()
         ->and($none->fails())->toBeTrue();
+});
+
 test('user controller authenticator app endpoints skip the generic resource permission check', function (string $method) {
     user_controller_database();
 
@@ -2509,10 +2517,61 @@ test('user controller disables the authenticator app and replaces recovery codes
     expect($codesDenied->getStatusCode())->toBe(422)
         ->and($codes->getData(true)['recovery_codes'])->toHaveCount(8)
         ->and($denied->getStatusCode())->toBe(422)
-        ->and(TestActivityLogger::$logged)->not->toBeEmpty()
+        ->and(array_column(UserControllerActivityLoggerFake::$logged, 'event'))->toBe(['authenticator_enabled', 'recovery_codes_regenerated', 'authenticator_disabled'])
         ->and($disabled->getData(true))->toBe([
             'status'   => ['enabled' => false, 'confirmed_at' => null, 'recovery_codes_remaining' => 0],
             'settings' => ['enabled' => false, 'method' => 'email'],
         ])
         ->and($noApp->getStatusCode())->toBe(422);
+});
+
+it('enforces metrics and system two-factor permissions before reaching their handlers', function (string $controllerClass, ?string $permission) {
+    $database   = user_controller_database();
+    $controller = new $controllerClass();
+    $middleware = collect($controller->getMiddleware())->first(fn ($entry) => $entry['middleware'] instanceof Closure)['middleware'];
+    $run        = function (?string $actor) use ($middleware) {
+        session()->remove('user');
+        if ($actor !== null) {
+            session(['user' => $actor]);
+        }
+        $request = user_controller_request('GET', [], $actor ? user_controller_user($actor) : null);
+
+        return $middleware($request, fn () => 'allowed');
+    };
+
+    expect($run(null)->getStatusCode())->toBe(401)
+        ->and($run('member-1')->getStatusCode())->toBe(401)
+        ->and($run('admin-1'))->toBe('allowed');
+
+    if ($permission !== null) {
+        user_controller_grant_permission($database, 'pivot-member-1', $permission);
+        expect($run('member-1'))->toBe('allowed');
+    }
+})->with([
+    'platform metrics'         => [Fleetbase\Http\Controllers\Internal\v1\AdminMetricsController::class, null],
+    'developer metrics'        => [Fleetbase\Http\Controllers\Internal\v1\DeveloperMetricsController::class, 'developers list api-key'],
+    'IAM metrics'              => [Fleetbase\Http\Controllers\Internal\v1\IamMetricsController::class, 'iam list user'],
+    'system two-factor policy' => [Fleetbase\Http\Controllers\Internal\v1\TwoFaController::class, null],
+]);
+
+it('allows report execution and export only after the matching permission check', function (string $action, string $method) {
+    $database   = user_controller_database();
+    $controller = new Fleetbase\Http\Controllers\Internal\v1\ReportController();
+    $middleware = collect($controller->getMiddleware())->first(fn ($entry) => in_array($method, $entry['options']['only'] ?? [], true))['middleware'];
+    $run        = function (string $actor) use ($middleware, $method) {
+        session(['user' => $actor]);
+        $request = user_controller_request('POST', [], user_controller_user($actor), $method);
+
+        return $middleware($request, fn () => 'allowed');
+    };
+
+    expect($run('member-1')->getStatusCode())->toBe(401)
+        ->and($run('admin-1'))->toBe('allowed');
+    user_controller_grant_permission($database, 'pivot-member-1', 'iam ' . $action . ' report');
+    expect($run('member-1'))->toBe('allowed');
+})->with([['execute', 'executeQuery'], ['export', 'exportQuery'], ['export', 'download']]);
+
+it('uses the API key schema name when authorizing credential operations', function () {
+    user_controller_database();
+    expect((new Fleetbase\Http\Controllers\Internal\v1\ApiCredentialController())->getPermissionResourceName())->toBe('api-key');
 });

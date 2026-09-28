@@ -1220,7 +1220,7 @@ it('searches organization identity and owner details without escaping the tenant
         ['uuid' => 'other', 'name' => 'Other Owner', 'email' => 'other@foreign.test', 'phone' => '+441234', 'ip_address' => '198.51.100.2'],
     ]);
     $database->table('companies')->insert([
-        ['uuid' => 'owned', 'owner_uuid' => 'user-1', 'name' => 'Fleet Example', 'public_id' => 'company_example', 'phone' => '+14155550199', 'description' => 'Regional delivery', 'website_url' => 'https://example.test', 'slug' => 'fleet-example', 'country' => 'US', 'timezone' => 'America/New_York', 'type' => 'logistics', 'status' => null, 'created_at' => '2026-09-01 23:59:59', 'updated_at' => '2026-09-28 23:59:59'],
+        ['uuid' => 'owned', 'owner_uuid' => 'user-1', 'name' => 'Fleet Example', 'public_id' => 'company_example', 'phone' => '+14155550199', 'description' => 'Regional delivery', 'website_url' => 'https://example.test', 'slug' => 'fleet-example', 'country' => 'US', 'timezone' => 'America/New_York', 'type' => 'logistics', 'status' => null, 'created_at' => '2026-09-01 23:59:59', 'updated_at' => '2026-09-27 23:59:59'],
         ['uuid' => 'foreign', 'owner_uuid' => 'other', 'name' => 'Foreign', 'public_id' => 'company_foreign', 'phone' => null, 'description' => 'Regional delivery', 'website_url' => null, 'slug' => null, 'country' => 'GB', 'timezone' => 'Europe/London', 'type' => 'retail', 'status' => 'suspended', 'created_at' => '2026-08-01 00:00:00', 'updated_at' => '2026-08-02 00:00:00'],
     ]);
 
@@ -1232,7 +1232,7 @@ it('searches organization identity and owner details without escaping the tenant
         ['ip_address'       => '198.51.100.1'], ['country' => 'us'], ['timezone' => 'America/New_York'],
         ['type'             => 'logistics'], ['status' => 'active'],
         ['created_at_after' => '2026-09-01', 'created_at_before' => '2026-09-01'],
-        ['updated_at_after' => '2026-09-28'], ['updated_at_before' => '2026-09-28', 'country' => 'US'],
+        ['updated_at_after' => '2026-09-27'], ['updated_at_before' => '2026-09-27', 'country' => 'US'],
     ] as $filters) {
         expect(concrete_filter_admin_uuids(CompanyFilter::class, Company::class, $filters))->toBe(['owned']);
     }
