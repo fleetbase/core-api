@@ -272,6 +272,22 @@ trait HasApiControllerBehavior
     }
 
     /**
+     * Gets the resource name used in permission names, e.g. "user" in "iam list user".
+     *
+     * Defaults to the kebab-cased singular resource name. A controller whose model name
+     * differs from its IAM schema resource declares `public string $permissionResource`
+     * (for example ApiCredentialController uses the schema resource "api-key").
+     */
+    public function getPermissionResourceName(): string
+    {
+        if (property_exists($this, 'permissionResource') && !empty($this->permissionResource)) {
+            return $this->permissionResource;
+        }
+
+        return str_replace('_', '-', $this->getResourceSingularName());
+    }
+
+    /**
      * Gets the service associated with the controller.
      *
      * Returns the fully qualified name of the service namespace that is used by

@@ -34,6 +34,11 @@ class ApiCredentialController extends FleetbaseController
     public $service = 'developers';
 
     /**
+     * The IAM schema resource this controller's permissions use.
+     */
+    public string $permissionResource = 'api-key';
+
+    /**
      * Create a new API credential record.
      *
      * Overrides the generic createRecord to ensure that when a test/sandbox key

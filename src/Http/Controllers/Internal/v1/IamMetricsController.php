@@ -11,6 +11,7 @@ use Fleetbase\Models\Policy;
 use Fleetbase\Models\Role;
 use Fleetbase\Models\Setting;
 use Fleetbase\Models\User;
+use Fleetbase\Support\Auth;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -20,6 +21,18 @@ use Illuminate\Support\Facades\DB;
 class IamMetricsController extends Controller
 {
     private const DORMANT_DAYS = 90;
+
+    public function __construct()
+    {
+        // Not a resource controller, so AuthorizationGuard cannot resolve a permission for it.
+        $this->middleware(function ($request, $next) {
+            if (Auth::cannotUnlessAdmin('iam list user')) {
+                return response()->error('User is not authorized to list user', 401);
+            }
+
+            return $next($request);
+        });
+    }
 
     public function kpis(Request $request): JsonResponse
     {

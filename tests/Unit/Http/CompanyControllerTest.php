@@ -762,17 +762,22 @@ test('company controller resolves only the active session organization for gener
     expect($foreign->getStatusCode())->toBe(404)
         ->and($foreign->getData(true))->toBe(['errors' => ['Organization not found.']]);
 
+    $before = $capsule->getConnection('mysql')->table('companies')->where('uuid', 'company-1')->first();
+
     $updated = company_controller()->updateRecord(company_controller_request('PUT', [
-        'name'   => 'Acme Updated',
-        'slug'   => 'attempted-slug-change',
-        'status' => 'suspended',
+        'name'       => 'Acme Updated',
+        'slug'       => 'attempted-slug-change',
+        'status'     => 'suspended',
+        'owner_uuid' => 'attempted-owner-takeover',
     ]), 'company_public_1');
 
     $record = $capsule->getConnection('mysql')->table('companies')->where('uuid', 'company-1')->first();
 
+    // Ownership and lifecycle status are platform-managed and ignored for non-admin updates.
     expect($updated['company']->resource->name)->toBe('Acme Updated')
         ->and($record->name)->toBe('Acme Updated')
-        ->and($record->status)->toBe('suspended')
+        ->and($record->status)->toBe($before->status)
+        ->and($record->owner_uuid)->toBe($before->owner_uuid)
         ->and($record->slug)->toBe('acme-logistics');
 
     $deleted = company_controller()->deleteRecord('company_public_1', company_controller_request('DELETE'));
@@ -1426,6 +1431,34 @@ test('company controller leave organization rejects missing sessions missing com
         ->and($missingCompany->getData(true))->toBe(['errors' => ['No organization found for user to leave.']])
         ->and($notMember->getStatusCode())->toBe(400)
         ->and($notMember->getData(true))->toBe(['errors' => ['User selected to leave organization is not a member of this organization.']]);
+});
+
+test('company controller only lets organization managers update settings or the organization 2fa policy', function () {
+    $capsule = company_controller_fixtures();
+
+    $registered = collect(company_controller()->getMiddleware())
+        ->first(fn ($entry) => ($entry['options']['only'] ?? null) === ['updateRecord', 'saveTwoFactorSettings']);
+    expect($registered)->not->toBeNull();
+
+    $run = function (string $user) use ($registered) {
+        session(['company' => 'company-1', 'user' => $user]);
+
+        return ($registered['middleware'])(company_controller_request('PUT'), fn () => 'allowed');
+    };
+
+    // A plain member (the dispatcher case) is refused.
+    $refused = $run('member-1');
+    expect($refused->getStatusCode())->toBe(401)
+        ->and($refused->getData(true))->toBe(['errors' => ['Only the organization owner or an Administrator can change organization settings.']]);
+
+    // The owner, a member holding the Administrator role, and system admins are allowed.
+    expect($run('owner-1'))->toBe('allowed')
+        ->and($run('admin-1'))->toBe('allowed');
+
+    $capsule->getConnection('mysql')->table('model_has_roles')->insert([
+        'role_id' => 'Administrator', 'model_type' => Fleetbase\Models\CompanyUser::class, 'model_uuid' => 'pivot-member-1',
+    ]);
+    expect($run('member-1'))->toBe('allowed');
 });
 
 test('company controller reads and saves organization authentication settings', function () {

@@ -15,6 +15,18 @@ use Laravel\Sanctum\PersonalAccessToken;
  */
 class TwoFaController extends Controller
 {
+    public function __construct()
+    {
+        // The system-wide 2FA policy applies to every organization: system administrators only.
+        $this->middleware(function ($request, $next) {
+            if (!Auth::getUserFromSession($request)?->isAdmin()) {
+                return response()->error('Only system administrators can change the system two-factor policy.', 401);
+            }
+
+            return $next($request);
+        })->only('saveSystemConfig');
+    }
+
     /**
      * Save Two-Factor Authentication system wide settings.
      *
