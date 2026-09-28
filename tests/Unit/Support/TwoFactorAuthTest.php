@@ -44,12 +44,31 @@ class TwoFactorAuthRedisFake
         return array_key_exists($key, $this->values);
     }
 
-    public function del(?string $key): bool
+    public function get(string $key): mixed
     {
-        $this->deleted[] = $key;
-        unset($this->values[$key]);
+        return $this->values[$key] ?? null;
+    }
+
+    public function del(?string ...$keys): bool
+    {
+        foreach ($keys as $key) {
+            $this->deleted[] = $key;
+            unset($this->values[$key]);
+        }
 
         return true;
+    }
+
+    public function incr(string $key): int
+    {
+        $this->values[$key] = (int) ($this->values[$key] ?? 0) + 1;
+
+        return $this->values[$key];
+    }
+
+    public function expire(string $key, int $seconds): bool
+    {
+        return array_key_exists($key, $this->values);
     }
 
     public function connection(): self
@@ -384,6 +403,7 @@ test('two factor auth starts encrypted redis backed sessions and validates ident
         ->and($redis->sets)->toHaveCount(1)
         ->and($redis->sets[0]['key'])->toStartWith('two_fa_session:' . $user->uuid . ':')
         ->and($redis->sets[0]['value'])->toBe($user->uuid)
+        ->and($redis->sets[0]['options'])->toBe(['EX', TwoFactorAuth::SESSION_TTL])
         ->and(TwoFactorAuth::validateSessionToken($token, $user->email))->toBeTrue()
         ->and(TwoFactorAuth::validateSessionToken($token, '+19999999999'))->toBeFalse()
         ->and(TwoFactorAuth::createTwoFaSessionIfEnabled('missing@example.com'))->toBeNull();
@@ -583,7 +603,53 @@ test('two factor auth verifies matching codes creates access tokens and forgets 
 
     expect($accessToken)->toContain('|')
         ->and(app('db')->table('personal_access_tokens')->where('tokenable_id', $user->uuid)->count())->toBe(1)
-        ->and($redis->deleted)->toBe([$redis->sets[0]['key']]);
+        ->and($redis->deleted)->toBe([$redis->sets[0]['key'], $redis->sets[0]['key'] . ':attempts']);
+});
+
+test('two factor auth invalidates the session after too many failed codes', function () {
+    [$user, , $redis] = two_factor_auth_fixtures();
+    TwoFactorAuth::saveTwoFaSettingsForUser($user, ['enabled' => true, 'method' => 'email']);
+
+    $token            = TwoFactorAuth::start($user->email, 10);
+    $sessionKey       = $redis->sets[0]['key'];
+    $verificationCode = two_factor_auth_verification_code($user, Carbon::now()->addMinutes(5));
+    $clientToken      = TwoFactorAuth::createClientSessionToken($verificationCode);
+
+    for ($i = 1; $i < TwoFactorAuth::MAX_VERIFY_ATTEMPTS; $i++) {
+        expect(fn () => TwoFactorAuth::verifyCode('000000', $token, $clientToken))
+            ->toThrow(Exception::class, 'Verification code does not match.');
+    }
+
+    expect($redis->values[$sessionKey . ':attempts'])->toBe(TwoFactorAuth::MAX_VERIFY_ATTEMPTS - 1)
+        ->and(fn () => TwoFactorAuth::verifyCode('000000', $token, $clientToken))
+        ->toThrow(Exception::class, 'Too many failed verification attempts. Please sign in again.')
+        ->and($redis->exists($sessionKey))->toBeFalse()
+        ->and($redis->exists($sessionKey . ':attempts'))->toBeFalse()
+        // The correct code no longer works once the session is gone.
+        ->and(fn () => TwoFactorAuth::verifyCode('123456', $token, $clientToken))
+        ->toThrow(Exception::class, 'Verification code is invalid.')
+        ->and(app('db')->table('personal_access_tokens')->count())->toBe(0);
+});
+
+test('two factor auth keeps counting failed codes across resent codes', function () {
+    [$user, , $redis] = two_factor_auth_fixtures();
+    TwoFactorAuth::saveTwoFaSettingsForUser($user, ['enabled' => true, 'method' => 'email']);
+
+    $token      = TwoFactorAuth::start($user->email, 10);
+    $sessionKey = $redis->sets[0]['key'];
+
+    for ($i = 1; $i < TwoFactorAuth::MAX_VERIFY_ATTEMPTS; $i++) {
+        $clientToken = TwoFactorAuth::resendCode($user->email, $token);
+
+        expect(fn () => TwoFactorAuth::verifyCode('not-the-code', $token, $clientToken))
+            ->toThrow(Exception::class, 'Verification code does not match.');
+    }
+
+    $clientToken = TwoFactorAuth::resendCode($user->email, $token);
+
+    expect(fn () => TwoFactorAuth::verifyCode('not-the-code', $token, $clientToken))
+        ->toThrow(Exception::class, 'Too many failed verification attempts. Please sign in again.')
+        ->and($redis->exists($sessionKey))->toBeFalse();
 });
 
 test('two factor auth verify code rejects invalid and mismatched codes', function () {
@@ -614,4 +680,195 @@ test('two factor auth resends codes only for valid users and sessions', function
         ->and(app('db')->table('verification_codes')->count())->toBe(1)
         ->and(fn () => TwoFactorAuth::resendCode('missing@example.com', $token))->toThrow(Exception::class, 'No user found using the provided identity')
         ->and(fn () => TwoFactorAuth::resendCode($user->email, 'invalid-token'))->toThrow(Exception::class, '2FA session is invalid.');
+});
+
+/**
+ * Enroll the user in an authenticator app and return its secret and recovery codes.
+ *
+ * @return array{0: string, 1: array<int, string>}
+ */
+function two_factor_auth_enroll_authenticator(User $user): array
+{
+    $enrollment    = TwoFactorAuth::beginAuthenticatorEnrollment($user);
+    $recoveryCodes = TwoFactorAuth::confirmAuthenticatorEnrollment($user, (new PragmaRX\Google2FA\Google2FA())->getCurrentOtp($enrollment['secret']));
+
+    return [$enrollment['secret'], $recoveryCodes];
+}
+
+function two_factor_auth_authenticator_record(User $user): array
+{
+    return json_decode(app('db')->table('settings')->where('key', 'user.' . $user->uuid . '.2fa_authenticator')->value('value') ?? '[]', true) ?? [];
+}
+
+test('two factor auth sets up an authenticator app only once confirmed with a code from it', function () {
+    [$user] = two_factor_auth_fixtures();
+    TwoFactorAuth::saveTwoFaSettingsForUser($user, ['enabled' => true, 'method' => 'email']);
+
+    $enrollment = TwoFactorAuth::beginAuthenticatorEnrollment($user);
+    $pending    = two_factor_auth_authenticator_record($user);
+
+    expect($enrollment['secret'])->toMatch('/^[A-Z2-7]{32}$/')
+        ->and($enrollment['otpauth_url'])->toStartWith('otpauth://totp/Fleetbase:user%40example.com?secret=' . $enrollment['secret'])
+        ->and($enrollment['qr_code'])->toStartWith('data:image/svg+xml;base64,')
+        ->and($pending['pending_secret'])->toStartWith('encrypted:')
+        ->and(json_encode($pending))->not->toContain($enrollment['secret'])
+        ->and(TwoFactorAuth::hasAuthenticatorApp($user))->toBeFalse()
+        ->and(fn () => TwoFactorAuth::confirmAuthenticatorEnrollment($user, '000000'))->toThrow(Exception::class, 'The code from your authenticator app is not correct.');
+
+    $recoveryCodes = TwoFactorAuth::confirmAuthenticatorEnrollment($user, (new PragmaRX\Google2FA\Google2FA())->getCurrentOtp($enrollment['secret']));
+    $record        = two_factor_auth_authenticator_record($user);
+
+    expect($recoveryCodes)->toHaveCount(TwoFactorAuth::RECOVERY_CODE_COUNT)
+        ->and($recoveryCodes[0])->toMatch('/^[a-z2-9]{5}-[a-z2-9]{5}$/')
+        ->and($record)->not->toHaveKey('pending_secret')
+        ->and($record['secret'])->toStartWith('encrypted:')
+        ->and(json_encode($record))->not->toContain($recoveryCodes[0])
+        ->and(TwoFactorAuth::usesAuthenticatorApp($user))->toBeTrue()
+        ->and(TwoFactorAuth::getTwoFaSettingsForUser($user)->value)->toBe(['enabled' => true, 'method' => 'authenticator_app'])
+        ->and(TwoFactorAuth::getAuthenticatorStatus($user))->toMatchArray(['enabled' => true, 'recovery_codes_remaining' => 8])
+        ->and(array_column(TestActivityLogger::$logged, 'event'))->toBe(['authenticator_enabled']);
+});
+
+test('two factor auth rejects an authenticator setup that has expired', function () {
+    [$user] = two_factor_auth_fixtures();
+
+    $enrollment = TwoFactorAuth::beginAuthenticatorEnrollment($user);
+    Carbon::setTestNow(Carbon::now()->addSeconds(TwoFactorAuth::AUTHENTICATOR_ENROLLMENT_TTL + 1));
+
+    expect(fn () => TwoFactorAuth::confirmAuthenticatorEnrollment($user, (new PragmaRX\Google2FA\Google2FA())->getCurrentOtp($enrollment['secret'])))
+        ->toThrow(Exception::class, 'Authenticator setup has expired. Start again.')
+        ->and(TwoFactorAuth::hasAuthenticatorApp($user))->toBeFalse();
+});
+
+test('two factor auth signs in authenticator app users with a code from the app and sends nothing', function () {
+    [$user, , $redis]           = two_factor_auth_fixtures();
+    [$secret]                   = two_factor_auth_enroll_authenticator($user);
+    TestActivityLogger::$logged = [];
+
+    $token       = TwoFactorAuth::start($user);
+    $clientToken = TwoFactorAuth::getClientSessionTokenFromTwoFaSession($token, $user->email);
+
+    expect(app('db')->table('verification_codes')->count())->toBe(0)
+        ->and(app('mail.manager')->sent)->toBe([])
+        ->and(base64_decode($clientToken))->not->toContain($user->uuid)
+        ->and(TwoFactorAuth::getChallengeMethod($user->email, $clientToken))->toBe('authenticator_app')
+        ->and(TwoFactorAuth::getClientSessionTokenFromTwoFaSession($token, $user->email, $clientToken))->toBe($clientToken)
+        ->and(TwoFactorAuth::validateSessionToken($token, $user->email, $clientToken))->toBeTrue();
+
+    // Enrolling used the current time step, so sign in with the next one, which the
+    // clock drift window still accepts
+    $google2fa   = new PragmaRX\Google2FA\Google2FA();
+    $nextCode    = $google2fa->oathTotp($secret, two_factor_auth_authenticator_record($user)['last_timestep'] + 1);
+    $accessToken = TwoFactorAuth::verifyCode($nextCode, $token, $clientToken);
+
+    expect($accessToken)->toContain('|')
+        ->and(app('db')->table('personal_access_tokens')->where('tokenable_id', $user->uuid)->count())->toBe(1)
+        ->and(array_keys($redis->values))->toBe([])
+        ->and(TestActivityLogger::$logged)->toBe([
+            ['log' => 'auth', 'description' => 'Two-factor sign-in verified', 'causer' => $user->uuid, 'subject' => $user->uuid, 'properties' => ['method' => 'authenticator_app'], 'event' => 'two_factor_verified'],
+        ]);
+});
+
+test('two factor auth does not accept the same authenticator code twice', function () {
+    [$user]   = two_factor_auth_fixtures();
+    [$secret] = two_factor_auth_enroll_authenticator($user);
+
+    // The enrollment code is the current one, so it cannot be used again to sign in
+    $code        = (new PragmaRX\Google2FA\Google2FA())->getCurrentOtp($secret);
+    $token       = TwoFactorAuth::start($user);
+    $clientToken = TwoFactorAuth::getClientSessionTokenFromTwoFaSession($token, $user->email);
+
+    expect(fn () => TwoFactorAuth::verifyCode($code, $token, $clientToken))->toThrow(Exception::class, 'Verification code does not match.')
+        ->and(TwoFactorAuth::verifyAuthenticatorCode($user, $code))->toBeNull();
+});
+
+test('two factor auth accepts each recovery code once', function () {
+    [$user, , $redis]           = two_factor_auth_fixtures();
+    [, $recoveryCodes]          = two_factor_auth_enroll_authenticator($user);
+    TestActivityLogger::$logged = [];
+
+    $token       = TwoFactorAuth::start($user);
+    $clientToken = TwoFactorAuth::getClientSessionTokenFromTwoFaSession($token, $user->email);
+    $accessToken = TwoFactorAuth::verifyCode(strtoupper(str_replace('-', ' ', $recoveryCodes[0])), $token, $clientToken);
+
+    expect($accessToken)->toContain('|')
+        ->and(TwoFactorAuth::getAuthenticatorStatus($user)['recovery_codes_remaining'])->toBe(7)
+        ->and(array_column(TestActivityLogger::$logged, 'event'))->toBe(['recovery_code_used', 'two_factor_verified'])
+        ->and(TestActivityLogger::$logged[1]['properties'])->toBe(['method' => 'recovery_code'])
+        ->and(TwoFactorAuth::verifyAuthenticatorCode($user, $recoveryCodes[0]))->toBeNull()
+        ->and(TwoFactorAuth::verifyAuthenticatorCode($user, $recoveryCodes[1]))->toBe('recovery_code');
+});
+
+test('two factor auth counts wrong authenticator codes towards the lockout', function () {
+    [$user, , $redis] = two_factor_auth_fixtures();
+    two_factor_auth_enroll_authenticator($user);
+
+    $token       = TwoFactorAuth::start($user);
+    $clientToken = TwoFactorAuth::getClientSessionTokenFromTwoFaSession($token, $user->email);
+
+    for ($i = 1; $i < TwoFactorAuth::MAX_VERIFY_ATTEMPTS; $i++) {
+        expect(fn () => TwoFactorAuth::verifyCode('abcde-fghjk', $token, $clientToken))->toThrow(Exception::class, 'Verification code does not match.');
+    }
+
+    expect(fn () => TwoFactorAuth::verifyCode('000000', $token, $clientToken))->toThrow(Exception::class, 'Too many failed verification attempts. Please sign in again.')
+        ->and(TwoFactorAuth::validateSessionToken($token, $user->email, $clientToken))->toBeFalse()
+        ->and(array_column(TestActivityLogger::$logged, 'event'))->toContain('two_factor_locked');
+});
+
+test('two factor auth rejects an authenticator challenge for another user', function () {
+    [$user] = two_factor_auth_fixtures();
+    two_factor_auth_enroll_authenticator($user);
+
+    $other = new User(['uuid' => '44444444-4444-4444-8444-444444444444', 'email' => 'other@example.com', 'name' => 'Other']);
+    app('db')->table('users')->insert(['uuid' => $other->uuid, 'email' => $other->email, 'name' => $other->name, 'created_at' => now(), 'updated_at' => now()]);
+    TwoFactorAuth::saveTwoFaSettingsForUser($other, ['enabled' => true, 'method' => 'email']);
+
+    $clientToken = TwoFactorAuth::getClientSessionTokenFromTwoFaSession(TwoFactorAuth::start($user), $user->email);
+    $otherToken  = TwoFactorAuth::start($other);
+
+    expect(TwoFactorAuth::validateSessionToken($otherToken, $other->email, $clientToken))->toBeFalse()
+        ->and(fn () => TwoFactorAuth::getClientSessionTokenFromTwoFaSession($otherToken, $other->email, $clientToken))->toThrow(Exception::class, '2FA Verification session has expired.')
+        ->and(fn () => TwoFactorAuth::verifyCode('123456', $otherToken, $clientToken))->toThrow(Exception::class, 'Verification code is invalid.');
+});
+
+test('two factor auth sends authenticator app users a code by email as a fallback', function () {
+    [$user] = two_factor_auth_fixtures();
+    two_factor_auth_enroll_authenticator($user);
+
+    $token       = TwoFactorAuth::start($user);
+    $clientToken = TwoFactorAuth::resendCode($user->email, $token);
+
+    expect(app('db')->table('verification_codes')->count())->toBe(1)
+        ->and(app('mail.manager')->sent)->toHaveCount(1)
+        ->and(TwoFactorAuth::getChallengeMethod($user->email, $clientToken))->toBe('email')
+        ->and(TwoFactorAuth::verifyCode(app('db')->table('verification_codes')->value('code'), $token, $clientToken))->toContain('|');
+});
+
+test('two factor auth turns two factor off when the authenticator app it used is removed', function () {
+    [$user]            = two_factor_auth_fixtures();
+    [, $recoveryCodes] = two_factor_auth_enroll_authenticator($user);
+
+    TwoFactorAuth::disableAuthenticatorApp($user);
+
+    expect(TwoFactorAuth::hasAuthenticatorApp($user))->toBeFalse()
+        ->and(two_factor_auth_authenticator_record($user))->toBe([])
+        ->and(TwoFactorAuth::getTwoFaSettingsForUser($user)->value)->toBe(['enabled' => false, 'method' => 'email'])
+        ->and(TwoFactorAuth::verifyAuthenticatorCode($user, $recoveryCodes[0]))->toBeNull()
+        ->and(array_column(TestActivityLogger::$logged, 'event'))->toBe(['authenticator_enabled', 'authenticator_disabled']);
+});
+
+test('two factor auth replaces recovery codes', function () {
+    [$user]         = two_factor_auth_fixtures();
+    [, $oldCodes]   = two_factor_auth_enroll_authenticator($user);
+
+    $newCodes = TwoFactorAuth::regenerateRecoveryCodes($user);
+
+    expect($newCodes)->toHaveCount(8)
+        ->and(array_intersect($oldCodes, $newCodes))->toBe([])
+        ->and(TwoFactorAuth::verifyAuthenticatorCode($user, $oldCodes[0]))->toBeNull()
+        ->and(TwoFactorAuth::verifyAuthenticatorCode($user, $newCodes[0]))->toBe('recovery_code');
+
+    TwoFactorAuth::disableAuthenticatorApp($user);
+
+    expect(fn () => TwoFactorAuth::regenerateRecoveryCodes($user))->toThrow(Exception::class, 'Set up an authenticator app first.');
 });

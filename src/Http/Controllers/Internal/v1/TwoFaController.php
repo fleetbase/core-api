@@ -44,19 +44,20 @@ class TwoFaController extends Controller
     }
 
     /**
-     * Check Two-Factor Authentication status for a given user identity.
+     * Retained for older consoles, which call this before submitting the password.
+     *
+     * It used to start a 2FA session from the identity alone, which let the emailed/SMS
+     * code stand in for the password and revealed which accounts have 2FA enabled. A 2FA
+     * session is now only started by `auth/login` once the password checks out, so this
+     * always reports 2FA as off and older consoles continue to the password login.
      *
      * @return \Illuminate\Http\Response
      */
     public function checkTwoFactor(Request $request)
     {
-        $identity       = $request->input('identity');
-        $twoFaSession   = TwoFactorAuth::createTwoFaSessionIfEnabled($identity);
-        $isTwoFaEnabled = $twoFaSession !== null;
-
         return response()->json([
-            'twoFaSession'   => $twoFaSession,
-            'isTwoFaEnabled' => $isTwoFaEnabled,
+            'twoFaSession'   => null,
+            'isTwoFaEnabled' => false,
         ]);
     }
 
@@ -76,6 +77,7 @@ class TwoFaController extends Controller
 
             return response()->json([
                 'clientToken' => $validClientToken,
+                'method'      => TwoFactorAuth::getChallengeMethod($identity, $validClientToken),
                 'expired'     => false,
             ]);
         } catch (\Exception $e) {
@@ -137,6 +139,7 @@ class TwoFaController extends Controller
 
             return response()->json([
                 'clientToken' => $clientToken,
+                'method'      => TwoFactorAuth::getChallengeMethod($identity, $clientToken),
             ]);
         } catch (\Exception $e) {
             return response()->error($e->getMessage());

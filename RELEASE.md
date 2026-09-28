@@ -1,31 +1,41 @@
-# v1.6.64 — Order reporting and test SMS with the entered credentials
+# v1.6.65 — Authenticator-app 2FA, sign-in hardening and IAM permission fixes
 
-## Improvements for reporting
+## Improvements
 
-- Declare row-level expression columns with `Column::expression($name, $sql, $type)`. Bare names resolve against the table or relationship that declares it, so `JSON_EXTRACT(meta, '$.quantity')` on `payload.entities` reads the joined entity's `meta`. An expression column can be selected, filtered, sorted, grouped by and aggregated.
-- Summary columns (`Column::count/sum/avg`) are flagged `aggregate` and resolve to their computation. Without grouping they return a single summary row; with grouping they sit beside the group keys.
-- `Table::softDeletes()` and `Relationship::softDeletes()` leave out soft-deleted rows. On joins the filter goes in the `ON` clause, so LEFT joins keep the parent row.
-- Computed columns can be group keys, conditions and sort columns, and a grouped report can be sorted by an aggregate's alias. A new `count_distinct` aggregate is available.
-- Custom expressions accept the JSON functions, `DATE()`, `CAST(… AS DECIMAL(15,2))` and the other cast types, `DISTINCT`, `IN`, `GROUP_CONCAT(… ORDER BY … SEPARATOR …)`, `->`/`->>` and `INTERVAL n UNIT`.
-- `public_id` and `internal_id` are no longer hidden as foreign keys, so ID columns appear in the column picker.
-- Relationship columns are labelled with the whole relationship name ("Order Config Namespace", not "Order Namespace"), and aggregate labels use the column label ("Sum (Quantity)").
-- `_key` and `_import_id` are never listed or selectable, whatever a schema declares.
+- Sign in with an authenticator app (TOTP, RFC 6238), next to email and SMS 2FA (#163). It works with Authy, Google Authenticator, Microsoft Authenticator and 1Password.
+  - New `users/two-fa/authenticator` endpoints to set up, confirm, disable and inspect the app. Setup, disable and regenerating recovery codes need the current password.
+  - Confirming the app returns 8 single-use recovery codes. `two-fa/verify` accepts an app code (±1 step for clock drift, each code once) or a recovery code.
+  - `two-fa/resend` falls back to an emailed (or SMS) code and returns the new `method`.
+  - The secret is encrypted with the app key, and recovery codes are stored as keyed hashes.
+  - New `Fleetbase\Support\Barcode` helper with a compact `qrCodeSvg()`.
+- Record the app, APNs environment and last-seen time on user devices. New nullable `user_devices` columns: `app_identifier` (indexed), `environment` and `last_seen_at`.
+- New organization setting to let users change their own password (default on), at `GET/POST companies/auth-settings`. `GET users/password-policy` returns `{can_change_password}`.
 
 ## Fixes
 
-- Test SMS Provider and Test Twilio in Admin › System Config › Services use the credentials entered in the form (fleetbase/fleetbase#680). Under Octane the Twilio client was built once per worker, so a test failed with "Credentials are required to create a Client" or reported success for the saved account. The endpoints now rebuild the client from the request's config and release it after the send.
+- Settings → Notifications applies when notifications are sent from the queue or a console command (#262). `NotificationRegistry` takes the company from the notification's subject instead of the session. `notifyUsingDefinitionName()` reads the company-scoped settings instead of a global key nothing writes. New `Setting::lookupForCompany()`.
+- Invited users can set their first password, and non-admins can change their own (#263). The password endpoints no longer fall through to `iam create user`.
+- FCM order notifications are sent with Android `priority: high`, so drivers' phones in Doze get them immediately (#268).
 
 ## Security
 
-- Every computed column is validated up front, including in grouped reports. Names must be safe identifiers, and `SELECT` is forbidden.
-- Schema-declared columns always take their SQL from the registry, never from the request. Group keys, aggregate columns, sort columns and condition fields must be allowed or computed columns.
-- Sort direction is normalised to `asc`/`desc`, and grouped reports validate `aggregateBy.computation`.
+- A 2FA session starts only after the password is checked. `GET two-fa/check` used to start one from the identity alone, so an email plus the emailed code was enough to sign in. It now always returns `{twoFaSession: null, isTwoFaEnabled: false}` and no longer reveals whether an account uses 2FA.
+- 2FA sessions expire after 10 minutes; they used to live about 56 years. The 5th wrong code deletes the session, and resending doesn't reset the count. Codes are compared in constant time and generated with `random_int`.
+- `users/change-password` requires `current_password` in the same request, and `iam change-password` is enforced. `users/set-password` works only once, within 24 hours of accepting an invite. `validate-password` and `change-password` are limited to 10 requests per minute.
+- Close authorization gaps where `AuthorizationGuard` resolved to permission names that don't exist:
+  - Updating the organization and its 2FA policy is limited to the owner, the Administrator role and system admins. Non-admin updates ignore `owner_uuid`, Stripe ids, `plan`, `status`, `trial_ends_at` and `type`.
+  - `POST two-fa/config` (system 2FA policy) and admin platform metrics are limited to system admins.
+  - IAM and developer metrics need `iam list user` / `developers list api-key`.
+  - Reports use the `iam` service: `iam execute report` for direct queries, `iam export report` for exports.
+  - API credentials, webhooks, API events and request logs check the `api-key`, `webhook`, `event` and `log` permissions.
+- Password, auth-setting and authenticator changes are written to the `auth` activity log.
 
 ## Behaviour changes
 
-- In a grouped report, a selected column that is neither a group key nor aggregated is now an error instead of being dropped.
-- Invalid report shapes fail with a clear message instead of an SQL error.
+- Consoles need the companion fleetbase/fleetbase changes: the 2FA sign-in flow (`fix/2fa-login-hardening`), `current_password` on change-password (fleetbase/fleetbase#685) and the authenticator-app UI (fleetbase/fleetbase#686). With an older console, users with 2FA can't sign in and self-service password changes fail.
+- Users need `iam … report` permissions to use reports, and `developers …` permissions for API keys, webhooks, events and logs. Fleet-Ops' report screens check the same names in fleetbase/fleetops#345.
+- A user who accepted an invite before this release but never set a password should use **Forgot password**.
 
-A database migration is not required. No configuration change is needed. The FleetOps order report schema ships in fleetbase/fleetops v0.6.70, and the report builder changes in fleetbase/ember-ui v0.4.4.
+Run the migrations for the new `user_devices` columns. Run `composer update` to install `pragmarx/google2fa`.
 
-Changes: [#269](https://github.com/fleetbase/core-api/pull/269), [#270](https://github.com/fleetbase/core-api/pull/270).
+Changes: [#272](https://github.com/fleetbase/core-api/pull/272), [#273](https://github.com/fleetbase/core-api/pull/273), [#274](https://github.com/fleetbase/core-api/pull/274), [#275](https://github.com/fleetbase/core-api/pull/275), [#276](https://github.com/fleetbase/core-api/pull/276), [#277](https://github.com/fleetbase/core-api/pull/277), [#278](https://github.com/fleetbase/core-api/pull/278).

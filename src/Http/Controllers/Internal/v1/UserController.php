@@ -712,9 +712,111 @@ class UserController extends FleetbaseController
             return response()->error('No user session found', 401);
         }
 
+        if (($twoFaSettings['method'] ?? null) === TwoFactorAuth::METHOD_AUTHENTICATOR_APP && !TwoFactorAuth::hasAuthenticatorApp($user)) {
+            return response()->error('Set up your authenticator app before choosing it as your two-factor method.', 422);
+        }
+
         $twoFaSettings = TwoFactorAuth::saveTwoFaSettingsForUser($user, $twoFaSettings);
 
         return response()->json($twoFaSettings->value);
+    }
+
+    /**
+     * Get the current user's authenticator app status.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    #[SkipAuthorizationCheck]
+    public function getAuthenticatorApp(Request $request)
+    {
+        return response()->json(TwoFactorAuth::getAuthenticatorStatus($request->user()));
+    }
+
+    /**
+     * Start setting up an authenticator app for the current user. Requires the current
+     * password, since it changes how the user signs in.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    #[SkipAuthorizationCheck]
+    public function setupAuthenticatorApp(Request $request)
+    {
+        $user = $request->user();
+        if (!$user->checkPassword((string) $request->input('password'))) {
+            return response()->error('The current password provided is invalid.', 422);
+        }
+
+        return response()->json(TwoFactorAuth::beginAuthenticatorEnrollment($user));
+    }
+
+    /**
+     * Confirm the current user's new authenticator app with a code from it. Returns the
+     * recovery codes, which are only shown this once.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    #[SkipAuthorizationCheck]
+    public function confirmAuthenticatorApp(Request $request)
+    {
+        $user = $request->user();
+
+        try {
+            $recoveryCodes = TwoFactorAuth::confirmAuthenticatorEnrollment($user, (string) $request->input('code'));
+        } catch (\Exception $e) {
+            return response()->error($e->getMessage(), 422);
+        }
+
+        return response()->json([
+            'recovery_codes' => $recoveryCodes,
+            'status'         => TwoFactorAuth::getAuthenticatorStatus($user),
+            'settings'       => TwoFactorAuth::getTwoFaSettingsForUser($user)->value,
+        ]);
+    }
+
+    /**
+     * Remove the current user's authenticator app. Requires the current password.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    #[SkipAuthorizationCheck]
+    public function disableAuthenticatorApp(Request $request)
+    {
+        $user = $request->user();
+        if (!$user->checkPassword((string) $request->input('password'))) {
+            return response()->error('The current password provided is invalid.', 422);
+        }
+
+        TwoFactorAuth::disableAuthenticatorApp($user);
+
+        return response()->json([
+            'status'   => TwoFactorAuth::getAuthenticatorStatus($user),
+            'settings' => TwoFactorAuth::getTwoFaSettingsForUser($user)->value,
+        ]);
+    }
+
+    /**
+     * Replace the current user's recovery codes. Requires the current password.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    #[SkipAuthorizationCheck]
+    public function regenerateRecoveryCodes(Request $request)
+    {
+        $user = $request->user();
+        if (!$user->checkPassword((string) $request->input('password'))) {
+            return response()->error('The current password provided is invalid.', 422);
+        }
+
+        try {
+            $recoveryCodes = TwoFactorAuth::regenerateRecoveryCodes($user);
+        } catch (\Exception $e) {
+            return response()->error($e->getMessage(), 422);
+        }
+
+        return response()->json([
+            'recovery_codes' => $recoveryCodes,
+            'status'         => TwoFactorAuth::getAuthenticatorStatus($user),
+        ]);
     }
 
     /**
