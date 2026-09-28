@@ -186,7 +186,7 @@ class Company extends Model
             'user_uuid',
             'uuid',
             'uuid'
-        );
+        )->wherePivotNull('deleted_at');
     }
 
     public function companyUsers(): HasManyThrough

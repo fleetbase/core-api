@@ -18,6 +18,7 @@ use Fleetbase\Models\Invite;
 use Fleetbase\Models\Setting;
 use Fleetbase\Models\User;
 use Fleetbase\Support\Auth;
+use Fleetbase\Support\OrganizationAdminSummary;
 use Fleetbase\Support\TwoFactorAuth;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -61,7 +62,7 @@ class CompanyController extends FleetbaseController
      */
     public function findRecord(Request $request, $id)
     {
-        $company = $this->resolveVisibleCompany($id);
+        $company = $this->resolveVisibleCompanyForUsers($id, $request);
 
         if (!$company) {
             return response()->error('Organization not found.', 404);
@@ -298,6 +299,10 @@ class CompanyController extends FleetbaseController
             // replace in pagination
             $users->setCollection($transformedItems);
 
+            if ($request->user()?->isAdmin()) {
+                OrganizationAdminSummary::attachAuthentication($transformedItems);
+            }
+
             return response()->json([
                 'users' => UserResource::collection($users->getCollection()),
                 'meta'  => [
@@ -322,7 +327,21 @@ class CompanyController extends FleetbaseController
             return $companyUser->user;
         });
 
+        if ($request->user()?->isAdmin()) {
+            OrganizationAdminSummary::attachAuthentication($users);
+        }
+
         return UserResource::collection($users);
+    }
+
+    public function usage(string $id, AdminRequest $request): JsonResponse
+    {
+        $company = $this->resolveAdminCompany($id);
+        if (!$company) {
+            return response()->json(['error' => 'Organization not found.'], 404);
+        }
+
+        return response()->json(['usage' => OrganizationAdminSummary::usage($company)]);
     }
 
     private function resolveVisibleCompanyForUsers(string $id, Request $request): ?Company

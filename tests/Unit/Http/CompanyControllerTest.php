@@ -461,6 +461,7 @@ function company_controller_fixtures(): Capsule
         $table->string('timezone')->nullable();
         $table->string('country')->nullable();
         $table->string('currency')->nullable();
+        $table->string('website_url')->nullable();
         $table->timestamp('onboarding_completed_at')->nullable();
         $table->string('onboarding_completed_by_uuid')->nullable();
         $table->timestamp('deleted_at')->nullable();
@@ -494,6 +495,13 @@ function company_controller_fixtures(): Capsule
         $table->increments('id');
         $table->string('key')->nullable()->index();
         $table->text('value')->nullable();
+    });
+    $schema->create('oauth_identities', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('user_uuid')->index();
+        $table->string('provider');
+        $table->string('provider_user_id')->nullable();
+        $table->text('meta')->nullable();
     });
     $schema->create('invites', function ($table) {
         $table->string('uuid')->primary();
@@ -1501,4 +1509,90 @@ test('company controller only lets administrators change organization authentica
         ->and($admin->getStatusCode())->toBe(200)
         ->and($missing->getStatusCode())->toBe(422)
         ->and(json_decode($capsule->getConnection('mysql')->table('settings')->where('key', 'company.company-1.auth')->value('value'), true))->toBe(['allow_users_change_password' => false]);
+});
+
+it('allows platform administrators to open a foreign organization and returns scoped usage', function () {
+    $database   = company_controller_fixtures()->getConnection('mysql');
+    $request    = company_controller_admin_request('GET', [], company_controller_user('admin-1'));
+    $controller = company_controller();
+    $found      = $controller->findRecord($request, 'company_public_2');
+    expect($found['company']->resource->uuid)->toBe('company-2');
+
+    foreach (['drivers', 'contacts', 'orders', 'api_request_logs', 'webhook_request_logs'] as $tableName) {
+        $database->getSchemaBuilder()->create($tableName, function ($table) use ($tableName) {
+            $table->string('company_uuid');
+            $table->string('type')->nullable();
+            if ($tableName !== 'api_request_logs') {
+                $table->softDeletes();
+            }
+        });
+        $database->table($tableName)->insert([
+            ['company_uuid' => 'company-1', 'type' => 'customer'],
+            ['company_uuid' => 'company-2', 'type' => 'customer'],
+            ['company_uuid' => 'company-2', 'type' => 'customer'],
+        ]);
+        if ($tableName !== 'api_request_logs') {
+            $database->table($tableName)->insert(['company_uuid' => 'company-2', 'type' => 'customer', 'deleted_at' => '2026-09-01']);
+        }
+    }
+    $database->table('contacts')->insert(['company_uuid' => 'company-2', 'type' => 'contact']);
+    $database->table('company_users')->insert(['uuid' => 'removed', 'company_uuid' => 'company-2', 'user_uuid' => 'owner-1', 'deleted_at' => '2026-09-01']);
+
+    expect($controller->usage('company_public_2', $request)->getData(true)['usage'])->toBe([
+        'users_count'             => 1,
+        'drivers_count'           => 2,
+        'customers_count'         => 2,
+        'orders_count'            => 2,
+        'api_requests_count'      => 2,
+        'webhook_callbacks_count' => 2,
+    ])->and($controller->usage('missing', $request)->getStatusCode())->toBe(404);
+
+    $database->getSchemaBuilder()->drop('drivers');
+    expect($controller->usage('company_public_2', $request)->getData(true)['usage']['drivers_count'])->toBeNull();
+});
+
+it('returns non-secret authentication metadata only to organization platform administrators', function () {
+    $database = company_controller_fixtures()->getConnection('mysql');
+    $database->table('settings')->insert([
+        'key'   => 'user.owner-1.2fa',
+        'value' => json_encode(['enabled' => true, 'method' => 'totp', 'secret' => 'must-not-leak', 'recovery_codes' => ['private']]),
+    ]);
+    $database->table('oauth_identities')->insert([
+        ['uuid' => 'oauth-1', 'user_uuid' => 'owner-1', 'provider' => 'google', 'provider_user_id' => 'private-google-id', 'meta' => '{"access_token":"private"}'],
+        ['uuid' => 'oauth-2', 'user_uuid' => 'owner-1', 'provider' => 'github', 'provider_user_id' => 'private-github-id', 'meta' => '{}'],
+        ['uuid' => 'oauth-3', 'user_uuid' => 'foreign-1', 'provider' => 'microsoft', 'provider_user_id' => 'private-foreign-id', 'meta' => '{}'],
+    ]);
+    $controller = company_controller();
+    $request    = company_controller_request('GET', [], company_controller_user('admin-1'));
+    $users      = $controller->users('company_public_1', $request)->resolve($request);
+    $owner      = collect($users)->firstWhere('uuid', 'owner-1');
+    $member     = collect($users)->firstWhere('uuid', 'member-1');
+    expect($owner)->toMatchArray(['two_factor_enabled' => true, 'two_factor_method' => 'totp', 'oauth_providers' => ['github', 'google']])
+        ->and($member)->toMatchArray(['two_factor_enabled' => false, 'two_factor_method' => null, 'oauth_providers' => []])
+        ->and(json_encode($users))->not->toContain('must-not-leak', 'recovery_codes', 'access_token', 'provider_user_id', 'microsoft')
+        ->and($database->table('settings')->where('key', 'user.member-1.2fa')->exists())->toBeFalse();
+
+    $paginated = $controller->users('company_public_1', company_controller_request('GET', ['paginate' => true], company_controller_user('admin-1')))->getData(true);
+    expect(collect($paginated['users'])->firstWhere('uuid', 'owner-1')['oauth_providers'])->toBe(['github', 'google']);
+
+    $request      = company_controller_request('GET', [], company_controller_user('owner-1'));
+    $regularUsers = $controller->users('company_public_1', $request)->resolve($request);
+    expect(collect($regularUsers)->firstWhere('uuid', 'owner-1'))->not->toHaveKey('two_factor_enabled');
+    $database->table('company_users')->where('company_uuid', 'company-2')->delete();
+    $request = company_controller_request('GET', [], company_controller_user('admin-1'));
+    expect($controller->users('company_public_2', $request)->resolve($request))->toBe([]);
+});
+
+it('sorts organizations by current membership count without counting removed users', function () {
+    $database = company_controller_fixtures()->getConnection('mysql');
+    $database->table('companies')->where('uuid', 'company-2')->update(['website_url' => 'https://organization.example.test']);
+    $database->table('company_users')->insert([
+        'uuid' => 'removed-count', 'company_uuid' => 'company-2', 'user_uuid' => 'owner-1', 'deleted_at' => '2026-09-01',
+    ]);
+    $companies = Company::whereIn('uuid', ['company-1', 'company-2'])->withCount('users')->orderBy('users_count', 'desc')->get();
+    expect($companies->pluck('uuid')->all())->toBe(['company-1', 'company-2'])
+        ->and($companies->pluck('users_count')->all())->toBe([2, 1]);
+    $request  = company_controller_request('GET', [], company_controller_user('admin-1'));
+    $resource = new Fleetbase\Http\Resources\Organization($companies->last());
+    expect($resource->resolve($request))->toMatchArray(['users_count' => 1, 'website_url' => 'https://organization.example.test']);
 });

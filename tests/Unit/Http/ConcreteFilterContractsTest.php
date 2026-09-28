@@ -208,6 +208,12 @@ function concrete_filter_database(): Capsule
         $table->string('public_id')->nullable();
         $table->string('name')->nullable();
         $table->string('owner_uuid')->nullable();
+        $table->string('description')->nullable();
+        $table->string('phone')->nullable();
+        $table->string('website_url')->nullable();
+        $table->string('slug')->nullable();
+        $table->string('timezone')->nullable();
+        $table->string('type')->nullable();
         $table->string('country')->nullable();
         $table->string('status')->nullable();
         $table->string('plan')->nullable();
@@ -223,6 +229,7 @@ function concrete_filter_database(): Capsule
         $table->string('email')->nullable();
         $table->string('phone')->nullable();
         $table->string('type')->nullable();
+        $table->string('ip_address')->nullable();
         $table->softDeletes();
         $table->timestamps();
     });
@@ -1204,4 +1211,38 @@ test('user filter narrows by verification state country and timezone', function 
         ->and(concrete_filter_uuids(UserFilter::class, User::class, ['phone_verified' => 'false'], 'int/v1/users'))->toBe(['user-verified'])
         ->and(concrete_filter_uuids(UserFilter::class, User::class, ['country' => 'MN'], 'int/v1/users'))->toBe(['user-unverified'])
         ->and(concrete_filter_uuids(UserFilter::class, User::class, ['timezone' => 'Asia/Singapore'], 'int/v1/users'))->toBe(['user-verified']);
+});
+
+it('searches organization identity and owner details without escaping the tenant scope', function () {
+    $database = concrete_filter_database()->getConnection('mysql');
+    $database->table('users')->insert([
+        ['uuid' => 'user-1', 'name' => 'Alice Owner', 'email' => 'alice@example.test', 'phone' => '+14155550123', 'ip_address' => '198.51.100.1'],
+        ['uuid' => 'other', 'name' => 'Other Owner', 'email' => 'other@foreign.test', 'phone' => '+441234', 'ip_address' => '198.51.100.2'],
+    ]);
+    $database->table('companies')->insert([
+        ['uuid' => 'owned', 'owner_uuid' => 'user-1', 'name' => 'Fleet Example', 'public_id' => 'company_example', 'phone' => '+14155550199', 'description' => 'Regional delivery', 'website_url' => 'https://example.test', 'slug' => 'fleet-example', 'country' => 'US', 'timezone' => 'America/New_York', 'type' => 'logistics', 'status' => null, 'created_at' => '2026-09-01 23:59:59', 'updated_at' => '2026-09-28 23:59:59'],
+        ['uuid' => 'foreign', 'owner_uuid' => 'other', 'name' => 'Foreign', 'public_id' => 'company_foreign', 'phone' => null, 'description' => 'Regional delivery', 'website_url' => null, 'slug' => null, 'country' => 'GB', 'timezone' => 'Europe/London', 'type' => 'retail', 'status' => 'suspended', 'created_at' => '2026-08-01 00:00:00', 'updated_at' => '2026-08-02 00:00:00'],
+    ]);
+
+    foreach (['Alice', 'alice@example.test', '4155550123', '198.51.100.1', 'company_example', '4155550199', 'example.test', 'fleet-example', 'America/New_York'] as $query) {
+        expect(concrete_filter_admin_uuids(CompanyFilter::class, Company::class, ['query' => $query]))->toBe(['owned']);
+    }
+    foreach ([
+        ['owner_name' => 'Alice'], ['owner_email' => 'alice@'], ['owner_phone' => '4155550123'],
+        ['ip_address'       => '198.51.100.1'], ['country' => 'us'], ['timezone' => 'America/New_York'],
+        ['type'             => 'logistics'], ['status' => 'active'],
+        ['created_at_after' => '2026-09-01', 'created_at_before' => '2026-09-01'],
+        ['updated_at_after' => '2026-09-28'], ['updated_at_before' => '2026-09-28', 'country' => 'US'],
+    ] as $filters) {
+        expect(concrete_filter_admin_uuids(CompanyFilter::class, Company::class, $filters))->toBe(['owned']);
+    }
+    expect(concrete_filter_admin_uuids(CompanyFilter::class, Company::class, ['created_at_before' => '2026-08-31']))->toBe(['foreign']);
+    $request = concrete_filter_request(['query' => 'Regional']);
+    $request->setUserResolver(fn () => new class {
+        public function isAdmin(): bool
+        {
+            return false;
+        }
+    });
+    expect((new CompanyFilter($request))->apply(Company::query())->pluck('uuid')->all())->toBe(['owned']);
 });

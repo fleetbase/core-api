@@ -60,6 +60,10 @@ class User extends FleetbaseResource
             'created_at'                                                               => $this->created_at,
         ];
 
+        if (Http::isInternalRequest() && $request->user()?->isAdmin()) {
+            $data = array_merge($data, $this->resource->getAttribute('admin_authentication') ?? []);
+        }
+
         return ResourceTransformerRegistry::transform($this->resource, $data);
     }
 
