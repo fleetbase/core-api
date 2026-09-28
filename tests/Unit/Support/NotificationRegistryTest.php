@@ -381,7 +381,7 @@ test('notification registry dispatches by definition name with dynamic subject c
     notification_registry_dispatch_database();
 
     Fleetbase\Models\Setting::query()->create([
-        'key'   => 'notification_settings',
+        'key'   => 'company.company-1.notification_settings',
         'value' => [
             'notificationRegistryDispatchNotification__manualNotice' => [
                 'notifiables' => [
@@ -400,8 +400,9 @@ test('notification registry dispatches by definition name with dynamic subject c
         ],
     ]);
 
-    $subject       = new NotificationRegistryDispatchSubject();
-    $subject->uuid = 'subject-2';
+    $subject               = new NotificationRegistryDispatchSubject();
+    $subject->uuid         = 'subject-2';
+    $subject->company_uuid = 'company-1';
 
     NotificationRegistry::notifyUsingDefinitionName(NotificationRegistryDispatchNotification::class, 'Manual Notice', $subject, 'manual');
 
@@ -425,7 +426,7 @@ test('notification registry dispatches by definition name to grouped notifiables
     notification_registry_dispatch_database();
 
     Fleetbase\Models\Setting::query()->create([
-        'key'   => 'notification_settings',
+        'key'   => 'company.company-1.notification_settings',
         'value' => [
             'notificationRegistryDispatchNotification__manualNotice' => [
                 'notifiables' => [
@@ -439,8 +440,9 @@ test('notification registry dispatches by definition name to grouped notifiables
         ],
     ]);
 
-    $subject       = new NotificationRegistryDispatchPropertySubject();
-    $subject->uuid = 'subject-3';
+    $subject               = new NotificationRegistryDispatchPropertySubject();
+    $subject->uuid         = 'subject-3';
+    $subject->company_uuid = 'company-1';
 
     NotificationRegistry::notifyUsingDefinitionName(NotificationRegistryDispatchNotification::class, 'Manual Notice', $subject, 'property');
 
@@ -505,7 +507,7 @@ test('notification registry resolves dynamic notifiables from subject properties
     notification_registry_dispatch_database();
 
     Fleetbase\Models\Setting::query()->create([
-        'key'   => 'notification_settings',
+        'key'   => 'company.company-1.notification_settings',
         'value' => [
             'notificationRegistryDispatchNotification__manualNotice' => [
                 'notifiables' => [
@@ -519,8 +521,9 @@ test('notification registry resolves dynamic notifiables from subject properties
         ],
     ]);
 
-    $subject       = new NotificationRegistryDispatchPropertySubject();
-    $subject->uuid = 'subject-5';
+    $subject               = new NotificationRegistryDispatchPropertySubject();
+    $subject->uuid         = 'subject-5';
+    $subject->company_uuid = 'company-1';
     $subject->setRelation('assignee', NotificationRegistryDispatchTarget::query()->find('target-2'));
 
     NotificationRegistry::notifyUsingDefinitionName(NotificationRegistryDispatchNotification::class, 'Manual Notice', $subject, 'property');
@@ -539,7 +542,7 @@ test('notification registry ignores configured notifiable definitions that do no
     notification_registry_dispatch_database();
 
     Fleetbase\Models\Setting::query()->create([
-        'key'   => 'notification_settings',
+        'key'   => 'company.company-1.notification_settings',
         'value' => [
             'notificationRegistryDispatchNotification__manualNotice' => [
                 'notifiables' => [
@@ -553,10 +556,143 @@ test('notification registry ignores configured notifiable definitions that do no
         ],
     ]);
 
-    $subject       = new NotificationRegistryDispatchSubject();
-    $subject->uuid = 'subject-6';
+    $subject               = new NotificationRegistryDispatchSubject();
+    $subject->uuid         = 'subject-6';
+    $subject->company_uuid = 'company-1';
 
     NotificationRegistry::notifyUsingDefinitionName(NotificationRegistryDispatchNotification::class, 'Manual Notice', $subject, 'ignored');
+
+    expect(NotificationRegistryDispatchTarget::$sent)->toBe([]);
+});
+
+function notification_registry_company_settings(string $companyUuid, string $settingsKey, string $targetUuid = 'target-1'): void
+{
+    Fleetbase\Models\Setting::query()->create([
+        'key'   => 'company.' . $companyUuid . '.notification_settings',
+        'value' => [
+            $settingsKey => [
+                'notifiables' => [
+                    [
+                        'definition' => NotificationRegistryDispatchTarget::class,
+                        'primaryKey' => 'uuid',
+                        'key'        => $targetUuid,
+                    ],
+                ],
+            ],
+        ],
+    ]);
+}
+
+test('notification registry resolves company settings from the subject when there is no session', function () {
+    notification_registry_dispatch_database();
+    NotificationRegistry::register(NotificationRegistryDispatchNotification::class);
+    notification_registry_company_settings('company-1', 'notificationRegistryDispatchNotification__dispatchNotice');
+
+    // Queued listeners and console commands run without a company session
+    expect(session()->missing('company'))->toBeTrue();
+
+    $subject               = new NotificationRegistryDispatchSubject();
+    $subject->uuid         = 'subject-queued';
+    $subject->company_uuid = 'company-1';
+
+    NotificationRegistry::notify(NotificationRegistryDispatchNotification::class, $subject, 'queued');
+
+    expect(NotificationRegistryDispatchTarget::$sent)->toBe([
+        [
+            'target'       => 'target-1',
+            'notification' => NotificationRegistryDispatchNotification::class,
+            'subject'      => 'subject-queued',
+            'label'        => 'queued',
+        ],
+    ]);
+});
+
+test('notification registry prefers the subject company over the session company', function () {
+    notification_registry_dispatch_database();
+    session(['company' => 'company-2']);
+    NotificationRegistry::register(NotificationRegistryDispatchNotification::class);
+    notification_registry_company_settings('company-1', 'notificationRegistryDispatchNotification__dispatchNotice', 'target-1');
+    notification_registry_company_settings('company-2', 'notificationRegistryDispatchNotification__dispatchNotice', 'target-2');
+
+    $subject               = new NotificationRegistryDispatchSubject();
+    $subject->uuid         = 'subject-company';
+    $subject->company_uuid = 'company-1';
+
+    NotificationRegistry::notify(NotificationRegistryDispatchNotification::class, $subject, 'subject-company');
+
+    expect(array_column(NotificationRegistryDispatchTarget::$sent, 'target'))->toBe(['target-1']);
+});
+
+test('notification registry resolves company settings from a company parameter', function () {
+    notification_registry_dispatch_database();
+    NotificationRegistry::register(NotificationRegistryDispatchNotification::class);
+    notification_registry_company_settings('company-1', 'notificationRegistryDispatchNotification__dispatchNotice');
+
+    $company       = new Fleetbase\Models\Company();
+    $company->uuid = 'company-1';
+
+    NotificationRegistry::notify(NotificationRegistryDispatchNotification::class, $company, 'company');
+
+    expect(NotificationRegistryDispatchTarget::$sent)->toBe([
+        [
+            'target'       => 'target-1',
+            'notification' => NotificationRegistryDispatchNotification::class,
+            'subject'      => 'company-1',
+            'label'        => 'company',
+        ],
+    ]);
+});
+
+test('notification registry falls back to the session company when the subject has none', function () {
+    notification_registry_dispatch_database();
+    session(['company' => 'company-1']);
+    NotificationRegistry::register(NotificationRegistryDispatchNotification::class);
+    notification_registry_company_settings('company-1', 'notificationRegistryDispatchNotification__dispatchNotice');
+
+    $subject       = new NotificationRegistryDispatchSubject();
+    $subject->uuid = 'subject-session';
+
+    NotificationRegistry::notify(NotificationRegistryDispatchNotification::class, $subject, 'session');
+
+    expect(array_column(NotificationRegistryDispatchTarget::$sent, 'target'))->toBe(['target-1']);
+});
+
+test('notification registry notifies nobody when no company can be resolved', function () {
+    notification_registry_dispatch_database();
+    NotificationRegistry::register(NotificationRegistryDispatchNotification::class);
+    notification_registry_company_settings('company-1', 'notificationRegistryDispatchNotification__dispatchNotice');
+
+    $subject       = new NotificationRegistryDispatchSubject();
+    $subject->uuid = 'subject-orphan';
+
+    NotificationRegistry::notify(NotificationRegistryDispatchNotification::class, $subject, 'orphan');
+    NotificationRegistry::notifyUsingDefinitionName(NotificationRegistryDispatchNotification::class, 'Dispatch Notice', $subject, 'orphan');
+
+    expect(NotificationRegistryDispatchTarget::$sent)->toBe([]);
+});
+
+test('notification registry no longer reads the global notification settings key', function () {
+    notification_registry_dispatch_database();
+    Fleetbase\Models\Setting::query()->create([
+        'key'   => 'notification_settings',
+        'value' => [
+            'notificationRegistryDispatchNotification__manualNotice' => [
+                'notifiables' => [
+                    [
+                        'definition' => NotificationRegistryDispatchTarget::class,
+                        'primaryKey' => 'uuid',
+                        'key'        => 'target-1',
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    $subject               = new NotificationRegistryDispatchSubject();
+    $subject->uuid         = 'subject-global';
+    $subject->company_uuid = 'company-1';
+
+    NotificationRegistry::notifyUsingDefinitionName(NotificationRegistryDispatchNotification::class, 'Manual Notice', $subject, 'global');
 
     expect(NotificationRegistryDispatchTarget::$sent)->toBe([]);
 });

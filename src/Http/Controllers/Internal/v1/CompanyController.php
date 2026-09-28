@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Http\Controllers\Internal\v1;
 
+use Fleetbase\Attributes\SkipAuthorizationCheck;
 use Fleetbase\Events\UserRemovedFromCompany;
 use Fleetbase\Exceptions\FleetbaseRequestValidationException;
 use Fleetbase\Exports\CompanyExport;
@@ -14,8 +15,10 @@ use Fleetbase\Models\Company;
 use Fleetbase\Models\CompanyUser;
 use Fleetbase\Models\ExtensionInstall;
 use Fleetbase\Models\Invite;
+use Fleetbase\Models\Setting;
 use Fleetbase\Models\User;
 use Fleetbase\Support\Auth;
+use Fleetbase\Support\OrganizationAdminSummary;
 use Fleetbase\Support\TwoFactorAuth;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -33,13 +36,33 @@ class CompanyController extends FleetbaseController
     public $resource = 'company';
 
     /**
+     * Company attributes only platform administrators may change through updateRecord().
+     */
+    private const PLATFORM_MANAGED_FIELDS = ['owner_uuid', 'stripe_customer_id', 'stripe_connect_id', 'plan', 'status', 'trial_ends_at', 'type'];
+
+    public function __construct()
+    {
+        parent::__construct();
+
+        // Organization settings and the organization's 2FA policy: owner, Administrator role or system admin.
+        $this->middleware(function ($request, $next) {
+            $company = Company::where('uuid', session('company'))->first();
+            if (!$company || !$this->currentUserManagesOrganization($company)) {
+                return response()->error('Only the organization owner or an Administrator can change organization settings.', 401);
+            }
+
+            return $next($request);
+        })->only(['updateRecord', 'saveTwoFactorSettings']);
+    }
+
+    /**
      * Find an organization visible to the current session company.
      *
      * @return \Illuminate\Http\Response|array
      */
     public function findRecord(Request $request, $id)
     {
-        $company = $this->resolveVisibleCompany($id);
+        $company = $this->resolveVisibleCompanyForUsers($id, $request);
 
         if (!$company) {
             return response()->error('Organization not found.', 404);
@@ -63,6 +86,11 @@ class CompanyController extends FleetbaseController
 
         try {
             $input = $this->model->getApiPayloadFromRequest($request);
+
+            // Ownership moves through transferOwnership(); billing and lifecycle fields are platform-managed.
+            if (!$request->user()?->isAdmin()) {
+                $input = Arr::except($input, self::PLATFORM_MANAGED_FIELDS);
+            }
             $input = $this->model->fillSessionAttributes($input, [], ['updated_by_uuid']);
 
             if ($this->model->isColumn('slug')) {
@@ -157,12 +185,70 @@ class CompanyController extends FleetbaseController
         if (!$company) {
             return response()->error('No company session found', 401);
         }
+
         if (isset($twoFaSettings['enabled']) && $twoFaSettings['enabled'] === false) {
             $twoFaSettings['enforced'] = false;
         }
         TwoFactorAuth::saveTwoFaSettingsForCompany($company, $twoFaSettings);
 
         return response()->json(['message' => 'Two-Factor Authentication saved successfully']);
+    }
+
+    /**
+     * Get the current organization's authentication settings.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    #[SkipAuthorizationCheck]
+    public function getAuthSettings()
+    {
+        $company = Auth::getCompany();
+
+        if (!$company) {
+            return response()->error('No company session found', 401);
+        }
+
+        return response()->json(Auth::getCompanyAuthSettings($company->uuid));
+    }
+
+    /**
+     * Save the current organization's authentication settings. Only admins and users
+     * holding the Administrator role may change them.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    #[SkipAuthorizationCheck]
+    public function saveAuthSettings(Request $request)
+    {
+        $user    = $request->user();
+        $company = Auth::getCompany();
+
+        if (!$company) {
+            return response()->error('No company session found', 401);
+        }
+
+        if (!$user || !($user->isAdmin() || $user->hasRole('Administrator'))) {
+            return response()->error('Only administrators can change authentication settings.', 403);
+        }
+
+        if (!$request->has('allow_users_change_password')) {
+            return response()->error('No authentication settings provided.', 422);
+        }
+
+        $settings = array_merge(Auth::getCompanyAuthSettings($company->uuid), [
+            'allow_users_change_password' => $request->boolean('allow_users_change_password'),
+        ]);
+
+        Setting::configure('company.' . $company->uuid . '.auth', $settings);
+
+        activity('auth')
+            ->causedBy($user)
+            ->performedOn($company)
+            ->withProperties($settings)
+            ->event('auth_settings_updated')
+            ->log('Authentication settings updated');
+
+        return response()->json($settings);
     }
 
     /**
@@ -213,6 +299,10 @@ class CompanyController extends FleetbaseController
             // replace in pagination
             $users->setCollection($transformedItems);
 
+            if ($request->user()?->isAdmin()) {
+                OrganizationAdminSummary::attachAuthentication($transformedItems);
+            }
+
             return response()->json([
                 'users' => UserResource::collection($users->getCollection()),
                 'meta'  => [
@@ -237,7 +327,21 @@ class CompanyController extends FleetbaseController
             return $companyUser->user;
         });
 
+        if ($request->user()?->isAdmin()) {
+            OrganizationAdminSummary::attachAuthentication($users);
+        }
+
         return UserResource::collection($users);
+    }
+
+    public function usage(string $id, AdminRequest $request): JsonResponse
+    {
+        $company = $this->resolveAdminCompany($id);
+        if (!$company) {
+            return response()->json(['error' => 'Organization not found.'], 404);
+        }
+
+        return response()->json(['usage' => OrganizationAdminSummary::usage($company)]);
     }
 
     private function resolveVisibleCompanyForUsers(string $id, Request $request): ?Company
@@ -259,6 +363,26 @@ class CompanyController extends FleetbaseController
                 $query->where('uuid', $id)->orWhere('public_id', $id);
             })
             ->first();
+    }
+
+    /**
+     * Whether the session user may manage the organization: platform admins, the owner,
+     * and members holding the Administrator role in it.
+     */
+    private function currentUserManagesOrganization(Company $company): bool
+    {
+        $user = Auth::getUserFromSession();
+        if (!$user) {
+            return false;
+        }
+
+        if ($user->isAdmin() || $company->owner_uuid === $user->uuid) {
+            return true;
+        }
+
+        $companyUser = CompanyUser::where('company_uuid', $company->uuid)->where('user_uuid', $user->uuid)->first();
+
+        return $companyUser !== null && $companyUser->roles()->where('name', 'Administrator')->exists();
     }
 
     private function resolveVisibleCompany(string $id): ?Company

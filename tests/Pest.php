@@ -403,6 +403,124 @@ namespace {
         }
     }
 
+    /**
+     * A reversible stand-in for the host app's encrypter (core-api does not depend on
+     * illuminate/encryption). Encrypted values are prefixed so tests can tell them apart.
+     */
+    class TestEncrypter implements Illuminate\Contracts\Encryption\Encrypter, Illuminate\Contracts\Encryption\StringEncrypter
+    {
+        public function encrypt(#[SensitiveParameter] $value, $serialize = true)
+        {
+            return 'encrypted:' . base64_encode($serialize ? serialize($value) : $value);
+        }
+
+        public function decrypt($payload, $unserialize = true)
+        {
+            if (!str_starts_with((string) $payload, 'encrypted:')) {
+                throw new Illuminate\Contracts\Encryption\DecryptException('The payload is invalid.');
+            }
+
+            $value = base64_decode(substr($payload, 10));
+
+            return $unserialize ? unserialize($value) : $value;
+        }
+
+        public function encryptString(#[SensitiveParameter] $value)
+        {
+            return $this->encrypt($value, false);
+        }
+
+        public function decryptString($payload)
+        {
+            return $this->decrypt($payload, false);
+        }
+
+        public function getKey()
+        {
+            return 'test-key';
+        }
+
+        public function getAllKeys()
+        {
+            return ['test-key'];
+        }
+
+        public function getPreviousKeys()
+        {
+            return [];
+        }
+    }
+
+    /**
+     * Records `activity()` calls made in tests. Read TestActivityLogger::$logged.
+     */
+    class TestActivityLogger extends Spatie\Activitylog\ActivityLogger
+    {
+        public static array $logged = [];
+
+        private array $entry = [];
+
+        public function __construct(private ?string $logName = null)
+        {
+        }
+
+        public function causedBy(Illuminate\Database\Eloquent\Model|int|string|null $modelOrId): static
+        {
+            $this->entry['causer'] = $modelOrId instanceof Illuminate\Database\Eloquent\Model ? $modelOrId->getKey() : $modelOrId;
+
+            return $this;
+        }
+
+        public function performedOn(Illuminate\Database\Eloquent\Model $model): static
+        {
+            $this->entry['subject'] = $model->getKey();
+
+            return $this;
+        }
+
+        public function event(string $event): static
+        {
+            $this->entry['event'] = $event;
+
+            return $this;
+        }
+
+        public function withProperties(mixed $properties): static
+        {
+            $this->entry['properties'] = $properties;
+
+            return $this;
+        }
+
+        public function log(string $description): ?Spatie\Activitylog\Contracts\Activity
+        {
+            static::$logged[] = array_merge(['log' => $this->logName, 'description' => $description], $this->entry);
+
+            return null;
+        }
+    }
+
+    class TestPendingActivityLog extends Spatie\Activitylog\PendingActivityLog
+    {
+        private ?string $logName = null;
+
+        public function __construct()
+        {
+        }
+
+        public function useLog(?string $logName): static
+        {
+            $this->logName = $logName;
+
+            return $this;
+        }
+
+        public function logger(): Spatie\Activitylog\ActivityLogger
+        {
+            return new TestActivityLogger($this->logName);
+        }
+    }
+
     function bind_test_container(array $config = []): Container
     {
         if (!Container::getInstance() instanceof FleetbaseTestContainer) {
@@ -421,6 +539,14 @@ namespace {
         }
 
         $container->instance('request', Request::create('/int/v1/test', 'GET'));
+
+        // activity() works in every test; files that assert on it bind their own fake
+        TestActivityLogger::$logged = [];
+        $container->instance(Spatie\Activitylog\PendingActivityLog::class, new TestPendingActivityLog());
+
+        if (!$container->bound('encrypter')) {
+            $container->instance('encrypter', new TestEncrypter());
+        }
 
         $container->instance('log', new class {
             public array $entries = [];

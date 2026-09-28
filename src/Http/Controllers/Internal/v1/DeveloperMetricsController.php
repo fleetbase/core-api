@@ -8,12 +8,25 @@ use Fleetbase\Models\ApiEvent;
 use Fleetbase\Models\ApiRequestLog;
 use Fleetbase\Models\WebhookEndpoint;
 use Fleetbase\Models\WebhookRequestLog;
+use Fleetbase\Support\Auth;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 
 class DeveloperMetricsController extends Controller
 {
+    public function __construct()
+    {
+        // Not a resource controller, so AuthorizationGuard cannot resolve a permission for it.
+        $this->middleware(function ($request, $next) {
+            if (Auth::cannotUnlessAdmin('developers list api-key')) {
+                return response()->error('User is not authorized to list api-key', 401);
+            }
+
+            return $next($request);
+        });
+    }
+
     public function kpis(Request $request): JsonResponse
     {
         [$start, $end, $previousStart, $previousEnd] = $this->periods($request);

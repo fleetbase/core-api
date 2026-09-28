@@ -916,3 +916,21 @@ test('report controller report query scopes custom actions to the active company
         ->and($current->company_uuid)->toBe('company-1')
         ->and($other)->toBeNull();
 });
+
+test('report controller maps direct query execution and exports to the iam report permissions', function () {
+    report_controller_bind();
+
+    $controller = new ReportController();
+    $scoped     = collect($controller->getMiddleware())->mapWithKeys(fn ($entry) => [implode(',', $entry['options']['only'] ?? []) => $entry['middleware']]);
+
+    expect($scoped->keys()->all())->toBe(['executeQuery', 'exportQuery,download'])
+        ->and($controller->getService())->toBe('iam');
+
+    // No session user: both are refused before reaching the query engine.
+    session()->flush();
+    $execute = ($scoped['executeQuery'])(Request::create('/int/v1/reports/execute-query', 'POST'), fn () => 'allowed');
+    $export  = ($scoped['exportQuery,download'])(Request::create('/int/v1/reports/export-query', 'POST'), fn () => 'allowed');
+
+    expect($execute->getData(true))->toBe(['errors' => ['User is not authorized to execute report']])
+        ->and($export->getData(true))->toBe(['errors' => ['User is not authorized to export report']]);
+});

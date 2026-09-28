@@ -221,6 +221,30 @@ class AuthSupportResourceController
     }
 }
 
+class AuthSupportAliasedResourceController
+{
+    public string $permissionResource = 'api-key';
+
+    public function getService(): string
+    {
+        return 'developers';
+    }
+
+    public function getResourceSingularName(): string
+    {
+        return 'api_credential';
+    }
+
+    public function getPermissionResourceName(): string
+    {
+        return $this->permissionResource;
+    }
+
+    public function queryRecord(): void
+    {
+    }
+}
+
 class AuthSupportSkipController
 {
     #[SkipAuthorizationCheck]
@@ -785,6 +809,41 @@ test('auth support resolves request permissions and wildcard user permission che
         ->and(Auth::cannot('fleetops view order'))->toBeTrue();
 
     expect(Auth::resolvePermissionsFromRequest(auth_support_request('GET', AuthSupportSkipController::class))->isEmpty())->toBeTrue();
+});
+
+test('auth support resolves permissions against a controller permission resource alias', function () {
+    [$admin] = auth_support_fixtures();
+    session(['user' => $admin->uuid]);
+
+    app('db')->table('permissions')->insert([
+        ['id' => 'permission-list-api-key', 'name' => 'developers list api-key', 'guard_name' => 'sanctum', 'service' => 'developers', 'created_at' => now(), 'updated_at' => now()],
+    ]);
+
+    $request = auth_support_request('GET', AuthSupportAliasedResourceController::class);
+
+    // Without the alias the model name "api-credential" matches no permission and the guard lets everyone through.
+    expect(Auth::isResourceGuarded('api-credential'))->toBeFalse()
+        ->and(Auth::getRequiredPermissionNameFromRequest($request))->toBe('list api-key')
+        ->and(Auth::resolvePermissionsFromRequest($request)->pluck('id')->all())->toBe(['permission-list-api-key'])
+        ->and(Auth::getPermissionResourceFromController(app(AuthSupportResourceController::class)))->toBe('user');
+});
+
+test('auth support cannotUnlessAdmin lets platform admins through and checks everyone else', function () {
+    [$admin] = auth_support_fixtures();
+
+    app('db')->table('permissions')->insert([
+        ['id' => 'permission-list-user-admin-check', 'name' => 'iam list user', 'guard_name' => 'sanctum', 'service' => 'iam', 'created_at' => now(), 'updated_at' => now()],
+    ]);
+
+    session(['user' => $admin->uuid]);
+    $admin->forceFill(['type' => 'admin'])->save();
+    expect(Auth::cannotUnlessAdmin('iam list user'))->toBeFalse();
+
+    $admin->forceFill(['type' => 'user'])->save();
+    expect(Auth::cannotUnlessAdmin('iam list user'))->toBeTrue();
+
+    session(['user' => null]);
+    expect(Auth::cannotUnlessAdmin('iam list user'))->toBeTrue();
 });
 
 test('auth support filters and applies directives for assigned role and policy subjects', function () {

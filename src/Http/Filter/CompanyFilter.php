@@ -29,7 +29,18 @@ class CompanyFilter extends Filter
 
     public function query(?string $searchQuery)
     {
-        $this->builder->searchWhere('name', $searchQuery);
+        $this->builder->where(function ($query) use ($searchQuery) {
+            foreach (['name', 'description', 'phone', 'website_url', 'public_id', 'slug', 'country', 'timezone'] as $column) {
+                $query->orWhereRaw('LOWER(companies.' . $column . ') LIKE ?', ['%' . mb_strtolower(trim($searchQuery ?? '')) . '%']);
+            }
+            $query->orWhereHas('owner', function ($owner) use ($searchQuery) {
+                $owner->where(function ($query) use ($searchQuery) {
+                    foreach (['name', 'email', 'phone', 'ip_address'] as $column) {
+                        $query->orWhereRaw('LOWER(users.' . $column . ') LIKE ?', ['%' . mb_strtolower(trim($searchQuery ?? '')) . '%']);
+                    }
+                });
+            });
+        });
     }
 
     public function name(?string $name)
@@ -39,12 +50,45 @@ class CompanyFilter extends Filter
 
     public function country(?string $country)
     {
-        $this->builder->searchWhere('country', $country);
+        $this->builder->where('country', strtoupper($country ?? ''));
     }
 
     public function status(?string $status)
     {
-        $this->builder->searchWhere('status', $status);
+        if ($status === 'active') {
+            $this->builder->where(function ($query) {
+                $query->whereNull('status')->orWhere('status', 'active');
+            });
+
+            return;
+        }
+
+        $this->builder->where('status', $status);
+    }
+
+    public function timezone(?string $timezone)
+    {
+        $this->builder->where('timezone', $timezone);
+    }
+
+    public function type(?string $type)
+    {
+        $this->builder->where('type', $type);
+    }
+
+    public function ipAddress(?string $ipAddress)
+    {
+        $this->builder->whereHas('owner', fn ($query) => $query->where('ip_address', $ipAddress));
+    }
+
+    public function ownerName(?string $name)
+    {
+        $this->builder->whereHas('owner', fn ($query) => $query->searchWhere('name', $name));
+    }
+
+    public function ownerPhone(?string $phone)
+    {
+        $this->builder->whereHas('owner', fn ($query) => $query->searchWhere('phone', $phone));
     }
 
     public function ownerEmail(?string $email)
@@ -120,5 +164,25 @@ class CompanyFilter extends Filter
         }
 
         $this->builder->whereDate('created_at', $date);
+    }
+
+    public function createdAtBetween(?string $from, ?string $to)
+    {
+        $this->dateRange('created_at', $from, $to);
+    }
+
+    public function updatedAtBetween(?string $from, ?string $to)
+    {
+        $this->dateRange('updated_at', $from, $to);
+    }
+
+    private function dateRange(string $column, ?string $from, ?string $to): void
+    {
+        if ($from) {
+            $this->builder->whereDate($column, '>=', $from);
+        }
+        if ($to) {
+            $this->builder->whereDate($column, '<=', $to);
+        }
     }
 }

@@ -281,10 +281,13 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 $router->fleetbaseRoutes('companies', null, [], function ($router, $controller) {
                                     $router->get('two-fa', $controller('getTwoFactorSettings'));
                                     $router->post('two-fa', $controller('saveTwoFactorSettings'));
+                                    $router->get('auth-settings', $controller('getAuthSettings'));
+                                    $router->post('auth-settings', $controller('saveAuthSettings'));
                                     $router->post('transfer-ownership', $controller('transferOwnership'));
                                     $router->post('leave', $controller('leaveOrganization'));
                                     $router->match(['get', 'post'], 'export', $controller('export'));
                                     $router->get('{id}/extensions', $controller('extensions'));
+                                    $router->get('{id}/usage', $controller('usage'));
                                     $router->patch('{id}/status', $controller('setAdminStatus'));
                                     $router->patch('{id}/onboarding', $controller('setAdminOnboarding'));
                                     $router->post('{id}/transfer-ownership', $controller('transferOwnershipAdmin'));
@@ -307,10 +310,16 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     $router->post('invite-user', $controller('inviteUser'));
                                     $router->post('resend-invite', $controller('resendInvitation'));
                                     $router->post('set-password', $controller('setCurrentUserPassword'));
-                                    $router->post('validate-password', $controller('validatePassword'));
-                                    $router->post('change-password', $controller('changeUserPassword'));
+                                    $router->post('validate-password', $controller('validatePassword'))->middleware(Illuminate\Routing\Middleware\ThrottleRequests::class . ':10,1');
+                                    $router->post('change-password', $controller('changeUserPassword'))->middleware(Illuminate\Routing\Middleware\ThrottleRequests::class . ':10,1');
+                                    $router->get('password-policy', $controller('getPasswordPolicy'));
                                     $router->post('two-fa', $controller('saveTwoFactorSettings'));
                                     $router->get('two-fa', $controller('getTwoFactorSettings'));
+                                    $router->get('two-fa/authenticator', $controller('getAuthenticatorApp'));
+                                    $router->post('two-fa/authenticator/setup', $controller('setupAuthenticatorApp'))->middleware(Illuminate\Routing\Middleware\ThrottleRequests::class . ':10,1');
+                                    $router->post('two-fa/authenticator/confirm', $controller('confirmAuthenticatorApp'))->middleware(Illuminate\Routing\Middleware\ThrottleRequests::class . ':10,1');
+                                    $router->post('two-fa/authenticator/disable', $controller('disableAuthenticatorApp'))->middleware(Illuminate\Routing\Middleware\ThrottleRequests::class . ':10,1');
+                                    $router->post('two-fa/recovery-codes', $controller('regenerateRecoveryCodes'))->middleware(Illuminate\Routing\Middleware\ThrottleRequests::class . ':10,1');
                                     $router->post('locale', $controller('setUserLocale'));
                                     $router->get('locale', $controller('getUserLocale'));
                                 }

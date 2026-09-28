@@ -58,6 +58,9 @@ jobs:
       run: composer test:unit
 
     - name: Generate Coverage Baseline
+      timeout-minutes: 30
+      env:
+        COMPOSER_PROCESS_TIMEOUT: '0'
       run: composer coverage:baseline
 
     - name: Upload Coverage Baseline

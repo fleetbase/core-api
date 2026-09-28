@@ -6,6 +6,7 @@ use Fleetbase\Http\Controllers\Controller;
 use Fleetbase\Models\Activity;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\User;
+use Fleetbase\Support\Auth;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -14,6 +15,18 @@ use Illuminate\Support\Facades\Schema;
 
 class AdminMetricsController extends Controller
 {
+    public function __construct()
+    {
+        // Platform-wide figures: system administrators only.
+        $this->middleware(function ($request, $next) {
+            if (!Auth::getUserFromSession($request)?->isAdmin()) {
+                return response()->error('Only system administrators can view platform metrics.', 401);
+            }
+
+            return $next($request);
+        });
+    }
+
     public function kpi(Request $request, string $slug): JsonResponse
     {
         [$currentPeriodStart, $previousPeriodStart] = $this->periodBoundaries();

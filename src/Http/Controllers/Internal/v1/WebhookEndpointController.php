@@ -38,6 +38,11 @@ class WebhookEndpointController extends FleetbaseController
     public $service = 'developers';
 
     /**
+     * The IAM schema resource this controller's permissions use.
+     */
+    public string $permissionResource = 'webhook';
+
+    /**
      * Enables a webhook endpoint.
      *
      * @return \Illuminate\Http\Response

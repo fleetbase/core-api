@@ -10,6 +10,7 @@ use Fleetbase\Http\Controllers\FleetbaseController;
 use Fleetbase\Http\Requests\CreateUserRequest;
 use Fleetbase\Http\Requests\ExportRequest;
 use Fleetbase\Http\Requests\Internal\AcceptCompanyInvite;
+use Fleetbase\Http\Requests\Internal\ChangeCurrentPasswordRequest;
 use Fleetbase\Http\Requests\Internal\ChangeCurrentUserEmailRequest;
 use Fleetbase\Http\Requests\Internal\ChangeUserEmailRequest;
 use Fleetbase\Http\Requests\Internal\InviteUserRequest;
@@ -711,9 +712,111 @@ class UserController extends FleetbaseController
             return response()->error('No user session found', 401);
         }
 
+        if (($twoFaSettings['method'] ?? null) === TwoFactorAuth::METHOD_AUTHENTICATOR_APP && !TwoFactorAuth::hasAuthenticatorApp($user)) {
+            return response()->error('Set up your authenticator app before choosing it as your two-factor method.', 422);
+        }
+
         $twoFaSettings = TwoFactorAuth::saveTwoFaSettingsForUser($user, $twoFaSettings);
 
         return response()->json($twoFaSettings->value);
+    }
+
+    /**
+     * Get the current user's authenticator app status.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    #[SkipAuthorizationCheck]
+    public function getAuthenticatorApp(Request $request)
+    {
+        return response()->json(TwoFactorAuth::getAuthenticatorStatus($request->user()));
+    }
+
+    /**
+     * Start setting up an authenticator app for the current user. Requires the current
+     * password, since it changes how the user signs in.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    #[SkipAuthorizationCheck]
+    public function setupAuthenticatorApp(Request $request)
+    {
+        $user = $request->user();
+        if (!$user->checkPassword((string) $request->input('password'))) {
+            return response()->error('The current password provided is invalid.', 422);
+        }
+
+        return response()->json(TwoFactorAuth::beginAuthenticatorEnrollment($user));
+    }
+
+    /**
+     * Confirm the current user's new authenticator app with a code from it. Returns the
+     * recovery codes, which are only shown this once.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    #[SkipAuthorizationCheck]
+    public function confirmAuthenticatorApp(Request $request)
+    {
+        $user = $request->user();
+
+        try {
+            $recoveryCodes = TwoFactorAuth::confirmAuthenticatorEnrollment($user, (string) $request->input('code'));
+        } catch (\Exception $e) {
+            return response()->error($e->getMessage(), 422);
+        }
+
+        return response()->json([
+            'recovery_codes' => $recoveryCodes,
+            'status'         => TwoFactorAuth::getAuthenticatorStatus($user),
+            'settings'       => TwoFactorAuth::getTwoFaSettingsForUser($user)->value,
+        ]);
+    }
+
+    /**
+     * Remove the current user's authenticator app. Requires the current password.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    #[SkipAuthorizationCheck]
+    public function disableAuthenticatorApp(Request $request)
+    {
+        $user = $request->user();
+        if (!$user->checkPassword((string) $request->input('password'))) {
+            return response()->error('The current password provided is invalid.', 422);
+        }
+
+        TwoFactorAuth::disableAuthenticatorApp($user);
+
+        return response()->json([
+            'status'   => TwoFactorAuth::getAuthenticatorStatus($user),
+            'settings' => TwoFactorAuth::getTwoFaSettingsForUser($user)->value,
+        ]);
+    }
+
+    /**
+     * Replace the current user's recovery codes. Requires the current password.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    #[SkipAuthorizationCheck]
+    public function regenerateRecoveryCodes(Request $request)
+    {
+        $user = $request->user();
+        if (!$user->checkPassword((string) $request->input('password'))) {
+            return response()->error('The current password provided is invalid.', 422);
+        }
+
+        try {
+            $recoveryCodes = TwoFactorAuth::regenerateRecoveryCodes($user);
+        } catch (\Exception $e) {
+            return response()->error($e->getMessage(), 422);
+        }
+
+        return response()->json([
+            'recovery_codes' => $recoveryCodes,
+            'status'         => TwoFactorAuth::getAuthenticatorStatus($user),
+        ]);
     }
 
     /**
@@ -1024,6 +1127,11 @@ class UserController extends FleetbaseController
         if ($isPending) {
             $user->update(['email_verified_at' => now()]);
             $user->activate();
+        }
+
+        // allow the user to set their first password without a current password
+        if ($needsPassword) {
+            Auth::markPasswordSetupPending($user);
         }
 
         // create authentication token for user
@@ -1365,10 +1473,15 @@ class UserController extends FleetbaseController
     }
 
     /**
-     * Updates the current users password.
+     * Sets the current user's first password, e.g. right after accepting an invite.
+     *
+     * No IAM permission is required because the user cannot skip this step, but it is
+     * only allowed once, while the password setup allowance is pending. Afterwards the
+     * password must be changed with `changeUserPassword`.
      *
      * @return \Illuminate\Http\Response
      */
+    #[SkipAuthorizationCheck]
     public function setCurrentUserPassword(UpdatePasswordRequest $request)
     {
         $password = $request->input('password');
@@ -1379,7 +1492,14 @@ class UserController extends FleetbaseController
             return response()->error('User not authenticated');
         }
 
+        if (!Auth::isPasswordSetupPending($user)) {
+            return response()->error('Your password has already been set. Use change password instead.', 403);
+        }
+
         $user->changePassword($password);
+        Auth::clearPasswordSetupPending($user);
+
+        activity('auth')->causedBy($user)->performedOn($user)->event('password_set')->log('Password set');
 
         return response()->json(['status' => 'ok']);
     }
@@ -1417,31 +1537,55 @@ class UserController extends FleetbaseController
     /**
      * Validate the user's current password.
      *
+     * Only checks the user's own password, so no IAM permission is required.
+     *
      * @return \Illuminate\Http\Response
      */
+    #[SkipAuthorizationCheck]
     public function validatePassword(ValidatePasswordRequest $request)
     {
         return response()->json(['status' => 'ok']);
     }
 
     /**
-     * Change the user's password.
+     * Change the current user's password.
+     *
+     * Requires the current password, and that the user may change their own password
+     * (see `Auth::canChangeOwnPassword`). The generic resource check is skipped because
+     * it would require the `create user` permission for this POST.
      *
      * @return \Illuminate\Http\Response
      */
-    public function changeUserPassword(UpdatePasswordRequest $request)
+    #[SkipAuthorizationCheck]
+    public function changeUserPassword(ChangeCurrentPasswordRequest $request)
     {
-        $user               = $request->user();
-        $newPassword        = $request->input('password');
-        $newConfirmPassword = $request->input('password_confirmation');
+        $user = $request->user();
 
-        if ($newPassword !== $newConfirmPassword) {
-            return response()->error('Password is not matching');
+        if (!Auth::canChangeOwnPassword($user)) {
+            return response()->error('You are not allowed to change your password. Ask an administrator.', 403);
         }
 
-        $user->changePassword($newPassword);
+        $user->changePassword($request->input('password'));
+        Auth::clearPasswordSetupPending($user);
+
+        activity('auth')->causedBy($user)->performedOn($user)->event('password_changed')->log('Password changed');
 
         return response()->json(['status' => 'ok']);
+    }
+
+    /**
+     * Get the current user's password policy.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    #[SkipAuthorizationCheck]
+    public function getPasswordPolicy(Request $request)
+    {
+        $user = $request->user();
+
+        return response()->json([
+            'can_change_password' => Auth::canChangeOwnPassword($user),
+        ]);
     }
 
     /**
