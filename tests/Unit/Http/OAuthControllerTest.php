@@ -16,6 +16,7 @@ use Fleetbase\Services\OAuth\OAuthConfigRepository;
 use Fleetbase\Services\OAuth\OAuthFlowService;
 use Fleetbase\Services\OAuth\OAuthIdentityService;
 use Fleetbase\Services\OAuth\OAuthStateService;
+use Fleetbase\Support\TwoFactorAuth;
 use Illuminate\Contracts\Encryption\Encrypter;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
@@ -174,9 +175,12 @@ class OAuthControllerRedisFake
 {
     public array $values = [];
 
+    public array $sets = [];
+
     public function set(string $key, mixed $value, mixed ...$options): bool
     {
         $this->values[$key] = $value;
+        $this->sets[]       = compact('key', 'value', 'options');
 
         return true;
     }
@@ -1046,7 +1050,12 @@ it('still asks for two-factor after linking automatically', function () {
     expect($data)->not->toHaveKey('token')
         ->and($data['twoFaSession'])->toBeString()
         ->and($data['linked'])->toBe('fakeprovider')
-        ->and($capsule->getConnection('mysql')->table('personal_access_tokens')->count())->toBe(0);
+        ->and($capsule->getConnection('mysql')->table('personal_access_tokens')->count())->toBe(0)
+        // The 2FA session is started only after the provider has vouched for the user,
+        // and lives for a relative TTL in seconds rather than an absolute timestamp.
+        ->and(app('redis')->sets)->toHaveCount(1)
+        ->and(app('redis')->sets[0]['key'])->toStartWith('two_fa_session:user-1:')
+        ->and(app('redis')->sets[0]['options'])->toBe(['EX', TwoFactorAuth::SESSION_TTL]);
 });
 
 it('asks the user to link by hand when automatic linking does not apply', function (array $account, array $config, ?Closure $before = null) {

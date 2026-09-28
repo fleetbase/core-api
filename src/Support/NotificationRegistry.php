@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Support;
 
+use Fleetbase\Models\Company;
 use Fleetbase\Models\Setting;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Schema;
@@ -28,7 +29,7 @@ class NotificationRegistry
         \Fleetbase\Models\User::class,
         \Fleetbase\Models\Group::class,
         \Fleetbase\Models\Role::class,
-        \Fleetbase\Models\Company::class,
+        Company::class,
     ];
 
     /**
@@ -251,7 +252,7 @@ class NotificationRegistry
         }
 
         // resolve settings for notification
-        $notificationSettings = Setting::lookupCompany('notification_settings');
+        $notificationSettings = static::resolveNotificationSettings(...$params);
 
         // Get the notification class definition
         $definition = static::findNotificationRegistrationByDefinition($notificationClass);
@@ -324,7 +325,7 @@ class NotificationRegistry
         }
 
         // resolve settings for notification
-        $notificationSettings = Setting::lookup('notification_settings');
+        $notificationSettings = static::resolveNotificationSettings(...$params);
 
         // iterate the properties to find the notifications key starting with the class
         $notificationSettingsKey = Str::camel(str_replace('\\', '', $notificationClass)) . '__' . Str::camel($notificationName);
@@ -360,6 +361,34 @@ class NotificationRegistry
                 }
             }
         }
+    }
+
+    /**
+     * Resolve the notification settings for the company the notification is about.
+     *
+     * The company is taken from the notification parameters (a company, or a model
+     * with a `company_uuid`) because notifications are often sent from queued jobs
+     * and console commands, where there is no company session.
+     *
+     * @param mixed ...$params the parameters passed to the notification class
+     */
+    protected static function resolveNotificationSettings(...$params): mixed
+    {
+        $companyUuid = null;
+
+        foreach ($params as $param) {
+            if ($param instanceof Company) {
+                $companyUuid = $param->uuid;
+                break;
+            }
+
+            if ($param instanceof Model && $param->getAttribute('company_uuid')) {
+                $companyUuid = $param->getAttribute('company_uuid');
+                break;
+            }
+        }
+
+        return Setting::lookupForCompany($companyUuid ?? session('company'), 'notification_settings', []);
     }
 
     /**

@@ -375,6 +375,7 @@ test('test push notification builds fcm messages with configured metadata payloa
                 'body'  => 'Test body',
             ],
             'android' => [
+                'priority'     => 'high',
                 'notification' => [
                     'color' => '#4391EA',
                     'sound' => 'default',
