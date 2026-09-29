@@ -196,11 +196,8 @@ class ApiCredentialController extends FleetbaseController
             return response()->error('API credential attempted to roll could not be found.');
         }
 
-        // create api credentials seed
-        $seed = array_map('intval', str_split(time() . $apiCredential->id));
-
-        // regenerate api key
-        $newCredentials = ApiCredential::generateKeys($seed, $apiCredential->test_mode);
+        // regenerate api key (random; see ApiCredential::generateKeys)
+        $newCredentials = ApiCredential::generateKeys(null, $apiCredential->test_mode);
 
         // store the previous key
         $previousApiKey = $apiCredential->key;

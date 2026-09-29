@@ -12,6 +12,7 @@ use Fleetbase\Traits\HasUuid;
 use Fleetbase\Traits\Searchable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Permission\Traits\HasPermissions;
@@ -159,13 +160,21 @@ class ApiCredential extends Model
     /**
      * Generate an API Key.
      *
+     * The key is 32 random alphanumeric characters from the CSPRNG (~190 bits). It used to be
+     * sqids($encode), where callers passed the digits of the creation time and row id. The
+     * model's primary key is the uuid and `id` is never read back on insert, so the observer
+     * saw a null id and every key created in the same second was identical: the lookup in
+     * AuthenticateOnceWithBasicAuth then resolved one organization's key to another's
+     * credential. Keys derived from a timestamp and a sequential id are guessable anyway.
+     *
+     * @param mixed $encode ignored; kept so existing callers do not break
+     *
      * @return array
      */
-    public static function generateKeys($encode, $testKey = false)
+    public static function generateKeys($encode = null, $testKey = false)
     {
-        $sqids = new \Sqids\Sqids();
-        $key   = $sqids->encode($encode);
-        $hash  = Hash::make($key);
+        $key  = Str::random(32);
+        $hash = Hash::make($key);
 
         return [
             'key'    => ($testKey ? 'flb_test_' : 'flb_live_') . $key,
