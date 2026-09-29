@@ -110,6 +110,35 @@ it('derives api credential sandbox mode expiration values and generated key pref
         ->and($testKeys['secret'])->toBe('hashed:' . substr($testKeys['key'], strlen('flb_test_')));
 });
 
+it('api credential keys are random rather than derived from their input', function () {
+    bind_test_container()->instance('hash', new ApiAndWebhookModelsHashFake());
+
+    // The old keys were sqids(creation second + id); the same input gave the same key.
+    $first  = ApiCredential::generateKeys([1, 7, 9, 0, 0, 0, 0, 0, 0, 0], false)['key'];
+    $second = ApiCredential::generateKeys([1, 7, 9, 0, 0, 0, 0, 0, 0, 0], false)['key'];
+
+    expect($first)->not->toBe($second)
+        ->and($first)->toMatch('/^flb_live_[A-Za-z0-9]{32}$/')
+        ->and(ApiCredential::generateKeys()['key'])->toMatch('/^flb_live_[A-Za-z0-9]{32}$/');
+});
+
+it('api credential observer gives credentials created in the same second different keys', function () {
+    $container = bind_test_container();
+    $container->instance('hash', new ApiAndWebhookModelsHashFake());
+
+    // The uuid primary key means `id` is never loaded on insert, so the observer sees null.
+    $keys = [];
+    foreach ([1, 2] as $n) {
+        $credential = new ApiCredentialObserverSaveSpy();
+        $credential->setDateFormat('Y-m-d H:i:s');
+        $credential->setRawAttributes(['id' => null, 'created_at' => '2026-07-17 12:34:56', 'test_mode' => false], true);
+        (new ApiCredentialObserver())->created($credential);
+        $keys[] = $credential->key;
+    }
+
+    expect($keys[0])->not->toBe($keys[1]);
+});
+
 it('api credential observer writes generated keys and persists live and test credentials', function (bool $testMode, string $expectedPrefix) {
     $container = bind_test_container();
     $container->instance('hash', new ApiAndWebhookModelsHashFake());

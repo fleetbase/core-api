@@ -13,9 +13,8 @@ class ApiCredentialObserver
      */
     public function created(ApiCredential $apiCredential)
     {
-        // generate the api credentials
-        $seed        = array_map('intval', str_split(strtotime($apiCredential->created_at) . $apiCredential->id));
-        $credentials = ApiCredential::generateKeys($seed, $apiCredential->test_mode);
+        // generate the api credentials (random; see ApiCredential::generateKeys)
+        $credentials = ApiCredential::generateKeys(null, $apiCredential->test_mode);
 
         // set the credentials
         $apiCredential->key    = data_get($credentials, 'key');
