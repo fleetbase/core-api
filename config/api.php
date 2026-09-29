@@ -23,6 +23,15 @@ return [
         // These keys can be used for performance testing in production
         // Example: THROTTLE_UNLIMITED_API_KEYS=Bearer test_key_123,Bearer load_test_456
         'unlimited_keys' => array_filter(explode(',', env('THROTTLE_UNLIMITED_API_KEYS', ''))),
+
+        // Count requests per API consumer for the admin "API consumers" view (needs Redis)
+        // Default: true (enabled). Administrators can also toggle this in the console.
+        // Example: THROTTLE_TRACK_CONSUMERS=false
+        'track_consumers' => env('THROTTLE_TRACK_CONSUMERS', true),
+
+        // Redis connection the consumer metrics are written to
+        // Default: cache
+        'metrics_connection' => env('THROTTLE_METRICS_REDIS_CONNECTION', 'cache'),
     ],
 
     'cache' => [

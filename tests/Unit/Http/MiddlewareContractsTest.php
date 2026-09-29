@@ -1023,6 +1023,65 @@ namespace {
             ->and($isUnlimitedApiKey->invoke($middleware, 'Bearer other-key'))->toBeFalse();
     });
 
+    test('throttle requests keys the limiter on the presented credential rather than the proxy ip', function () {
+        middleware_contracts_fixture([
+            'api.throttle.enabled'        => true,
+            'api.throttle.max_attempts'   => 2,
+            'api.throttle.decay_minutes'  => 1,
+            'api.throttle.unlimited_keys' => [],
+        ]);
+
+        $middleware = middleware_contracts_throttle();
+        // Every request arrives from the same load balancer address, as in production.
+        $send = function (string $uri, ?string $credential = null) use ($middleware) {
+            $server = ['REMOTE_ADDR' => '10.0.0.5'];
+            if ($credential) {
+                $server['HTTP_AUTHORIZATION'] = 'Bearer ' . $credential;
+            }
+            $request = Request::create($uri, 'GET', [], [], [], $server);
+            $request->setRouteResolver(fn () => new Illuminate\Routing\Route(['GET'], ltrim($uri, '/'), fn () => null));
+
+            try {
+                return $middleware->handle($request, fn () => new JsonResponse(['ok' => true]))->getStatusCode();
+            } catch (Illuminate\Http\Exceptions\ThrottleRequestsException $exception) {
+                return $exception->getStatusCode();
+            }
+        };
+
+        $noisy = [$send('/v1/orders', 'flb_live_noisy'), $send('/v1/orders', 'flb_live_noisy'), $send('/v1/orders', 'flb_live_noisy')];
+
+        expect($noisy)->toBe([200, 200, 429])
+            ->and($send('/v1/orders', 'flb_live_quiet'))->toBe(200)
+            ->and($send('/int/v1/auth/login'))->toBe(200)
+            ->and($send('/int/v1/lookup/countries'))->toBe(200)
+            ->and($send('/int/v1/settings/branding'))->toBe(429)
+            ->and($send('/v1/orders'))->toBe(200);
+    });
+
+    test('throttle requests falls back to the authenticated user before the ip when no credential is sent', function () {
+        middleware_contracts_fixture([
+            'api.throttle.enabled'        => true,
+            'api.throttle.max_attempts'   => 1,
+            'api.throttle.unlimited_keys' => [],
+        ]);
+
+        $middleware = middleware_contracts_throttle();
+        $signature  = new ReflectionMethod($middleware, 'resolveRequestSignature');
+        $signature->setAccessible(true);
+        $request = function (?string $userId, string $ip) {
+            $request = Request::create('/v1/orders', 'GET', [], [], [], ['REMOTE_ADDR' => $ip]);
+            $request->setUserResolver(fn () => $userId ? new Illuminate\Auth\GenericUser(['id' => $userId]) : null);
+
+            return $request;
+        };
+
+        expect($signature->invoke($middleware, $request('user-1', '10.0.0.5')))
+            ->toBe($signature->invoke($middleware, $request('user-1', '10.0.0.6')))
+            ->not->toBe($signature->invoke($middleware, $request('user-2', '10.0.0.5')))
+            ->and($signature->invoke($middleware, $request(null, '10.0.0.5')))
+            ->not->toBe($signature->invoke($middleware, $request(null, '10.0.0.6')));
+    });
+
     test('basic auth middleware rejects requests without bearer credentials before continuing', function () {
         middleware_contracts_fixture();
 

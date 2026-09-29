@@ -364,4 +364,25 @@ namespace {
             ->and(routes_contract_find($routes, 'GET', 'int/v1/notifications/registry')['action'])
             ->toBe('Fleetbase\Http\Controllers\Internal\v1\NotificationController@registry');
     });
+
+    test('route file exposes api rate limit administration as protected routes', function () {
+        $routes     = routes_contract_rows(routes_contract_router());
+        $controller = 'Fleetbase\\Http\\Controllers\\Internal\\v1\\RateLimitController';
+
+        $expected = [
+            ['GET', 'int/v1/rate-limits/settings', 'getSettings'],
+            ['POST', 'int/v1/rate-limits/settings', 'saveSettings'],
+            ['DELETE', 'int/v1/rate-limits/settings', 'resetSettings'],
+            ['GET', 'int/v1/rate-limits/consumers', 'consumers'],
+            ['POST', 'int/v1/rate-limits/consumers/{signature}/reset', 'resetConsumer'],
+        ];
+
+        foreach ($expected as [$method, $uri, $action]) {
+            $route = routes_contract_find($routes, $method, $uri);
+
+            expect($route)->not->toBeNull()
+                ->and($route['action'])->toBe($controller . '@' . $action)
+                ->and($route['middleware'])->toContain('fleetbase.protected');
+        }
+    });
 }
