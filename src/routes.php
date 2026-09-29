@@ -254,6 +254,13 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     $router->post('test-notification-channels-config', $controller('testNotificationChannelsConfig'));
                                 }
                                 );
+                                $router->group(['prefix' => 'rate-limits'], function ($router) {
+                                    $router->get('settings', 'RateLimitController@getSettings');
+                                    $router->post('settings', 'RateLimitController@saveSettings');
+                                    $router->delete('settings', 'RateLimitController@resetSettings');
+                                    $router->get('consumers', 'RateLimitController@consumers');
+                                    $router->post('consumers/{signature}/reset', 'RateLimitController@resetConsumer');
+                                });
                                 $router->fleetbaseRoutes('schedule-monitor', null, [], function ($router, $controller) {
                                     $router->get('tasks', $controller('tasks'));
                                     $router->get('{id}/logs', $controller('logs'));
