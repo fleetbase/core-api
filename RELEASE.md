@@ -1,11 +1,14 @@
-# v1.6.66 — Per-consumer API rate limiting, admin rate-limit controls and API consumer metrics
+# v1.6.67 — API keys are generated randomly
 
-## Fixes
+## Security
 
-- One API consumer can no longer rate-limit the whole platform. `ThrottleRequests` ran before API authentication, so Laravel keyed every bucket on the client IP. Behind a load balancer that is the balancer's IP, so every tenant, API key and console visitor shared a single 120/min bucket, and one busy integration returned 429 to everyone. The limiter now keys on the presented credential (API key, Sanctum token or basic auth), falling back to the user and then the IP only when none is sent. The first path segment keeps `/v1` and `/int` in separate buckets. (#280)
-- 429 responses keep `Retry-After` and `X-RateLimit-*`. The exception handler used to drop them, so throttled clients could not back off correctly. (#280)
+- **API keys created in the same second were identical, across organizations.** A key was derived from its creation time and row id, but the id is never loaded after insert (the primary key is the uuid), so every key created in the same second got the same value. API authentication resolves a key to the first matching credential, so a key issued to one organization could authenticate as another's. Keys are now 32 random characters from the CSPRNG, for new keys and for rolled keys. (#283)
 
-## Improvements
+## Upgrade Steps
 
-- System admins can manage API rate limits at runtime. The limits (`THROTTLE_*` environment defaults) can be overridden from the console and stored as the `system.rate-limits` setting: enable/disable, requests per window, and window length. **Per-organization overrides** give an organization a custom limit or none. New admin-only endpoints `GET/POST/DELETE int/v1/rate-limits/settings`. (#281)
-- API consumer metrics. The throttle middleware counts every request and every 429 per consumer in Redis: minute buckets are kept for 2 hours, hour buckets for 8 days, at one pipelined round trip per request. `GET int/v1/rate-limits/consumers?window=&sort=&limit=` lists the busiest or most throttled consumers with their organization, masked key, scope, IP, avg and peak per minute, and share. `POST int/v1/rate-limits/consumers/{signature}/reset` clears one consumer's window. Tracking can be disabled with `THROTTLE_TRACK_CONSUMERS=false`; `THROTTLE_METRICS_REDIS_CONNECTION` picks the Redis connection (default `cache`). (#281)
+- Check for existing duplicate keys and roll every credential that shares one, in both the live and sandbox databases:
+  ```sql
+  SELECT `key`, COUNT(*) AS credentials, COUNT(DISTINCT company_uuid) AS orgs
+  FROM api_credentials WHERE deleted_at IS NULL
+  GROUP BY `key` HAVING COUNT(*) > 1;
+  ```
