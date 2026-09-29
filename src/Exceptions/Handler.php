@@ -205,7 +205,8 @@ class Handler extends ExceptionHandler
                 return response()->error('Invalid XSRF token sent with request.', 419);
 
             case 'ThrottleRequestsException':
-                return response()->error('Too many requests.', 429);
+                // Keep Retry-After and X-RateLimit-* so the throttled client knows when to retry.
+                return response()->error('Too many requests.', 429)->withHeaders($exception->getHeaders());
 
             case 'AuthenticationException':
                 return response()->error('Unauthenticated.', 401);

@@ -113,6 +113,22 @@ namespace {
         'http not found'         => [new NotFoundHttpException(), ['There is nothing to see here.'], 404],
     ]);
 
+    it('keeps the retry-after and rate limit headers on a throttled response', function () {
+        $handler   = exception_handler_subject();
+        $exception = new ThrottleRequestsException('Too Many Attempts.', null, [
+            'Retry-After'           => 42,
+            'X-RateLimit-Limit'     => 120,
+            'X-RateLimit-Remaining' => 0,
+        ]);
+
+        $response = $handler->render(Request::create('/v1/orders', 'POST'), $exception);
+
+        expect($response->getStatusCode())->toBe(429)
+            ->and($response->headers->get('Retry-After'))->toBe('42')
+            ->and($response->headers->get('X-RateLimit-Limit'))->toBe('120')
+            ->and($response->headers->get('X-RateLimit-Remaining'))->toBe('0');
+    });
+
     it('returns a resource-specific model not found json response when the model is known', function () {
         $handler   = exception_handler_subject();
         $exception = (new ModelNotFoundException())->setModel(User::class);

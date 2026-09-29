@@ -60,6 +60,39 @@ class ThrottleRequests extends ThrottleRequestsMiddleware
     }
 
     /**
+     * Resolve the limiter key from the consumer rather than the connection.
+     *
+     * This middleware runs ahead of API authentication, so Laravel's default signature
+     * (the authenticated user, else route domain + client IP) always fell through to the
+     * IP. Behind a load balancer or reverse proxy that IP is the proxy's, and no route has
+     * a domain, so every tenant, API key and console visitor shared one bucket: a single
+     * busy integration returned 429 to the entire platform.
+     *
+     * The presented credential identifies the consumer without a database lookup, so the
+     * key is the hashed credential. Only requests carrying no credential fall back to the
+     * user, then the IP. The first path segment ("v1", "int", ...) keeps the public API and
+     * the console's public routes in separate buckets.
+     *
+     * @param \Illuminate\Http\Request $request
+     *
+     * @return string
+     */
+    protected function resolveRequestSignature($request)
+    {
+        $scope = 'fleetbase-throttle|' . ($request->segment(1) ?? '');
+
+        if ($credential = $this->extractApiKey($request)) {
+            return sha1($scope . '|credential|' . $credential);
+        }
+
+        if ($user = $request->user()) {
+            return sha1($scope . '|user|' . $user->getAuthIdentifier());
+        }
+
+        return sha1($scope . '|ip|' . $request->ip());
+    }
+
+    /**
      * Extract API key from the request.
      *
      * Supports multiple authentication methods:
