@@ -20,59 +20,76 @@ class Find
      */
     public static function httpResourceForModel(Model $model, ?string $namespace = null, ?int $version = 1): ?string
     {
-        // Create a unique cache key based on the model, namespace, and version.
-        $cacheKey     = md5(get_class($model) . '|' . ($namespace ?? '') . '|' . $version);
         static $cache = [];
+
+        // A model may name its resource explicitly; otherwise it is resolved by convention.
+        $explicit = method_exists($model, 'getResource') ? $model->getResource() : null;
+        $cacheKey = md5(get_class($model) . '|' . ($namespace ?? '') . '|' . $version . '|' . (is_string($explicit) ? $explicit : ''));
+
         if (isset($cache[$cacheKey])) {
-            return $cache[$cacheKey];
+            $cached = $cache[$cacheKey];
+
+            // Convention-resolved models with a dedicated `Internal\` resource depend on the request audience,
+            // so both candidates are cached and the request decides per call. Everything else never touches the request.
+            if (is_array($cached)) {
+                return Http::isInternalRequest() ? $cached['internal'] : $cached['public'];
+            }
+
+            return $cached;
         }
 
-        $resourceNamespace = null;
         $defaultResourceNS = $coreResourceNS = '\\Fleetbase\\Http\\Resources\\';
         $packageName       = static::getModelPackage($model);
         if ($packageName) {
             $defaultResourceNS = '\\Fleetbase\\' . $packageName . '\\Http\\Resources\\';
         }
 
+        $fallback = $coreResourceNS . 'FleetbaseResource';
+
+        if ($explicit !== null) {
+            $resolved = is_string($explicit) && Utils::classExists($explicit) ? $explicit : $fallback;
+
+            $cache[$cacheKey] = $resolved;
+
+            return $resolved;
+        }
+
         $baseNamespace = $namespace ? $namespace . '\\Http\\Resources\\' : $defaultResourceNS;
-        $modelName     = Utils::classBasename($model);
+        $modelName     = (string) Utils::classBasename($model);
 
-        if (method_exists($model, 'getResource')) {
-            $resourceNamespace = $model->getResource();
+        $public   = static::httpResourceByConvention($baseNamespace, $modelName, $version, false, $fallback);
+        $internal = static::httpResourceByConvention($baseNamespace, $modelName, $version, true, $fallback);
+
+        if ($public === $internal) {
+            $cache[$cacheKey] = $public;
+
+            return $public;
         }
 
-        if ($resourceNamespace === null) {
-            $internal = Http::isInternalRequest();
+        $cache[$cacheKey] = ['internal' => $internal, 'public' => $public];
 
-            if ($internal) {
-                $baseNamespace .= 'Internal\\';
-            }
+        return Http::isInternalRequest() ? $internal : $public;
+    }
 
-            $resourceNamespace = $baseNamespace . "v{$version}\\" . $modelName;
+    /**
+     * Resolve a resource class by naming convention: `{base}[Internal\]v{version}\{Model}`, falling back to the
+     * public resource, then the unversioned resource, then the given default.
+     */
+    protected static function httpResourceByConvention(string $baseNamespace, string $modelName, ?int $version, bool $internal, string $fallback): string
+    {
+        $candidate = $baseNamespace . ($internal ? 'Internal\\' : '') . "v{$version}\\" . $modelName;
 
-            // Fallback to public resource if internal version isn’t found.
-            if (!Utils::classExists($resourceNamespace)) {
-                $resourceNamespace = str_replace('Internal\\', '', $resourceNamespace);
-            }
-
-            // Fallback to non-versioned namespace.
-            if (!Utils::classExists($resourceNamespace)) {
-                $resourceNamespace = str_replace("v{$version}\\", '', $resourceNamespace);
-            }
+        // Fallback to public resource if internal version isn't found.
+        if (!Utils::classExists($candidate)) {
+            $candidate = str_replace('Internal\\', '', $candidate);
         }
 
-        try {
-            if (!Utils::classExists($resourceNamespace)) {
-                throw new \Exception('Missing resource');
-            }
-        } catch (\Error|\Exception $e) {
-            $resourceNamespace = $coreResourceNS . 'FleetbaseResource';
+        // Fallback to non-versioned namespace.
+        if (!Utils::classExists($candidate)) {
+            $candidate = str_replace("v{$version}\\", '', $candidate);
         }
 
-        // Cache the resolved class name.
-        $cache[$cacheKey] = $resourceNamespace;
-
-        return $cache[$cacheKey];
+        return Utils::classExists($candidate) ? $candidate : $fallback;
     }
 
     /**

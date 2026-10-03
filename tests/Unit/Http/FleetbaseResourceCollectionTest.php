@@ -448,3 +448,26 @@ test('resource collection paginated responses append explicit query parameters w
             'filter' => 'explicit',
         ]);
 });
+
+class FleetbaseResourceCollectionConditionalPlainResource extends JsonResource
+{
+    public function toArray($request = null): array
+    {
+        return [
+            'id'     => $this->resource['id'],
+            'absent' => $this->when(false, 'never'),
+        ];
+    }
+}
+
+test('resource collection resolves plain json resource items so conditional values are filtered', function () {
+    $request = fleetbase_resource_collection_request();
+
+    $collection = new FleetbaseResourceCollectionTestPlainItems([
+        new FleetbaseResourceCollectionConditionalPlainResource(['id' => 'conditional-1']),
+    ]);
+
+    expect($collection->toArray($request))->toBe([
+        ['id' => 'conditional-1'],
+    ]);
+});
