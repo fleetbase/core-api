@@ -3,6 +3,8 @@
 namespace Fleetbase\Http\Resources;
 
 use Fleetbase\Http\Resources\Json\FleetbasePaginatedResourceResponse;
+use Fleetbase\Support\ResourceTransformerContext;
+use Fleetbase\Support\ResourceTransformerRegistry;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Http\Resources\Json\ResourceCollection;
 use Illuminate\Support\Arr;
@@ -74,7 +76,9 @@ class FleetbaseResourceCollection extends ResourceCollection
      * Convert the resource collection into an array.
      *
      * Applies the exclusion list to every item. If items are not already resources,
-     * they are wrapped using the $collects class (if provided).
+     * they are wrapped using the $collects class (if provided). Items are resolved (not just
+     * converted) so registered resource transformers apply, sharing one transformer context
+     * so `prepare()` runs once for the whole collection.
      *
      * @param \Illuminate\Http\Request $request
      *
@@ -82,18 +86,18 @@ class FleetbaseResourceCollection extends ResourceCollection
      */
     public function toArray($request): array
     {
-        return $this->collection->map(function ($item) use ($request) {
-            // If the item is already a resource and has ->without(), use it.
+        $context = $this->transformerContextFor($request);
+
+        return $this->collection->map(function ($item) use ($request, $context) {
+            // If the item is already a resource, resolve it so transformers and filtering apply.
             if ($item instanceof JsonResource) {
-                if (method_exists($item, 'without')) {
-                    /** @var object $item */
-                    $array = $item->without($this->excluded)->toArray($request);
+                if ($item instanceof FleetbaseResource) {
+                    $array = $item->without($this->excluded)->withTransformerContext($context)->resolve($request);
 
                     return $this->applyArrayExclusions($array);
                 }
 
-                // Otherwise, just resolve it to array and then filter.
-                $array = $item->toArray($request);
+                $array = $item->resolve($request);
 
                 return $this->applyArrayExclusions($array);
             }
@@ -102,14 +106,19 @@ class FleetbaseResourceCollection extends ResourceCollection
             if (is_string($this->collects) && class_exists($this->collects)) {
                 $resource = new $this->collects($item);
 
-                if (method_exists($resource, 'without')) {
-                    $array = $resource->without($this->excluded)->toArray($request);
-                } else {
-                    $array = $resource->toArray($request);
-                    $array = $this->applyArrayExclusions($array);
+                if ($resource instanceof FleetbaseResource) {
+                    return $resource->without($this->excluded)->withTransformerContext($context)->resolve($request);
                 }
 
-                return $array;
+                if ($resource instanceof JsonResource) {
+                    return $this->applyArrayExclusions($resource->resolve($request));
+                }
+
+                if (method_exists($resource, 'toArray')) {
+                    return $this->applyArrayExclusions((array) $resource->toArray($request));
+                }
+
+                return $this->applyArrayExclusions((array) $resource);
             }
 
             if (is_object($item) && method_exists($item, 'toArray')) {
@@ -123,6 +132,60 @@ class FleetbaseResourceCollection extends ResourceCollection
 
             return $this->applyArrayExclusions($array);
         })->all();
+    }
+
+    /**
+     * Build one transformer context for the whole collection and run `prepare()` once,
+     * or return null when no transformer applies to the item resource class.
+     *
+     * @param \Illuminate\Http\Request $request
+     */
+    protected function transformerContextFor($request): ?ResourceTransformerContext
+    {
+        $registry = ResourceTransformerRegistry::instance();
+
+        if ($registry->isEmpty()) {
+            return null;
+        }
+
+        $resourceClass = $this->itemResourceClass();
+
+        if ($resourceClass === null) {
+            return null;
+        }
+
+        $models = $this->collection
+            ->map(fn ($item) => $item instanceof JsonResource ? $item->resource : $item)
+            ->filter(fn ($model) => is_object($model))
+            ->values();
+
+        $first      = $models->first();
+        $modelClass = is_object($first) ? get_class($first) : null;
+
+        if (!$registry->hasTransformersFor($resourceClass, $modelClass)) {
+            return null;
+        }
+
+        $context = $registry->newContext($request, ResourceTransformerContext::HTTP);
+        $registry->prepare($resourceClass, $models->all(), $context);
+
+        return $context;
+    }
+
+    /**
+     * The resource class items are (or will be) wrapped in.
+     *
+     * @return class-string|null
+     */
+    protected function itemResourceClass(): ?string
+    {
+        if (is_string($this->collects) && class_exists($this->collects)) {
+            return $this->collects;
+        }
+
+        $first = $this->collection->first(fn ($item) => $item instanceof JsonResource);
+
+        return $first instanceof JsonResource ? get_class($first) : null;
     }
 
     /**

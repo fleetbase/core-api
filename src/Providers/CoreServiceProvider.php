@@ -2,10 +2,12 @@
 
 namespace Fleetbase\Providers;
 
+use Fleetbase\Contracts\ResourceTransformer;
 use Fleetbase\Models\Setting;
 use Fleetbase\Support\EnvironmentMapper;
 use Fleetbase\Support\NotificationRegistry;
 use Fleetbase\Support\Reporting\ReportSchemaRegistry;
+use Fleetbase\Support\ResourceTransformerRegistry;
 use Fleetbase\Support\Telemetry;
 use Fleetbase\Support\Utils;
 use Illuminate\Console\Scheduling\Schedule;
@@ -104,6 +106,14 @@ class CoreServiceProvider extends ServiceProvider
     ];
 
     /**
+     * Resource transformers to register, as classes implementing
+     * `Fleetbase\Contracts\ResourceTransformer` or `class => options` entries.
+     *
+     * @var array<int|string, mixed>
+     */
+    public $transformers = [];
+
+    /**
      * Register any application services.
      *
      * Within the register method, you should only bind things into the
@@ -143,6 +153,11 @@ class CoreServiceProvider extends ServiceProvider
         // setup report schema registry
         $this->app->singleton(ReportSchemaRegistry::class, function () {
             return new ReportSchemaRegistry();
+        });
+
+        // Resource transformer registry: extensions register transformers against it during boot.
+        $this->app->singleton(ResourceTransformerRegistry::class, function () {
+            return new ResourceTransformerRegistry();
         });
 
         // OAuth services.
@@ -204,6 +219,8 @@ class CoreServiceProvider extends ServiceProvider
         });
         $this->registerObservers();
         $this->registerExpansionsFrom();
+        $this->registerTransformers();
+        $this->registerTransformersFrom();
         $this->registerMiddleware();
         $this->registerNotifications();
         $this->loadRoutesFrom(__DIR__ . '/../routes.php');
@@ -313,6 +330,83 @@ class CoreServiceProvider extends ServiceProvider
                 } catch (\Throwable $e) {
                 }
             }
+        }
+    }
+
+    /**
+     * Register the resource transformers declared by the service provider's `$transformers` property.
+     *
+     * @param array<int|string, mixed>|null $transformers overrides the property when given
+     */
+    public function registerTransformers(?array $transformers = null): void
+    {
+        $transformers ??= $this->transformers;
+
+        if (empty($transformers)) {
+            return;
+        }
+
+        ResourceTransformerRegistry::register($transformers);
+    }
+
+    /**
+     * Discover and register resource transformers from a directory.
+     *
+     * Mirrors `registerExpansionsFrom()`: every instantiable class in the directory that implements
+     * `Fleetbase\Contracts\ResourceTransformer` is registered. Unless `$namespace` is given, the class
+     * namespace is resolved as `{PackageNamespace}\Http\Transformers\` from the package's composer.json.
+     *
+     * @param string|array<int, string>|null $from      directory (or directories) to scan; defaults to this package's `src/Http/Transformers`
+     * @param string|null                    $namespace explicit namespace of the classes in the directory
+     */
+    public function registerTransformersFrom($from = null, $namespace = null): void
+    {
+        if (is_array($from)) {
+            foreach ($from as $frm) {
+                $this->registerTransformersFrom($frm, $namespace);
+            }
+
+            return;
+        }
+
+        $from ??= __DIR__ . '/../Http/Transformers';
+
+        try {
+            $files = new \DirectoryIterator($from);
+        } catch (\UnexpectedValueException $e) {
+            // no transformers
+            return;
+        }
+
+        if ($namespace !== null) {
+            $namespaces = [rtrim($namespace, '\\') . '\\'];
+        } else {
+            $namespaces       = ['Fleetbase\\Http\\Transformers\\'];
+            $packageNamespace = $this->findPackageNamespace($from);
+            if ($packageNamespace) {
+                $namespaces[] = $packageNamespace . '\\Http\\Transformers\\';
+            }
+        }
+
+        foreach ($files as $file) {
+            if (!$file->isFile() || $file->getExtension() !== 'php') {
+                continue;
+            }
+
+            $className = $file->getBasename('.php');
+            $resolved  = Arr::first($namespaces, fn ($ns) => Utils::classExists($ns . $className));
+
+            if (!$resolved) {
+                continue;
+            }
+
+            $class = ltrim($resolved . $className, '\\');
+
+            if (!is_a($class, ResourceTransformer::class, true) || (new \ReflectionClass($class))->isAbstract()) {
+                continue;
+            }
+
+            ResourceTransformerRegistry::register($class);
         }
     }
 

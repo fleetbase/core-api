@@ -665,7 +665,7 @@ class UserController extends FleetbaseController
 
         // Transform to resource
         $userData  = new $this->resource($user);
-        $userArray = $userData->toArray($request);
+        $userArray = $userData->resolve($request);
 
         // Store in cache
         UserCacheService::put($user, $companyId, $userArray);
