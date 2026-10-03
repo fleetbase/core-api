@@ -810,3 +810,112 @@ test('resource lifecycle webhook listener restores event session defaults and de
         ->and(session()->has('company'))->toBeFalse()
         ->and(session()->has('user'))->toBeFalse();
 });
+
+class EventsAndExceptionsTransformableWebhookResource extends Fleetbase\Http\Resources\FleetbaseResource
+{
+    public function toWebhookPayload(): array
+    {
+        return [
+            'id'     => 'custom-payload-id',
+            'status' => 'ready',
+        ];
+    }
+
+    public function toArray($request): array
+    {
+        return ['id' => 'array-payload-id'];
+    }
+}
+
+class EventsAndExceptionsTransformableArrayResource extends Fleetbase\Http\Resources\FleetbaseResource
+{
+    public function toArray($request): array
+    {
+        return ['id' => 'array-payload-id', 'absent' => $this->when(false, 'never')];
+    }
+}
+
+function events_and_exceptions_transformer_event(FleetbaseModel $record, JsonResource $resource): EventsAndExceptionsLifecycleEvent
+{
+    return EventsAndExceptionsLifecycleEvent::fake([
+        'modelName'           => 'order',
+        'modelClassNamespace' => FleetbaseModel::class,
+        'modelClassName'      => 'Order',
+        'modelHumanName'      => 'order',
+        'modelRecordName'     => null,
+        'modelUuid'           => 'record-uuid',
+        'namespace'           => '\\Fleetbase',
+        'version'             => 1,
+        'eventName'           => 'ready',
+        'sentAt'              => '2026-07-17 14:00:00',
+        'eventId'             => 'event_payload',
+        'apiVersion'          => 'v1',
+        'requestMethod'       => 'PATCH',
+        'apiCredential'       => 'console',
+        'apiSecret'           => 'internal',
+        'apiKey'              => null,
+        'apiEnvironment'      => 'live',
+        'isSandbox'           => false,
+        'data'                => [],
+        'userSession'         => null,
+        'companySession'      => 'company-uuid',
+    ], $record, $resource);
+}
+
+test('resource lifecycle events apply channel aware resource transformers to webhook and broadcast payloads', function () {
+    bind_test_container(['api.version' => 'v1']);
+    Fleetbase\Support\ResourceTransformerRegistry::reset();
+
+    $record = new FleetbaseModel();
+    $record->setRawAttributes([
+        'uuid'         => 'record-uuid',
+        'company_uuid' => 'company-uuid',
+    ], true);
+
+    $webhookResource = new EventsAndExceptionsTransformableWebhookResource($record);
+    $arrayResource   = new EventsAndExceptionsTransformableArrayResource($record);
+
+    // nothing registered: payloads are untouched
+    expect(events_and_exceptions_transformer_event($record, $webhookResource)->getEventData()['data'])->toBe([
+        'id'     => 'custom-payload-id',
+        'status' => 'ready',
+    ])
+        ->and(events_and_exceptions_transformer_event($record, $arrayResource)->getEventData()['data'])->toBe([
+            'id' => 'array-payload-id',
+        ]);
+
+    Fleetbase\Support\ResourceTransformerRegistry::register([
+        [fn (array $data) => $data + ['via_webhook' => true], ['target' => Fleetbase\Http\Resources\FleetbaseResource::class, 'contexts' => ['webhook'], 'id' => 'webhook']],
+        [fn (array $data) => $data + ['via_broadcast' => true], ['target' => Fleetbase\Http\Resources\FleetbaseResource::class, 'contexts' => ['broadcast'], 'id' => 'broadcast']],
+        [fn (array $data) => $data + ['via_http' => true], ['target' => Fleetbase\Http\Resources\FleetbaseResource::class, 'contexts' => ['http'], 'id' => 'http']],
+        [fn (array $data) => $data + ['everywhere' => true], ['target' => FleetbaseModel::class, 'id' => 'model']],
+    ]);
+
+    $webhookEvent = events_and_exceptions_transformer_event($record, $webhookResource);
+    $arrayEvent   = events_and_exceptions_transformer_event($record, $arrayResource);
+
+    expect($webhookEvent->getEventData()['data'])->toBe([
+        'id'          => 'custom-payload-id',
+        'status'      => 'ready',
+        'via_webhook' => true,
+        'everywhere'  => true,
+    ])
+        ->and($webhookEvent->broadcastWith()['data'])->toBe([
+            'id'            => 'custom-payload-id',
+            'status'        => 'ready',
+            'via_broadcast' => true,
+            'everywhere'    => true,
+        ])
+        ->and($arrayEvent->getEventData()['data'])->toBe([
+            'id'          => 'array-payload-id',
+            'via_webhook' => true,
+            'everywhere'  => true,
+        ])
+        ->and($arrayEvent->broadcastWith()['data'])->toBe([
+            'id'            => 'array-payload-id',
+            'via_broadcast' => true,
+            'everywhere'    => true,
+        ]);
+
+    Fleetbase\Support\ResourceTransformerRegistry::reset();
+});

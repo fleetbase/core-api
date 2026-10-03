@@ -2,8 +2,10 @@
 
 namespace Fleetbase\Events;
 
+use Fleetbase\Http\Resources\FleetbaseResource;
 use Fleetbase\Models\Model;
 use Fleetbase\Support\Resolve;
+use Fleetbase\Support\ResourceTransformerContext;
 use Fleetbase\Support\Utils;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
@@ -133,7 +135,7 @@ class ResourceLifecycleEvent implements ShouldBroadcast
      */
     public function broadcastWith(): array
     {
-        return $this->getEventData();
+        return $this->getEventData(ResourceTransformerContext::BROADCAST);
     }
 
     /**
@@ -327,11 +329,13 @@ class ResourceLifecycleEvent implements ShouldBroadcast
      * It checks if specific methods exist on the resource to format the data for a webhook payload or simply converts it to an array.
      * Additionally, it decides whether to keep relational data based on predefined criteria.
      *
+     * @param string $channel the transformer channel the payload is produced for (`webhook` or `broadcast`)
+     *
      * @return array An array representing the structured data for the event, including identifiers and formatted model data.
      *               This array includes fields like 'id' for the event ID, 'api_version', 'event' for the event type,
      *               'created_at' for the timestamp, and 'data' containing the transformed model information.
      */
-    public function getEventData(): array
+    public function getEventData(string $channel = ResourceTransformerContext::WEBHOOK): array
     {
         $model               = $this->getModelRecord();
         if (!$model) {
@@ -346,10 +350,19 @@ class ResourceLifecycleEvent implements ShouldBroadcast
         $shouldKeepRelations = in_array($this->modelName, $keepRelations);
 
         if ($resource) {
+            $request = request();
+
+            // Registered resource transformers apply to webhook/broadcast payloads too, tagged with the channel
+            // so transformers can opt in or out per channel.
             if (method_exists($resource, 'toWebhookPayload')) {
-                $resourceData = $resource->toWebhookPayload();
-            } elseif (method_exists($resource, 'toArray')) {
-                $resourceData = $resource->toArray(request());
+                $resourceData = (array) $resource->toWebhookPayload();
+                if ($resource instanceof FleetbaseResource) {
+                    $resourceData = $resource->transformPayload($resourceData, $channel, $request);
+                }
+            } elseif ($resource instanceof FleetbaseResource) {
+                $resourceData = $resource->resolveFor($channel, $request);
+            } else {
+                $resourceData = $resource->resolve($request);
             }
         }
 

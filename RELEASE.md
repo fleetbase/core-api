@@ -1,14 +1,26 @@
-# v1.6.67 — API keys are generated randomly
+# v1.6.68 — Resource transformers apply to every resource
 
-## Security
+## Added
 
-- **API keys created in the same second were identical, across organizations.** A key was derived from its creation time and row id, but the id is never loaded after insert (the primary key is the uuid), so every key created in the same second got the same value. API authentication resolves a key to the first matching credential, so a key issued to one organization could authenticate as another's. Keys are now 32 random characters from the CSPRNG, for new keys and for rolled keys. (#283)
+- **Agnostic resource transformers.** Any extension can decorate the serialized output of any API resource without modifying the resource or its model. Register a transformer against an HTTP resource class, an Eloquent model class, an interface, or `'*'` (subclasses match), and `FleetbaseResource::resolve()` applies it to JSON responses, nested resources, collection items, webhook payloads and broadcast payloads. Transformers chain in ascending `priority` and can be scoped by `contexts` (`http`, `webhook`, `broadcast`) and `only` (`internal`, `public`). (#285)
+- `Fleetbase\Contracts\ResourceTransformer`, `Fleetbase\Contracts\PreparesResourceTransformation` (a once-per-collection `prepare()` hook for batch loading, so transformers never add N+1 queries), `Fleetbase\Support\ResourceTransformerContext`, and the `Fleetbase\Http\Transformers\Transformer` base class.
+- Closure transformers via `ResourceTransformerRegistry::register(fn (...) => ..., ['target' => ...])`.
+- `CoreServiceProvider::$transformers`, `registerTransformers()` and `registerTransformersFrom(__DIR__ . '/../Http/Transformers')` for declarative and directory-based registration from extensions, mirroring expansions.
+
+## Changed
+
+- `FleetbaseResourceCollection` resolves items (instead of calling `toArray()`), sharing one `prepare()` pass per collection. A hand-built collection with a manually set `preserveKeys` now filters item arrays with the item's flag.
+- `ResourceLifecycleEvent` payloads, chat participant broadcasts, `Utils::serializeJsonResource()` and the cached internal user payload serialize through `resolve()`, so transformers reach them and conditional `MissingValue`s are no longer emitted as `{}`.
+- `Find::httpResourceForModel()` caches internal and public resolutions separately, consulting the request only when a model has a dedicated `Internal` resource.
+
+## Removed
+
+- Legacy duck-typed transformers (`$target` property + static `output($model, $data)`), `ResourceTransformerRegistry::transform(Model, array)`, `resolveByTarget()`, `fixClassName()` and the static `$transformers` array. The `User` resource no longer calls the registry directly.
+
+## Dependencies
+
+- `fleetbase/laravel-mysql-spatial` `^1.0.3`. The spatial `MysqlConnection` no longer connects to MySQL when the connection object is built, so resolving `DB::connection()` during boot (for example `artisan package:discover` during `composer install`) no longer requires a reachable database.
 
 ## Upgrade Steps
 
-- Check for existing duplicate keys and roll every credential that shares one, in both the live and sandbox databases:
-  ```sql
-  SELECT `key`, COUNT(*) AS credentials, COUNT(DISTINCT company_uuid) AS orgs
-  FROM api_credentials WHERE deleted_at IS NULL
-  GROUP BY `key` HAVING COUNT(*) > 1;
-  ```
+- Extensions that registered a legacy transformer must implement `Fleetbase\Contracts\ResourceTransformer` (or extend `Fleetbase\Http\Transformers\Transformer`) and register it through `$transformers` or `registerTransformersFrom()`. See the README section "Resource transformers". The only known legacy consumer, aws-marketplace, is deprecated and is not updated.

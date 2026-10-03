@@ -540,6 +540,9 @@ namespace {
 
         $container->instance('request', Request::create('/int/v1/test', 'GET'));
 
+        // fresh resource transformer registry per test so registrations never leak between tests
+        $container->instance(Fleetbase\Support\ResourceTransformerRegistry::class, new Fleetbase\Support\ResourceTransformerRegistry());
+
         // activity() works in every test; files that assert on it bind their own fake
         TestActivityLogger::$logged = [];
         $container->instance(Spatie\Activitylog\PendingActivityLog::class, new TestPendingActivityLog());
