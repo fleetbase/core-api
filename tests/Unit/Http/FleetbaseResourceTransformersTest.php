@@ -273,3 +273,11 @@ test('transformPayload returns the payload untouched when nothing applies', func
     // no filtering side effects when no transformer ran
     expect($resource->transformPayload($payload, ResourceTransformerContext::WEBHOOK))->toBe($payload);
 });
+
+test('resolving without a request fails loudly when the container holds no request', function () {
+    frt_request();
+    Container::getInstance()->instance('request', new stdClass());
+
+    expect(fn () => (new FrtResource(frt_model()))->resolveFor(ResourceTransformerContext::WEBHOOK))
+        ->toThrow(RuntimeException::class, 'Unable to resolve the current request');
+});

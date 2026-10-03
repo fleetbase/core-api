@@ -112,6 +112,24 @@ abstract class RtrAbstractTransformer extends Transformer
     protected static $target = RtrResource::class;
 }
 
+class RtrInvokableTransformer
+{
+    public function __invoke(array $data): array
+    {
+        return $data + ['invoked' => true];
+    }
+
+    public function handle(array $data): array
+    {
+        return $data + ['handled' => true];
+    }
+
+    public static function handleStatic(array $data): array
+    {
+        return $data + ['static' => true];
+    }
+}
+
 class RtrNotATransformer
 {
     public static $target = RtrResource::class;
@@ -427,4 +445,35 @@ test('abstract transformer base requires a target and exposes options', function
                 return $data;
             }
         })::target())->toThrow(LogicException::class, 'must define a static $target property');
+});
+
+test('registry derives ids for invokable objects and array callables', function () {
+    $registry  = ResourceTransformerRegistry::instance();
+    $invokable = new RtrInvokableTransformer();
+
+    $invokableId = $registry->add($invokable, ['target' => RtrResource::class]);
+    $methodId    = $registry->add([$invokable, 'handle'], ['target' => RtrResource::class]);
+    $staticId    = $registry->add([RtrInvokableTransformer::class, 'handleStatic'], ['target' => RtrResource::class]);
+
+    $context = $registry->newContext(rtr_request('v1/widgets'));
+
+    expect($invokableId)->toBe(RtrInvokableTransformer::class . ':' . spl_object_id($invokable))
+        ->and($methodId)->toBe('callable:' . RtrInvokableTransformer::class . ':' . spl_object_id($invokable) . '::handle')
+        ->and($staticId)->toBe('callable:' . RtrInvokableTransformer::class . '::handleStatic')
+        ->and($registry->apply([], new RtrResource(new RtrModel()), $context))->toBe(['invoked' => true, 'handled' => true, 'static' => true])
+        ->and(fn () => $registry->add(new stdClass(), ['target' => RtrResource::class]))->toThrow(InvalidArgumentException::class, 'stdClass');
+});
+
+test('registry short-circuits when nothing is registered', function () {
+    $registry = ResourceTransformerRegistry::instance();
+    $resource = new RtrResource(new RtrModel(['name' => 'empty']));
+    $context  = $registry->newContext(rtr_request('v1/widgets'));
+
+    expect($registry->matching(RtrResource::class, RtrModel::class))->toBe([])
+        ->and($registry->apply(['id' => 1], $resource, $context))->toBe(['id' => 1])
+        ->and($registry->hasTransformersFor($resource))->toBeFalse();
+
+    $registry->prepare(RtrResource::class, [$resource->resource], $context);
+
+    expect($context->all())->toBe([]);
 });

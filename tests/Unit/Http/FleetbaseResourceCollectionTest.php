@@ -471,3 +471,60 @@ test('resource collection resolves plain json resource items so conditional valu
         ['id' => 'conditional-1'],
     ]);
 });
+
+class FleetbaseResourceCollectionArrayableCollects
+{
+    public function __construct(private array $item)
+    {
+    }
+
+    public function toArray($request = null): array
+    {
+        return $this->item + ['wrapped_by' => 'arrayable'];
+    }
+}
+
+class FleetbaseResourceCollectionBareCollects
+{
+    public function __construct(array $item)
+    {
+        foreach ($item as $key => $value) {
+            $this->{$key} = $value;
+        }
+    }
+}
+
+test('resource collection wraps raw items with non-resource collects classes', function () {
+    $request = fleetbase_resource_collection_request();
+
+    $arrayable = (new FleetbaseResourceCollectionMutableCollects([
+        ['id' => 'arrayable-collects', 'secret' => 'no'],
+    ]))->forceCollects(FleetbaseResourceCollectionArrayableCollects::class)->without('secret');
+
+    $bare = (new FleetbaseResourceCollectionMutableCollects([
+        ['id' => 'bare-collects', 'secret' => 'no'],
+    ]))->forceCollects(FleetbaseResourceCollectionBareCollects::class)->without('secret');
+
+    expect($arrayable->toArray($request))->toBe([
+        ['id' => 'arrayable-collects', 'wrapped_by' => 'arrayable'],
+    ])
+        ->and($bare->toArray($request))->toBe([
+            ['id' => 'bare-collects'],
+        ]);
+});
+
+test('resource collection skips the transformer pass when items carry no resource class', function () {
+    $request = fleetbase_resource_collection_request();
+
+    Fleetbase\Support\ResourceTransformerRegistry::register(fn (array $data) => $data + ['transformed' => true], ['target' => '*']);
+
+    $collection = new FleetbaseResourceCollectionTestPlainItems([
+        ['id' => 'plain-array'],
+    ]);
+
+    expect($collection->toArray($request))->toBe([
+        ['id' => 'plain-array'],
+    ]);
+
+    Fleetbase\Support\ResourceTransformerRegistry::reset();
+});

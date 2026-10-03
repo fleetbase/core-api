@@ -407,9 +407,12 @@ class ResourceTransformerRegistry
             return $instance->transform($data, $resource, $context->request, $context);
         }
 
+        // @codeCoverageIgnoreStart
+        // normalize() only admits ResourceTransformer classes/instances and callables, so this cannot be reached.
         if (!is_callable($instance)) {
             throw new \UnexpectedValueException('Resource transformer "' . $registration['id'] . '" is not invokable.');
         }
+        // @codeCoverageIgnoreEnd
 
         $result = $instance($data, $resource, $context->request, $context);
 
@@ -436,9 +439,12 @@ class ResourceTransformerRegistry
 
         if (!isset($this->instances[$registration['id']])) {
             $instance = Container::getInstance()->make($transformer);
+            // @codeCoverageIgnoreStart
+            // The container returns an instance for a concrete class string; guard against custom bindings.
             if (!is_object($instance)) {
                 throw new \UnexpectedValueException('Unable to instantiate resource transformer ' . $transformer . '.');
             }
+            // @codeCoverageIgnoreEnd
             $this->instances[$registration['id']] = $instance;
         }
 
@@ -586,13 +592,11 @@ class ResourceTransformerRegistry
             return get_class($callable) . ':' . spl_object_id($callable);
         }
 
-        if (is_array($callable)) {
-            $target = is_object($callable[0]) ? get_class($callable[0]) . ':' . spl_object_id($callable[0]) : (string) $callable[0];
+        // Only array callables remain: strings are registered as transformer classes, never as callables.
+        /** @var array{0: object|string, 1: string} $callable */
+        $target = is_object($callable[0]) ? get_class($callable[0]) . ':' . spl_object_id($callable[0]) : $callable[0];
 
-            return 'callable:' . $target . '::' . (string) $callable[1];
-        }
-
-        return 'callable:' . (is_string($callable) ? $callable : get_debug_type($callable));
+        return 'callable:' . $target . '::' . $callable[1];
     }
 
     /**
