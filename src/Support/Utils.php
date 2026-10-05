@@ -1439,7 +1439,7 @@ class Utils
     public static function serializeJsonResource(JsonResource $resource)
     {
         $request = request();
-        $data    = $resource->toArray($request);
+        $data    = $resource->resolve($request);
 
         foreach ($data as $key => $value) {
             if ($value instanceof JsonResource) {

@@ -5,6 +5,7 @@ namespace Fleetbase\Events;
 use Fleetbase\Http\Resources\ChatParticipant as ChatParticipantResource;
 use Fleetbase\Models\ChatChannel;
 use Fleetbase\Models\ChatParticipant;
+use Fleetbase\Support\ResourceTransformerContext;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
@@ -80,7 +81,7 @@ class ChatParticipantAdded implements ShouldBroadcastNow
             'event'       => $this->broadcastAs(),
             'created_at'  => $this->createdAt->toDateTimeString(),
             'channel_id'  => $this->chatChannel->public_id,
-            'data'        => $resource ? $resource->toArray(request()) : [],
+            'data'        => $resource->resolveFor(ResourceTransformerContext::BROADCAST, request()),
         ];
     }
 }
