@@ -109,3 +109,35 @@ Notes:
 - Transformers may return `MissingValue` / `MergeValue` objects; they are filtered like `when()` / `merge()` output. Keys excluded with `without()` stay excluded.
 - Re-registering a class replaces its options; `ResourceTransformerRegistry::forget()` and `reset()` remove registrations.
 - The registry is a container singleton (`app(ResourceTransformerRegistry::class)`); registrations happen at boot and are shared by every request in an Octane worker.
+
+## Realtime channel authentication
+
+Setting `SOCKETCLUSTER_AUTH_KEY` (a shared secret of at least 32 characters, also given to the socket server) turns on authenticated realtime channels. Without it nothing changes: no socket tokens are minted, the token routes answer 404, and broadcasts use the websocket publisher as before.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `SOCKETCLUSTER_AUTH_KEY` | unset | Signs socket tokens (HS256) and, through derived keys, the API to socket server requests. |
+| `SOCKETCLUSTER_PUBLISH_URL` | `http://{SOCKETCLUSTER_HOST}:8001` | The socket server's internal listener; broadcasts are sent as one signed `POST {url}/publish`. |
+| `SOCKETCLUSTER_TOKEN_TTL` | `900` | Lifetime in seconds of user, API, driver, customer and checkout tokens. |
+
+Clients fetch a token before connecting: `POST int/v1/socket/token` (console session), `POST v1/socket/token` (API credential or Sanctum user token). The socket server asks `POST int/v1/socket/authorize`, signed with its own derived key, whether a token may subscribe to a channel.
+
+A channel is authorized by the resolver registered for its prefix (the part before the first `.`); unknown prefixes are denied. Extensions register theirs from their service provider:
+
+```php
+use Fleetbase\Support\SocketCluster\SocketChannelRegistry;
+use Fleetbase\Support\SocketCluster\SocketPrincipal;
+
+$registry = app(SocketChannelRegistry::class);
+
+// `order.{uuid|public_id}`: users and API credentials of the order's company; drivers only when $narrow agrees.
+$registry->registerModel('order', Order::class, fn (SocketPrincipal $p, Order $order) => $p->kind === 'driver' && $p->owns((string) $order->driver_assigned_uuid));
+
+// Anything else: fn (SocketPrincipal $p, string $id, string $channel): bool
+$registry->register('fleet', fn (SocketPrincipal $p, string $id, string $channel) => /* ... */ false);
+
+// Claim a Sanctum-authenticated user as a more specific principal on `POST v1/socket/token`.
+$registry->registerPrincipalResolver(fn (Request $request, $user) => /* ?SocketPrincipal */ null);
+```
+
+`app(ChannelAuthorizer::class)->authorize($principal, $channel)` gives the same decision anywhere in PHP.
