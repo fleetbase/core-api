@@ -101,7 +101,7 @@ class CoreServiceProvider extends ServiceProvider
         \Fleetbase\Console\Commands\PurgeScheduledTaskLogs::class,
         \Fleetbase\Console\Commands\PurgeOrphanedModelRecords::class,
         \Fleetbase\Console\Commands\DeleteUser::class,
-        \Fleetbase\Console\Commands\BackupDatabase\MysqlS3Backup::class,
+        \Fleetbase\Console\Commands\BackupDatabase::class,
         \Fleetbase\Console\Commands\TelemetryPing::class,
     ];
 
@@ -144,7 +144,7 @@ class CoreServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__ . '/../../config/schedule-monitor.php', 'schedule-monitor');
         $this->mergeConfigFrom(__DIR__ . '/../../config/excel.php', 'excel');
         $this->mergeConfigFrom(__DIR__ . '/../../config/sentry.php', 'sentry');
-        $this->mergeConfigFrom(__DIR__ . '/../../config/laravel-mysql-s3-backup.php', 'laravel-mysql-s3-backup');
+        $this->mergeConfigFrom(__DIR__ . '/../../config/database-backups.php', 'database-backups');
         $this->mergeConfigFrom(__DIR__ . '/../../config/responsecache.php', 'responsecache');
         $this->mergeConfigFrom(__DIR__ . '/../../config/image.php', 'image');
         $this->mergeConfigFrom(__DIR__ . '/../../config/sms.php', 'sms');
@@ -216,6 +216,9 @@ class CoreServiceProvider extends ServiceProvider
             // available in sandbox within an hour of being created in
             // production, but infrequent enough to avoid unnecessary DB load.
             $schedule->command('sandbox:sync')->hourly()->name('sandbox-sync')->withoutOverlapping();
+            // Database backups run on the schedule an administrator sets under Admin → Database
+            // Backups (or the DB_BACKUP_* environment defaults), and not at all while disabled.
+            \Fleetbase\Support\DatabaseBackupSettings::schedule($schedule);
         });
         $this->registerObservers();
         $this->registerExpansionsFrom();
