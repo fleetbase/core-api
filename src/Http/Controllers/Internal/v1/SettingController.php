@@ -1040,14 +1040,28 @@ class SettingController extends Controller
     /**
      * Test SocketCluster Configuration.
      *
+     * Publishes only to the signed-in user's own `test.{user uuid}` channel; any channel in the
+     * request is ignored. The channel used is returned so the console can subscribe to it.
+     *
      * @param Request $request the incoming HTTP request containing the authenticated user
      *
      * @return \Illuminate\Http\JsonResponse returns a JSON response with a success message and HTTP status 200
      */
     public function testSocketcluster(AdminRequest $request)
     {
+        $userUuid = session('user');
+
+        if (!is_string($userUuid) || $userUuid === '') {
+            return response()->json([
+                'status'   => 'error',
+                'message'  => 'No signed-in user to publish the test message for.',
+                'channel'  => null,
+                'response' => null,
+            ]);
+        }
+
         // Get the channel to publish to
-        $channel  = $request->input('channel', 'test');
+        $channel  = 'test.' . $userUuid;
         $message  = 'Socket broadcasted message successfully.';
         $status   = 'success';
         $sent     = false;

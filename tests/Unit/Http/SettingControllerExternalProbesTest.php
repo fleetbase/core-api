@@ -28,7 +28,8 @@ function setting_controller_external_probe_fixtures(array $config = []): void
             'token' => 'existing-token',
             'from'  => '+15555550100',
         ],
-        'broadcasting.connections.socketcluster.options' => [
+        'broadcasting.connections.socketcluster.auth_key' => null,
+        'broadcasting.connections.socketcluster.options'  => [
             'secure'  => false,
             'host'    => '127.0.0.1',
             'port'    => 9,
@@ -170,16 +171,37 @@ test('test twilio config returns php warning failures as stable probe errors', f
 
 test('test socketcluster returns stable json when the configured socket cannot send', function () {
     setting_controller_external_probe_fixtures();
+    session(['user' => 'user-probe']);
 
+    // Any requested channel is ignored: the probe only ever publishes to the admin's own test channel.
     $response = (new SettingController())->testSocketcluster(setting_controller_external_probe_request([
-        'channel' => 'settings-probe',
+        'channel' => 'company.someone-else',
     ]));
+
+    session()->flush();
 
     expect($response->getStatusCode())->toBe(200)
         ->and($response->getData(true))->toBe([
             'status'   => 'error',
             'message'  => 'Socket broadcasted message successfully.',
-            'channel'  => 'settings-probe',
+            'channel'  => 'test.user-probe',
+            'response' => null,
+        ]);
+});
+
+test('test socketcluster refuses to publish without a signed-in user', function () {
+    setting_controller_external_probe_fixtures();
+    session()->flush();
+
+    $response = (new SettingController())->testSocketcluster(setting_controller_external_probe_request([
+        'channel' => 'company.someone-else',
+    ]));
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($response->getData(true))->toBe([
+            'status'   => 'error',
+            'message'  => 'No signed-in user to publish the test message for.',
+            'channel'  => null,
             'response' => null,
         ]);
 });
