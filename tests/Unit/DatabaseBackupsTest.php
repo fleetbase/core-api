@@ -240,38 +240,39 @@ function database_backups_fixture(array $config = []): array
     mkdir($root . '/tmp', 0777, true);
 
     $sqlite = ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => ''];
+    $disks  = [
+        'backups' => ['driver' => 'local', 'root' => $root . '/disk'],
+        's3'      => ['driver' => 's3', 'bucket' => 'fleetbase-media', 'region' => 'ap-southeast-1'],
+    ];
 
     $container = bind_test_container(array_merge([
-        'app.name'                            => 'Fleetbase',
-        'app.env'                             => 'production',
-        'fleetbase.console.host'              => 'https://console.fleetbase.test',
-        'database.default'                    => 'mysql',
-        'database.connections.mysql'          => $sqlite,
-        'database.connections.primary'        => ['driver' => 'mysql', 'host' => 'db.example.test', 'port' => 3307, 'username' => 'fleetbase', 'password' => 'secret value', 'database' => 'fleetbase'],
-        'database.connections.sandbox'        => ['driver' => 'mysql', 'unix_socket' => '/run/mysqld.sock', 'username' => 'fleetbase', 'password' => 'sandbox secret', 'database' => 'fleetbase_sandbox'],
-        'fleetbase.connection.db'             => 'mysql',
-        'filesystems.disks'                   => [
-            'backups' => ['driver' => 'local', 'root' => $root . '/disk'],
-            's3'      => ['driver' => 's3', 'bucket' => 'fleetbase-media', 'region' => 'ap-southeast-1'],
-        ],
-        'database-backups.enabled'            => true,
-        'database-backups.frequency'          => 'daily',
-        'database-backups.time'               => '02:30',
-        'database-backups.day_of_week'        => 0,
-        'database-backups.disk'               => 'backups',
-        'database-backups.bucket'             => null,
-        'database-backups.path'               => 'nightly',
-        'database-backups.connections'        => ['primary', 'sandbox'],
-        'database-backups.retention_days'     => 30,
-        'database-backups.retention_count'    => null,
-        'database-backups.min_size_bytes'     => 1024,
-        'database-backups.notify_on_failure'  => true,
-        'database-backups.notify_emails'      => ['ops@example.test'],
-        'database-backups.dump_binary'        => 'mysqldump',
-        'database-backups.dump_args'          => ['--single-transaction', '--no-tablespaces'],
-        'database-backups.extra_dump_args'    => ['--column-statistics=0'],
-        'database-backups.timeout'            => 60,
-        'database-backups.tmp_dir'            => $root . '/tmp',
+        'app.name'                           => 'Fleetbase',
+        'app.env'                            => 'production',
+        'fleetbase.console.host'             => 'https://console.fleetbase.test',
+        'database.default'                   => 'mysql',
+        'database.connections.mysql'         => $sqlite,
+        'database.connections.primary'       => ['driver' => 'mysql', 'host' => 'db.example.test', 'port' => 3307, 'username' => 'fleetbase', 'password' => 'secret value', 'database' => 'fleetbase'],
+        'database.connections.sandbox'       => ['driver' => 'mysql', 'unix_socket' => '/run/mysqld.sock', 'username' => 'fleetbase', 'password' => 'sandbox secret', 'database' => 'fleetbase_sandbox'],
+        'fleetbase.connection.db'            => 'mysql',
+        'filesystems.disks'                  => $disks,
+        'database-backups.enabled'           => true,
+        'database-backups.frequency'         => 'daily',
+        'database-backups.time'              => '02:30',
+        'database-backups.day_of_week'       => 0,
+        'database-backups.disk'              => 'backups',
+        'database-backups.bucket'            => null,
+        'database-backups.path'              => 'nightly',
+        'database-backups.connections'       => ['primary', 'sandbox'],
+        'database-backups.retention_days'    => 30,
+        'database-backups.retention_count'   => null,
+        'database-backups.min_size_bytes'    => 1024,
+        'database-backups.notify_on_failure' => true,
+        'database-backups.notify_emails'     => ['ops@example.test'],
+        'database-backups.dump_binary'       => 'mysqldump',
+        'database-backups.dump_args'         => ['--single-transaction', '--no-tablespaces'],
+        'database-backups.extra_dump_args'   => ['--column-statistics=0'],
+        'database-backups.timeout'           => 60,
+        'database-backups.tmp_dir'           => $root . '/tmp',
     ], $config));
 
     $container->instance('cache', new CacheRepository(new ArrayStore()));
@@ -680,8 +681,8 @@ test('database backup runs trim after a full success and log a failed trim witho
 
     expect(file_exists($fixture['root'] . '/disk/nightly/production_fleetbase_backup-20260101-000000.sql.gz'))->toBeFalse();
 
-    $disk               = DatabaseBackupsDiskFake::at($fixture['root'] . '/disk');
-    $disk->listingError = new RuntimeException('listing denied');
+    $disk                  = DatabaseBackupsDiskFake::at($fixture['root'] . '/disk');
+    $disk->listingError    = new RuntimeException('listing denied');
     $service->diskOverride = $disk;
 
     expect($service->run('scheduled', ['primary'])[0]->status)->toBe('completed')
@@ -742,12 +743,14 @@ test('db backup command reports each database and exits non zero on any failure'
     $ok     = database_backups_record(['path' => 'nightly/a.sql.gz', 'size_bytes' => 2048, 'duration_ms' => 15]);
     $failed = database_backups_record(['database' => 'fleetbase_sandbox', 'status' => 'failed', 'error' => 'Access denied']);
 
-    [$code, $display] = database_backups_command($service = new DatabaseBackupsServiceStub([$ok]), ['--trigger' => 'scheduled', '--connection' => ['primary']]);
+    $service          = new DatabaseBackupsServiceStub([$ok]);
+    [$code, $display] = database_backups_command($service, ['--trigger' => 'scheduled', '--connection' => ['primary']]);
     expect($code)->toBe(0)
         ->and($display)->toContain('Backed up fleetbase to backups:nightly/a.sql.gz (2048 bytes, 15 ms)')
         ->and($service->calls)->toBe([['scheduled', ['primary']]]);
 
-    [$code, $display] = database_backups_command($service = new DatabaseBackupsServiceStub([$ok, $failed]), ['--trigger' => 'bogus']);
+    $service          = new DatabaseBackupsServiceStub([$ok, $failed]);
+    [$code, $display] = database_backups_command($service, ['--trigger' => 'bogus']);
     expect($code)->toBe(1)
         ->and($display)->toContain('Backup of fleetbase_sandbox failed: Access denied')
         ->and($service->calls)->toBe([['console', null]]);
@@ -762,20 +765,23 @@ test('db backup command reports each database and exits non zero on any failure'
 test('db backup command does nothing while disabled unless forced', function () {
     database_backups_fixture(['database-backups.enabled' => false]);
 
-    [$code, $display] = database_backups_command($service = new DatabaseBackupsServiceStub([]));
+    $service          = new DatabaseBackupsServiceStub([]);
+    [$code, $display] = database_backups_command($service);
     expect($code)->toBe(0)
         ->and($display)->toContain('Database backups are disabled.')
         ->and($service->calls)->toBe([]);
 
-    [$code] = database_backups_command($service = new DatabaseBackupsServiceStub([database_backups_record([])]), ['--force' => true]);
+    $service = new DatabaseBackupsServiceStub([database_backups_record([])]);
+    [$code]  = database_backups_command($service, ['--force' => true]);
     expect($code)->toBe(0)->and($service->calls)->toHaveCount(1);
 });
 
 test('run database backup job backs up as a manual run and logs a run that could not start', function () {
     database_backups_fixture();
 
-    $job = new RunDatabaseBackup();
-    $job->handle($service = new DatabaseBackupsServiceStub([]));
+    $job     = new RunDatabaseBackup();
+    $service = new DatabaseBackupsServiceStub([]);
+    $job->handle($service);
 
     expect($service->calls)->toBe([['manual', null]])
         ->and($job->tries)->toBe(1);
