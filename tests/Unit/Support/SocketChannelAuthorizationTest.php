@@ -60,6 +60,20 @@ function socket_channel_core_authorizer(): ChannelAuthorizer
     return new ChannelAuthorizer($registry);
 }
 
+/**
+ * The decision reason for each channel, keyed by channel.
+ */
+function socket_channel_reasons(ChannelAuthorizer $authorizer, SocketPrincipal $principal, array $channels): array
+{
+    $reasons = [];
+
+    foreach ($channels as $channel) {
+        $reasons[$channel] = $authorizer->authorize($principal, $channel)->reason;
+    }
+
+    return $reasons;
+}
+
 afterEach(function () {
     SocketAuthFixtures::reset();
 });
@@ -77,7 +91,7 @@ test('the authorizer denies malformed channel names before anything else', funct
 ]);
 
 test('anonymous connections may follow the install channel only until setup creates a user', function () {
-    SocketAuthFixtures::database(SocketAuthFixtures::KEY, ['users']);
+    SocketAuthFixtures::database(SocketAuthFixtures::KEY, ['users'], false);
     $missingSchema = (new ChannelAuthorizer(new SocketChannelRegistry()))->authorize(null, 'fleetbase.install');
 
     SocketAuthFixtures::database(SocketAuthFixtures::KEY, [], false);
@@ -341,15 +355,19 @@ test('company principals are denied every core channel of another company', func
     $authorizer = socket_channel_core_authorizer();
     $user       = socket_channel_principal();
     $api        = socket_channel_principal(['kind' => 'api', 'sub' => 'cred-a', 'ids' => ['cred-a']]);
+    $allowed    = ['chat.chat_aaa', 'chat_channel.chat-a', 'chat_participant.participant-a1', 'chat_message.chat_message_a', 'file.file_aaa', 'user.user-a2', 'api.cred-a', 'test.user-a1'];
+    $denied     = ['chat.chat_bbb', 'chat_channel.chat-b', 'chat_participant.participant-b1', 'chat_message.chat_message_b', 'file.file_bbb', 'user.user_b1', 'company.company_bbb', 'api.cred-b', 'api.2', 'test.user-b1', 'install.company-b.fleetops'];
 
-    foreach (['chat.chat_aaa', 'chat_channel.chat-a', 'chat_participant.participant-a1', 'chat_message.chat_message_a', 'file.file_aaa', 'user.user-a2', 'api.cred-a', 'test.user-a1'] as $channel) {
-        expect($authorizer->authorize($user, $channel)->allow)->toBeTrue();
-    }
-
-    foreach (['chat.chat_bbb', 'chat_channel.chat-b', 'chat_participant.participant-b1', 'chat_message.chat_message_b', 'file.file_bbb', 'user.user_b1', 'company.company_bbb', 'api.cred-b', 'api.2', 'test.user-b1', 'install.company-b.fleetops'] as $channel) {
-        expect($authorizer->authorize($user, $channel)->toArray())->toBe(['allow' => false, 'ttl' => 30, 'reason' => 'forbidden'])
-            ->and($authorizer->authorize($api, $channel)->allow)->toBeFalse();
-    }
+    // Collected rather than asserted one by one so a failure shows every reason and any resolver error.
+    expect([
+        'user' => socket_channel_reasons($authorizer, $user, array_merge($allowed, $denied)),
+        'api'  => socket_channel_reasons($authorizer, $api, $denied),
+        'log'  => app('log')->entries,
+    ])->toBe([
+        'user' => array_merge(array_fill_keys($allowed, 'resolver'), array_fill_keys($denied, 'forbidden')),
+        'api'  => array_fill_keys($denied, 'forbidden'),
+        'log'  => [],
+    ]);
 });
 
 test('drivers reach only the chats they take part in', function () {
@@ -357,14 +375,16 @@ test('drivers reach only the chats they take part in', function () {
 
     $authorizer = socket_channel_core_authorizer();
     $driver     = socket_channel_driver();
+    $allowed    = ['chat.chat_aaa', 'chat_channel.chat-a', 'chat_participant.chat_participant_a1', 'chat_message.message-a'];
+    $denied     = ['chat.chat_bbb', 'chat_participant.participant-b1', 'chat_message.message-b', 'user.user-a2', 'company.company-a', 'file.file_aaa', 'api.cred-a'];
 
-    foreach (['chat.chat_aaa', 'chat_channel.chat-a', 'chat_participant.chat_participant_a1', 'chat_message.message-a', 'user.user-a1', 'driver.driver-1'] as $channel) {
-        expect($authorizer->authorize($driver, $channel)->allow)->toBeTrue();
-    }
-
-    foreach (['chat.chat_bbb', 'chat_participant.participant-b1', 'chat_message.message-b', 'user.user-a2', 'company.company-a', 'file.file_aaa', 'api.cred-a'] as $channel) {
-        expect($authorizer->authorize($driver, $channel)->allow)->toBeFalse();
-    }
+    expect([
+        'driver' => socket_channel_reasons($authorizer, $driver, array_merge($allowed, ['user.user-a1', 'driver.driver-1'], $denied)),
+        'log'    => app('log')->entries,
+    ])->toBe([
+        'driver' => array_merge(array_fill_keys($allowed, 'resolver'), ['user.user-a1' => 'self', 'driver.driver-1' => 'self'], array_fill_keys($denied, 'forbidden')),
+        'log'    => [],
+    ]);
 
     expect($authorizer->authorize(socket_channel_driver(['ids' => ['driver-1']]), 'chat.chat_aaa')->allow)->toBeFalse()
         ->and($authorizer->authorize(socket_channel_driver(['ids' => []]), 'chat.chat_aaa')->allow)->toBeFalse()
