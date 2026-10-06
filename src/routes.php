@@ -35,6 +35,8 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
             ->middleware(['fleetbase.platform-api'])
             ->group(function ($router) {
                 $router->get('organizations', 'OrganizationController@listOrganizations');
+                // Realtime socket token for the platform itself.
+                $router->post('socket/system-token', [Fleetbase\Http\Controllers\SocketAuthController::class, 'systemToken']);
             });
 
         $router->prefix('v1')

@@ -371,6 +371,7 @@ namespace {
 
         $consoleToken = routes_contract_find($routes, 'POST', 'int/v1/socket/token');
         $apiToken     = routes_contract_find($routes, 'POST', 'v1/socket/token');
+        $systemToken  = routes_contract_find($routes, 'POST', 'v1/socket/system-token');
         $authorize    = routes_contract_find($routes, 'POST', 'int/v1/socket/authorize');
 
         expect($consoleToken['action'])->toBe($controller . '@token')
@@ -378,6 +379,9 @@ namespace {
             ->and($apiToken['action'])->toBe($controller . '@apiToken')
             ->and($apiToken['middleware'])->toContain('fleetbase.api')
             ->and($apiToken['middleware'])->not->toContain('fleetbase.platform-api')
+            ->and($systemToken['action'])->toBe($controller . '@systemToken')
+            ->and($systemToken['middleware'])->toContain('fleetbase.platform-api')
+            ->and($systemToken['middleware'])->not->toContain('fleetbase.api')
             // Only the socket server calls this; its signature is the whole of its authentication.
             ->and($authorize['action'])->toBe($controller . '@authorizeChannel')
             ->and($authorize['middleware'])->toBe([Fleetbase\Http\Middleware\VerifySocketSignature::class]);
