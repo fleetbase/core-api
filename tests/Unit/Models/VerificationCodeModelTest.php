@@ -506,3 +506,72 @@ it('account created listener skips verification for admin users', function () {
 
     expect(VerificationCode::query()->count())->toBe(0);
 });
+
+it('issues hashed codes that keep only an hmac of the plain code', function () {
+    verification_code_model_database();
+    config(['app.key' => 'base64:test-app-key']);
+    Carbon::setTestNow(Carbon::parse('2026-10-06 09:00:00', 'UTC'));
+
+    $subject = verification_code_subject(['uuid' => 'contact-1']);
+    $issued  = VerificationCode::issue($subject, 'fleetops_tracking_access', ['meta' => ['scope' => 'order-1']]);
+    $stored  = VerificationCode::query()->whereKey($issued->uuid)->first();
+
+    expect($issued->plainCode)->toMatch('/^[1-9][0-9]{5}$/')
+        ->and($stored->code)->toBe(hash_hmac('sha256', $issued->plainCode, 'base64:test-app-key'))
+        ->and($stored->code)->not->toBe($issued->plainCode)
+        ->and(VerificationCode::hashCode($issued->plainCode))->toBe($stored->code)
+        ->and($stored->for)->toBe('fleetops_tracking_access')
+        ->and($stored->status)->toBe('active')
+        ->and($stored->subject_uuid)->toBe('contact-1')
+        ->and($stored->expires_at->toDateTimeString())->toBe('2026-10-06 09:10:00')
+        ->and($stored->meta)->toBe(['scope' => 'order-1', 'hashed' => true, 'attempts' => 0])
+        ->and($stored->plainCode)->toBeNull();
+
+    $custom = VerificationCode::issue(null, 'other', [
+        'expireAfter' => Carbon::parse('2026-10-06 09:30:00', 'UTC'),
+        'status'      => 'pending',
+    ]);
+
+    expect($custom->status)->toBe('pending')
+        ->and($custom->subject_uuid)->toBeNull()
+        ->and($custom->expires_at->toDateTimeString())->toBe('2026-10-06 09:30:00')
+        ->and($custom->meta)->toBe(['hashed' => true, 'attempts' => 0]);
+});
+
+it('checks hashed codes, counts wrong attempts and locks on the last one', function () {
+    verification_code_model_database();
+    config(['app.key' => 'base64:test-app-key']);
+
+    $issued = VerificationCode::issue(verification_code_subject(), 'fleetops_tracking_access');
+    $wrong  = $issued->plainCode === '111111' ? '222222' : '111111';
+
+    expect($issued->check($wrong))->toBe(VerificationCode::CHECK_INVALID)
+        ->and($issued->attemptsLeft())->toBe(2)
+        ->and($issued->check(' ' . $issued->plainCode . ' '))->toBe(VerificationCode::CHECK_VALID)
+        ->and($issued->check($wrong))->toBe(VerificationCode::CHECK_INVALID)
+        ->and($issued->check($wrong))->toBe(VerificationCode::CHECK_LOCKED)
+        ->and($issued->attemptsLeft())->toBe(0)
+        ->and($issued->check($issued->plainCode))->toBe(VerificationCode::CHECK_LOCKED)
+        ->and(VerificationCode::query()->whereKey($issued->uuid)->first()->status)->toBe('locked')
+        ->and(VerificationCode::query()->whereKey($issued->uuid)->first()->getMeta('attempts'))->toBe(3);
+
+    $single = VerificationCode::issue(null, 'fleetops_tracking_access');
+    expect($single->check($wrong, 1))->toBe(VerificationCode::CHECK_LOCKED);
+});
+
+it('reports expired codes and still checks plain codes made the old way', function () {
+    verification_code_model_database();
+    config(['app.key' => 'base64:test-app-key']);
+    Carbon::setTestNow(Carbon::parse('2026-10-06 09:00:00', 'UTC'));
+
+    $issued = VerificationCode::issue(null, 'fleetops_tracking_access');
+    Carbon::setTestNow(Carbon::parse('2026-10-06 09:10:00', 'UTC'));
+
+    expect($issued->check($issued->plainCode))->toBe(VerificationCode::CHECK_EXPIRED);
+
+    Carbon::setTestNow();
+    $plain = VerificationCode::generateFor(null, 'device_pairing');
+
+    expect($plain->check((string) $plain->code))->toBe(VerificationCode::CHECK_VALID)
+        ->and($plain->check('000000'))->toBe(VerificationCode::CHECK_INVALID);
+});
