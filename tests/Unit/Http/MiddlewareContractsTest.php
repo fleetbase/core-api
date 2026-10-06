@@ -536,6 +536,24 @@ namespace {
             ->and($options->getData(true))->toBe(['ok' => true]);
     });
 
+    test('ensure fleetbase configured lets the socket server authorize the install channel before setup', function () {
+        middleware_contracts_fixture();
+
+        $middleware = middleware_contracts_configured_middleware(null, [], true);
+        $internal   = $middleware->handle(
+            middleware_contracts_request('/int/v1/socket/authorize', 'int/v1/socket/authorize'),
+            fn () => new JsonResponse(['authorized' => true])
+        );
+        $prefixed = $middleware->handle(
+            middleware_contracts_request('/api/int/v1/socket/authorize', 'api/int/v1/socket/authorize'),
+            fn () => new JsonResponse(['authorized' => true])
+        );
+
+        expect($internal->getStatusCode())->toBe(200)
+            ->and($internal->getData(true))->toBe(['authorized' => true])
+            ->and($prefixed->getStatusCode())->toBe(200);
+    });
+
     test('ensure fleetbase configured returns setup error when database or core tables are missing', function () {
         middleware_contracts_fixture();
 

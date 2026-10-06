@@ -41,6 +41,8 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
             ->namespace('Api\v1')
             ->middleware(['fleetbase.api'])
             ->group(function ($router) {
+                // Realtime socket token for an API credential or a Sanctum user token.
+                $router->post('socket/token', [Fleetbase\Http\Controllers\SocketAuthController::class, 'apiToken']);
                 $router->group(
                     ['prefix' => 'organizations'],
                     function ($router) {
@@ -163,6 +165,10 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 $router->get('branding', 'SettingController@getBrandingSettings');
                             }
                         );
+                        // Called by the socket server only: authenticated by its request signature,
+                        // never by a session or user token.
+                        $router->post('socket/authorize', [Fleetbase\Http\Controllers\SocketAuthController::class, 'authorizeChannel'])
+                            ->middleware(Fleetbase\Http\Middleware\VerifySocketSignature::class);
                         $router->group(
                             ['prefix' => 'two-fa', 'middleware' => [Fleetbase\Http\Middleware\ThrottleRequests::class]],
                             function ($router) {
@@ -176,6 +182,8 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                         $router->group(
                             ['middleware' => ['fleetbase.protected']],
                             function ($router) {
+                                // Realtime socket token for the signed-in console user.
+                                $router->post('socket/token', [Fleetbase\Http\Controllers\SocketAuthController::class, 'token']);
                                 $router->group(
                                     ['prefix' => 'lookup'],
                                     function ($router) {
