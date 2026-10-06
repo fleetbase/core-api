@@ -23,6 +23,12 @@ return [
             'path' => env('SOCKETCLUSTER_PATH', '/socketcluster/'),
             'query' => [],
         ],
+
+        // Realtime channel authentication. Leaving SOCKETCLUSTER_AUTH_KEY unset keeps the
+        // feature off: no socket tokens are minted and broadcasts use the websocket publisher.
+        'auth_key'    => env('SOCKETCLUSTER_AUTH_KEY'),
+        'publish_url' => env('SOCKETCLUSTER_PUBLISH_URL', 'http://' . env('SOCKETCLUSTER_HOST', 'socket') . ':8001'),
+        'token_ttl'   => (int) env('SOCKETCLUSTER_TOKEN_TTL', 900),
     ],
 
     // for apple apn
