@@ -44,10 +44,13 @@ class ModelChannelResolver implements SocketChannelResolver
 
     /**
      * Find a model by uuid or public_id in the principal's environment (sandbox for test).
+     *
+     * Relations a model always eager loads are skipped: authorization only reads its own columns.
      */
     public static function find(string $modelClass, string $id, SocketPrincipal $principal): ?object
     {
         return $modelClass::on(static::connection($principal))
+            ->setEagerLoads([])
             ->where(function ($query) use ($id) {
                 $query->where('uuid', $id)->orWhere('public_id', $id);
             })
