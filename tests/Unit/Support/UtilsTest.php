@@ -1234,3 +1234,65 @@ test('utils discovers extension seeders migrations and auth schemas from install
         Utils::deleteDirectory($noPsrRoot);
     }
 });
+
+test('utils builds the country lookup once and serves it from cache', function () {
+    bind_test_container();
+    Utils::flushCountryLookup();
+
+    // A cached lookup is used as is, without loading the countries dataset.
+    app('cache')->put(Utils::COUNTRY_LOOKUP_CACHE_KEY, [
+        ['name' => 'Testland', 'iso2' => 'TL', 'currency' => 'TLD'],
+    ]);
+
+    expect(Utils::getCountryCodeByCurrency('TLD'))->toBe('TL')
+        ->and(Utils::getCountryCodeByName('testland'))->toBe('TL')
+        ->and(Utils::getCountryCodeByCurrency('MNT', 'ZZ'))->toBe('ZZ');
+
+    // Memoized per process: the cache is not read again.
+    app('cache')->forget(Utils::COUNTRY_LOOKUP_CACHE_KEY);
+    expect(Utils::getCountryCodeByCurrency('TLD'))->toBe('TL');
+
+    // Flushing rebuilds from the dataset and caches the result.
+    Utils::flushCountryLookup();
+    expect(Utils::getCountryCodeByCurrency('MNT'))->toBe('MN')
+        ->and(Utils::getCountryCodeByCurrency('TLD'))->toBeNull();
+
+    $cached = app('cache')->get(Utils::COUNTRY_LOOKUP_CACHE_KEY);
+    expect($cached)->toBeArray()
+        ->and(collect($cached)->firstWhere('iso2', 'SG'))->toMatchArray(['iso2' => 'SG', 'currency' => 'SGD']);
+
+    // Flushing only the memo keeps the cached copy.
+    Utils::flushCountryLookup(false);
+    expect(app('cache')->get(Utils::COUNTRY_LOOKUP_CACHE_KEY))->toBe($cached);
+
+    Utils::flushCountryLookup();
+});
+
+test('utils country lookup works when the cache store is unavailable', function () {
+    $container = bind_test_container();
+    $container->instance('cache', new class {
+        public function get(string $key, mixed $default = null): mixed
+        {
+            throw new RuntimeException('cache down');
+        }
+
+        public function put(string $key, mixed $value, mixed $ttl = null): bool
+        {
+            throw new RuntimeException('cache down');
+        }
+
+        public function forget(string $key): bool
+        {
+            throw new RuntimeException('cache down');
+        }
+    });
+    Illuminate\Support\Facades\Cache::clearResolvedInstances();
+    Utils::flushCountryLookup();
+
+    expect(Utils::getCountryCodeByCurrency('SGD'))->toBe('SG')
+        ->and(Utils::getCountryCodeByName('Mongolia'))->toBe('MN');
+
+    Utils::flushCountryLookup();
+    Illuminate\Support\Facades\Cache::clearResolvedInstances();
+    bind_test_container();
+});
