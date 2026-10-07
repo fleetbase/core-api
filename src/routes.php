@@ -254,6 +254,13 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     $router->post('test-notification-channels-config', $controller('testNotificationChannelsConfig'));
                                 }
                                 );
+                                $router->group(['prefix' => 'database-backups'], function ($router) {
+                                    $router->get('settings', 'DatabaseBackupController@getSettings');
+                                    $router->post('settings', 'DatabaseBackupController@saveSettings');
+                                    $router->delete('settings', 'DatabaseBackupController@resetSettings');
+                                    $router->get('runs', 'DatabaseBackupController@runs');
+                                    $router->post('run', 'DatabaseBackupController@run');
+                                });
                                 $router->group(['prefix' => 'rate-limits'], function ($router) {
                                     $router->get('settings', 'RateLimitController@getSettings');
                                     $router->post('settings', 'RateLimitController@saveSettings');

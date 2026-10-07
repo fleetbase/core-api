@@ -385,4 +385,25 @@ namespace {
                 ->and($route['middleware'])->toContain('fleetbase.protected');
         }
     });
+
+    test('route file exposes database backup administration as protected routes', function () {
+        $routes     = routes_contract_rows(routes_contract_router());
+        $controller = 'Fleetbase\\Http\\Controllers\\Internal\\v1\\DatabaseBackupController';
+
+        $expected = [
+            ['GET', 'int/v1/database-backups/settings', 'getSettings'],
+            ['POST', 'int/v1/database-backups/settings', 'saveSettings'],
+            ['DELETE', 'int/v1/database-backups/settings', 'resetSettings'],
+            ['GET', 'int/v1/database-backups/runs', 'runs'],
+            ['POST', 'int/v1/database-backups/run', 'run'],
+        ];
+
+        foreach ($expected as [$method, $uri, $action]) {
+            $route = routes_contract_find($routes, $method, $uri);
+
+            expect($route)->not->toBeNull()
+                ->and($route['action'])->toBe($controller . '@' . $action)
+                ->and($route['middleware'])->toContain('fleetbase.protected');
+        }
+    });
 }
