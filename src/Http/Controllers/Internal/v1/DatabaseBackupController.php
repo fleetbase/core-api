@@ -7,6 +7,7 @@ use Fleetbase\Http\Requests\AdminRequest;
 use Fleetbase\Jobs\RunDatabaseBackup;
 use Fleetbase\Models\DatabaseBackup;
 use Fleetbase\Support\DatabaseBackupSettings;
+use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Validation\Rule;
 
@@ -76,7 +77,7 @@ class DatabaseBackupController extends Controller
      */
     public function run(AdminRequest $request): JsonResponse
     {
-        RunDatabaseBackup::dispatch(DatabaseBackup::TRIGGER_MANUAL);
+        app(Dispatcher::class)->dispatch(new RunDatabaseBackup(DatabaseBackup::TRIGGER_MANUAL));
 
         return response()->json(['status' => 'queued'], 202);
     }
