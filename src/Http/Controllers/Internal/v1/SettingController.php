@@ -1040,8 +1040,10 @@ class SettingController extends Controller
     /**
      * Test SocketCluster Configuration.
      *
-     * Publishes only to the signed-in user's own `test.{user uuid}` channel; any channel in the
-     * request is ignored. The channel used is returned so the console can subscribe to it.
+     * With socket authentication on, publishes only to the signed-in user's own
+     * `test.{user uuid}` channel and ignores any channel in the request. With it off, publishes
+     * to the requested channel (default `test`) as before, so existing consoles keep working.
+     * The channel used is returned so the console can subscribe to it.
      *
      * @param Request $request the incoming HTTP request containing the authenticated user
      *
@@ -1050,8 +1052,9 @@ class SettingController extends Controller
     public function testSocketcluster(AdminRequest $request)
     {
         $userUuid = session('user');
+        $scoped   = \Fleetbase\Support\SocketCluster\SocketToken::enabled();
 
-        if (!is_string($userUuid) || $userUuid === '') {
+        if ($scoped && (!is_string($userUuid) || $userUuid === '')) {
             return response()->json([
                 'status'   => 'error',
                 'message'  => 'No signed-in user to publish the test message for.',
@@ -1061,7 +1064,7 @@ class SettingController extends Controller
         }
 
         // Get the channel to publish to
-        $channel  = 'test.' . $userUuid;
+        $channel  = $scoped ? 'test.' . $userUuid : (string) $request->input('channel', 'test');
         $message  = 'Socket broadcasted message successfully.';
         $status   = 'success';
         $sent     = false;

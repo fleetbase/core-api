@@ -24,8 +24,11 @@ return [
             'query' => [],
         ],
 
-        // Realtime channel authentication. Leaving SOCKETCLUSTER_AUTH_KEY unset keeps the
-        // feature off: no socket tokens are minted and broadcasts use the websocket publisher.
+        // Realtime channel authentication. It is off unless SOCKETCLUSTER_AUTH_ENABLED is true
+        // and SOCKETCLUSTER_AUTH_KEY is set: until then no socket tokens are minted and
+        // broadcasts use the websocket publisher, so existing socket clients keep working.
+        // Turn it on once every client fetches socket tokens.
+        'auth_enabled' => Utils::castBoolean(env('SOCKETCLUSTER_AUTH_ENABLED', false)),
         'auth_key'    => env('SOCKETCLUSTER_AUTH_KEY'),
         'publish_url' => env('SOCKETCLUSTER_PUBLISH_URL', 'http://' . env('SOCKETCLUSTER_HOST', 'socket') . ':8001'),
         'token_ttl'   => (int) env('SOCKETCLUSTER_TOKEN_TTL', 900),

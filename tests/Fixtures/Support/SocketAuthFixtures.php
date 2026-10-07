@@ -35,10 +35,11 @@ class SocketAuthFixtures
     public static function container(?string $key = self::KEY, array $config = []): Container
     {
         $container = bind_test_container(array_merge([
-            'broadcasting.connections.socketcluster.auth_key'    => $key,
-            'broadcasting.connections.socketcluster.publish_url' => 'http://socket.test:8001',
-            'broadcasting.connections.socketcluster.token_ttl'   => 900,
-            'broadcasting.connections.socketcluster.options'     => [
+            'broadcasting.connections.socketcluster.auth_enabled' => $key !== null,
+            'broadcasting.connections.socketcluster.auth_key'     => $key,
+            'broadcasting.connections.socketcluster.publish_url'  => 'http://socket.test:8001',
+            'broadcasting.connections.socketcluster.token_ttl'    => 900,
+            'broadcasting.connections.socketcluster.options'      => [
                 'secure' => false,
                 'host'   => 'socket.test',
                 'port'   => 8000,

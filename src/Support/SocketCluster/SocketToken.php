@@ -18,8 +18,9 @@ use Lcobucci\JWT\Validation\Constraint\StrictValidAt;
 /**
  * Mints and verifies the HS256 tokens realtime clients present to the socket server.
  *
- * The signing key is SOCKETCLUSTER_AUTH_KEY, shared with the socket server. Without it
- * (or with one shorter than 32 bytes) the feature is off and nothing is minted.
+ * The signing key is SOCKETCLUSTER_AUTH_KEY, shared with the socket server. The feature is
+ * on only when SOCKETCLUSTER_AUTH_ENABLED is true and that key is at least 32 bytes long;
+ * otherwise nothing is minted and broadcasts use the websocket publisher.
  */
 class SocketToken
 {
@@ -54,9 +55,20 @@ class SocketToken
         return is_string($key) && strlen($key) >= self::MIN_KEY_LENGTH ? $key : null;
     }
 
+    /**
+     * Whether realtime channel authentication is switched on.
+     *
+     * The switch is separate from the key so the key can be provisioned (for example on
+     * the socket server) before every socket client is ready for tokens.
+     */
+    public static function switchedOn(): bool
+    {
+        return filter_var(config('broadcasting.connections.socketcluster.auth_enabled', false), FILTER_VALIDATE_BOOLEAN);
+    }
+
     public static function enabled(): bool
     {
-        return static::key() !== null;
+        return static::switchedOn() && static::key() !== null;
     }
 
     /**

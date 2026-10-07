@@ -2,6 +2,7 @@
 
 use Fleetbase\Models\ApiCredential;
 use Fleetbase\Support\SocketCluster\ChannelDecision;
+use Fleetbase\Support\SocketCluster\SocketClusterService;
 use Fleetbase\Support\SocketCluster\SocketPrincipal;
 use Fleetbase\Support\SocketCluster\SocketSignature;
 use Fleetbase\Support\SocketCluster\SocketToken;
@@ -26,8 +27,8 @@ afterEach(function () {
     SocketAuthFixtures::reset();
 });
 
-test('socket tokens are disabled without a configured key of at least 32 bytes', function () {
-    SocketAuthFixtures::container(null);
+test('socket tokens are disabled without a configured key of at least 32 bytes, even when switched on', function () {
+    SocketAuthFixtures::container(null, ['broadcasting.connections.socketcluster.auth_enabled' => true]);
 
     expect(SocketToken::key())->toBeNull()
         ->and(SocketToken::enabled())->toBeFalse();
@@ -37,10 +38,36 @@ test('socket tokens are disabled without a configured key of at least 32 bytes',
     expect(SocketToken::key())->toBeNull()
         ->and(SocketToken::enabled())->toBeFalse();
 
-    config(['broadcasting.connections.socketcluster.auth_key' => SocketAuthFixtures::KEY]);
+    config(['broadcasting.connections.socketcluster.auth_enabled' => true, 'broadcasting.connections.socketcluster.auth_key' => SocketAuthFixtures::KEY]);
 
     expect(SocketToken::key())->toBe(SocketAuthFixtures::KEY)
         ->and(SocketToken::enabled())->toBeTrue();
+});
+
+test('socket tokens stay off until the auth switch is on, even with a valid key', function () {
+    SocketAuthFixtures::container(SocketAuthFixtures::KEY, ['broadcasting.connections.socketcluster.auth_enabled' => false]);
+
+    expect(SocketToken::key())->toBe(SocketAuthFixtures::KEY)
+        ->and(SocketToken::switchedOn())->toBeFalse()
+        ->and(SocketToken::enabled())->toBeFalse()
+        ->and(SocketClusterService::publishesOverHttp())->toBeFalse();
+
+    // Values read from the environment arrive as strings.
+    config(['broadcasting.connections.socketcluster.auth_enabled' => 'true']);
+
+    expect(SocketToken::switchedOn())->toBeTrue()
+        ->and(SocketToken::enabled())->toBeTrue()
+        ->and(SocketClusterService::publishesOverHttp())->toBeTrue();
+
+    config(['broadcasting.connections.socketcluster.auth_enabled' => 'false']);
+
+    expect(SocketToken::enabled())->toBeFalse();
+
+    // The switch alone is not enough without a key.
+    config(['broadcasting.connections.socketcluster.auth_enabled' => true, 'broadcasting.connections.socketcluster.auth_key' => null]);
+
+    expect(SocketToken::switchedOn())->toBeTrue()
+        ->and(SocketToken::enabled())->toBeFalse();
 });
 
 test('issuing a socket token requires the feature to be configured', function () {
