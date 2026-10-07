@@ -1791,8 +1791,9 @@ class Utils
         $bucketPath = 'uploads/storefront/' . $owner->uuid . '/' . Str::slug($type) . '/' . $fileName;
         $pathInfo   = pathinfo($bucketPath);
 
-        // upload to bucket
-        Storage::disk('s3')->put($bucketPath, $contents, 'public');
+        // upload to bucket. No 'public' visibility: the media bucket is private and enforces
+        // bucket-owner object ownership, which rejects any request carrying an ACL.
+        Storage::disk('s3')->put($bucketPath, $contents);
 
         $fileInfo = [
             'company_uuid'  => $owner->company_uuid ?? null,

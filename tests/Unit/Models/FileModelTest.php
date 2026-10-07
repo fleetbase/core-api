@@ -343,6 +343,53 @@ it('resolves cached temporary urls and reads stored contents through the configu
     expect($file->url)->toBe('https://cdn.example.test/cached-report.csv');
 });
 
+it('extracts object keys only from urls that point into the configured s3 bucket', function () {
+    bind_file_model_filesystem([
+        'filesystems.disks.s3.bucket' => 'fleetbase-production-media',
+        'filesystems.disks.s3.url'    => 'https://media.example.test/assets',
+    ]);
+
+    expect(File::s3KeyFromUrl('https://fleetbase-production-media.s3.amazonaws.com/uploads/a/photo.png'))->toBe('uploads/a/photo.png')
+        ->and(File::s3KeyFromUrl('https://fleetbase-production-media.s3.ap-southeast-1.amazonaws.com/uploads/a/photo.png?X-Amz-Signature=old'))->toBe('uploads/a/photo.png')
+        ->and(File::s3KeyFromUrl('https://fleetbase-production-media.s3-ap-southeast-1.amazonaws.com/custom-avatars/vehicles/c/My%20Van.png'))->toBe('custom-avatars/vehicles/c/My Van.png')
+        ->and(File::s3KeyFromUrl('https://s3.ap-southeast-1.amazonaws.com/fleetbase-production-media/uploads/b/logo.png'))->toBe('uploads/b/logo.png')
+        ->and(File::s3KeyFromUrl('https://media.example.test/assets/uploads/c/doc.pdf'))->toBe('uploads/c/doc.pdf')
+        // other buckets, other hosts and non-urls are left alone
+        ->and(File::s3KeyFromUrl('https://flb-assets.s3.ap-southeast-1.amazonaws.com/static/no-avatar.png'))->toBeNull()
+        ->and(File::s3KeyFromUrl('https://s3.ap-southeast-1.amazonaws.com/flb-assets/static/no-avatar.png'))->toBeNull()
+        ->and(File::s3KeyFromUrl('https://evil.example.test/fleetbase-production-media.s3.amazonaws.com/x.png'))->toBeNull()
+        ->and(File::s3KeyFromUrl('https://fleetbase-production-media.s3.amazonaws.com.evil.test/x.png'))->toBeNull()
+        ->and(File::s3KeyFromUrl('https://fleetbase-production-media.s3.amazonaws.com/'))->toBeNull()
+        ->and(File::s3KeyFromUrl('5f1c2a10-0000-4000-8000-000000000000'))->toBeNull()
+        ->and(File::s3KeyFromUrl(null))->toBeNull();
+
+    // config is shared across tests: drop the url override here as well
+    bind_file_model_filesystem(['filesystems.disks.s3.bucket' => null, 'filesystems.disks.s3.url' => null]);
+
+    expect(File::s3KeyFromUrl('https://fleetbase-production-media.s3.amazonaws.com/uploads/a/photo.png'))->toBeNull();
+});
+
+it('re-signs stored bucket urls and leaves every other value unchanged', function () {
+    $filesystem = bind_file_model_filesystem([
+        'filesystems.disks.s3.bucket' => 'fleetbase-production-media',
+    ]);
+
+    $stored = 'https://fleetbase-production-media.s3.ap-southeast-1.amazonaws.com/custom-avatars/vehicles/c/van.png?X-Amz-Expires=7200&X-Amz-Signature=expired';
+
+    expect(File::signStoredUrl($stored))->toBe('https://s3.example.test/custom-avatars/vehicles/c/van.png?temporary=1')
+        ->and($filesystem->disk('s3')->temporaryUrls)->toHaveKey('custom-avatars/vehicles/c/van.png')
+        ->and(File::signStoredUrl('https://flb-assets.s3.ap-southeast-1.amazonaws.com/static/vehicle-icons/mini_bus.svg'))
+        ->toBe('https://flb-assets.s3.ap-southeast-1.amazonaws.com/static/vehicle-icons/mini_bus.svg')
+        ->and(File::signStoredUrl(null))->toBeNull()
+        ->and(File::signStoredUrl(''))->toBe('');
+
+    // the signed url is cached per object key, like File::url
+    $filesystem->disk('s3')->temporaryUrls = [];
+
+    expect(File::signStoredUrl($stored))->toBe('https://s3.example.test/custom-avatars/vehicles/c/van.png?temporary=1')
+        ->and($filesystem->disk('s3')->temporaryUrls)->toBe([]);
+});
+
 it('assigns uploaders subjects and file types through model mutators', function () {
     bind_test_container();
 
