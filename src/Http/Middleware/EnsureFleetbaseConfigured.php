@@ -44,6 +44,12 @@ class EnsureFleetbaseConfigured
             return false;
         }
 
+        // The socket server asks this endpoint whether an anonymous install page may follow
+        // the install channel, which is exactly the case before setup has finished.
+        if ($request->is('int/v1/socket/authorize') || $request->is('*/int/v1/socket/authorize')) {
+            return false;
+        }
+
         return $request->is('int/*')
             || $request->is('*/int/*')
             || $request->is('v1/*')
