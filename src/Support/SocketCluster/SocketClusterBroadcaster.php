@@ -42,14 +42,15 @@ class SocketClusterBroadcaster implements Broadcaster
     /**
      * Broadcast.
      *
+     * Channels with an empty suffix are dropped; when signed publishing is configured every
+     * channel goes out in a single request.
+     *
      * @param string $event
      *
      * @return void
      */
     public function broadcast(array $channels, $event, array $payload = [])
     {
-        foreach ($channels as $channel) {
-            $this->socketcluster->send($channel, $payload);
-        }
+        $this->socketcluster->sendMany($channels, $payload);
     }
 }

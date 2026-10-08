@@ -60,13 +60,109 @@ class VerificationCode extends Model
      */
     protected $hidden = [];
 
-    /** on boot generate code */
+    /**
+     * Outcomes of {@see check()}.
+     */
+    public const CHECK_VALID   = 'valid';
+    public const CHECK_INVALID = 'invalid';
+    public const CHECK_EXPIRED = 'expired';
+    public const CHECK_LOCKED  = 'locked';
+
+    /**
+     * The plain code of a code made by {@see issue()}. It lives on this instance only, so the
+     * caller can send it once; the database keeps an HMAC of it.
+     */
+    public ?string $plainCode = null;
+
+    /** on boot generate code, unless one was set already (a hashed code from {@see issue()}) */
     public static function boot()
     {
         parent::boot();
         static::creating(function ($model) {
-            $model->code = random_int(100000, 999999);
+            if (blank($model->code)) {
+                $model->code = random_int(100000, 999999);
+            }
         });
+    }
+
+    /**
+     * Issue a code that is stored hashed, for flows where a leaked table must not give away
+     * live codes. The plain code is on the returned instance's `plainCode`; sending it is up
+     * to the caller.
+     *
+     * Options: `expireAfter` (default 10 minutes from now), `meta` (merged into the code's meta)
+     * and `status` (default 'active').
+     *
+     * @param mixed $subject the model the code is for, or null
+     */
+    public static function issue($subject, string $for, array $options = []): static
+    {
+        $plainCode = (string) random_int(100000, 999999);
+
+        $verifyCode             = new static();
+        $verifyCode->for        = $for;
+        $verifyCode->status     = data_get($options, 'status', 'active');
+        $verifyCode->expires_at = data_get($options, 'expireAfter', Carbon::now()->addMinutes(10));
+        $verifyCode->code       = static::hashCode($plainCode);
+        $verifyCode->meta       = array_merge((array) data_get($options, 'meta', []), ['hashed' => true, 'attempts' => 0]);
+
+        if ($subject) {
+            $verifyCode->setSubject($subject, false);
+        }
+
+        $verifyCode->save();
+        $verifyCode->plainCode = $plainCode;
+
+        return $verifyCode;
+    }
+
+    /**
+     * The HMAC a hashed code is stored as, keyed by the app key.
+     */
+    public static function hashCode(string $plainCode): string
+    {
+        return hash_hmac('sha256', $plainCode, (string) config('app.key', ''));
+    }
+
+    /**
+     * Check a plain code against this one. A wrong code counts an attempt, and the code locks
+     * itself on the last allowed attempt, so it can't be guessed further.
+     *
+     * Read the code without the expiry scope to tell an expired code apart: the scope hides
+     * expired rows from queries.
+     */
+    public function check(string $plainCode, int $maxAttempts = 3): string
+    {
+        if ($this->status === 'locked') {
+            return self::CHECK_LOCKED;
+        }
+
+        if ($this->hasExpired()) {
+            return self::CHECK_EXPIRED;
+        }
+
+        $plainCode = trim($plainCode);
+        $expected  = $this->getMeta('hashed') === true ? static::hashCode($plainCode) : $plainCode;
+        if (hash_equals((string) $this->code, $expected)) {
+            return self::CHECK_VALID;
+        }
+
+        $attempts = (int) $this->getMeta('attempts', 0) + 1;
+        $this->setMeta('attempts', $attempts);
+        if ($attempts >= $maxAttempts) {
+            $this->status = 'locked';
+        }
+        $this->save();
+
+        return $this->status === 'locked' ? self::CHECK_LOCKED : self::CHECK_INVALID;
+    }
+
+    /**
+     * How many wrong codes {@see check()} still allows.
+     */
+    public function attemptsLeft(int $maxAttempts = 3): int
+    {
+        return max(0, $maxAttempts - (int) $this->getMeta('attempts', 0));
     }
 
     /**

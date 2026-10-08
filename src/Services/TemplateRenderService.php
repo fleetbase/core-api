@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Services;
 
+use Fleetbase\Models\File;
 use Fleetbase\Models\Template;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -297,7 +298,8 @@ class TemplateRenderService
                 return "<div style=\"{$styleStr}\">{$content}</div>\n";
 
             case 'image':
-                $src = data_get($element, 'src', '');
+                // the builder stores the upload's URL; re-sign it so old (expired or unsigned) bucket URLs still render
+                $src = File::signStoredUrl((string) data_get($element, 'src', ''));
 
                 return "<img src=\"{$src}\" style=\"{$styleStr}\" alt=\"\" />\n";
 

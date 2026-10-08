@@ -147,30 +147,102 @@ class File extends Model
         /** @var Storage $filesystem */
         $filesystem = $this->getFilesystem();
 
-        $cacheKey      = "file_url_{$this->uuid}";
-        $bufferTime    = 5; // Buffer time in minutes
-        $urlExpiration = 120; // URL expiration time in minutes (2 hours)
-
         if ($disk === 's3' || $disk === 'gcs') {
-            // Check if the URL is already cached
-            if (Cache::has($cacheKey)) {
-                return Cache::get($cacheKey);
-            }
-
-            // Generate a new temporary URL
-            $url = $filesystem->temporaryUrl($this->path, now()->addMinutes($urlExpiration));
-
-            // Cache the URL with a reduced expiration time for buffer
-            Cache::put($cacheKey, $url, now()->addMinutes($urlExpiration - $bufferTime));
-        } else {
-            $url = $filesystem->url($this->path);
+            return static::cachedTemporaryUrl($filesystem, $this->path, "file_url_{$this->uuid}");
         }
+
+        $url = $filesystem->url($this->path);
 
         if ($disk === 'local') {
             return asset($url, !app()->environment(['development', 'local']));
         }
 
         return $url;
+    }
+
+    /**
+     * Generate a signed URL for an object, cached for slightly less than its lifetime.
+     */
+    protected static function cachedTemporaryUrl($filesystem, string $path, string $cacheKey): string
+    {
+        // Cache for half the signature's lifetime, so every URL handed out has at least an hour left.
+        // Callers (browser tabs, short-lived caches) hold the string after we return it.
+        $bufferTime    = 60; // Buffer time in minutes
+        $urlExpiration = 120; // URL expiration time in minutes (2 hours)
+
+        // Check if the URL is already cached
+        if (Cache::has($cacheKey)) {
+            return Cache::get($cacheKey);
+        }
+
+        // Generate a new temporary URL
+        $url = $filesystem->temporaryUrl($path, now()->addMinutes($urlExpiration));
+
+        // Cache the URL with a reduced expiration time for buffer
+        Cache::put($cacheKey, $url, now()->addMinutes($urlExpiration - $bufferTime));
+
+        return $url;
+    }
+
+    /**
+     * Re-sign an absolute URL that was stored as a string and points into the configured S3 bucket.
+     *
+     * Some columns (e.g. legacy `avatar_url` values, cart item image URLs) hold a URL rather than a
+     * File reference. Plain bucket URLs only work while the bucket is publicly readable, and stored
+     * signed URLs stop working once their signature expires, so both are turned back into an object
+     * key and signed afresh. Anything else (other hosts, flb-assets, relative paths, UUIDs) is
+     * returned unchanged.
+     */
+    public static function signStoredUrl(?string $url): ?string
+    {
+        $key = static::s3KeyFromUrl($url);
+        if ($key === null) {
+            return $url;
+        }
+
+        return static::cachedTemporaryUrl(Storage::disk('s3'), $key, 'file_url_key_' . sha1($key));
+    }
+
+    /**
+     * Extract the object key from a URL that points into the configured S3 bucket, or null.
+     *
+     * Recognises virtual-hosted (`bucket.s3.region.amazonaws.com/key`, `bucket.s3-region...`),
+     * path-style (`s3.region.amazonaws.com/bucket/key`) and the disk's configured `url` (AWS_URL).
+     */
+    public static function s3KeyFromUrl(?string $url): ?string
+    {
+        if (!is_string($url) || !preg_match('#^https?://#i', $url)) {
+            return null;
+        }
+
+        $bucket = config('filesystems.disks.s3.bucket');
+        if (!is_string($bucket) || $bucket === '') {
+            return null;
+        }
+
+        $key        = null;
+        $withoutQs  = preg_split('/[?#]/', $url, 2)[0];
+        $configured = config('filesystems.disks.s3.url');
+
+        if (is_string($configured) && $configured !== '' && Str::startsWith($withoutQs, rtrim($configured, '/') . '/')) {
+            $key = Str::after($withoutQs, rtrim($configured, '/') . '/');
+        } else {
+            $host   = strtolower((string) parse_url($withoutQs, PHP_URL_HOST));
+            $path   = ltrim((string) parse_url($withoutQs, PHP_URL_PATH), '/');
+            $quoted = preg_quote(strtolower($bucket), '#');
+
+            if (preg_match('#^' . $quoted . '\.s3([.-][a-z0-9-]+)?\.amazonaws\.com$#', $host)) {
+                $key = $path;
+            } elseif (preg_match('#^s3([.-][a-z0-9-]+)?\.amazonaws\.com$#', $host) && Str::startsWith($path, $bucket . '/')) {
+                $key = Str::after($path, $bucket . '/');
+            }
+        }
+
+        if ($key === null || $key === '') {
+            return null;
+        }
+
+        return rawurldecode($key);
     }
 
     /**

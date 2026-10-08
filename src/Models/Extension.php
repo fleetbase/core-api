@@ -187,7 +187,8 @@ class Extension extends Model
      */
     public function getIconUrlAttribute()
     {
-        return static::attributeFromCache($this, 'file.url', 'https://s3.ap-southeast-1.amazonaws.com/flb-assets/static/no-avatar.png');
+        // short TTL: file.url is a signed URL that expires, a day-long cache would serve dead links
+        return static::attributeFromCache($this, 'file.url', 'https://s3.ap-southeast-1.amazonaws.com/flb-assets/static/no-avatar.png', 30 * 60);
     }
 
     /**

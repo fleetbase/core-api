@@ -1129,6 +1129,83 @@ class Utils
     }
 
     /**
+     * Cache key for the country name, ISO2 and currency lookup.
+     */
+    public const COUNTRY_LOOKUP_CACHE_KEY = 'fleetbase:utils:country-lookup:v1';
+
+    /**
+     * Country lookup memoized for the current process.
+     *
+     * @var array<int, array{name: ?string, iso2: ?string, currency: ?string}>|null
+     */
+    protected static ?array $countryLookup = null;
+
+    /**
+     * Name, ISO2 and primary currency for every country.
+     *
+     * Building this list loads and hydrates the full countries dataset, which costs
+     * between a fraction of a second and several seconds. It is built once, kept in
+     * the application cache and memoized per process, so per-record callers (for
+     * example a store resource resolving its country from its currency) stay cheap.
+     *
+     * @return array<int, array{name: ?string, iso2: ?string, currency: ?string}>
+     */
+    public static function getCountryLookup(): array
+    {
+        if (static::$countryLookup !== null) {
+            return static::$countryLookup;
+        }
+
+        try {
+            $cached = Cache::get(static::COUNTRY_LOOKUP_CACHE_KEY);
+        } catch (\Throwable $e) {
+            $cached = null;
+        }
+
+        if (is_array($cached) && !empty($cached)) {
+            return static::$countryLookup = $cached;
+        }
+
+        $lookup = (new \PragmaRX\Countries\Package\Countries())
+            ->all()
+            ->map(function ($country) {
+                return [
+                    'name'     => static::get($country, 'name.common'),
+                    'iso2'     => static::get($country, 'cca2'),
+                    'currency' => static::resolveCurrencyCode(static::get($country, 'currencies', [])),
+                ];
+            })
+            ->values()
+            ->toArray();
+
+        try {
+            Cache::put(static::COUNTRY_LOOKUP_CACHE_KEY, $lookup);
+        } catch (\Throwable $e) {
+            // The lookup still works without a cache; it is rebuilt once per process.
+        }
+
+        return static::$countryLookup = $lookup;
+    }
+
+    /**
+     * Forget the memoized country lookup, and optionally the cached copy.
+     */
+    public static function flushCountryLookup(bool $forgetCache = true): void
+    {
+        static::$countryLookup = null;
+
+        if (!$forgetCache) {
+            return;
+        }
+
+        try {
+            Cache::forget(static::COUNTRY_LOOKUP_CACHE_KEY);
+        } catch (\Throwable $e) {
+            // Nothing cached to forget.
+        }
+    }
+
+    /**
      * Returns the ISO2 country name by providing a countries full name.
      *
      * @param string countryName
@@ -1139,18 +1216,7 @@ class Utils
             return $defaultValue;
         }
 
-        $countries = new \PragmaRX\Countries\Package\Countries();
-        $countries = $countries
-            ->all()
-            ->map(function ($country) {
-                return [
-                    'name' => static::get($country, 'name.common'),
-                    'iso2' => static::get($country, 'cca2'),
-                ];
-            })
-            ->values()
-            ->toArray();
-        $countries = collect($countries);
+        $countries = collect(static::getCountryLookup());
 
         $data = $countries->first(function ($country) use ($countryName) {
             // @todo switch to string contains or like search
@@ -1174,19 +1240,7 @@ class Utils
             return $defaultValue;
         }
 
-        $countries = new \PragmaRX\Countries\Package\Countries();
-        $countries = $countries
-            ->all()
-            ->map(function ($country) {
-                return [
-                    'name'     => static::get($country, 'name.common'),
-                    'iso2'     => static::get($country, 'cca2'),
-                    'currency' => static::resolveCurrencyCode(static::get($country, 'currencies', [])),
-                ];
-            })
-            ->values()
-            ->toArray();
-        $countries = collect($countries);
+        $countries = collect(static::getCountryLookup());
 
         $data = $countries->first(function ($country) use ($currencyCode) {
             return is_string($country['currency']) && strtolower($country['currency']) === strtolower($currencyCode);
@@ -1791,8 +1845,9 @@ class Utils
         $bucketPath = 'uploads/storefront/' . $owner->uuid . '/' . Str::slug($type) . '/' . $fileName;
         $pathInfo   = pathinfo($bucketPath);
 
-        // upload to bucket
-        Storage::disk('s3')->put($bucketPath, $contents, 'public');
+        // upload to bucket. No 'public' visibility: the media bucket is private and enforces
+        // bucket-owner object ownership, which rejects any request carrying an ACL.
+        Storage::disk('s3')->put($bucketPath, $contents);
 
         $fileInfo = [
             'company_uuid'  => $owner->company_uuid ?? null,
