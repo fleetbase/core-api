@@ -125,6 +125,7 @@ The switch is separate from the key so a deployment can provision the key ahead 
 | `SOCKETCLUSTER_AUTH_KEY` | unset | Signs socket tokens (HS256) and, through derived keys, the API to socket server requests. |
 | `SOCKETCLUSTER_PUBLISH_URL` | `http://{SOCKETCLUSTER_HOST}:8001` | The socket server's internal listener; broadcasts are sent as one signed `POST {url}/publish`. |
 | `SOCKETCLUSTER_TOKEN_TTL` | `900` | Lifetime in seconds of user, API, driver, customer and checkout tokens. |
+| `SOCKETCLUSTER_ORIGIN` | unset | `Origin` header the websocket publisher sends on its handshake. Set it to an origin the socket server allows (e.g. the console URL) when `SOCKETCLUSTER_OPTIONS` restricts `origins`; without it the handshake is refused as `Invalid origin: *`. Not used by the signed HTTP publish. |
 
 Clients fetch a token before connecting: `POST int/v1/socket/token` (console session), `POST v1/socket/token` (API credential or Sanctum user token). The socket server asks `POST int/v1/socket/authorize`, signed with its own derived key, whether a token may subscribe to a channel.
 

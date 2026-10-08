@@ -22,6 +22,11 @@ return [
             'port' => env('SOCKETCLUSTER_PORT', 8000),
             'path' => env('SOCKETCLUSTER_PATH', '/socketcluster/'),
             'query' => [],
+            // The websocket publisher sends no Origin of its own, and a socket server whose
+            // `origins` are restricted (as scripts/docker-install.sh sets them) rejects a
+            // handshake without one. Set SOCKETCLUSTER_ORIGIN to an allowed origin, e.g. the
+            // console URL.
+            'headers' => array_filter(['Origin' => env('SOCKETCLUSTER_ORIGIN')]),
         ],
 
         // Realtime channel authentication. It is off unless SOCKETCLUSTER_AUTH_ENABLED is true
