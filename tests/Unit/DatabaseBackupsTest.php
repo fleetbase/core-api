@@ -242,7 +242,7 @@ function database_backups_fixture(array $config = []): array
     $sqlite = ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => ''];
     $disks  = [
         'backups' => ['driver' => 'local', 'root' => $root . '/disk'],
-        's3'      => ['driver' => 's3', 'bucket' => 'fleetbase-media', 'region' => 'ap-southeast-1'],
+        's3'      => ['driver' => 's3', 'bucket' => 'example-media', 'region' => 'ap-southeast-1'],
     ];
 
     $container = bind_test_container(array_merge([
@@ -620,12 +620,12 @@ test('database backup service applies the bucket override only to s3 disks', fun
     $service->diskOverride = DatabaseBackupsDiskFake::at(database_backups_root() . '/disk');
     $settings              = DatabaseBackupSettings::settings();
 
-    $service->disk(array_merge($settings, ['disk' => 's3', 'bucket' => 'fleetbase-db-backups']));
+    $service->disk(array_merge($settings, ['disk' => 's3', 'bucket' => 'example-db-backups']));
     $service->disk(array_merge($settings, ['disk' => 's3', 'bucket' => null]));
     $service->disk(array_merge($settings, ['bucket' => 'ignored']));
 
-    expect($service->diskConfigs[0]['bucket'])->toBe('fleetbase-db-backups')
-        ->and($service->diskConfigs[1]['bucket'])->toBe('fleetbase-media')
+    expect($service->diskConfigs[0]['bucket'])->toBe('example-db-backups')
+        ->and($service->diskConfigs[1]['bucket'])->toBe('example-media')
         ->and($service->diskConfigs[2])->not->toHaveKey('bucket')
         ->and($service->objectPath('', 'a.sql.gz'))->toBe('a.sql.gz')
         ->and($service->objectPath('/x/y/', 'a.sql.gz'))->toBe('x/y/a.sql.gz');
@@ -871,7 +871,7 @@ test('database backup controller saves validated settings and resets them', func
         'time'              => '01:15',
         'day_of_week'       => 1,
         'disk'              => 's3',
-        'bucket'            => 'fleetbase-db-backups',
+        'bucket'            => 'example-db-backups',
         'path'              => 'mysql',
         'connections'       => ['primary'],
         'retention_days'    => 14,
