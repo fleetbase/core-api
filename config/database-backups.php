@@ -26,7 +26,7 @@ return [
      * s3 disks, and a key prefix.
      */
     'disk'   => env('DB_BACKUP_DISK', 's3'),
-    'bucket' => env('DB_BACKUP_BUCKET', 'fleetbase-db-backups'),
+    'bucket' => env('DB_BACKUP_BUCKET'),
     'path'   => env('DB_BACKUP_PATH', ''),
 
     /*
