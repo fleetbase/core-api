@@ -308,6 +308,27 @@ function security_behavioral_bind_auth_guard(bool $validateResult = true): Secur
     return $guard;
 }
 
+/**
+ * The trait deleteRecord also layers IAM directives onto the query; those need the
+ * users/permissions graph, so this stand-in leaves directives out and keeps the
+ * tenant clause (and its real schema column check) as the only scoping.
+ */
+class SecurityBehavioralApiCredential extends ApiCredential
+{
+    public function applyDirectivesToQuery(Request $request, $builder)
+    {
+        return $builder;
+    }
+}
+
+function security_behavioral_credential_controller(): ApiCredentialController
+{
+    $controller        = new ApiCredentialController();
+    $controller->model = new SecurityBehavioralApiCredential();
+
+    return $controller;
+}
+
 afterEach(function () {
     session()->flush();
     Carbon::setTestNow();
@@ -365,6 +386,30 @@ test('notification deleteRecord deletes a notification owned by the authenticate
         ->and($response->getData(true))->toBe(['message' => 'Notification deleted successfully'])
         ->and(Notification::where('id', 'notif-mine')->exists())->toBeFalse()
         ->and(Notification::where('id', 'notif-theirs')->exists())->toBeTrue();
+});
+
+test('default deleteRecord refuses to delete another company record', function () {
+    security_behavioral_database();
+
+    // ApiCredentialController inherits the trait deleteRecord; acting as company-1,
+    // company-2's credential must not resolve.
+    $request  = security_behavioral_request('DELETE', '/v1/api-credentials/key_theirs');
+    $response = security_behavioral_credential_controller()->deleteRecord('key_theirs', $request);
+
+    expect($response->getStatusCode())->toBe(404)
+        ->and(ApiCredential::where('uuid', 'cred-theirs')->whereNull('deleted_at')->exists())->toBeTrue()
+        ->and(ApiCredential::where('uuid', 'cred-mine')->whereNull('deleted_at')->exists())->toBeTrue();
+});
+
+test('default deleteRecord deletes a record owned by the active company', function () {
+    security_behavioral_database();
+
+    $request  = security_behavioral_request('DELETE', '/v1/api-credentials/key_mine');
+    $response = security_behavioral_credential_controller()->deleteRecord('key_mine', $request);
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and(ApiCredential::where('uuid', 'cred-mine')->whereNull('deleted_at')->exists())->toBeFalse()
+        ->and(ApiCredential::where('uuid', 'cred-theirs')->whereNull('deleted_at')->exists())->toBeTrue();
 });
 
 test('file download refuses to resolve another company file (IDOR)', function () {

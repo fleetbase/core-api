@@ -582,7 +582,7 @@ trait HasApiControllerBehavior
         // cross-tenant deletion (GHSA-3wj9-hh56-7fw7). No global scope backs this
         // up — removing it reopens that vulnerability.
         $companyUuid = session('company');
-        if ($companyUuid && $this->model->isColumn($this->model->qualifyColumn('company_uuid'))) {
+        if ($companyUuid && $this->model->isColumn('company_uuid')) {
             $builder->where($this->model->qualifyColumn('company_uuid'), $companyUuid);
         }
 
