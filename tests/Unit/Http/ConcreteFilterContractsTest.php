@@ -18,6 +18,7 @@ use Fleetbase\Http\Filter\GroupFilter;
 use Fleetbase\Http\Filter\NotificationFilter;
 use Fleetbase\Http\Filter\PermissionFilter;
 use Fleetbase\Http\Filter\PolicyFilter;
+use Fleetbase\Http\Filter\ReportFilter;
 use Fleetbase\Http\Filter\RoleFilter;
 use Fleetbase\Http\Filter\ScheduleExceptionFilter;
 use Fleetbase\Http\Filter\ScheduleFilter;
@@ -40,12 +41,14 @@ use Fleetbase\Models\File;
 use Fleetbase\Models\Group;
 use Fleetbase\Models\Notification;
 use Fleetbase\Models\Policy;
+use Fleetbase\Models\Report;
 use Fleetbase\Models\Role;
 use Fleetbase\Models\ScheduleException;
 use Fleetbase\Models\ScheduleItem;
 use Fleetbase\Models\ScheduleTemplate;
 use Fleetbase\Models\User;
 use Fleetbase\Models\WebhookEndpoint;
+use Fleetbase\Support\Find;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
@@ -1009,6 +1012,30 @@ test('chat filters delegate free text queries to searchable builders', function 
     expect($builder->queries)->toBe(['dispatch'])
         ->and($messageBuilder->queries)->toBe(['pickup'])
         ->and($logBuilder->queries)->toBe(['delivered']);
+});
+
+test('report filter scopes saved reports to the session company', function () {
+    $capsule = concrete_filter_database();
+    $schema  = $capsule->getConnection('mysql')->getSchemaBuilder();
+    $schema->dropIfExists('reports');
+    $schema->create('reports', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('public_id')->nullable();
+        $table->string('company_uuid')->nullable();
+        $table->string('title')->nullable();
+        $table->string('type')->nullable();
+        $table->softDeletes();
+    });
+    $capsule->getConnection('mysql')->table('reports')->insert([
+        ['uuid' => 'report-visible', 'public_id' => 'report_visible', 'company_uuid' => 'company-1', 'title' => 'Mine', 'type' => 'custom'],
+        ['uuid' => 'report-hidden', 'public_id' => 'report_hidden', 'company_uuid' => 'company-2', 'title' => 'Theirs', 'type' => 'custom'],
+        ['uuid' => 'report-orphan', 'public_id' => 'report_orphan', 'company_uuid' => null, 'title' => 'Orphan', 'type' => 'custom'],
+    ]);
+
+    expect(Find::httpFilterForModel(new Report()))->toBe('\\Fleetbase\\Http\\Filter\\ReportFilter')
+        ->and(concrete_filter_uuids(ReportFilter::class, Report::class, [], 'int/v1/reports'))->toBe(['report-visible'])
+        ->and(concrete_filter_uuids(ReportFilter::class, Report::class, ['type' => 'custom'], 'int/v1/reports'))->toBe(['report-visible'])
+        ->and(concrete_filter_uuids(ReportFilter::class, Report::class, [], 'v1/reports'))->toBe(['report-visible']);
 });
 
 test('category filter applies tenant core parent and list filters', function () {

@@ -836,6 +836,8 @@ test('api model behavior validates update parameters and find record scoping con
 
     expect($model->isColumn('company_uuid'))->toBeTrue()
         ->and($model->isColumn('missing_column'))->toBeFalse()
+        // isColumn takes a bare column name; a table-qualified name never matches.
+        ->and($model->isColumn($model->qualifyColumn('company_uuid')))->toBeFalse()
         ->and($model->shouldQualifyColumn('uuid'))->toBeTrue()
         ->and($model->shouldQualifyColumn('name'))->toBeFalse()
         ->and($model->isInvalidUpdateParam('name'))->toBeFalse()
