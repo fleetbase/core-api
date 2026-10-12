@@ -426,9 +426,9 @@ test('api model cache generates tenant scoped stable query model and relationshi
     expect($first)->toBe($second)
         ->and($first)->toStartWith('{api_query}:orders:company_company-1:v7:')
         ->and(ApiModelCache::generateModelCacheKey($model, 'order-1', ['customer', 'payload']))
-        ->toBe('{api_model}:orders:order-1:' . md5(json_encode(['customer', 'payload'])))
+        ->toBe('{api_model}:orders:v0:order-1:' . md5(json_encode(['customer', 'payload'])))
         ->and(ApiModelCache::generateRelationshipCacheKey($model, 'payload'))
-        ->toBe('{api_relation}:orders:order-1:payload')
+        ->toBe('{api_relation}:orders:v0:order-1:payload')
         ->and(ApiModelCache::generateCacheTags($model, 'company-1', true))
         ->toBe(['api_cache', 'api_model:orders', 'api_query:orders', 'company:company-1']);
 });
@@ -520,7 +520,7 @@ test('api model cache stores model and relationship lookups with status tracking
         ->and($secondModel)->toBe(['uuid' => 'order-1'])
         ->and($modelCalls)->toBe(1)
         ->and(ApiModelCache::getCacheStatus())->toBe('HIT')
-        ->and(ApiModelCache::getCacheKey())->toStartWith('{api_model}:orders:order-1:');
+        ->and(ApiModelCache::getCacheKey())->toStartWith('{api_model}:orders:v0:order-1:');
 
     ApiModelCache::resetCacheStatus();
     $relationshipCalls = 0;
@@ -539,7 +539,7 @@ test('api model cache stores model and relationship lookups with status tracking
         ->and($secondRelation)->toBe(['uuid' => 'payload-1'])
         ->and($relationshipCalls)->toBe(1)
         ->and(ApiModelCache::getCacheStatus())->toBe('HIT')
-        ->and(ApiModelCache::getCacheKey())->toBe('{api_relation}:orders:order-1:payload');
+        ->and(ApiModelCache::getCacheKey())->toBe('{api_relation}:orders:v0:order-1:payload');
 });
 
 test('api model cache bypasses model relationship and invalidation work when disabled', function () {
@@ -588,6 +588,7 @@ test('api model cache invalidates scoped query and model caches and advances que
     expect(ApiModelCache::getCacheStatus())->toBeNull()
         ->and(ApiModelCache::getCacheKey())->toBeNull()
         ->and($store->get('api_query_version:orders:company-1'))->toBe(1)
+        ->and($store->get('api_model_version:orders'))->toBe(1)
         ->and($store->flushedTags)->toContain(['api_cache', 'api_model:orders', 'company:company-1'])
         ->and($store->flushedTags)->toContain(['api_cache', 'api_model:orders', 'api_query:orders', 'company:company-1']);
 
@@ -624,7 +625,35 @@ test('api model cache does not serve a list cached before the first invalidation
         ->and($store->get('api_query_version:orders:company-1'))->toBe(2);
 });
 
-test('api model cache seeds the query version on stores whose increment does not create missing keys', function () {
+test('api model cache does not serve model or relationship lookups cached before an invalidation when the tag flush leaves them behind', function () {
+    $store                     = api_model_cache_fixture();
+    $store->flushRemovesValues = false;
+    $model                     = api_model_cache_model();
+
+    ApiModelCache::cacheModel($model, 'order-1', fn () => ['status' => 'stale'], ['payload']);
+    ApiModelCache::cacheRelationship($model, 'payload', fn () => ['name' => 'stale']);
+    $modelKeyBefore    = ApiModelCache::generateModelCacheKey($model, 'order-1', ['payload']);
+    $relationKeyBefore = ApiModelCache::generateRelationshipCacheKey($model, 'payload');
+
+    ApiModelCache::invalidateModelCache($model, 'company-1');
+
+    expect(ApiModelCache::cacheModel($model, 'order-1', fn () => ['status' => 'fresh'], ['payload']))->toBe(['status' => 'fresh'])
+        ->and(ApiModelCache::getCacheStatus())->toBe('MISS')
+        ->and(ApiModelCache::getCacheKey())->not->toBe($modelKeyBefore)
+        ->and(ApiModelCache::cacheRelationship($model, 'payload', fn () => ['name' => 'fresh']))->toBe(['name' => 'fresh'])
+        ->and(ApiModelCache::getCacheStatus())->toBe('MISS')
+        ->and(ApiModelCache::getCacheKey())->not->toBe($relationKeyBefore)
+        ->and($store->get('api_model_version:orders'))->toBe(1);
+
+    // Lookups know no company, so a write in any company moves the table's model version
+    ApiModelCache::invalidateModelCache($model, null);
+
+    expect(ApiModelCache::cacheModel($model, 'order-1', fn () => ['status' => 'fresher'], ['payload']))->toBe(['status' => 'fresher'])
+        ->and(ApiModelCache::cacheRelationship($model, 'payload', fn () => ['name' => 'fresher']))->toBe(['name' => 'fresher'])
+        ->and($store->get('api_model_version:orders'))->toBe(2);
+});
+
+test('api model cache seeds versions on stores whose increment does not create missing keys', function () {
     $store                          = api_model_cache_fixture();
     $store->flushRemovesValues      = false;
     $store->incrementCreatesMissing = false;
@@ -635,11 +664,13 @@ test('api model cache seeds the query version on stores whose increment does not
     ApiModelCache::invalidateModelCache($model, 'company-1');
 
     expect($store->get('api_query_version:orders:company-1'))->toBe(1)
+        ->and($store->get('api_model_version:orders'))->toBe(1)
         ->and(ApiModelCache::cacheQueryResult($model, $request, fn () => collect(['fresh'])))->toEqual(collect(['fresh']));
 
     ApiModelCache::invalidateModelCache($model, 'company-1');
 
-    expect($store->get('api_query_version:orders:company-1'))->toBe(2);
+    expect($store->get('api_query_version:orders:company-1'))->toBe(2)
+        ->and($store->get('api_model_version:orders'))->toBe(2);
 });
 
 test('api model cache resolves tenant scope from authenticated user and request input fallbacks', function () {
@@ -693,13 +724,13 @@ test('api model cache falls back to callbacks when tagged cache operations fail'
 
     expect($modelResult)->toBe(['fallback' => true])
         ->and(ApiModelCache::getCacheStatus())->toBe('ERROR')
-        ->and(ApiModelCache::getCacheKey())->toBe('{api_model}:orders:order-1');
+        ->and(ApiModelCache::getCacheKey())->toBe('{api_model}:orders:v0:order-1');
 
     $relationshipResult = ApiModelCache::cacheRelationship($model, 'payload', fn () => ['relationship' => true]);
 
     expect($relationshipResult)->toBe(['relationship' => true])
         ->and(ApiModelCache::getCacheStatus())->toBe('ERROR')
-        ->and(ApiModelCache::getCacheKey())->toBe('{api_relation}:orders:order-1:payload');
+        ->and(ApiModelCache::getCacheKey())->toBe('{api_relation}:orders:v0:order-1:payload');
 });
 
 test('api model cache warmup logs failures without leaking exceptions', function () {

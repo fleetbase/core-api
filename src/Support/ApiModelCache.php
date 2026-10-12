@@ -18,8 +18,10 @@ use Illuminate\Support\Facades\Log;
  * - Multi-tenancy support
  * - Cache tagging for efficient bulk invalidation
  *
- * List caches are invalidated by a per table/company query version embedded in
- * the cache key, not by the tag flush. On Laravel 10 with phpredis >= 6.1,
+ * Caches are invalidated by versions embedded in their keys, not by the tag
+ * flush: list caches carry a per table/company query version, single model and
+ * relationship caches a per table model version (their lookups are keyed by id
+ * and know no company). On Laravel 10 with phpredis >= 6.1,
  * RedisTagSet::entries() starts ZSCAN with cursor '0', which phpredis treats as
  * an already finished scan, so RedisTaggedCache::flush() deletes only the tag
  * sets and leaves every tagged value in Redis until its TTL expires. Bumping the
@@ -112,6 +114,28 @@ class ApiModelCache
     }
 
     /**
+     * Cache key holding the model and relationship version for a table.
+     */
+    protected static function modelVersionKey(string $table): string
+    {
+        return "api_model_version:{$table}";
+    }
+
+    /**
+     * Advance a cache version so keys built from it change.
+     *
+     * A missing version reads as 0 and INCR creates it at 1, so the first bump
+     * also changes the key. Stores whose increment does not create missing keys
+     * (database, memcached) return false, so the version is seeded instead.
+     */
+    protected static function bumpVersion(string $versionKey): void
+    {
+        if (Cache::increment($versionKey) === false) {
+            Cache::add($versionKey, 1) || Cache::increment($versionKey);
+        }
+    }
+
+    /**
      * Generate a cache key for a single model instance.
      *
      * @param string|int $id
@@ -120,9 +144,11 @@ class ApiModelCache
     {
         $table    = $model->getTable();
         $withHash = !empty($with) ? ':' . md5(json_encode($with)) : '';
+        $version  = Cache::get(static::modelVersionKey($table), 0);
 
         // Add Redis hash tag {api_model} for Redis Cluster shard routing
-        return "{api_model}:{$table}:{$id}{$withHash}";
+        // Include version to ensure cache keys change after writes
+        return "{api_model}:{$table}:v{$version}:{$id}{$withHash}";
     }
 
     /**
@@ -130,11 +156,13 @@ class ApiModelCache
      */
     public static function generateRelationshipCacheKey(Model $model, string $relationshipName): string
     {
-        $table = $model->getTable();
-        $id    = $model->getKey();
+        $table   = $model->getTable();
+        $id      = $model->getKey();
+        $version = Cache::get(static::modelVersionKey($table), 0);
 
         // Add Redis hash tag {api_relation} for Redis Cluster shard routing
-        return "{api_relation}:{$table}:{$id}:{$relationshipName}";
+        // Shares the model version, since relationships are invalidated with their parent
+        return "{api_relation}:{$table}:v{$version}:{$id}:{$relationshipName}";
     }
 
     /**
@@ -335,16 +363,12 @@ class ApiModelCache
         // after invalidation within the same request lifecycle
         static::resetCacheStatus();
 
-        // FIX #4: Increment query version counter
-        // This ensures the cache key changes after invalidation, and it is what
-        // actually hides stale list caches (see the class docblock). A missing
-        // version reads as 0 and INCR creates it at 1, so the first invalidation
-        // also changes the key. Stores whose increment does not create missing
-        // keys (database, memcached) return false, so the version is seeded.
-        $versionKey = static::queryVersionKey($model->getTable(), $companyUuid);
-        if (Cache::increment($versionKey) === false) {
-            Cache::add($versionKey, 1) || Cache::increment($versionKey);
-        }
+        // FIX #4: Increment the query and model version counters
+        // This ensures cache keys change after invalidation, and it is what
+        // actually hides stale caches (see the class docblock)
+        $table = $model->getTable();
+        static::bumpVersion(static::queryVersionKey($table, $companyUuid));
+        static::bumpVersion(static::modelVersionKey($table));
 
         // Generate tags for BOTH model and query caches
         // Model caches: single-record lookups
@@ -357,8 +381,8 @@ class ApiModelCache
             Cache::tags($modelTags)->flush();
 
             // Flush query-level caches (collections, lists)
-            // On Redis this removes the tag sets but not the values (see the class
-            // docblock); the version bump above is what invalidates list caches
+            // On Redis these flushes remove the tag sets but not the values (see the
+            // class docblock); the version bumps above are what invalidate caches
             Cache::tags($queryTags)->flush();
         } catch (\Exception $e) {
             Log::error('Failed to invalidate cache', [
