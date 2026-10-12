@@ -60,7 +60,23 @@ class ApiModelCache
     public const RELATIONSHIP_TTL = 1800;
 
     /**
+     * Session keys that scope list queries below the company (default).
+     *
+     * An API credential, or a Storefront store or network key, is resolved into
+     * these by middleware, and query callbacks filter on them without the value
+     * appearing in the query string.
+     */
+    public const SESSION_SCOPE = ['api_credential', 'storefront_store', 'storefront_network'];
+
+    /**
      * Generate a cache key for a query.
+     *
+     * Besides the table, company and query string, the key covers the request path
+     * and the configured session scope. The path separates internal from public
+     * endpoints (which paginate and eager load differently) and endpoints whose
+     * callbacks read route parameters; the session scope separates API keys, stores
+     * and networks of one company. Both are hashed, so credentials never appear in
+     * the key or in the X-Cache-Key debug header.
      */
     public static function generateQueryCacheKey(Model $model, Request $request, array $additionalParams = []): string
     {
@@ -90,8 +106,12 @@ class ApiModelCache
         $params = array_filter($params, fn ($value) => $value !== null);
         ksort($params);
 
-        // Generate hash of parameters
-        $paramsHash = md5(json_encode($params));
+        // Generate hash of parameters, the endpoint and the session scope
+        $paramsHash = md5(json_encode([
+            'params' => $params,
+            'path'   => $request->path(),
+            'scope'  => static::getSessionScope($request),
+        ]));
 
         // Include company UUID for multi-tenancy
         $companyPart = $companyUuid ? "company_{$companyUuid}" : 'no_company';
@@ -488,6 +508,31 @@ class ApiModelCache
 
         // Try to get from request input
         return $request->input('company_uuid');
+    }
+
+    /**
+     * Extract the configured session scope values from request.
+     */
+    protected static function getSessionScope(Request $request): array
+    {
+        if (!$request->hasSession()) {
+            return [];
+        }
+
+        $keys  = config('api.cache.scope.session') ?? static::SESSION_SCOPE;
+        $scope = [];
+
+        foreach ($keys as $key) {
+            $value = $request->session()->get($key);
+
+            if ($value !== null) {
+                $scope[$key] = $value;
+            }
+        }
+
+        ksort($scope);
+
+        return $scope;
     }
 
     /**
