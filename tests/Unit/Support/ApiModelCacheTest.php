@@ -366,6 +366,7 @@ function api_model_cache_fixture(array $config = []): ApiModelCacheTestStore
         'api.cache.ttl.query'        => 111,
         'api.cache.ttl.model'        => 222,
         'api.cache.ttl.relationship' => 333,
+        'api.cache.scope.session'    => null,
         'cache.default'              => 'array',
     ], $config));
 
@@ -396,6 +397,16 @@ function api_model_cache_request(array $query = [], mixed $company = 'company-1'
         $session->put('company', $company);
     }
     $request->setLaravelSession($session);
+
+    return $request;
+}
+
+function api_model_cache_scoped_request(string $path, array $session, array $query = []): Request
+{
+    $request = Request::create($path, 'GET', $query);
+    $store   = new Store('testing', new ApiModelCacheArraySessionHandler());
+    $store->put($session);
+    $request->setLaravelSession($store);
 
     return $request;
 }
@@ -942,6 +953,64 @@ test('api model cache seeds versions on stores whose increment does not create m
 
     expect($store->get('api_query_version:orders:company-1'))->toBe(2)
         ->and($store->get('api_model_version:orders'))->toBe(2);
+});
+
+test('api model cache keeps lists of storefront stores and networks of the same company apart', function () {
+    api_model_cache_fixture();
+    $model    = api_model_cache_model();
+    $query    = ['limit' => '10'];
+    $callback = ['has_callback' => true];
+    $storeA   = api_model_cache_scoped_request('/storefront/v1/products', ['company' => 'company-1', 'storefront_store' => 'store-a', 'api_credential' => 'store_key_a'], $query);
+    $storeB   = api_model_cache_scoped_request('/storefront/v1/products', ['company' => 'company-1', 'storefront_store' => 'store-b', 'api_credential' => 'store_key_b'], $query);
+    $network  = api_model_cache_scoped_request('/storefront/v1/products', ['company' => 'company-1', 'storefront_network' => 'network-a', 'api_credential' => 'network_key_a'], $query);
+
+    expect(ApiModelCache::cacheQueryResult($model, $storeA, fn () => collect(['store a product']), $callback))->toEqual(collect(['store a product']));
+    $storeAKey = ApiModelCache::getCacheKey();
+
+    expect(ApiModelCache::cacheQueryResult($model, $storeB, fn () => collect(['store b product']), $callback))->toEqual(collect(['store b product']))
+        ->and(ApiModelCache::getCacheStatus())->toBe('MISS')
+        ->and(ApiModelCache::cacheQueryResult($model, $network, fn () => collect(['network product']), $callback))->toEqual(collect(['network product']))
+        ->and(ApiModelCache::getCacheStatus())->toBe('MISS')
+        ->and(ApiModelCache::cacheQueryResult($model, $storeA, fn () => collect(['not reached']), $callback))->toEqual(collect(['store a product']))
+        ->and(ApiModelCache::getCacheStatus())->toBe('HIT')
+        ->and($storeAKey)->toStartWith('{api_query}:orders:company_company-1:v0.0:')
+        ->and($storeAKey)->not->toContain('store_key_a');
+});
+
+test('api model cache keeps internal and public lists of the same company and query apart', function () {
+    api_model_cache_fixture();
+    $model    = api_model_cache_model();
+    $query    = ['limit' => '30'];
+    $callback = ['has_callback' => true];
+    $internal = api_model_cache_scoped_request('/storefront/int/v1/catalogs', ['company' => 'company-1'], $query);
+    $public   = api_model_cache_scoped_request('/storefront/v1/catalogs', ['company' => 'company-1', 'storefront_store' => 'store-a', 'api_credential' => 'store_key_a'], $query);
+    $console  = api_model_cache_scoped_request('/storefront/int/v1/catalogs', ['company' => 'company-1'], $query);
+
+    ApiModelCache::cacheQueryResult($model, $internal, fn () => 'internal paginator with editor relations', $callback);
+
+    expect(ApiModelCache::cacheQueryResult($model, $public, fn () => collect(['store a catalog']), $callback))->toEqual(collect(['store a catalog']))
+        ->and(ApiModelCache::getCacheStatus())->toBe('MISS')
+        ->and(ApiModelCache::cacheQueryResult($model, $console, fn () => 'not reached', $callback))->toBe('internal paginator with editor relations')
+        ->and(ApiModelCache::getCacheStatus())->toBe('HIT');
+});
+
+test('api model cache keeps public lists of the same company and query on different endpoints apart', function () {
+    api_model_cache_fixture();
+    $model   = api_model_cache_model();
+    $session = ['company' => 'company-1', 'api_credential' => 'credential-1'];
+    $key     = fn (string $path) => ApiModelCache::generateQueryCacheKey($model, api_model_cache_scoped_request($path, $session, ['limit' => '10']), ['has_callback' => true]);
+
+    expect($key('/v1/customers/customer_a/places'))->not->toBe($key('/v1/customers/customer_b/places'))
+        ->and($key('/v1/customers/customer_a/places'))->toBe($key('/v1/customers/customer_a/places'));
+});
+
+test('api model cache scopes list keys by the configured session keys only', function () {
+    api_model_cache_fixture(['api.cache.scope.session' => ['customer']]);
+    $model = api_model_cache_model();
+    $key   = fn (array $session) => ApiModelCache::generateQueryCacheKey($model, api_model_cache_scoped_request('/v1/orders', ['company' => 'company-1', ...$session]));
+
+    expect($key(['customer' => 'customer-a']))->not->toBe($key(['customer' => 'customer-b']))
+        ->and($key(['customer' => 'customer-a', 'storefront_store' => 'store-a']))->toBe($key(['customer' => 'customer-a', 'storefront_store' => 'store-b']));
 });
 
 test('api model cache resolves tenant scope from authenticated user and request input fallbacks', function () {

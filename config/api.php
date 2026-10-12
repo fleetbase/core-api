@@ -60,6 +60,15 @@ return [
             'relationship' => env('API_CACHE_RELATIONSHIP_TTL', 1800),
         ],
 
+        // List cache scope below the company
+        'scope' => [
+            // Session keys whose values are part of every list cache key, so lists
+            // filtered on them are not shared between their values. Add any key a
+            // query callback reads from the session but not from the query string.
+            // Default: the API credential and the Storefront store and network
+            'session' => ['api_credential', 'storefront_store', 'storefront_network'],
+        ],
+
         // Cache driver (uses Laravel's cache configuration)
         // Options: redis, memcached, database, file
         // Default: uses config('cache.default')
