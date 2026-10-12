@@ -119,8 +119,6 @@ class Comment extends Model
      */
     public static function publish(array $attributes): Comment
     {
-        static::unguard();
-
         // If replies or parent is set somehow unset it
         unset($attributes['replies'], $attributes['parent']);
 
@@ -139,9 +137,10 @@ class Comment extends Model
         $attributes['created_at'] = now();
         $attributes['updated_at'] = now();
 
-        $comment = static::create($attributes);
-        static::reguard();
-
-        return $comment;
+        // Unguard only for this insert: `unguarded()` restores the guard even when the insert
+        // throws. A bare unguard() left every model in a long-lived (Octane) worker unguarded
+        // after a failed insert, so request params became where clauses and stray payload keys
+        // became insert columns on unrelated models.
+        return static::unguarded(fn () => static::create($attributes));
     }
 }
