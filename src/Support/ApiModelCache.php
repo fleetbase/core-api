@@ -3,9 +3,14 @@
 namespace Fleetbase\Support;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 /**
  * API Model Cache Manager.
@@ -19,9 +24,15 @@ use Illuminate\Support\Facades\Log;
  * - Cache tagging for efficient bulk invalidation
  *
  * Caches are invalidated by versions embedded in their keys, not by the tag
- * flush: list caches carry a per table/company query version, single model and
- * relationship caches a per table model version (their lookups are keyed by id
- * and know no company). On Laravel 10 with phpredis >= 6.1,
+ * flush: list caches carry per table query versions (table wide and per company),
+ * single model and relationship caches per table model versions (their lookups
+ * are keyed by id and know no company). A key carries the versions of the
+ * model's own table and of every table its cached result embeds: the tables a
+ * model declares in `$apiCacheDependencies` (relation paths or table names), plus
+ * the relations a request (`with`, `expand`, `count`) or a model or relationship
+ * lookup loads. A write to any of those tables changes the key. Only what is
+ * loaded inside the cached callback goes stale; relations a resource lazy loads
+ * at render time are queried fresh on every hit. On Laravel 10 with phpredis >= 6.1,
  * RedisTagSet::entries() starts ZSCAN with cursor '0', which phpredis treats as
  * an already finished scan, so RedisTaggedCache::flush() deletes only the tag
  * sets and leaves every tagged value in Redis until its TTL expires. Bumping the
@@ -60,6 +71,18 @@ class ApiModelCache
     public const RELATIONSHIP_TTL = 1800;
 
     /**
+     * Resolved dependency tables, keyed by model class, mode and relation path.
+     *
+     * @var array<string, string[]>
+     */
+    protected static array $dependencyTables = [];
+
+    /**
+     * Most resolved paths kept per process; request paths are client supplied.
+     */
+    protected const DEPENDENCY_MEMO_LIMIT = 1000;
+
+    /**
      * Generate a cache key for a query.
      */
     public static function generateQueryCacheKey(Model $model, Request $request, array $additionalParams = []): string
@@ -96,17 +119,27 @@ class ApiModelCache
         // Include company UUID for multi-tenancy
         $companyPart = $companyUuid ? "company_{$companyUuid}" : 'no_company';
 
-        // Get query version for this table/company
+        // Get query versions for this table and the tables its responses embed
         // This ensures cache keys change after invalidation
-        $version = Cache::get(static::queryVersionKey($table, $companyUuid), 0);
+        $versionKeys = [];
+        foreach ([$table, ...static::dependencyTables($model, static::requestRelationPaths($request))] as $versionTable) {
+            $versionKeys[] = static::queryVersionKey($versionTable, null);
+            if ($companyUuid) {
+                $versionKeys[] = static::queryVersionKey($versionTable, $companyUuid);
+            }
+        }
+        $version = static::versionSegment($versionKeys);
 
         // Add Redis hash tag {api_query} for Redis Cluster shard routing
         // Include version to ensure cache keys change after writes
-        return "{api_query}:{$table}:{$companyPart}:v{$version}:{$paramsHash}";
+        return "{api_query}:{$table}:{$companyPart}:{$version}:{$paramsHash}";
     }
 
     /**
      * Cache key holding the query version for a table/company.
+     *
+     * A null company is the table wide version, which every company's list keys
+     * include, so writes that know no company invalidate all of them.
      */
     protected static function queryVersionKey(string $table, ?string $companyUuid): string
     {
@@ -119,6 +152,192 @@ class ApiModelCache
     protected static function modelVersionKey(string $table): string
     {
         return "api_model_version:{$table}";
+    }
+
+    /**
+     * Read versions in one round trip and join them into a key segment.
+     *
+     * @param string[] $versionKeys
+     */
+    protected static function versionSegment(array $versionKeys): string
+    {
+        $versions = Cache::many($versionKeys);
+
+        return 'v' . implode('.', array_map(fn ($version) => (int) $version, $versions));
+    }
+
+    /**
+     * Get the other tables whose data a model's cached results embed.
+     *
+     * Declared dependencies come from the model's `$apiCacheDependencies` and must
+     * resolve (an entry that does not throws in debug and is logged and skipped
+     * otherwise); `$paths` are relations a request or lookup loads (`with`, `expand`,
+     * `$with`, a relationship name), and segments that cannot be resolved there
+     * end that path.
+     *
+     * @param string[] $paths
+     *
+     * @return string[] sorted table names, excluding the model's own table
+     */
+    public static function dependencyTables(Model $model, array $paths = []): array
+    {
+        $declared = method_exists($model, 'getApiCacheDependencies') ? $model->getApiCacheDependencies() : [];
+        $tables   = [];
+
+        foreach ($declared as $path) {
+            array_push($tables, ...static::pathTables($model, $path, true));
+        }
+        foreach ($paths as $path) {
+            array_push($tables, ...static::pathTables($model, $path, false));
+        }
+
+        $tables = array_values(array_unique(array_diff($tables, [$model->getTable()])));
+        sort($tables);
+
+        return $tables;
+    }
+
+    /**
+     * Resolve one relation path, memoized per process.
+     *
+     * @return string[]
+     */
+    protected static function pathTables(Model $model, string $path, bool $strict): array
+    {
+        $memoKey = get_class($model) . '|' . ($strict ? 'declared' : 'lookup') . '|' . $path;
+        if (array_key_exists($memoKey, static::$dependencyTables)) {
+            return static::$dependencyTables[$memoKey];
+        }
+
+        if (count(static::$dependencyTables) >= static::DEPENDENCY_MEMO_LIMIT) {
+            static::$dependencyTables = [];
+        }
+
+        return static::$dependencyTables[$memoKey] = static::resolvePath($model, $path, $strict);
+    }
+
+    /**
+     * Resolve a relation path (or, when declared, a table name) to tables.
+     *
+     * A relation contributes its related table, the pivot table of a many to many
+     * relation and the intermediate table of a has-many-through. A morphTo has no
+     * single related table, so declarations must name its tables instead.
+     *
+     * @return string[]
+     */
+    protected static function resolvePath(Model $model, string $path, bool $strict): array
+    {
+        $tables   = [];
+        $current  = $model->newInstance();
+        $segments = explode('.', $path);
+
+        foreach ($segments as $segment) {
+            $method = static::relationMethod($current, trim($segment), $strict);
+            // Like Eloquent's eager loading: a fresh instance, without the relation's constraints
+            $relation = $method ? Relation::noConstraints(fn () => $current->newInstance()->{$method}()) : null;
+
+            if (!$relation instanceof Relation || $relation instanceof MorphTo) {
+                if (!$strict) {
+                    return $tables;
+                }
+
+                // A declared entry that is not a relation name is a table name
+                if ($method === null && count($segments) === 1) {
+                    return [$segment];
+                }
+
+                // Extensions deploy independently of core, so a bad declaration fails
+                // loudly in debug (tests, development) but only logs in production
+                $message = sprintf('%s::$apiCacheDependencies entry "%s" cannot be resolved at "%s"; declare a relation path or the table names it reads.', get_class($model), $path, $segment);
+                if (config('app.debug')) {
+                    throw new \LogicException($message);
+                }
+                Log::error($message);
+
+                return $tables;
+            }
+
+            if ($relation instanceof BelongsToMany) {
+                $tables[] = $relation->getTable();
+            }
+            if ($relation instanceof HasManyThrough) {
+                $tables[] = $relation->getParent()->getTable();
+            }
+
+            $current  = $relation->getRelated();
+            $tables[] = $current->getTable();
+        }
+
+        return $tables;
+    }
+
+    /**
+     * Find the method a relation segment names, as requests spell it (camel or snake case).
+     *
+     * Request paths are client supplied, so only methods the model's own classes
+     * declare, with no required parameters, are considered.
+     */
+    protected static function relationMethod(Model $model, string $segment, bool $strict): ?string
+    {
+        foreach (array_unique([$segment, Str::camel($segment), Str::snake($segment)]) as $method) {
+            if ($method === '' || !method_exists($model, $method)) {
+                continue;
+            }
+
+            $reflection = new \ReflectionMethod($model, $method);
+            $declaredBy = $reflection->getDeclaringClass()->getName();
+            if (!$reflection->isPublic() || $reflection->isStatic() || $reflection->getNumberOfRequiredParameters() > 0) {
+                continue;
+            }
+            if (!$strict && str_starts_with($declaredBy, 'Illuminate\\')) {
+                continue;
+            }
+
+            return $method;
+        }
+
+        return null;
+    }
+
+    /**
+     * Get the relation paths a list request eager loads or counts.
+     *
+     * @return string[]
+     */
+    protected static function requestRelationPaths(Request $request): array
+    {
+        $paths = [];
+        foreach (['with', 'expand', 'count', 'with_count'] as $param) {
+            $value = $request->input($param);
+            if (is_string($value)) {
+                $value = explode(',', $value);
+            }
+            if (is_array($value)) {
+                array_push($paths, ...array_filter($value, 'is_string'));
+            }
+        }
+
+        return array_values(array_unique(array_map('trim', $paths)));
+    }
+
+    /**
+     * Turn eager load definitions into relation paths.
+     *
+     * @param array<int|string, mixed> $with
+     *
+     * @return string[]
+     */
+    protected static function relationPaths(array $with): array
+    {
+        $paths = [];
+        foreach ($with as $key => $value) {
+            $path = is_string($key) ? $key : $value;
+            if (is_string($path)) {
+                $paths[] = explode(':', $path, 2)[0];
+            }
+        }
+
+        return $paths;
     }
 
     /**
@@ -144,11 +363,12 @@ class ApiModelCache
     {
         $table    = $model->getTable();
         $withHash = !empty($with) ? ':' . md5(json_encode($with)) : '';
-        $version  = Cache::get(static::modelVersionKey($table), 0);
+        $tables   = [$table, ...static::dependencyTables($model, static::relationPaths($with))];
+        $version  = static::versionSegment(array_map(fn ($versionTable) => static::modelVersionKey($versionTable), $tables));
 
         // Add Redis hash tag {api_model} for Redis Cluster shard routing
         // Include version to ensure cache keys change after writes
-        return "{api_model}:{$table}:v{$version}:{$id}{$withHash}";
+        return "{api_model}:{$table}:{$version}:{$id}{$withHash}";
     }
 
     /**
@@ -158,11 +378,12 @@ class ApiModelCache
     {
         $table   = $model->getTable();
         $id      = $model->getKey();
-        $version = Cache::get(static::modelVersionKey($table), 0);
+        $tables  = [$table, ...static::dependencyTables($model, [$relationshipName])];
+        $version = static::versionSegment(array_map(fn ($versionTable) => static::modelVersionKey($versionTable), $tables));
 
         // Add Redis hash tag {api_relation} for Redis Cluster shard routing
-        // Shares the model version, since relationships are invalidated with their parent
-        return "{api_relation}:{$table}:v{$version}:{$id}:{$relationshipName}";
+        // Carries the parent's versions and the related tables', so a write to either side changes it
+        return "{api_relation}:{$table}:{$version}:{$id}:{$relationshipName}";
     }
 
     /**

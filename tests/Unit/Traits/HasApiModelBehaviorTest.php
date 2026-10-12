@@ -58,6 +58,11 @@ class HasApiModelBehaviorCacheFake
         return $this->store[$key] ?? $default;
     }
 
+    public function many(array $keys): array
+    {
+        return array_combine($keys, array_map(fn ($key) => $this->store[$key] ?? null, $keys));
+    }
+
     public function put(string $key, mixed $value, mixed $ttl = null): bool
     {
         $this->store[$key] = $value;

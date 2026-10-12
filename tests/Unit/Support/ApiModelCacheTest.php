@@ -5,6 +5,7 @@ use Fleetbase\Traits\HasApiModelCache;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\Pivot;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Http\Request;
@@ -80,6 +81,95 @@ class ApiModelCacheSoftDeletingTraitTestModel extends ApiModelCacheTraitTestMode
     use SoftDeletes;
 }
 
+class ApiModelCacheDependencyPayload extends Model
+{
+    use HasApiModelCache;
+
+    protected $table      = 'payloads';
+    protected $primaryKey = 'uuid';
+    public $incrementing  = false;
+    protected $keyType    = 'string';
+    protected $guarded    = [];
+}
+
+class ApiModelCacheDependencyTag extends Model
+{
+    protected $table      = 'tags';
+    protected $primaryKey = 'uuid';
+    public $incrementing  = false;
+    protected $keyType    = 'string';
+    protected $guarded    = [];
+}
+
+class ApiModelCacheDependencyOrderTag extends Pivot
+{
+    use HasApiModelCache;
+
+    protected $table   = 'order_tags';
+    public $timestamps = false;
+}
+
+class ApiModelCacheRelationsOrder extends ApiModelCacheTraitTestModel
+{
+    public function payload()
+    {
+        return $this->belongsTo(ApiModelCacheDependencyPayload::class, 'payload_uuid', 'uuid');
+    }
+
+    public function tags()
+    {
+        return $this->belongsToMany(ApiModelCacheDependencyTag::class, 'order_tags', 'order_uuid', 'tag_uuid')
+            ->using(ApiModelCacheDependencyOrderTag::class);
+    }
+
+    public function subject()
+    {
+        return $this->morphTo();
+    }
+
+    public function tagPayloads()
+    {
+        return $this->hasManyThrough(ApiModelCacheDependencyPayload::class, ApiModelCacheDependencyTag::class, 'order_uuid', 'tag_uuid', 'uuid', 'uuid');
+    }
+
+    public function reconnectingPayload()
+    {
+        $this->setConnection('mysql');
+
+        return $this->belongsTo(ApiModelCacheDependencyPayload::class, 'payload_uuid', 'uuid');
+    }
+
+    public function summary(): string
+    {
+        return 'not a relation';
+    }
+}
+
+class ApiModelCacheDependencyOrder extends ApiModelCacheRelationsOrder
+{
+    protected $apiCacheDependencies = ['payload', 'tags', 'audit_logs'];
+}
+
+class ApiModelCacheMorphDependencyOrder extends ApiModelCacheRelationsOrder
+{
+    protected $apiCacheDependencies = ['subject'];
+}
+
+class ApiModelCacheUnresolvableDependencyOrder extends ApiModelCacheRelationsOrder
+{
+    protected $apiCacheDependencies = ['payload.customer'];
+}
+
+class ApiModelCacheNotRelationDependencyOrder extends ApiModelCacheRelationsOrder
+{
+    protected $apiCacheDependencies = ['summary'];
+}
+
+class ApiModelCachePartlyResolvableDependencyOrder extends ApiModelCacheRelationsOrder
+{
+    protected $apiCacheDependencies = ['tags', 'payload.customer'];
+}
+
 class ApiModelCacheTestLock
 {
     public function __construct(private ApiModelCacheTestStore $store)
@@ -152,6 +242,16 @@ class ApiModelCacheTestStore
     public function get(string $key, mixed $default = null): mixed
     {
         return $this->values[$key] ?? $default;
+    }
+
+    public function many(array $keys): array
+    {
+        $values = [];
+        foreach ($keys as $key) {
+            $values[$key] = $this->values[$key] ?? null;
+        }
+
+        return $values;
     }
 
     public function put(string $key, mixed $value): bool
@@ -315,6 +415,31 @@ function api_model_cache_internal_request(array $query = [], mixed $company = 'c
     return $request;
 }
 
+function api_model_cache_dependency_database(): Capsule
+{
+    $capsule = api_model_cache_trait_database();
+    $schema  = $capsule->getConnection('mysql')->getSchemaBuilder();
+
+    $schema->table('orders', fn ($table) => $table->string('payload_uuid')->nullable());
+    $schema->create('payloads', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('company_uuid')->nullable();
+        $table->string('name')->nullable();
+        $table->timestamp('created_at')->nullable();
+        $table->timestamp('updated_at')->nullable();
+    });
+    $schema->create('tags', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('name')->nullable();
+    });
+    $schema->create('order_tags', function ($table) {
+        $table->string('order_uuid');
+        $table->string('tag_uuid');
+    });
+
+    return $capsule;
+}
+
 function api_model_cache_trait_database(): Capsule
 {
     Model::clearBootedModels();
@@ -424,7 +549,7 @@ test('api model cache generates tenant scoped stable query model and relationshi
     ]), ['callback' => true]);
 
     expect($first)->toBe($second)
-        ->and($first)->toStartWith('{api_query}:orders:company_company-1:v7:')
+        ->and($first)->toStartWith('{api_query}:orders:company_company-1:v0.7:')
         ->and(ApiModelCache::generateModelCacheKey($model, 'order-1', ['customer', 'payload']))
         ->toBe('{api_model}:orders:v0:order-1:' . md5(json_encode(['customer', 'payload'])))
         ->and(ApiModelCache::generateRelationshipCacheKey($model, 'payload'))
@@ -448,7 +573,7 @@ test('api model cache stores query results with miss hit status and disabled byp
     expect($first->all())->toBe(['fresh-result'])
         ->and($calls)->toBe(1)
         ->and(ApiModelCache::getCacheStatus())->toBe('MISS')
-        ->and(ApiModelCache::getCacheKey())->toStartWith('{api_query}:orders:company_company-1:v0:');
+        ->and(ApiModelCache::getCacheKey())->toStartWith('{api_query}:orders:company_company-1:v0.0:');
 
     $second = ApiModelCache::cacheQueryResult($model, $request, function () use (&$calls) {
         $calls++;
@@ -595,7 +720,7 @@ test('api model cache invalidates scoped query and model caches and advances que
     ApiModelCache::invalidateQueryCache($model, $request);
 
     expect($store->forgotten[0]['tags'])->toBe(['api_cache', 'api_model:orders', 'api_query:orders', 'company:company-1'])
-        ->and($store->forgotten[0]['key'])->toStartWith('{api_query}:orders:company_company-1:v1:');
+        ->and($store->forgotten[0]['key'])->toStartWith('{api_query}:orders:company_company-1:v0.1:');
 
     ApiModelCache::invalidateCompanyCache('company-1');
 
@@ -653,6 +778,152 @@ test('api model cache does not serve model or relationship lookups cached before
         ->and($store->get('api_model_version:orders'))->toBe(2);
 });
 
+test('api model cache resolves declared dependencies to related pivot and raw table names', function () {
+    api_model_cache_dependency_database();
+    config(['app.debug' => true]);
+
+    expect(ApiModelCache::dependencyTables(new ApiModelCacheDependencyOrder()))->toBe(['audit_logs', 'order_tags', 'payloads', 'tags'])
+        ->and(ApiModelCache::dependencyTables(new ApiModelCacheRelationsOrder()))->toBe([])
+        // Lookup paths skip what they cannot resolve instead of failing the lookup
+        ->and(ApiModelCache::dependencyTables(new ApiModelCacheRelationsOrder(), ['payload', 'subject', 'missing', 'tags.missing']))
+        ->toBe(['order_tags', 'payloads', 'tags'])
+        ->and(fn () => ApiModelCache::dependencyTables(new ApiModelCacheMorphDependencyOrder()))
+        ->toThrow(LogicException::class, 'entry "subject" cannot be resolved at "subject"')
+        ->and(fn () => ApiModelCache::dependencyTables(new ApiModelCacheUnresolvableDependencyOrder()))
+        ->toThrow(LogicException::class, 'entry "payload.customer" cannot be resolved at "customer"')
+        ->and(fn () => ApiModelCache::dependencyTables(new ApiModelCacheNotRelationDependencyOrder()))
+        ->toThrow(LogicException::class, 'entry "summary" cannot be resolved at "summary"');
+});
+
+test('api model cache logs and skips an unresolvable declaration outside debug', function () {
+    api_model_cache_dependency_database();
+    config(['app.debug' => false]);
+    $logger = new ApiModelCacheTestLogger();
+    app()->instance('log', $logger);
+    Facade::clearResolvedInstance('log');
+
+    expect(ApiModelCache::dependencyTables(new ApiModelCachePartlyResolvableDependencyOrder()))->toBe(['order_tags', 'payloads', 'tags'])
+        ->and($logger->errors)->toHaveCount(1)
+        ->and($logger->errors[0]['message'])->toContain('entry "payload.customer" cannot be resolved at "customer"');
+});
+
+test('api model cache resolves request style relation paths without side effects on the model', function () {
+    api_model_cache_dependency_database();
+    $order = new ApiModelCacheRelationsOrder();
+
+    expect(ApiModelCache::dependencyTables($order, ['tag_payloads']))->toBe(['payloads', 'tags'])
+        // Framework methods named by a client are never called
+        ->and(ApiModelCache::dependencyTables($order, ['delete', 'push', 'touch', 'getTable']))->toBe([])
+        ->and(ApiModelCache::dependencyTables($order, ['reconnecting_payload']))->toBe(['payloads'])
+        ->and($order->getConnectionName())->toBeNull();
+});
+
+test('api model cache versions a list by the relations its request eager loads', function () {
+    api_model_cache_dependency_database();
+    $store                     = app('cache');
+    $store->flushRemovesValues = false;
+    $order                     = new ApiModelCacheRelationsOrder();
+    $withPayload               = api_model_cache_request(['with' => ['payload']]);
+    $expandTags                = api_model_cache_request(['expand' => 'tags']);
+    $plain                     = api_model_cache_request();
+
+    ApiModelCache::cacheQueryResult($order, $withPayload, fn () => collect(['stale payload']));
+    ApiModelCache::cacheQueryResult($order, $expandTags, fn () => collect(['stale tags']));
+    ApiModelCache::cacheQueryResult($order, $plain, fn () => collect(['plain']));
+
+    ApiModelCache::invalidateModelCache(new ApiModelCacheDependencyPayload(), 'company-1');
+
+    expect(ApiModelCache::cacheQueryResult($order, $withPayload, fn () => collect(['fresh payload'])))->toEqual(collect(['fresh payload']))
+        ->and(ApiModelCache::cacheQueryResult($order, $expandTags, fn () => collect(['unexpected'])))->toEqual(collect(['stale tags']))
+        ->and(ApiModelCache::cacheQueryResult($order, $plain, fn () => collect(['unexpected'])))->toEqual(collect(['plain']));
+
+    ApiModelCache::invalidateModelCache(new ApiModelCacheDependencyOrderTag(), null);
+
+    expect(ApiModelCache::cacheQueryResult($order, $expandTags, fn () => collect(['fresh tags'])))->toEqual(collect(['fresh tags']))
+        ->and(ApiModelCache::cacheQueryResult($order, $plain, fn () => collect(['unexpected'])))->toEqual(collect(['plain']));
+});
+
+test('api model cache does not serve a list after a write to a declared dependency of the same company or of no company', function () {
+    api_model_cache_dependency_database();
+    $store                     = app('cache');
+    $store->flushRemovesValues = false;
+    $order                     = new ApiModelCacheDependencyOrder();
+    $request                   = api_model_cache_request(['status' => 'active']);
+
+    ApiModelCache::cacheQueryResult($order, $request, fn () => collect(['stale']));
+
+    // Another company's write leaves this company's list alone
+    ApiModelCache::invalidateModelCache(new ApiModelCacheDependencyPayload(), 'company-2');
+
+    expect(ApiModelCache::cacheQueryResult($order, $request, fn () => collect(['unexpected'])))->toEqual(collect(['stale']))
+        ->and(ApiModelCache::getCacheStatus())->toBe('HIT');
+
+    ApiModelCache::invalidateModelCache(new ApiModelCacheDependencyPayload(), 'company-1');
+
+    expect(ApiModelCache::cacheQueryResult($order, $request, fn () => collect(['fresh'])))->toEqual(collect(['fresh']))
+        ->and(ApiModelCache::getCacheStatus())->toBe('MISS');
+
+    // Pivots carry no company, so their writes move the table wide version every company reads
+    ApiModelCache::invalidateModelCache(new ApiModelCacheDependencyOrderTag(), null);
+
+    expect(ApiModelCache::cacheQueryResult($order, $request, fn () => collect(['fresher'])))->toEqual(collect(['fresher']))
+        ->and(ApiModelCache::getCacheStatus())->toBe('MISS')
+        // orders, then audit_logs, order_tags, payloads, tags; each table wide then company-1
+        ->and(ApiModelCache::getCacheKey())->toStartWith('{api_query}:orders:company_company-1:v0.0.0.0.1.0.0.1.0.0:');
+});
+
+test('has api model cache invalidates a parent list when a dependency or custom pivot is written through eloquent', function () {
+    api_model_cache_dependency_database();
+    $store                     = app('cache');
+    $store->flushRemovesValues = false;
+
+    Model::setEventDispatcher(new Dispatcher(app()));
+    Model::clearBootedModels();
+
+    $request = api_model_cache_request(['status' => 'active']);
+    $read    = fn (string $value) => ApiModelCache::cacheQueryResult(new ApiModelCacheDependencyOrder(), $request, fn () => collect([$value]));
+
+    $read('before payload write');
+    $payload = ApiModelCacheDependencyPayload::create(['uuid' => 'payload-1', 'company_uuid' => 'company-1', 'name' => 'Payload']);
+
+    expect($read('after payload create'))->toEqual(collect(['after payload create']));
+
+    $payload->update(['name' => 'Renamed']);
+
+    expect($read('after payload update'))->toEqual(collect(['after payload update']));
+
+    $order = ApiModelCacheDependencyOrder::find('order-1');
+    $order->tags()->attach('tag-1');
+
+    expect($read('after attach'))->toEqual(collect(['after attach']));
+
+    $order->tags()->detach('tag-1');
+
+    expect($read('after detach'))->toEqual(collect(['after detach']))
+        ->and($read('unexpected'))->toEqual(collect(['after detach']));
+
+    Model::unsetEventDispatcher();
+});
+
+test('api model cache does not serve relationship or eager loaded lookups after a write to the related table', function () {
+    api_model_cache_dependency_database();
+    $store                     = app('cache');
+    $store->flushRemovesValues = false;
+    $order                     = new ApiModelCacheRelationsOrder(['uuid' => 'order-1']);
+
+    ApiModelCache::cacheRelationship($order, 'payload', fn () => ['name' => 'stale']);
+    ApiModelCache::cacheModel($order, 'order-1', fn () => ['payload' => 'stale'], ['payload:uuid,name']);
+    ApiModelCache::cacheModel($order, 'order-1', fn () => ['status' => 'cached']);
+
+    ApiModelCache::invalidateModelCache(new ApiModelCacheDependencyPayload(), 'company-1');
+
+    expect(ApiModelCache::cacheRelationship($order, 'payload', fn () => ['name' => 'fresh']))->toBe(['name' => 'fresh'])
+        ->and(ApiModelCache::getCacheKey())->toBe('{api_relation}:orders:v0.1:order-1:payload')
+        ->and(ApiModelCache::cacheModel($order, 'order-1', fn () => ['payload' => 'fresh'], ['payload:uuid,name']))->toBe(['payload' => 'fresh'])
+        // A lookup that does not load the payload keeps its cache
+        ->and(ApiModelCache::cacheModel($order, 'order-1', fn () => ['status' => 'unexpected']))->toBe(['status' => 'cached']);
+});
+
 test('api model cache seeds versions on stores whose increment does not create missing keys', function () {
     $store                          = api_model_cache_fixture();
     $store->flushRemovesValues      = false;
@@ -686,9 +957,9 @@ test('api model cache resolves tenant scope from authenticated user and request 
     ], null);
 
     expect(ApiModelCache::generateQueryCacheKey($model, $userRequest))
-        ->toStartWith('{api_query}:orders:company_company-from-user:v0:')
+        ->toStartWith('{api_query}:orders:company_company-from-user:v0.0:')
         ->and(ApiModelCache::generateQueryCacheKey($model, $inputRequest))
-        ->toStartWith('{api_query}:orders:company_company-from-input:v0:');
+        ->toStartWith('{api_query}:orders:company_company-from-input:v0.0:');
 });
 
 test('api model cache invalidation methods swallow tagged cache backend failures', function () {
@@ -778,7 +1049,7 @@ test('has api model cache caches request queries with callback markers page offs
         ->and($second->pluck('uuid')->all())->toBe(['order-2'])
         ->and($callbackCalls)->toBe(1)
         ->and(ApiModelCache::getCacheStatus())->toBe('HIT')
-        ->and(ApiModelCache::getCacheKey())->toStartWith('{api_query}:orders:company_company-1:v0:')
+        ->and(ApiModelCache::getCacheKey())->toStartWith('{api_query}:orders:company_company-1:v0.0:')
         ->and(ApiModelCacheTraitTestModel::$mutatedRequestQueries)->toHaveCount(1)
         ->and(ApiModelCacheTraitTestModel::$mutatedRequestQueries[0])->toMatchArray([
             'status' => 'active',
