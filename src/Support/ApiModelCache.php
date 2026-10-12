@@ -17,6 +17,13 @@ use Illuminate\Support\Facades\Log;
  * - Automatic cache invalidation
  * - Multi-tenancy support
  * - Cache tagging for efficient bulk invalidation
+ *
+ * List caches are invalidated by a per table/company query version embedded in
+ * the cache key, not by the tag flush. On Laravel 10 with phpredis >= 6.1,
+ * RedisTagSet::entries() starts ZSCAN with cursor '0', which phpredis treats as
+ * an already finished scan, so RedisTaggedCache::flush() deletes only the tag
+ * sets and leaves every tagged value in Redis until its TTL expires. Bumping the
+ * version moves readers to new keys and leaves the orphaned entries to expire.
  */
 class ApiModelCache
 {
@@ -89,12 +96,19 @@ class ApiModelCache
 
         // Get query version for this table/company
         // This ensures cache keys change after invalidation
-        $versionKey = "api_query_version:{$table}:{$companyUuid}";
-        $version    = Cache::get($versionKey, 1);  // Default to version 1
+        $version = Cache::get(static::queryVersionKey($table, $companyUuid), 0);
 
         // Add Redis hash tag {api_query} for Redis Cluster shard routing
         // Include version to ensure cache keys change after writes
         return "{api_query}:{$table}:{$companyPart}:v{$version}:{$paramsHash}";
+    }
+
+    /**
+     * Cache key holding the query version for a table/company.
+     */
+    protected static function queryVersionKey(string $table, ?string $companyUuid): string
+    {
+        return "api_query_version:{$table}:{$companyUuid}";
     }
 
     /**
@@ -166,9 +180,8 @@ class ApiModelCache
         $ttl         = $ttl ?? static::LIST_TTL;
 
         // FIX #3: Guard against read-after-invalidate in same request
-        // After invalidation, resetCacheStatus() sets $cacheStatus to null
-        // But we need a way to detect if invalidation happened in this request
-        // For now, we'll rely on tag flush working correctly
+        // After invalidation, resetCacheStatus() sets $cacheStatus to null and the
+        // query version has moved, so the key generated above is already the new one
 
         try {
             // Initialize cache status and key
@@ -323,10 +336,15 @@ class ApiModelCache
         static::resetCacheStatus();
 
         // FIX #4: Increment query version counter
-        // This ensures the cache key changes after invalidation
-        $table      = $model->getTable();
-        $versionKey = "api_query_version:{$table}:{$companyUuid}";
-        Cache::increment($versionKey);
+        // This ensures the cache key changes after invalidation, and it is what
+        // actually hides stale list caches (see the class docblock). A missing
+        // version reads as 0 and INCR creates it at 1, so the first invalidation
+        // also changes the key. Stores whose increment does not create missing
+        // keys (database, memcached) return false, so the version is seeded.
+        $versionKey = static::queryVersionKey($model->getTable(), $companyUuid);
+        if (Cache::increment($versionKey) === false) {
+            Cache::add($versionKey, 1) || Cache::increment($versionKey);
+        }
 
         // Generate tags for BOTH model and query caches
         // Model caches: single-record lookups
@@ -339,7 +357,8 @@ class ApiModelCache
             Cache::tags($modelTags)->flush();
 
             // Flush query-level caches (collections, lists)
-            // This is CRITICAL - query caches must be explicitly flushed
+            // On Redis this removes the tag sets but not the values (see the class
+            // docblock); the version bump above is what invalidates list caches
             Cache::tags($queryTags)->flush();
         } catch (\Exception $e) {
             Log::error('Failed to invalidate cache', [
