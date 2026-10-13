@@ -660,15 +660,27 @@ namespace {
             middleware_contracts_mutation_request('/int/v1/orders', 'int/v1/orders'),
             fn () => new JsonResponse(['id' => 'order_2'], 201)
         );
+        $storefrontInternal = middleware_contracts_log_middleware()->handle(
+            middleware_contracts_mutation_request('/storefront/int/v1/orders', 'storefront/int/v1/orders'),
+            fn () => new JsonResponse(['id' => 'order_3'], 201)
+        );
         $excluded = middleware_contracts_log_middleware()->handle(
             middleware_contracts_mutation_request('/v1/drivers/driver_1/track', 'v1/drivers/{driver}/track'),
             fn () => new JsonResponse(['id' => 'track_1'], 201)
+        );
+        $unroutedRequest = middleware_contracts_mutation_request('/v1/orders', 'v1/orders');
+        $unroutedRequest->setRouteResolver(fn () => null);
+        $unrouted = middleware_contracts_log_middleware()->handle(
+            $unroutedRequest,
+            fn () => new JsonResponse(['id' => 'order_4'], 201)
         );
 
         expect($disabled->getStatusCode())->toBe(201)
             ->and($read->getStatusCode())->toBe(204)
             ->and($internal->getStatusCode())->toBe(201)
+            ->and($storefrontInternal->getStatusCode())->toBe(201)
             ->and($excluded->getStatusCode())->toBe(201)
+            ->and($unrouted->getStatusCode())->toBe(201)
             ->and($bus->jobs)->toBeEmpty();
     });
 
@@ -709,6 +721,38 @@ namespace {
                 'query_params'     => ['status' => 'created'],
                 'request_body'     => ['name' => 'Order 1', 'status' => 'created'],
                 'request_raw_body' => '{"name":"Order 1"}',
+            ]);
+    });
+
+    test('log api requests dispatches extension mutation request logs with related ids from the request', function () {
+        middleware_contracts_fixture(['api.version' => 'v1']);
+        session([
+            'company'        => 'company-1',
+            'api_credential' => 'store_live_key',
+        ]);
+        $bus = new MiddlewareContractsBusFake();
+        app()->instance('bus', $bus);
+        app()->instance(BusDispatcher::class, $bus);
+        Facade::clearResolvedInstance('bus');
+        Facade::clearResolvedInstance(BusDispatcher::class);
+
+        $request = middleware_contracts_mutation_request('/storefront/v1/customers/request-creation-code', 'storefront/v1/customers/request-creation-code');
+        $request->attributes->set(Fleetbase\Jobs\LogApiRequest::RELATED_ATTRIBUTE, ['store_abc123']);
+
+        $response = middleware_contracts_log_middleware()->handle(
+            $request,
+            fn () => new JsonResponse(['status' => 'ok'], 200)
+        );
+
+        expect($response->getStatusCode())->toBe(200)
+            ->and($bus->jobs)->toHaveCount(1)
+            ->and($bus->jobs[0])->toBeInstanceOf(Fleetbase\Jobs\LogApiRequest::class)
+            ->and($bus->jobs[0]->payload)->toMatchArray([
+                'company_uuid' => 'company-1',
+                'method'       => 'POST',
+                'path'         => 'storefront/v1/customers/request-creation-code',
+                'status_code'  => 200,
+                'related'      => ['store_abc123'],
             ]);
     });
 
