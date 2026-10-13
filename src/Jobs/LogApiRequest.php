@@ -26,6 +26,16 @@ class LogApiRequest implements ShouldQueue
     use SerializesModels;
 
     /**
+     * Request attribute holding ids to add to the log's related column.
+     *
+     * Extensions set it from their middleware so a logged request can be traced
+     * to the resource behind it, for example the owner of the key that made it.
+     *
+     * @var string
+     */
+    public const RELATED_ATTRIBUTE = 'api_request_log_related';
+
+    /**
      * The API Request/JsonResponse payload.
      *
      * @var array
@@ -82,10 +92,11 @@ class LogApiRequest implements ShouldQueue
             $related[] = Utils::get($content, 'id');
         }
 
-        // If a storefront key made the request, push the store or network public id to related
-        $storefrontPublicId = session('storefront_store_public_id') ?? session('storefront_network_public_id');
-        if ($storefrontPublicId) {
-            $related[] = $storefrontPublicId;
+        // Push ids that middleware related to this request, such as the resource whose key made it
+        foreach ((array) $request->attributes->get(static::RELATED_ATTRIBUTE, []) as $id) {
+            if ($id) {
+                $related[] = $id;
+            }
         }
 
         // Get api credential from session

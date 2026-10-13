@@ -224,41 +224,28 @@ namespace {
             ->and($payload)->not->toHaveKeys(['api_credential_uuid', 'access_token_id']);
     });
 
-    it('relates storefront payloads to the store or network whose key made the request', function () {
+    it('adds ids that middleware related to the request to the payload', function () {
         bind_test_container(['api.version' => 'v1']);
         session([
-            'api_credential'               => 'store_live_key',
-            'company'                      => 'company-1',
-            'storefront_store'             => 'store-uuid-1',
-            'storefront_store_public_id'   => 'store_abc123',
-            'storefront_network'           => null,
-            'storefront_network_public_id' => null,
+            'api_credential' => 'store_live_key',
+            'company'        => 'company-1',
         ]);
 
-        $storePayload = LogApiRequest::getPayload(
-            loggable_request(microtime(true) - 0.01),
-            new JsonResponse(['id' => 'customer_1'], 201)
-        );
+        $related = loggable_request(microtime(true) - 0.01);
+        $related->attributes->set(LogApiRequest::RELATED_ATTRIBUTE, ['store_abc123', null, '']);
 
-        session([
-            'api_credential'               => 'network_live_key',
-            'company'                      => 'company-2',
-            'storefront_store'             => null,
-            'storefront_store_public_id'   => null,
-            'storefront_network'           => 'network-uuid-1',
-            'storefront_network_public_id' => 'network_xyz789',
-        ]);
+        $single = loggable_request(microtime(true) - 0.01);
+        $single->attributes->set(LogApiRequest::RELATED_ATTRIBUTE, 'network_xyz789');
 
-        $networkPayload = LogApiRequest::getPayload(
-            loggable_request(microtime(true) - 0.01),
-            new JsonResponse(['status' => 'ok'], 200)
-        );
+        $relatedPayload = LogApiRequest::getPayload($related, new JsonResponse(['id' => 'customer_1'], 201));
+        $singlePayload  = LogApiRequest::getPayload($single, new JsonResponse(['status' => 'ok'], 200));
+        $plainPayload   = LogApiRequest::getPayload(loggable_request(microtime(true) - 0.01), new JsonResponse(['status' => 'ok'], 200));
 
-        expect($storePayload['related'])->toBe(['customer_1', 'store_abc123'])
-            ->and($storePayload['company_uuid'])->toBe('company-1')
-            ->and($storePayload)->not->toHaveKeys(['api_credential_uuid', 'access_token_id'])
-            ->and($networkPayload['related'])->toBe(['network_xyz789'])
-            ->and($networkPayload['company_uuid'])->toBe('company-2');
+        expect($relatedPayload['related'])->toBe(['customer_1', 'store_abc123'])
+            ->and($relatedPayload['company_uuid'])->toBe('company-1')
+            ->and($relatedPayload)->not->toHaveKeys(['api_credential_uuid', 'access_token_id'])
+            ->and($singlePayload['related'])->toBe(['network_xyz789'])
+            ->and($plainPayload['related'])->toBe([]);
     });
 
     it('persists API request logs on the selected connection and clears response cache', function () {
