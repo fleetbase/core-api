@@ -2,6 +2,8 @@
 
 namespace Fleetbase\Support;
 
+use Illuminate\Container\Container;
+use Illuminate\Database\DatabaseTransactionsManager;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
@@ -90,6 +92,11 @@ class ApiModelCache
      * Most resolved paths kept per process; request paths are client supplied.
      */
     protected const DEPENDENCY_MEMO_LIMIT = 1000;
+
+    /**
+     * Most relation paths read from one request; the rest add no versions.
+     */
+    protected const REQUEST_PATH_LIMIT = 50;
 
     /**
      * Generate a cache key for a query.
@@ -190,8 +197,8 @@ class ApiModelCache
      * Get the other tables whose data a model's cached results embed.
      *
      * Declared dependencies come from the model's `$apiCacheDependencies` and must
-     * resolve (an entry that does not throws in debug and is logged and skipped
-     * otherwise); `$paths` are relations a request or lookup loads (`with`, `expand`,
+     * resolve (an entry that does not is logged and skipped, or throws when
+     * api.cache.strict_dependencies is on); `$paths` are relations a request or lookup loads (`with`, `expand`,
      * `$with`, a relationship name), and segments that cannot be resolved there
      * end that path.
      *
@@ -252,9 +259,17 @@ class ApiModelCache
         $segments = explode('.', $path);
 
         foreach ($segments as $segment) {
-            $method = static::relationMethod($current, trim($segment), $strict);
-            // Like Eloquent's eager loading: a fresh instance, without the relation's constraints
-            $relation = $method ? Relation::noConstraints(fn () => $current->newInstance()->{$method}()) : null;
+            $method   = static::relationMethod($current, trim($segment), $strict);
+            $relation = null;
+            if ($method) {
+                try {
+                    // Like Eloquent's eager loading: a fresh instance, without the relation's constraints
+                    $relation = Relation::noConstraints(fn () => $current->newInstance()->{$method}());
+                } catch (\Throwable $e) {
+                    // A relation that cannot be built on a blank model adds no versions
+                    $relation = null;
+                }
+            }
 
             if (!$relation instanceof Relation || $relation instanceof MorphTo) {
                 if (!$strict) {
@@ -266,10 +281,11 @@ class ApiModelCache
                     return [$segment];
                 }
 
-                // Extensions deploy independently of core, so a bad declaration fails
-                // loudly in debug (tests, development) but only logs in production
+                // Extensions deploy independently of core, so a bad declaration never
+                // fails a request; it is logged once per process, and throws only when
+                // api.cache.strict_dependencies is on (tests)
                 $message = sprintf('%s::$apiCacheDependencies entry "%s" cannot be resolved at "%s"; declare a relation path or the table names it reads.', get_class($model), $path, $segment);
-                if (config('app.debug')) {
+                if (config('api.cache.strict_dependencies', false)) {
                     throw new \LogicException($message);
                 }
                 Log::error($message);
@@ -294,8 +310,12 @@ class ApiModelCache
     /**
      * Find the method a relation segment names, as requests spell it (camel or snake case).
      *
-     * Request paths are client supplied, so only methods the model's own classes
-     * declare, with no required parameters, are considered.
+     * Only public, non-static methods without required parameters are considered.
+     * Request paths are client supplied, so for them a method is only called when it
+     * declares a Relation return type: an untyped method could be anything (e.g.
+     * Order::dispatch() saves and fires events), and calling it is never worth a
+     * cache version. Declared paths come from the model's own code and may name
+     * untyped relation methods.
      */
     protected static function relationMethod(Model $model, string $segment, bool $strict): ?string
     {
@@ -305,11 +325,10 @@ class ApiModelCache
             }
 
             $reflection = new \ReflectionMethod($model, $method);
-            $declaredBy = $reflection->getDeclaringClass()->getName();
             if (!$reflection->isPublic() || $reflection->isStatic() || $reflection->getNumberOfRequiredParameters() > 0) {
                 continue;
             }
-            if (!$strict && str_starts_with($declaredBy, 'Illuminate\\')) {
+            if (!$strict && !static::declaresRelationReturn($reflection)) {
                 continue;
             }
 
@@ -317,6 +336,18 @@ class ApiModelCache
         }
 
         return null;
+    }
+
+    /**
+     * Whether a method's declared return type is an Eloquent relation.
+     */
+    protected static function declaresRelationReturn(\ReflectionMethod $method): bool
+    {
+        $type = $method->getReturnType();
+
+        return $type instanceof \ReflectionNamedType
+            && !$type->isBuiltin()
+            && is_a($type->getName(), Relation::class, true);
     }
 
     /**
@@ -337,7 +368,7 @@ class ApiModelCache
             }
         }
 
-        return array_values(array_unique(array_map('trim', $paths)));
+        return array_slice(array_values(array_unique(array_map('trim', $paths))), 0, static::REQUEST_PATH_LIMIT);
     }
 
     /**
@@ -358,6 +389,47 @@ class ApiModelCache
         }
 
         return $paths;
+    }
+
+    /**
+     * Bump versions again when the write's transaction commits.
+     *
+     * Model events fire before the surrounding transaction commits, so a read in
+     * between sees the old rows under the new version and caches them. The second
+     * bump on commit retires anything cached in that window. The transaction may be
+     * on another connection than the model's (e.g. a storefront model written
+     * inside a transaction on the default connection), so this defers through the
+     * transactions manager all connections share. Outside a transaction the
+     * immediate bump stands alone.
+     *
+     * @param string[] $versionKeys
+     */
+    protected static function bumpVersionsAfterCommit(Model $model, array $versionKeys): void
+    {
+        $bump = function () use ($versionKeys) {
+            foreach ($versionKeys as $versionKey) {
+                static::bumpVersion($versionKey);
+            }
+        };
+
+        try {
+            $container = Container::getInstance();
+            if ($container->bound('db.transactions')) {
+                $transactions = $container->make('db.transactions');
+                if ($transactions instanceof DatabaseTransactionsManager && $transactions->callbackApplicableTransactions()->isNotEmpty()) {
+                    $transactions->addCallback($bump);
+                }
+
+                return;
+            }
+
+            // No shared manager (e.g. a bare capsule): only the model's connection is known
+            if (Model::getConnectionResolver() !== null && $model->getConnection()->transactionLevel() > 0) {
+                $model->getConnection()->afterCommit($bump);
+            }
+        } catch (\Throwable $e) {
+            // Nothing to defer to; the immediate bump stands alone
+        }
     }
 
     /**
@@ -443,16 +515,19 @@ class ApiModelCache
             return $result ?? collect([]); // Guard against null
         }
 
-        $cacheKey    = static::generateQueryCacheKey($model, $request, $additionalParams);
-        $companyUuid = static::getCompanyUuid($request);
-        $tags        = static::generateCacheTags($model, $companyUuid, true);  // Include query tag
-        $ttl         = $ttl ?? static::LIST_TTL;
+        $cacheKey = null;
+        $ttl      = $ttl ?? static::LIST_TTL;
 
         // FIX #3: Guard against read-after-invalidate in same request
         // After invalidation, resetCacheStatus() sets $cacheStatus to null and the
-        // query version has moved, so the key generated above is already the new one
+        // query version has moved, so the key generated below is already the new one
 
         try {
+            // Inside the try, so a cache outage while reading versions falls back to the query
+            $cacheKey    = static::generateQueryCacheKey($model, $request, $additionalParams);
+            $companyUuid = static::getCompanyUuid($request);
+            $tags        = static::generateCacheTags($model, $companyUuid, true);  // Include query tag
+
             // Initialize cache status and key
             static::$cacheStatus = null;
             static::$cacheKey    = $cacheKey;
@@ -607,9 +682,12 @@ class ApiModelCache
         // FIX #4: Increment the query and model version counters
         // This ensures cache keys change after invalidation, and it is what
         // actually hides stale caches (see the class docblock)
-        $table = $model->getTable();
-        static::bumpVersion(static::queryVersionKey($table, $companyUuid));
-        static::bumpVersion(static::modelVersionKey($table));
+        $table       = $model->getTable();
+        $versionKeys = [static::queryVersionKey($table, $companyUuid), static::modelVersionKey($table)];
+        foreach ($versionKeys as $versionKey) {
+            static::bumpVersion($versionKey);
+        }
+        static::bumpVersionsAfterCommit($model, $versionKeys);
 
         // Generate tags for BOTH model and query caches
         // Model caches: single-record lookups
