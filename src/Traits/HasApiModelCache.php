@@ -251,6 +251,25 @@ trait HasApiModelCache
     }
 
     /**
+     * Get the relation paths or table names this model's cached responses embed.
+     *
+     * Declare them on the model as `protected $apiCacheDependencies = ['catalogs', 'catalogs.products', 'some_table'];`
+     * so a write to any of those tables invalidates this model's caches. List only
+     * what the cached query loads (`$with`, filter or controller eager loads, counts);
+     * request `with`/`expand` paths are added automatically. Writes only invalidate
+     * when the model writing that table uses HasApiModelBehavior or this trait (for
+     * pivots, a `->using()` pivot class with one), goes through Eloquent events (not
+     * query builder updates, inserts or quiet saves), or is followed by
+     * invalidateApiCacheManually().
+     *
+     * @return string[]
+     */
+    public function getApiCacheDependencies(): array
+    {
+        return property_exists($this, 'apiCacheDependencies') ? (array) $this->apiCacheDependencies : [];
+    }
+
+    /**
      * Invalidate all caches for this model.
      */
     public function invalidateApiCache(): void
