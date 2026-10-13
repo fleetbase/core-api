@@ -105,9 +105,9 @@ function sms_policy_database(array $guard = []): Capsule
         ['uuid' => 'company-new', 'public_id' => 'company_new', 'name' => 'New Co', 'created_at' => Carbon::now()->subDay(), 'updated_at' => Carbon::now()],
     ]);
     $db->table('users')->insert([
-        ['uuid' => 'admin-1', 'type' => 'admin', 'name' => 'Root', 'email' => 'Root@example.test'],
+        ['uuid' => 'admin-1', 'type' => 'admin', 'name' => 'Root', 'email' => 'Root@example.test', 'deleted_at' => null],
         ['uuid' => 'admin-2', 'type' => 'admin', 'name' => 'Deleted', 'email' => 'gone@example.test', 'deleted_at' => Carbon::now()],
-        ['uuid' => 'user-1', 'type' => 'user', 'name' => 'Member', 'email' => 'member@example.test'],
+        ['uuid' => 'user-1', 'type' => 'user', 'name' => 'Member', 'email' => 'member@example.test', 'deleted_at' => null],
     ]);
 
     return $capsule;

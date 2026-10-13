@@ -5,6 +5,7 @@ namespace Fleetbase\Support\Sms;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\Setting;
 use Fleetbase\Models\User;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -47,6 +48,10 @@ class SmsPolicy
      */
     public static function stored(): array
     {
+        if (!static::hasDatabase()) {
+            return [];
+        }
+
         try {
             $value = Setting::where('key', 'system.' . static::SETTING_KEY)->value('value');
         } catch (\Throwable $e) {
@@ -54,6 +59,15 @@ class SmsPolicy
         }
 
         return is_array($value) ? $value : [];
+    }
+
+    /**
+     * Whether Eloquent has a connection to query at all. Only a bare container (unit tests)
+     * lacks one, and a query there does not fail cleanly, so the lookups are skipped.
+     */
+    protected static function hasDatabase(): bool
+    {
+        return Model::getConnectionResolver() !== null;
     }
 
     /**
@@ -305,7 +319,7 @@ class SmsPolicy
      */
     public static function isOnProbation(?string $companyUuid, int $days): bool
     {
-        if (!$companyUuid || $days <= 0) {
+        if (!$companyUuid || $days <= 0 || !static::hasDatabase()) {
             return false;
         }
 
@@ -348,6 +362,10 @@ class SmsPolicy
      */
     public static function adminUsers(): Collection
     {
+        if (!static::hasDatabase()) {
+            return new Collection();
+        }
+
         try {
             return User::withoutGlobalScopes()->where('type', 'admin')->whereNull('deleted_at')->get();
         } catch (\Throwable $e) {

@@ -48,6 +48,10 @@ final class SmsReservation
      */
     public function trace(): array
     {
+        if (!$this->isGuarded()) {
+            return [];
+        }
+
         return array_filter([
             'company_uuid'        => $this->context->companyUuid,
             'tenant_type'         => $this->context->tenantType,

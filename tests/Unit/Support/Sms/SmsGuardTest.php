@@ -43,7 +43,7 @@ function sms_guard_test_setup(array $guard = [], string $path = '/storefront/v1/
         'enabled'      => true,
         'mode'         => 'enforce',
         'alert_emails' => '',
-        'validation'   => ['enabled' => true, 'blocked_prefixes' => '+881'],
+        'validation'   => ['enabled' => true, 'blocked_prefixes' => '+881,+882'],
         'limits'       => [
             'destination' => ['cooldown_seconds' => 60, 'per_hour' => 3, 'per_day' => 5],
             'ip'          => ['per_15_minutes' => 50, 'per_day' => 100],
@@ -144,7 +144,7 @@ test('sms guard refuses destinations that can never be texted with a 422', funct
         ->and($premium->status())->toBe(422)
         ->and($premium->reason())->toBe('type_not_allowed')
         ->and($blocked->status())->toBe(422)
-        ->and($blocked->reason())->toBeIn(['prefix_blocked', 'invalid_destination'])
+        ->and($blocked->reason())->toBeIn(['prefix_blocked', 'type_not_allowed', 'invalid_destination'])
         ->and($guard->limiter()->attempts(SmsGuard::CACHE_PREFIX . 'company:company-1:per_day'))->toBe(0);
 });
 

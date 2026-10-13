@@ -41,7 +41,7 @@ test('phone validator refuses numbers that are invalid or cannot receive texts',
 });
 
 test('phone validator applies blocked prefixes, blocked countries and a company allowlist', function () {
-    $prefix  = PhoneValidator::validate('+447400100123', ['blocked_prefixes' => '+800, +4477']);
+    $prefix  = PhoneValidator::validate('+447400100123', ['blocked_prefixes' => '+800, +4474']);
     $country = PhoneValidator::validate('+447400100123', ['blocked_countries' => 'gb,fr']);
     $allowed = PhoneValidator::validate('+447400100123', ['allowed_countries' => ['MN', 'SG']]);
     $fine    = PhoneValidator::validate('+447400100123', ['blocked_prefixes' => ['+800'], 'blocked_countries' => ['FR'], 'allowed_countries' => ['GB']]);
