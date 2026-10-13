@@ -206,6 +206,24 @@ class ApiModelCachePartlyResolvableDependencyOrder extends ApiModelCacheRelation
     protected $apiCacheDependencies = ['tags', 'payload.customer'];
 }
 
+class ApiModelCacheUncallableRelationsOrder extends ApiModelCacheRelationsOrder
+{
+    public static function staticPayload(): BelongsTo
+    {
+        return (new static())->belongsTo(ApiModelCacheDependencyPayload::class, 'payload_uuid', 'uuid');
+    }
+
+    public function payloadFor(string $key): BelongsTo
+    {
+        return $this->belongsTo(ApiModelCacheDependencyPayload::class, $key, 'uuid');
+    }
+
+    protected function hiddenPayload(): BelongsTo
+    {
+        return $this->belongsTo(ApiModelCacheDependencyPayload::class, 'payload_uuid', 'uuid');
+    }
+}
+
 class ApiModelCacheTestLock
 {
     public function __construct(private ApiModelCacheTestStore $store)
@@ -987,6 +1005,41 @@ test('api model cache retires a list cached while the invalidating write was unc
     app()->forgetInstance('db.transactions');
 });
 
+test('api model cache keeps the immediate bump when the transactions manager cannot be resolved', function () {
+    $capsule                   = api_model_cache_dependency_database();
+    $store                     = app('cache');
+    $store->flushRemovesValues = false;
+    $connection                = $capsule->getConnection('mysql');
+    app()->bind('db.transactions', fn () => throw new RuntimeException('transactions manager unavailable'));
+
+    $connection->beginTransaction();
+    ApiModelCache::invalidateModelCache(new ApiModelCacheDependencyPayload(), 'company-1');
+    $connection->commit();
+
+    app()->offsetUnset('db.transactions');
+
+    expect($store->get('api_query_version:payloads:company-1'))->toBe(1);
+});
+
+test('api model cache only resolves public instance relation methods without required parameters', function () {
+    api_model_cache_dependency_database();
+    $order = new ApiModelCacheUncallableRelationsOrder();
+
+    expect(ApiModelCache::dependencyTables($order, ['static_payload', 'payload_for', 'hidden_payload']))->toBe([])
+        ->and(ApiModelCache::dependencyTables($order, ['payload']))->toBe(['payloads']);
+});
+
+test('api model cache clears the relation path memo once it reaches its limit', function () {
+    api_model_cache_dependency_database();
+    $memo  = new ReflectionProperty(ApiModelCache::class, 'dependencyTables');
+    $limit = (new ReflectionClassConstant(ApiModelCache::class, 'DEPENDENCY_MEMO_LIMIT'))->getValue();
+    $memo->setAccessible(true);
+    $memo->setValue(null, array_fill_keys(array_map(fn ($i) => "memo-{$i}", range(1, $limit)), []));
+
+    expect(ApiModelCache::dependencyTables(new ApiModelCacheRelationsOrder(), ['payload']))->toBe(['payloads'])
+        ->and($memo->getValue())->toHaveCount(1);
+});
+
 test('api model cache resolves request style relation paths without side effects on the model', function () {
     api_model_cache_dependency_database();
     $order = new ApiModelCacheRelationsOrder();
@@ -1195,7 +1248,7 @@ test('api model cache keys requests without a session by company input and leave
         'company_uuid' => 'company-1',
     ]));
 
-    expect($sessionless)->toStartWith('{api_query}:orders:company_company-1:v0:')
+    expect($sessionless)->toStartWith('{api_query}:orders:company_company-1:v0.0:')
         ->and($sessionless)->toBe($unscoped);
 });
 
