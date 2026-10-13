@@ -406,11 +406,7 @@ class ApiModelCache
      */
     protected static function bumpVersionsAfterCommit(Model $model, array $versionKeys): void
     {
-        $bump = function () use ($versionKeys) {
-            foreach ($versionKeys as $versionKey) {
-                static::bumpVersion($versionKey);
-            }
-        };
+        $bump = fn () => static::bumpVersions($versionKeys, $model);
 
         try {
             $container = Container::getInstance();
@@ -429,6 +425,30 @@ class ApiModelCache
             }
         } catch (\Throwable $e) {
             // Nothing to defer to; the immediate bump stands alone
+        }
+    }
+
+    /**
+     * Advance versions without ever failing the write that triggered them.
+     *
+     * Invalidation runs inside model events, after-commit callbacks and write paths
+     * such as location pings. A cache outage there must not fail or roll back the
+     * write; the cached entries it would have retired expire within their TTL.
+     *
+     * @param string[] $versionKeys
+     */
+    protected static function bumpVersions(array $versionKeys, Model $model): void
+    {
+        try {
+            foreach ($versionKeys as $versionKey) {
+                static::bumpVersion($versionKey);
+            }
+        } catch (\Throwable $e) {
+            Log::error('Failed to advance API cache versions', [
+                'model' => get_class($model),
+                'keys'  => $versionKeys,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 
@@ -684,9 +704,7 @@ class ApiModelCache
         // actually hides stale caches (see the class docblock)
         $table       = $model->getTable();
         $versionKeys = [static::queryVersionKey($table, $companyUuid), static::modelVersionKey($table)];
-        foreach ($versionKeys as $versionKey) {
-            static::bumpVersion($versionKey);
-        }
+        static::bumpVersions($versionKeys, $model);
         static::bumpVersionsAfterCommit($model, $versionKeys);
 
         // Generate tags for BOTH model and query caches

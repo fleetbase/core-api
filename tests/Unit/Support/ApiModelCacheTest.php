@@ -272,6 +272,7 @@ class ApiModelCacheTestStore
     public array $forgotten              = [];
     public bool $throwOnTags             = false;
     public bool $throwOnMany             = false;
+    public bool $throwOnIncrement        = false;
     public bool $lockReturnsNull         = false;
     public bool $flushRemovesValues      = true;
     public bool $incrementCreatesMissing = true;
@@ -315,6 +316,10 @@ class ApiModelCacheTestStore
 
     public function increment(string $key): int|false
     {
+        if ($this->throwOnIncrement) {
+            throw new RuntimeException('cache unavailable');
+        }
+
         if (!$this->incrementCreatesMissing && !array_key_exists($key, $this->values)) {
             return false;
         }
@@ -887,6 +892,22 @@ test('api model cache contains a declared relation that throws on a blank model'
     expect(ApiModelCache::dependencyTables(new ApiModelCacheExplodingDependencyOrder()))->toBe(['order_tags', 'tags'])
         ->and($logger->errors)->toHaveCount(1)
         ->and($logger->errors[0]['message'])->toContain('entry "exploding" cannot be resolved');
+});
+
+test('api model cache invalidation never fails the write when the cache is unavailable', function () {
+    $store                   = api_model_cache_fixture();
+    $store->throwOnIncrement = true;
+    $store->throwOnTags      = true;
+    $logger                  = new ApiModelCacheTestLogger();
+    app()->instance('log', $logger);
+    Facade::clearResolvedInstance('log');
+
+    ApiModelCache::invalidateModelCache(api_model_cache_model(), 'company-1');
+
+    expect($logger->errors)->toHaveCount(2)
+        ->and($logger->errors[0]['message'])->toBe('Failed to advance API cache versions')
+        ->and($logger->errors[0]['context']['keys'])->toBe(['api_query_version:orders:company-1', 'api_model_version:orders'])
+        ->and($logger->errors[1]['message'])->toBe('Failed to invalidate cache');
 });
 
 test('api model cache falls back to the query when reading versions fails', function () {
