@@ -26,3 +26,6 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - `HasApiModelBehavior::normalizeRequestRelations()` (protected, no callers outside the trait).
 - Legacy duck-typed transformers (`$target` property + static `output($model, $data)`), `ResourceTransformerRegistry::transform(Model, array)`, `resolveByTarget()`, `fixClassName()` and the static `$transformers` array. The `User` resource no longer calls the registry directly.
 - Adds first version
+
+### Security
+- `NotificationRegistry` only resolves notifiables registered with `registerNotifiable()`. A company's saved notification settings could name any `dynamic:<property>`, which reached any public no-argument method on the notification subject (for example fleetops `Order::dispatch()`), or any class name, which the container built. Unregistered definitions are now skipped; extensions must register every `dynamic:` name and notifiable class they expect to receive.
