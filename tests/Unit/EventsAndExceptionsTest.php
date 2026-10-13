@@ -657,7 +657,6 @@ test('resource lifecycle events broadcast relationship storefront and direct cha
     $channel->setRelation('driverAssigned', $driver);
     $channel->setAttribute('customer_uuid', 'customer-uuid');
     $channel->setAttribute('driver_assigned_uuid', 'driver-assigned-uuid');
-    $channel->setAttribute('driverAssigned_uuid', 'driver-assigned-uuid');
 
     $event = EventsAndExceptionsLifecycleEvent::fake([
         'modelName'           => 'chat_channel',
@@ -697,6 +696,56 @@ test('resource lifecycle events broadcast relationship storefront and direct cha
         ->and($channels)->toContain('user.session-user')
         ->and($channels)->toContain('chat.chat_7654321')
         ->and($channels)->toContain('chat.33333333-3333-4333-8333-333333333333');
+});
+
+test('resource lifecycle events read relationship uuid channels from the snake case foreign key', function () {
+    bind_test_container();
+    session()->flush();
+    session(['company' => 'session-company', 'user' => 'session-user']);
+
+    // Only the real foreign key columns are set, no relations are loaded: the uuid channel must come
+    // from `driver_assigned_uuid`, not from a `driverAssigned_uuid` attribute that never exists.
+    $channel = new ChatChannel();
+    $channel->setRawAttributes([
+        'uuid'                 => '44444444-4444-4444-8444-444444444444',
+        'public_id'            => 'chat_1111111',
+        'company_uuid'         => 'model-company',
+        'created_by_uuid'      => 'creator-user',
+        'driver_assigned_uuid' => 'driver-uuid-only',
+        'customer_uuid'        => 'customer-uuid-only',
+    ], true);
+    $channel->setRelation('company', null);
+
+    $event = EventsAndExceptionsLifecycleEvent::fake([
+        'modelName'           => 'chat_channel',
+        'modelClassNamespace' => ChatChannel::class,
+        'modelClassName'      => 'ChatChannel',
+        'modelHumanName'      => 'chat channel',
+        'modelRecordName'     => null,
+        'modelUuid'           => '44444444-4444-4444-8444-444444444444',
+        'namespace'           => '\\Fleetbase',
+        'version'             => 1,
+        'eventName'           => 'updated',
+        'sentAt'              => '2026-07-18 12:00:00',
+        'eventId'             => 'event_driver_channel',
+        'apiVersion'          => 'v1',
+        'requestMethod'       => 'PUT',
+        'apiCredential'       => 'console',
+        'apiSecret'           => 'internal',
+        'apiKey'              => null,
+        'apiEnvironment'      => 'live',
+        'isSandbox'           => false,
+        'data'                => [],
+        'userSession'         => 'session-user',
+        'companySession'      => 'session-company',
+    ], $channel);
+
+    $channels = array_map(fn ($channel) => (string) $channel, $event->broadcastOn());
+
+    expect($channels)->toContain('driverAssigned.driver-uuid-only')
+        ->and($channels)->toContain('customer.customer-uuid-only')
+        ->and($channels)->not->toContain('driverAssigned.')
+        ->and($channels)->not->toContain('customer.');
 });
 
 test('resource lifecycle events prefer webhook payloads when resources provide them', function () {
