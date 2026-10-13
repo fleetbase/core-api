@@ -28,12 +28,26 @@ class Comment extends FleetbaseResource
             'content'               => $this->content,
             'tags'                  => $this->tags,
             'meta'                  => data_get($this, 'meta', Utils::createObject()),
+            'visibility'            => method_exists($this->resource, 'getVisibility') ? $this->resource->getVisibility() : null,
             'author'                => new Author($this->author),
-            'replies'               => static::collection($this->replies),
+            'replies'               => static::collection($this->visibleReplies()),
             'editable'              => $request->hasSession() && session('user') === $this->author_uuid,
             'updated_at'            => $this->updated_at,
             'created_at'            => $this->created_at,
             'deleted_at'            => $this->deleted_at,
         ];
+    }
+
+    /**
+     * Replies to show: all of them for the console, only customer visible ones anywhere else.
+     */
+    protected function visibleReplies(): mixed
+    {
+        $replies = $this->replies;
+        if (!$replies || Http::isInternalRequest()) {
+            return $replies;
+        }
+
+        return $replies->filter(fn ($reply) => !method_exists($reply, 'isVisibleToCustomers') || $reply->isVisibleToCustomers())->values();
     }
 }
