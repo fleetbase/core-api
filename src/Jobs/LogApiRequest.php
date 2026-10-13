@@ -82,6 +82,12 @@ class LogApiRequest implements ShouldQueue
             $related[] = Utils::get($content, 'id');
         }
 
+        // If a storefront key made the request, push the store or network public id to related
+        $storefrontPublicId = session('storefront_store_public_id') ?? session('storefront_network_public_id');
+        if ($storefrontPublicId) {
+            $related[] = $storefrontPublicId;
+        }
+
         // Get api credential from session
         $apiCredential = session('api_credential');
 

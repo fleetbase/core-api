@@ -49,8 +49,9 @@ class Http extends HttpClient
 
         $uri = ltrim((string) $route->uri(), '/');
 
-        // Only log true public API: starts with "v1/"
-        return Str::startsWith($uri, 'v1/');
+        // Only true public APIs: the core "v1/" API and the storefront "storefront/v1/" API.
+        // Internal routes such as "int/v1/..." and "storefront/int/v1/..." never match.
+        return Str::startsWith($uri, ['v1/', 'storefront/v1/']);
     }
 
     /**
