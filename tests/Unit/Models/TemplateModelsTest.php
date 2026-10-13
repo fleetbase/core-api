@@ -5,6 +5,7 @@ use Fleetbase\Models\TemplateQuery;
 use Fleetbase\Traits\Searchable;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Support\Facades\Facade;
 
@@ -15,9 +16,18 @@ class TemplateQueryTenantFixture extends Model
     protected $guarded    = [];
     public $timestamps    = false;
 
-    public function notes()
+    public static int $archived = 0;
+
+    public function notes(): HasMany
     {
         return $this->hasMany(TemplateQueryTenantNoteFixture::class, 'fixture_id');
+    }
+
+    public function archive()
+    {
+        static::$archived++;
+
+        return $this;
     }
 }
 
@@ -411,16 +421,18 @@ it('executes tenant scoped template queries with conditions sorting and limits',
             ['field' => 'archived_at', 'operator' => 'null'],
             ['field' => null, 'operator' => '=', 'value' => 'ignored'],
         ],
-        'with' => ['notes'],
+        'with' => ['notes', 'archive'],
         'sort' => [
             ['field' => 'score', 'direction' => 'desc'],
         ],
         'limit' => 1,
     ]);
 
-    $results = $query->execute();
+    TemplateQueryTenantFixture::$archived = 0;
+    $results                              = $query->execute();
 
     expect($results)->toHaveCount(1)
+        ->and(TemplateQueryTenantFixture::$archived)->toBe(0)
         ->and($results->first()->name)->toBe('Alpha order')
         ->and($results->first()->company_uuid)->toBe('company-1')
         ->and($results->first()->relationLoaded('notes'))->toBeTrue()

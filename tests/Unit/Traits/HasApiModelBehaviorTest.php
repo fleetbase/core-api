@@ -8,6 +8,7 @@ use Fleetbase\Traits\HasApiModelCache;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Http\JsonResponse;
@@ -172,7 +173,7 @@ class HasApiModelBehaviorRecord extends Model
         'updated_at',
     ];
 
-    public function childItems()
+    public function childItems(): HasMany
     {
         return $this->hasMany(HasApiModelBehaviorChild::class, 'record_uuid', 'uuid');
     }
@@ -348,7 +349,7 @@ class HasApiModelBehaviorSnakeRelationRecord extends Model
         'name',
     ];
 
-    public function child_items()
+    public function child_items(): HasMany
     {
         return $this->hasMany(HasApiModelBehaviorChild::class, 'record_uuid', 'uuid');
     }
@@ -361,6 +362,11 @@ class HasApiModelBehaviorChild extends Model
     protected $guarded = [];
 
     public $timestamps = false;
+}
+
+class HasApiModelBehaviorHiddenRecord extends HasApiModelBehaviorRecord
+{
+    protected $hidden = ['amount'];
 }
 
 /**
@@ -1059,10 +1065,23 @@ test('api model behavior applies explicit filter operators and relation normaliz
         ->and($nullStatuses)->toBe(['record-3'])
         ->and($notNullStatuses)->toBe(['record-1', 'record-2'])
         ->and($likeNames)->toBe(['record-1'])
-        ->and(array_keys($relationshipBuilder->getEagerLoads()))->toBe(['childItems', 'childItems.grandChildren'])
+        ->and(array_keys($relationshipBuilder->getEagerLoads()))->toBe(['childItems'])
         ->and($relationshipBuilder->getQuery()->columns)->toBeNull()
         ->and(array_keys($snakeRelationBuilder->getEagerLoads()))->toBe(['child_items'])
         ->and($countBuilder->toSql())->toContain('api_model_behavior_children', 'child_items_count');
+});
+
+test('api model behavior without adds to the hidden attributes instead of replacing them', function () {
+    $capsule = has_api_model_behavior_database();
+    has_api_model_behavior_seed_records($capsule);
+
+    $results = (new HasApiModelBehaviorHiddenRecord())->queryFromRequest(has_api_model_behavior_request([
+        'company_uuid' => 'company-a',
+        'without'      => ['slug'],
+    ]));
+
+    expect($results->first()->getHidden())->toContain('amount', 'slug')
+        ->and($results->first()->toArray())->not->toHaveKeys(['amount', 'slug']);
 });
 
 test('api model behavior never calls a requested method that is not a relation', function (array $input) {

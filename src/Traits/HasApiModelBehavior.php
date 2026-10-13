@@ -7,6 +7,7 @@ use Fleetbase\Support\ApiModelCache;
 use Fleetbase\Support\Auth;
 use Fleetbase\Support\Http;
 use Fleetbase\Support\QueryOptimizer;
+use Fleetbase\Support\RequestRelations;
 use Fleetbase\Support\Resolve;
 use Fleetbase\Support\Utils;
 use Illuminate\Http\JsonResponse;
@@ -353,13 +354,13 @@ trait HasApiModelBehavior
 
         // PERFORMANCE OPTIMIZATION: Use load() instead of re-querying the database
         // This avoids an unnecessary second database query
-        $with = static::normalizeRequestRelations($request->or(['with', 'expand'], []));
+        $with = RequestRelations::eagerLoads($record, $request->or(['with', 'expand'], []));
         if (!empty($with)) {
             $record->load($with);
         }
 
         // Load counts if requested
-        $withCount = $request->array('with_count', []);
+        $withCount = RequestRelations::counts($record, $request->input('with_count', []));
         if (!empty($withCount)) {
             $record->loadCount($withCount);
         }
@@ -456,13 +457,13 @@ trait HasApiModelBehavior
 
         // PERFORMANCE OPTIMIZATION: Use load() instead of re-querying the database
         // This avoids an unnecessary second database query
-        $with = static::normalizeRequestRelations($request->or(['with', 'expand'], []));
+        $with = RequestRelations::eagerLoads($record, $request->or(['with', 'expand'], []));
         if (!empty($with)) {
             $record->load($with);
         }
 
         // Load counts if requested
-        $withCount = $request->array('with_count', []);
+        $withCount = RequestRelations::counts($record, $request->input('with_count', []));
         if (!empty($withCount)) {
             $record->loadCount($withCount);
         }
@@ -548,9 +549,6 @@ trait HasApiModelBehavior
      */
     public static function mutateModelWithRequest(Request $request, $result)
     {
-        $with    = static::normalizeRequestRelations($request->or(['with', 'expand'], []));
-        $without = $request->array('without');
-
         // handle collection or array of results
         if (is_array($result) || $result instanceof \Illuminate\Support\Collection) {
             return collect($result)->map(
@@ -560,28 +558,23 @@ trait HasApiModelBehavior
             );
         }
 
+        if (!$result instanceof \Illuminate\Database\Eloquent\Model) {
+            return $result;
+        }
+
+        $with    = RequestRelations::eagerLoads($result, $request->or(['with', 'expand'], []));
+        $without = array_filter($request->array('without'), 'is_string');
+
         if ($with) {
             $result->load($with);
         }
 
+        // makeHidden adds to the model's hidden attributes; setHidden would replace them and expose the defaults
         if ($without) {
-            $result->setHidden($without);
+            $result->makeHidden($without);
         }
 
         return $result;
-    }
-
-    protected static function normalizeRequestRelations($relations)
-    {
-        if (empty($relations)) {
-            return [];
-        }
-
-        $relations = is_array($relations) ? $relations : explode(',', $relations);
-
-        return array_map(function ($relation) {
-            return implode('.', array_map(fn ($part) => Str::camel(trim($part)), explode('.', $relation)));
-        }, $relations);
     }
 
     /**
@@ -640,33 +633,9 @@ trait HasApiModelBehavior
             return $builder;
         }
 
-        $contains = is_array($with) ? $with : explode(',', $with);
-
-        foreach ($contains as $contain) {
-            $camelVersion = Str::camel(trim($contain));
-            if (\method_exists($this, $camelVersion)) {
-                $builder->with($camelVersion);
-                continue;
-            }
-
-            $snakeCase = Str::snake(trim($contain));
-            if (\method_exists($this, $snakeCase)) {
-                $builder->with(trim($snakeCase));
-                continue;
-            }
-
-            if (strpos($contain, '.') !== false) {
-                $parts = array_map(
-                    function ($part) {
-                        return Str::camel($part);
-                    },
-                    explode('.', $contain)
-                );
-                $contain = implode('.', $parts);
-
-                $builder->with($contain);
-                continue;
-            }
+        $contains = RequestRelations::eagerLoads($this, $with);
+        if ($contains) {
+            $builder->with($contains);
         }
 
         if ($without) {
@@ -692,19 +661,9 @@ trait HasApiModelBehavior
             return $builder;
         }
 
-        $counters = explode(',', $count);
-
-        foreach ($counters as $counter) {
-            if (\method_exists($this, $counter)) {
-                $builder->withCount($counter);
-                continue;
-            }
-
-            $camelVersion = Str::camel($counter);
-            if (\method_exists($this, $camelVersion)) {
-                $builder->withCount($camelVersion);
-                continue;
-            }
+        $counters = RequestRelations::counts($this, $count);
+        if ($counters) {
+            $builder->withCount($counters);
         }
 
         return $builder;
@@ -965,16 +924,9 @@ trait HasApiModelBehavior
         $without          = $request->array('without');
         $withoutRelations = $request->boolean('without_relations');
 
-        // camelcase all params in with and apply
+        // apply only the requested names that are relations of this model
         if (is_array($with)) {
-            $with = array_map(
-                function ($relationship) {
-                    return Str::camel($relationship);
-                },
-                $with
-            );
-
-            $builder = $builder->with($with);
+            $builder = $builder->with(RequestRelations::eagerLoads($this, $with));
         }
 
         // camelcase all params in with and apply

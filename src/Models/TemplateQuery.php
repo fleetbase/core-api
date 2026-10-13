@@ -4,6 +4,7 @@ namespace Fleetbase\Models;
 
 use Fleetbase\Casts\Json;
 use Fleetbase\Services\TemplateRenderService;
+use Fleetbase\Support\RequestRelations;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasUuid;
@@ -180,7 +181,8 @@ class TemplateQuery extends Model
         }
 
         // Eager-load relationships
-        $with = $this->getAttribute('with');
+        // The stored list is user-editable, so it is held to the same relation check as a request's `with`
+        $with = RequestRelations::eagerLoads($model, $this->getAttribute('with'));
         if (!empty($with)) {
             $query->with($with);
         }
