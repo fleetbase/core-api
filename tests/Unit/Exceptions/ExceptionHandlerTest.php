@@ -59,6 +59,7 @@ namespace Fleetbase\Exceptions {
 namespace {
     use Fleetbase\Exceptions\FleetbaseRequestValidationException;
     use Fleetbase\Exceptions\Handler;
+    use Fleetbase\Exceptions\SmsBlockedException;
     use Fleetbase\Models\User;
     use Illuminate\Auth\AuthenticationException;
     use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -214,6 +215,20 @@ namespace {
                 'file'    => $exception->getFile(),
                 'line'    => $exception->getLine(),
             ]);
+    });
+
+    it('answers a refused sms with its own status, retry-after and the standard error envelope', function () {
+        $handler = exception_handler_subject();
+
+        $limited = $handler->render(Request::create('/storefront/v1/customers/request-creation-code', 'POST'), SmsBlockedException::limited('cooldown', 30));
+        $invalid = $handler->render(Request::create('/v1/drivers/login-with-sms', 'POST'), SmsBlockedException::invalidDestination('invalid_destination'));
+
+        expect($limited->getStatusCode())->toBe(429)
+            ->and($limited->headers->get('Retry-After'))->toBe('30')
+            ->and($limited->getData(true))->toBe(['errors' => ['Unable to send a verification code right now. Try again in a minute.']])
+            ->and($invalid->getStatusCode())->toBe(422)
+            ->and($invalid->headers->has('Retry-After'))->toBeFalse()
+            ->and($invalid->getData(true))->toBe(['errors' => ['The phone number provided is not valid.']]);
     });
 
     it('delegates unknown exceptions to the framework renderer', function () {

@@ -33,6 +33,25 @@ class SmsGuardTestBrokenCache extends CacheRepository
 }
 
 /**
+ * Stands in for Laravel's CacheManager: only the default store exists.
+ */
+class SmsGuardTestCacheManager
+{
+    public function __construct(private CacheRepository $repository)
+    {
+    }
+
+    public function store(?string $name = null): CacheRepository
+    {
+        if ($name !== null) {
+            throw new RuntimeException('Cache store [' . $name . '] is not defined.');
+        }
+
+        return $this->repository;
+    }
+}
+
+/**
  * @return array{0: SmsGuard, 1: SmsGuardTestBreaker, 2: CacheRepository}
  */
 function sms_guard_test_setup(array $guard = [], string $path = '/storefront/v1/customers/request-creation-code', ?CacheRepository $cache = null): array
@@ -355,4 +374,150 @@ test('sms guard make returns a bound instance when the container has one', funct
     app()->forgetInstance(SmsGuard::class);
 
     expect(SmsGuard::make())->not->toBe($guard);
+});
+
+test('sms context takes a network tenant from the session and survives a request that cannot be resolved', function () {
+    sms_guard_test_setup();
+    session(['company' => 'company-1', 'storefront_store' => null, 'storefront_network' => 'network-1']);
+    $network = sms_guard_context('+447400100123');
+
+    app()->bind('request', fn () => throw new RuntimeException('no request bound'));
+    $blind = sms_guard_context('+447400100123');
+    app()->instance('request', Request::create('/'));
+
+    expect($network->tenantType)->toBe('network')
+        ->and($network->tenantUuid)->toBe('network-1')
+        ->and($network->tenantScope())->toBe('tenant:network:network-1')
+        ->and($blind->ip)->toBeNull()
+        ->and($blind->userAgent)->toBeNull()
+        ->and($blind->source)->toBe(SmsContext::SOURCE_SYSTEM)
+        ->and(SmsContext::detectSource(Request::create('/health')))->toBe(SmsContext::SOURCE_SYSTEM);
+});
+
+test('sms breaker lets an expired pause lapse and reads a missing platform counter as absent', function () {
+    [$guard, $breaker, $cache] = sms_guard_test_setup([
+        'limits'  => ['platform' => ['public' => ['per_minute' => null, 'per_hour' => null, 'per_day' => 500]]],
+        'breaker' => ['alert_percentages' => [50]],
+    ]);
+    $cache->forever(SmsGuard::CACHE_PREFIX . 'pause:company:company-1', ['until' => time() - 5, 'reason' => 'old', 'auto' => true, 'company_uuid' => 'company-1', 'at' => time() - 600]);
+
+    $reservation = $guard->reserve(sms_guard_context('+447400100123'));
+
+    expect($breaker->pausedUntil('company:company-1'))->toBeNull()
+        ->and($reservation->decision)->toBe(SmsReservation::DECISION_ALLOWED)
+        ->and($breaker->alerts)->toBe([])
+        ->and(SmsBreaker::companyUuidFromScope('company:company-1'))->toBe('company-1')
+        ->and(SmsBreaker::companyUuidFromScope('platform'))->toBeNull();
+});
+
+test('sms breaker pauses a tenant that hits its hourly budget in a second hour of the day', function () {
+    [$guard, $breaker, $cache] = sms_guard_test_setup([
+        'limits'  => ['destination' => ['cooldown_seconds' => 0, 'per_hour' => null, 'per_day' => null], 'company' => ['per_minute' => 100, 'per_hour' => 2, 'per_day' => 100]],
+        'breaker' => ['alert_percentages' => []],
+    ]);
+    // An earlier hour today already reached the budget.
+    $cache->put(SmsGuard::CACHE_PREFIX . 'hour-trips:company:company-1', 1, 86400);
+
+    $guard->reserve(sms_guard_context('+447400100001'));
+    $second = $guard->reserve(sms_guard_context('+447400100002'));
+    $third  = sms_guard_refusal($guard, sms_guard_context('+447400100003'));
+    $pause  = $breaker->pausedUntil('company:company-1');
+
+    expect($second->decision)->toBe(SmsReservation::DECISION_ALLOWED)
+        ->and($pause['reason'])->toBe(SmsBreaker::SIGNAL_COMPANY_HOURLY_REPEAT)
+        ->and($third->status())->toBe(423)
+        ->and($breaker->alerts)->toHaveCount(1)
+        ->and($breaker->alerts[0]->signal)->toBe(SmsBreaker::SIGNAL_COMPANY_HOURLY_REPEAT)
+        ->and($breaker->alerts[0]->data)->toMatchArray(['hours_at_budget_today' => 2, 'budget' => 2])
+        ->and($breaker->alerts[0]->toArray(null)['title'])->toBe('tenant hit its hourly SMS budget twice');
+});
+
+test('sms breaker alerts when the platform bucket nears its hourly budget and ignores a bucket without one', function () {
+    [$guard, $breaker] = sms_guard_test_setup([
+        'limits'  => ['destination' => ['cooldown_seconds' => 0, 'per_hour' => null, 'per_day' => null], 'platform' => ['public' => ['per_minute' => 500, 'per_hour' => 4, 'per_day' => 500]]],
+        'breaker' => ['alert_percentages' => [50]],
+    ]);
+
+    $guard->reserve(sms_guard_context('+447400100001'));
+    $guard->reserve(sms_guard_context('+447400100002'));
+    $guard->reserve(sms_guard_context('+447400100003'));
+
+    expect($breaker->alerts)->toHaveCount(1)
+        ->and($breaker->alerts[0]->signal)->toBe(SmsBreaker::SIGNAL_PLATFORM_THRESHOLD)
+        ->and($breaker->alerts[0]->data)->toMatchArray(['percent' => 50, 'sends_this_hour' => 2, 'budget' => 4, 'scope' => SmsBreaker::SCOPE_PLATFORM])
+        ->and($breaker->alerts[0]->toArray(null)['title'])->toBe('platform at 50% of its hourly SMS budget')
+        ->and($breaker->pausedUntil(SmsBreaker::SCOPE_PLATFORM))->toBeNull();
+
+    [$unbounded, $quiet] = sms_guard_test_setup([
+        'limits'  => ['destination' => ['cooldown_seconds' => 0, 'per_hour' => null, 'per_day' => null], 'platform' => ['public' => ['per_minute' => null, 'per_hour' => null, 'per_day' => null]]],
+        'breaker' => ['alert_percentages' => [50]],
+    ]);
+    $unbounded->reserve(sms_guard_context('+447400100001'));
+
+    expect($quiet->alerts)->toBe([]);
+});
+
+test('sms breaker does not pause a scope twice when two signals trip on the same send', function () {
+    [$guard, $breaker] = sms_guard_test_setup([
+        'limits'  => ['destination' => ['cooldown_seconds' => 0, 'per_hour' => null, 'per_day' => null], 'company' => ['per_minute' => 100, 'per_hour' => 100, 'per_day' => 2]],
+        'breaker' => ['distinct_destinations_per_10m' => 2, 'alert_percentages' => []],
+    ], '/v1/drivers/login-with-sms');
+    // No store or network, so the burst signal lands on the company scope like the budget does.
+    session(['company' => 'company-1', 'storefront_store' => null, 'storefront_network' => null]);
+
+    $guard->reserve(sms_guard_context('+447400100001'));
+    $guard->reserve(sms_guard_context('+447400100002'));
+    $pause = $breaker->pausedUntil('company:company-1');
+
+    expect($pause['reason'])->toBe(SmsBreaker::SIGNAL_COMPANY_DAILY_BUDGET)
+        ->and($breaker->alerts)->toHaveCount(1)
+        ->and($breaker->alerts[0]->signal)->toBe(SmsBreaker::SIGNAL_COMPANY_DAILY_BUDGET);
+});
+
+test('sms breaker skips the tenant signals for a send with no company behind it', function () {
+    [$guard, $breaker] = sms_guard_test_setup([], '/v1/drivers/login-with-sms');
+    session()->flush();
+
+    $context     = sms_guard_context('+447400100123');
+    $reservation = $guard->reserve($context);
+
+    expect($context->companyUuid)->toBeNull()
+        ->and($context->tenantScope())->toBeNull()
+        ->and($reservation->decision)->toBe(SmsReservation::DECISION_ALLOWED)
+        ->and($breaker->alerts)->toBe([])
+        ->and($guard->limiter()->attempts(SmsGuard::CACHE_PREFIX . 'ip:platform:203.0.113.9:day'))->toBe(1);
+});
+
+test('sms guard in monitor mode records a pause it would have enforced', function () {
+    [$guard, , $cache] = sms_guard_test_setup(['mode' => 'monitor', 'limits' => ['destination' => ['cooldown_seconds' => 0, 'per_hour' => null, 'per_day' => null]]]);
+    $cache->put(SmsGuard::CACHE_PREFIX . 'pause:company:company-1', ['until' => time() + 1800, 'reason' => 'incident', 'auto' => false, 'company_uuid' => 'company-1', 'at' => time()], 1800);
+
+    $reservation = $guard->reserve(sms_guard_context('+447400100123'));
+
+    expect($reservation->decision)->toBe(SmsReservation::DECISION_MONITOR)
+        ->and($reservation->wouldBlock)->toBe(SmsBlockedException::REASON_PAUSED)
+        ->and(collect(app('log')->entries)->pluck(1)->all())->toContain('sms.would_block');
+});
+
+test('sms guard counts on the configured cache store and falls back to the default store when it is missing', function () {
+    [, , $cache] = sms_guard_test_setup(['cache_store' => 'sms-counters']);
+    app()->instance('cache', new SmsGuardTestCacheManager($cache));
+    Facade::clearResolvedInstances();
+
+    $guard = new SmsGuard();
+    $guard->limiter()->hit(SmsGuard::CACHE_PREFIX . 'probe', 60);
+
+    expect($cache->get(SmsGuard::CACHE_PREFIX . 'probe'))->toBe(1)
+        ->and(collect(app('log')->entries)->pluck(1)->all())->toContain('sms.guard_cache_store_unavailable');
+
+    bind_test_container(['sms.guard' => ['cache_store' => null]]);
+    app()->instance('cache', new SmsGuardTestCacheManager($cache));
+    Facade::clearResolvedInstances();
+
+    $plain = new SmsGuard();
+    $plain->limiter()->hit(SmsGuard::CACHE_PREFIX . 'probe', 60);
+
+    expect($cache->get(SmsGuard::CACHE_PREFIX . 'probe'))->toBe(2)
+        ->and($plain->breaker())->toBeInstanceOf(SmsBreaker::class)
+        ->and(app('log')->entries)->toBe([]);
 });

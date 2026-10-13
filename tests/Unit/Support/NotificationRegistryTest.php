@@ -613,6 +613,35 @@ test('notification registry ignores configured notifiable definitions that do no
     expect(NotificationRegistryDispatchTarget::$sent)->toBe([]);
 });
 
+test('notification registry resolves nothing for an unknown definition or a registered notifiable that is not a model', function () {
+    notification_registry_dispatch_database();
+    NotificationRegistry::registerNotifiable(stdClass::class);
+
+    Fleetbase\Models\Setting::query()->create([
+        'key'   => 'company.company-1.notification_settings',
+        'value' => [
+            'notificationRegistryDispatchNotification__manualNotice' => [
+                'notifiables' => [
+                    [
+                        'definition' => stdClass::class,
+                        'primaryKey' => 'uuid',
+                        'key'        => 'target-1',
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    $subject               = new NotificationRegistryDispatchSubject();
+    $subject->uuid         = 'subject-7';
+    $subject->company_uuid = 'company-1';
+
+    NotificationRegistry::notifyUsingDefinitionName(NotificationRegistryDispatchNotification::class, 'Manual Notice', $subject, 'ignored');
+
+    expect(NotificationRegistryDispatchTarget::$sent)->toBe([])
+        ->and(NotificationRegistry::findNotificationRegistrationByDefinition('Nope\\Unknown\\Notification'))->toBeNull();
+});
+
 function notification_registry_settings_with(array $notifiables): void
 {
     Fleetbase\Models\Setting::query()->create([

@@ -647,9 +647,9 @@ namespace {
             );
         }
 
-        public function json(mixed $data, int $statusCode = 200): JsonResponse
+        public function json(mixed $data, int $statusCode = 200, array $headers = []): JsonResponse
         {
-            return new JsonResponse($data, $statusCode);
+            return new JsonResponse($data, $statusCode, $headers);
         }
 
         public function download(string $file, ?string $name = null, array $headers = []): Symfony\Component\HttpFoundation\BinaryFileResponse

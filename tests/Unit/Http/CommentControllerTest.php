@@ -655,3 +655,31 @@ test('creating a comment dispatches comment created and never fails when broadca
         ->and($dispatched[0]->comment->is($comment))->toBeTrue()
         ->and($stillCreated->exists)->toBeTrue();
 });
+
+test('comment created broadcasts to the subject only when the subject can be resolved', function () {
+    comment_visibility_database();
+
+    $channels = fn (Comment $comment) => array_map(fn ($channel) => (string) $channel, (new Fleetbase\Events\CommentCreated($comment))->broadcastOn());
+    $comment  = function (array $attributes): Comment {
+        $comment = new Comment();
+        $comment->setRawAttributes(array_merge(['uuid' => 'comment-x', 'company_uuid' => 'company-1'], $attributes), true);
+        $comment->meta = ['visibility' => 'customer'];
+
+        return $comment;
+    };
+
+    $bare   = $comment(['subject_type' => null, 'subject_uuid' => null]);
+    $loaded = $comment(['subject_type' => Fleetbase\Tests\Fixtures\Models\Order::class, 'subject_uuid' => 'order-uuid-9']);
+    $loaded->setRelation('subject', new Fleetbase\Tests\Fixtures\Models\Order(['uuid' => 'order-uuid-9', 'public_id' => 'order_9']));
+    $missing = $comment(['subject_type' => 'Fleetbase\\Missing\\Model', 'subject_uuid' => 'order-uuid-1']);
+    $broken  = $comment(['subject_type' => stdClass::class, 'subject_uuid' => 'order-uuid-1']);
+
+    expect($channels($bare))->toBe(['company.company-1'])
+        ->and($channels($loaded))->toBe(['company.company-1', 'order.order_9', 'order.order-uuid-9'])
+        ->and($channels($missing))->toBe(['company.company-1'])
+        ->and($channels($broken))->toBe(['company.company-1'])
+        ->and(Comment::isVisibilityAwareSubjectType(null))->toBeFalse()
+        ->and(Comment::isVisibilityAwareSubjectType('order'))->toBeTrue()
+        ->and(Comment::isVisibilityAwareSubjectType(Fleetbase\Tests\Fixtures\Models\Order::class))->toBeTrue()
+        ->and(Comment::isVisibilityAwareSubjectType('contact'))->toBeFalse();
+});
