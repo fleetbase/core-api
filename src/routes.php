@@ -133,7 +133,9 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 $router->get('should-onboard', 'OnboardController@shouldOnboard');
                                 $router->post('create-account', 'OnboardController@createAccount');
                                 $router->post('verify-email', 'OnboardController@verifyEmail');
-                                $router->post('send-verification-sms', 'OnboardController@sendVerificationSms');
+                                // Anyone with a signup session can ask for the SMS again; a tight
+                                // per-address limit sits in front of the guard's own budgets.
+                                $router->post('send-verification-sms', 'OnboardController@sendVerificationSms')->middleware(Illuminate\Routing\Middleware\ThrottleRequests::class . ':3,1,onboard-sms');
                                 $router->post('send-verification-email', 'OnboardController@sendVerificationEmail');
                             }
                         );

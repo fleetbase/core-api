@@ -2,6 +2,9 @@
 
 namespace Fleetbase\Services;
 
+use Fleetbase\Support\Sms\SmsContext;
+use Fleetbase\Support\Sms\SmsGuard;
+use Fleetbase\Support\Sms\SmsReservation;
 use Fleetbase\Twilio\Support\Laravel\Facade as Twilio;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -52,17 +55,38 @@ class SmsService
      *
      * @param string      $to       Recipient phone number
      * @param string      $text     Message text
-     * @param array       $options  Additional options (from, provider, twilioParams, etc.)
+     * @param array       $options  Additional options (from, provider, twilioParams, etc.). Guard options:
+     *                              `purpose` (what the message is for), `company_uuid`, `source`, and
+     *                              `sms_reservation` when the caller already reserved the send.
      * @param string|null $provider Explicitly specify provider (overrides auto-routing)
      *
      * @return array Response containing status and provider information
      *
-     * @throws \Exception If SMS sending fails
+     * @throws \Fleetbase\Exceptions\SmsBlockedException If the SMS guard refuses the send
+     * @throws \Exception                                If SMS sending fails
      */
     public function send(string $to, string $text, array $options = [], ?string $provider = null): array
     {
         // Normalize phone number
         $normalizedPhone = $this->normalizePhoneNumber($to);
+
+        // Every send passes the guard before a provider is called. A caller that already
+        // reserved the send (VerificationCode) hands its reservation over so it counts once.
+        $reservation = $options['sms_reservation'] ?? null;
+        if (!$reservation instanceof SmsReservation) {
+            $reservation = SmsGuard::make()->reserve(SmsContext::resolve($normalizedPhone, [
+                'purpose'      => $options['purpose'] ?? 'sms',
+                'company_uuid' => $options['company_uuid'] ?? null,
+                'source'       => $options['source'] ?? null,
+            ]));
+        }
+
+        if ($reservation->isGuarded() && $reservation->country !== null) {
+            // The validator produced a canonical E.164 number; send to that
+            $normalizedPhone = $reservation->context->destination;
+        }
+
+        $options = SmsGuard::providerOptions($options);
 
         // Determine provider
         $selectedProvider = $provider ?? $this->determineProvider($normalizedPhone);
@@ -92,6 +116,13 @@ class SmsService
                 'to'       => $to,
             ]);
 
+            $accepted = !(is_array($result) && array_key_exists('success', $result) && $result['success'] === false);
+            SmsGuard::make()->settle($reservation, $accepted, [
+                'provider'   => $selectedProvider,
+                'message_id' => $result['message_id'] ?? null,
+                'error'      => $accepted ? null : ($result['error'] ?? $result['message'] ?? null),
+            ]);
+
             return $result;
         } catch (\Throwable $e) {
             Log::error('SMS sending failed', [
@@ -99,6 +130,8 @@ class SmsService
                 'to'       => $to,
                 'error'    => $e->getMessage(),
             ]);
+
+            SmsGuard::make()->settle($reservation, false, ['provider' => $selectedProvider, 'error' => $e->getMessage()]);
 
             throw $e;
         }

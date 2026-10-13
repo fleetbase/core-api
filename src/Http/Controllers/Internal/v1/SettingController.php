@@ -589,7 +589,7 @@ class SettingController extends Controller
         $result          = null;
 
         try {
-            $result = (new SmsService())->send($phone, $message, [], $provider);
+            $result = (new SmsService())->send($phone, $message, ['purpose' => 'admin_test'], $provider);
             if (is_array($result) && data_get($result, 'success') === false) {
                 $status          = 'error';
                 $responseMessage = data_get($result, 'error', 'SMS provider returned an error.');
