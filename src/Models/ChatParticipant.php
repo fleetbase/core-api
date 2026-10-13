@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Models;
 
+use Fleetbase\Casts\Json;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasUuid;
@@ -16,6 +17,15 @@ class ChatParticipant extends Model
     use HasPublicId;
     use HasApiModelBehavior;
     use SendsWebhooks;
+
+    /**
+     * Participant roles (`meta.role`), used by order chats to tell apps who is speaking.
+     */
+    public const ROLE_CUSTOMER = 'customer';
+    public const ROLE_DRIVER   = 'driver';
+    public const ROLE_STORE    = 'store';
+    public const ROLE_SYSTEM   = 'system';
+    public const ROLES         = [self::ROLE_CUSTOMER, self::ROLE_DRIVER, self::ROLE_STORE, self::ROLE_SYSTEM];
 
     /**
      * The database table used by the model.
@@ -36,7 +46,7 @@ class ChatParticipant extends Model
      *
      * @var array
      */
-    protected $fillable = ['company_uuid', 'chat_channel_uuid', 'user_uuid'];
+    protected $fillable = ['company_uuid', 'chat_channel_uuid', 'user_uuid', 'meta'];
 
     /**
      * Dynamic attributes that are appended to object.
@@ -57,7 +67,9 @@ class ChatParticipant extends Model
      *
      * @var array
      */
-    protected $casts = [];
+    protected $casts = [
+        'meta' => Json::class,
+    ];
 
     public function user(): BelongsTo|Builder
     {
@@ -105,6 +117,16 @@ class ChatParticipant extends Model
     public function getIsOnlineAttribute(): bool
     {
         return $this->user ? $this->user->isOnline() : false;
+    }
+
+    /**
+     * The participant's role (`meta.role`) when it is one of the known roles.
+     */
+    public function getRole(): ?string
+    {
+        $role = data_get($this->meta, 'role');
+
+        return in_array($role, self::ROLES, true) ? $role : null;
     }
 
     /**

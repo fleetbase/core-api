@@ -20,6 +20,7 @@ use Fleetbase\Exceptions\PolicyDoesNotExist;
 use Fleetbase\Exceptions\UnauthorizedRequestException;
 use Fleetbase\Listeners\SendResourceLifecycleWebhook;
 use Fleetbase\Models\ChatChannel;
+use Fleetbase\Models\ChatMessage;
 use Fleetbase\Models\ChatParticipant;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\Model as FleetbaseModel;
@@ -428,6 +429,76 @@ test('chat participant events broadcast participant payloads to chat and user ch
     'participant added'   => [ChatParticipantAdded::class, 'chat.added_participant'],
     'participant removed' => [ChatParticipantRemoved::class, 'chat.removed_participant'],
 ]);
+
+test('chat participant and message resources expose the participant role and message meta', function () {
+    bind_test_container();
+
+    $channel = new ChatChannel();
+    $channel->setRawAttributes(['uuid' => 'channel-uuid', 'public_id' => 'chat_channel_public'], true);
+
+    $user = new EventsAndExceptionsUser();
+    $user->setRawAttributes(['uuid' => 'user-uuid', 'public_id' => 'user_public', 'name' => 'Corner Cafe'], true);
+
+    $participant = new EventsAndExceptionsChatParticipant();
+    $participant->setRawAttributes([
+        'uuid'              => 'participant-uuid',
+        'public_id'         => 'participant_public',
+        'chat_channel_uuid' => 'channel-uuid',
+        'user_uuid'         => 'user-uuid',
+        'meta'              => '{"role":"store"}',
+    ], true);
+    $participant->setRelation('chatChannel', $channel);
+    $participant->setRelation('user', $user);
+
+    $message = new ChatMessage();
+    $message->setRawAttributes([
+        'uuid'              => 'message-uuid',
+        'public_id'         => 'message_public',
+        'chat_channel_uuid' => 'channel-uuid',
+        'sender_uuid'       => 'participant-uuid',
+        'content'           => 'Drop-off changed to 8 Marina View',
+        'meta'              => '{"system":true,"kind":"order_updated"}',
+    ], true);
+    $message->setRelation('chatChannel', $channel);
+    $message->setRelation('sender', $participant);
+    $message->setRelation('attachments', collect());
+    $message->setRelation('receipts', collect());
+
+    // a system message may have no sender at all
+    $senderless = new ChatMessage();
+    $senderless->setRawAttributes(['uuid' => 'message-2', 'public_id' => 'message_2', 'content' => 'Order updated', 'meta' => '{"system":true,"kind":"order_updated"}'], true);
+    $senderless->setRelation('chatChannel', $channel);
+    $senderless->setRelation('sender', null);
+    $senderless->setRelation('attachments', collect());
+    $senderless->setRelation('receipts', collect());
+
+    $plain = new ChatMessage();
+    $plain->setRawAttributes(['uuid' => 'message-3', 'public_id' => 'message_3', 'content' => 'Hi'], true);
+    $plain->setRelation('chatChannel', $channel);
+    $plain->setRelation('sender', $participant);
+    $plain->setRelation('attachments', collect());
+    $plain->setRelation('receipts', collect());
+
+    $request = Illuminate\Http\Request::create('/v1/chat-channels/chat_channel_public');
+    $request->setRouteResolver(fn () => new EventsAndExceptionsRoute('v1/chat-channels/{id}'));
+    app()->instance('request', $request);
+
+    $resolve        = fn ($resource) => json_decode(json_encode($resource->resolve($request)), true);
+    $publicMessage  = $resolve(new Fleetbase\Http\Resources\ChatMessage($message));
+    $publicNoSender = $resolve(new Fleetbase\Http\Resources\ChatMessage($senderless));
+    $publicPlain    = $resolve(new Fleetbase\Http\Resources\ChatMessage($plain));
+
+    expect($publicMessage['id'])->toBe('message_public')
+        ->and($publicMessage['system'])->toBeTrue()
+        ->and($publicMessage['meta'])->toBe(['system' => true, 'kind' => 'order_updated'])
+        ->and($publicMessage['sender']['id'])->toBe('participant_public')
+        ->and($publicMessage['sender']['role'])->toBe('store')
+        ->and($publicMessage['sender']['meta'])->toBe(['role' => 'store'])
+        ->and($publicNoSender['sender'])->toBeNull()
+        ->and($publicNoSender['system'])->toBeTrue()
+        ->and($publicPlain['system'])->toBeFalse()
+        ->and($publicPlain['meta'])->toBe([]);
+});
 
 test('resource lifecycle events normalize payload children without dropping chat message relations', function () {
     bind_test_container(['api.version' => 'v1']);

@@ -3,6 +3,7 @@
 namespace Fleetbase\Http\Resources;
 
 use Fleetbase\Support\Http;
+use Fleetbase\Support\Utils;
 
 class ChatParticipant extends FleetbaseResource
 {
@@ -27,6 +28,8 @@ class ChatParticipant extends FleetbaseResource
             'email'                              => $this->whenLoaded('user', fn () => $this->user->email),
             'phone'                              => $this->whenLoaded('user', fn () => $this->user->phone),
             'avatar_url'                         => $this->whenLoaded('user', fn () => $this->user->avatar_url),
+            'role'                               => method_exists($this->resource, 'getRole') ? $this->resource->getRole() : null,
+            'meta'                               => data_get($this, 'meta') ?: Utils::createObject(),
             'is_online'                          => $this->is_online,
             'last_seen_at'                       => $this->last_seen_at,
             'updated_at'                         => $this->updated_at,
