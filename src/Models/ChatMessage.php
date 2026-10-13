@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Models;
 
+use Fleetbase\Casts\Json;
 use Fleetbase\Notifications\ChatMessageReceived;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasPublicId;
@@ -34,7 +35,7 @@ class ChatMessage extends Model
      *
      * @var array
      */
-    protected $fillable = ['company_uuid', 'chat_channel_uuid', 'sender_uuid', 'content'];
+    protected $fillable = ['company_uuid', 'chat_channel_uuid', 'sender_uuid', 'content', 'meta'];
 
     /**
      * The relationships to always load along with the model.
@@ -42,6 +43,15 @@ class ChatMessage extends Model
      * @var array
      */
     protected $with = ['sender', 'attachments', 'receipts'];
+
+    /**
+     * The attributes that should be cast to native types.
+     *
+     * @var array
+     */
+    protected $casts = [
+        'meta' => Json::class,
+    ];
 
     /**
      * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
@@ -73,6 +83,24 @@ class ChatMessage extends Model
     public function receipts()
     {
         return $this->hasMany(ChatReceipt::class, 'chat_message_uuid', 'uuid')->whereHas('participant');
+    }
+
+    /**
+     * Whether this is a system message (`meta.system = true`), e.g. "order updated".
+     */
+    public function isSystem(): bool
+    {
+        return (bool) data_get($this->meta, 'system', false);
+    }
+
+    /**
+     * The system message kind (`meta.kind`), e.g. `order_updated` or `address_change_requested`.
+     */
+    public function getSystemKind(): ?string
+    {
+        $kind = $this->isSystem() ? data_get($this->meta, 'kind') : null;
+
+        return is_string($kind) ? $kind : null;
     }
 
     /**

@@ -225,8 +225,10 @@ class ResourceLifecycleEvent implements ShouldBroadcast
     {
         $relationships = ['driverAssigned', 'customer', 'facilitator', 'vendor'];
         foreach ($relationships as $relationship) {
-            if ($model && isset($model->{Str::snake($relationship) . '_uuid'})) {
-                $channels[] = new Channel($relationship . '.' . $model->{$relationship . '_uuid'});
+            // Foreign keys are snake case (`driver_assigned_uuid`), the relationship names are camel case.
+            $foreignKey = Str::snake($relationship) . '_uuid';
+            if ($model && isset($model->{$foreignKey})) {
+                $channels[] = new Channel($relationship . '.' . $model->{$foreignKey});
             }
             if ($model && isset($model->{$relationship})) {
                 $channels[] = new Channel($relationship . '.' . $model->{$relationship}->public_id);

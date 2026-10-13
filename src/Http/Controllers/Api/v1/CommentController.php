@@ -35,6 +35,11 @@ class CommentController extends Controller
             'content'            => $content,
         ];
 
+        // Optional `internal` | `customer`; unset falls back to the subject's default visibility.
+        if (in_array($request->input('visibility'), Comment::VISIBILITIES, true)) {
+            $data['visibility'] = $request->input('visibility');
+        }
+
         // Resolve the parent
         $parentComment = null;
         if ($parent) {
@@ -144,9 +149,9 @@ class CommentController extends Controller
      */
     public function find($id)
     {
-        // find for the Comment
+        // find for the Comment, internal notes are not exposed on the public API
         try {
-            $comment = Comment::findRecordOrFail($id);
+            $comment = Comment::findRecordOrFail($id, [], ['*'], fn ($query) => $query->visibleToCustomers());
         } catch (ModelNotFoundException $exception) {
             return response()->apiError('Comment resource not found.', 404);
         } catch (\Throwable $e) {
