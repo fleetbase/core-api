@@ -742,6 +742,24 @@ test('api model cache scopes list keys by the configured session keys only', fun
         ->and($key(['customer' => 'customer-a', 'storefront_store' => 'store-a']))->toBe($key(['customer' => 'customer-a', 'storefront_store' => 'store-b']));
 });
 
+test('api model cache leaves requests without a session unscoped', function () {
+    api_model_cache_fixture();
+
+    $sessionScope = new ReflectionMethod(ApiModelCache::class, 'getSessionScope');
+    $sessionScope->setAccessible(true);
+
+    expect($sessionScope->invoke(null, Request::create('/v1/orders', 'GET')))->toBe([])
+        ->and($sessionScope->invoke(null, api_model_cache_scoped_request('/v1/orders', [
+            'company'            => 'company-1',
+            'storefront_store'   => 'store-1',
+            'api_credential'     => 'credential-1',
+            'storefront_network' => null,
+        ])))->toBe([
+            'api_credential'   => 'credential-1',
+            'storefront_store' => 'store-1',
+        ]);
+});
+
 test('api model cache resolves tenant scope from authenticated user and request input fallbacks', function () {
     api_model_cache_fixture();
     $model = api_model_cache_model();
