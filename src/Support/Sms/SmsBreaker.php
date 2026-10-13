@@ -2,9 +2,12 @@
 
 namespace Fleetbase\Support\Sms;
 
+use Fleetbase\Models\Company;
+use Fleetbase\Models\VerificationCode;
 use Fleetbase\Notifications\SmsGuardAlert;
 use Illuminate\Cache\RateLimiter;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 
@@ -30,6 +33,8 @@ class SmsBreaker
     public const SIGNAL_BUDGET_THRESHOLD       = 'company_budget_threshold';
     public const SIGNAL_DISTINCT_DESTINATIONS  = 'distinct_destinations';
     public const SIGNAL_PLATFORM_THRESHOLD     = 'platform_budget_threshold';
+    public const SIGNAL_NEW_COUNTRY            = 'new_destination_country';
+    public const SIGNAL_LOW_CONVERSION         = 'low_verification_conversion';
 
     public const DISTINCT_WINDOW = 600;
     public const ALERT_WINDOW    = 3600;
@@ -114,11 +119,40 @@ class SmsBreaker
     }
 
     /**
+     * A scope key for what an operator typed: "platform", a scope key as is, or a company
+     * uuid or public id resolved to its company scope. Null when no company matches.
+     */
+    public static function resolveScope(string $input): ?string
+    {
+        $input = trim($input);
+
+        if ($input === self::SCOPE_PLATFORM || str_starts_with($input, 'company:') || str_starts_with($input, 'tenant:')) {
+            return $input;
+        }
+
+        try {
+            $company = Company::withoutGlobalScopes()
+                ->where('uuid', $input)
+                ->orWhere('public_id', $input)
+                ->first(['uuid']);
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        return $company ? 'company:' . $company->uuid : null;
+    }
+
+    public static function companyUuidFromScope(string $scope): ?string
+    {
+        return str_starts_with($scope, 'company:') ? substr($scope, strlen('company:')) : null;
+    }
+
+    /**
      * Read the counters after a reserved send and trip whatever crossed a line.
      *
      * @param array<int, array{key: string, max: int, decay: int, reason: string, scope: string, window: string}> $counters the guard's counters for this send
      */
-    public function observe(SmsContext $context, array $limits, array $counters, RateLimiter $limiter, bool $monitor, array $settings): void
+    public function observe(SmsContext $context, array $limits, array $counters, RateLimiter $limiter, bool $monitor, array $settings, ?string $country = null): void
     {
         $breaker = $settings['breaker'];
 
@@ -128,9 +162,87 @@ class SmsBreaker
 
         if (!$limits['trusted']) {
             $this->observeDistinctDestinations($context, $breaker, $monitor);
+            $this->observeNewCountry($context, $country, $breaker, $monitor);
+            $this->observeConversion($context, $breaker, $monitor);
         }
 
         $this->observePlatform($context, $counters, $limiter, $breaker, $monitor);
+    }
+
+    /**
+     * A burst of sends to a country the company has never texted. Learned from the ledger
+     * rather than configured, since tenants' countries cannot be guessed; armed only once
+     * the company has enough history for "never" to mean something.
+     */
+    protected function observeNewCountry(SmsContext $context, ?string $country, array $breaker, bool $monitor): void
+    {
+        $threshold = $breaker['new_country_min_sends'] ?? null;
+        if (!$threshold || !$country || !$context->companyUuid) {
+            return;
+        }
+
+        if (SmsLedger::sentCountFor($context->companyUuid) < ($breaker['new_country_min_history'] ?? 0)) {
+            return;
+        }
+
+        $known = SmsLedger::countriesFor($context->companyUuid);
+        if (!$known || in_array(strtoupper($country), $known, true)) {
+            return;
+        }
+
+        $scope = $context->tenantScope() ?? $context->companyScope();
+        $count = $this->increment('new-country:' . $scope . ':' . strtoupper($country) . ':' . intdiv(time(), self::DISTINCT_WINDOW), self::DISTINCT_WINDOW);
+        if ($count >= $threshold) {
+            $this->trip($scope, self::SIGNAL_NEW_COUNTRY, $context, $breaker, $monitor, ['country' => strtoupper($country), 'sends_to_country' => $count, 'known_countries' => $known, 'window_minutes' => self::DISTINCT_WINDOW / 60]);
+        }
+    }
+
+    /**
+     * Codes issued by SMS in the last hour against codes actually verified. Real customers
+     * verify most of what they ask for; pumping verifies nothing.
+     */
+    protected function observeConversion(SmsContext $context, array $breaker, bool $monitor): void
+    {
+        $minIssued = $breaker['conversion_min_issued'] ?? null;
+        if (!$minIssued || !$context->companyUuid) {
+            return;
+        }
+
+        $stats = $this->conversionFor($context->companyUuid);
+        if ($stats === null || $stats['issued'] < $minIssued) {
+            return;
+        }
+
+        if ($stats['verified'] * 100 < $stats['issued'] * ($breaker['conversion_min_percent'] ?? 0)) {
+            $this->trip($context->companyScope(), self::SIGNAL_LOW_CONVERSION, $context, $breaker, $monitor, ['issued_last_hour' => $stats['issued'], 'verified_last_hour' => $stats['verified']]);
+        }
+    }
+
+    /**
+     * Codes issued by SMS and verified for a company in the last hour, cached for a minute;
+     * null until the verification code table carries the tracing columns.
+     *
+     * @return array{issued: int, verified: int}|null
+     */
+    protected function conversionFor(string $companyUuid): ?array
+    {
+        if (!VerificationCode::supportsTracingColumns()) {
+            return null;
+        }
+
+        try {
+            return $this->cache->remember($this->key('conversion:' . $companyUuid), 60, function () use ($companyUuid) {
+                $since = Carbon::now()->subHour();
+                $base  = VerificationCode::withoutGlobalScopes()->where('company_uuid', $companyUuid)->where('channel', 'sms')->where('created_at', '>=', $since);
+
+                return [
+                    'issued'   => (int) (clone $base)->count(),
+                    'verified' => (int) (clone $base)->whereNotNull('consumed_at')->count(),
+                ];
+            });
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     protected function observeCompanyBudget(SmsContext $context, array $counters, RateLimiter $limiter, array $breaker, bool $monitor): void

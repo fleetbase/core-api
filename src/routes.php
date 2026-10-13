@@ -280,6 +280,16 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     $router->get('consumers', 'RateLimitController@consumers');
                                     $router->post('consumers/{signature}/reset', 'RateLimitController@resetConsumer');
                                 });
+                                $router->group(['prefix' => 'sms-guard'], function ($router) {
+                                    $router->get('settings', 'SmsGuardController@getSettings');
+                                    $router->post('settings', 'SmsGuardController@saveSettings');
+                                    $router->delete('settings', 'SmsGuardController@resetSettings');
+                                    $router->get('usage', 'SmsGuardController@usage');
+                                    $router->get('ledger', 'SmsGuardController@ledger');
+                                    $router->get('pauses', 'SmsGuardController@pauses');
+                                    $router->post('pauses', 'SmsGuardController@pause');
+                                    $router->delete('pauses/{scope}', 'SmsGuardController@unpause')->where('scope', '.*');
+                                });
                                 $router->fleetbaseRoutes('schedule-monitor', null, [], function ($router, $controller) {
                                     $router->get('tasks', $controller('tasks'));
                                     $router->get('{id}/logs', $controller('logs'));

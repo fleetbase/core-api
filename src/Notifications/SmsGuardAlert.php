@@ -47,6 +47,8 @@ class SmsGuardAlert extends Notification
             'distinct_destinations'          => ['burst of SMS to new numbers', 'One tenant texted ' . ($data['distinct_destinations'] ?? '?') . ' distinct numbers inside ' . ($data['window_minutes'] ?? 10) . ' minutes. This is the SMS pumping pattern.'],
             'company_budget_threshold'       => ['tenant at ' . ($data['percent'] ?? '?') . '% of its daily SMS budget', 'The tenant has sent ' . ($data['sends_today'] ?? '?') . ' of ' . ($data['budget'] ?? '?') . ' messages today.'],
             'platform_budget_threshold'      => ['platform at ' . ($data['percent'] ?? '?') . '% of its hourly SMS budget', 'All tenants together have sent ' . ($data['sends_this_hour'] ?? '?') . ' of ' . ($data['budget'] ?? '?') . ' messages this hour.'],
+            'new_destination_country'        => ['SMS to a country new to the tenant', 'The tenant sent ' . ($data['sends_to_country'] ?? '?') . ' messages to ' . ($data['country'] ?? '?') . ' inside ' . ($data['window_minutes'] ?? 10) . ' minutes, a country it has not texted in the last 30 days (known: ' . implode(', ', (array) ($data['known_countries'] ?? [])) . ').'],
+            'low_verification_conversion'    => ['SMS codes going unverified', 'The tenant had ' . ($data['issued_last_hour'] ?? '?') . ' codes sent by SMS in the last hour and ' . ($data['verified_last_hour'] ?? '?') . ' verified. Real customers verify most of what they ask for.'],
             default                          => ['SMS guard signal: ' . $signal, 'The SMS guard raised ' . $signal . '.'],
         };
 

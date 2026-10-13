@@ -3,6 +3,7 @@
 namespace Fleetbase\Support\Sms;
 
 use Fleetbase\Exceptions\SmsBlockedException;
+use Fleetbase\Models\SmsSend;
 use Illuminate\Cache\RateLimiter;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Support\Arr;
@@ -103,7 +104,7 @@ class SmsGuard
                 $this->limiter()->hit($counter['key'], $counter['decay']);
             }
 
-            $this->breaker()->observe($context, $limits, $counters, $this->limiter(), $monitor, $settings);
+            $this->breaker()->observe($context, $limits, $counters, $this->limiter(), $monitor, $settings, $validation['country']);
         } catch (SmsBlockedException $e) {
             throw $e;
         } catch (\Throwable $e) {
@@ -116,10 +117,24 @@ class SmsGuard
                 throw SmsBlockedException::unavailable($context->toArray());
             }
 
-            return new SmsReservation($context, SmsReservation::DECISION_DEGRADED, null, $validation['country'], $validation['type']);
+            return $this->ledgered(new SmsReservation($context, SmsReservation::DECISION_DEGRADED, null, $validation['country'], $validation['type']));
         }
 
-        return new SmsReservation($context, $wouldBlock === null ? SmsReservation::DECISION_ALLOWED : SmsReservation::DECISION_MONITOR, $wouldBlock, $validation['country'], $validation['type']);
+        return $this->ledgered(new SmsReservation($context, $wouldBlock === null ? SmsReservation::DECISION_ALLOWED : SmsReservation::DECISION_MONITOR, $wouldBlock, $validation['country'], $validation['type']));
+    }
+
+    /**
+     * Put a send that is going ahead on the ledger as reserved; settle() records how it ended.
+     */
+    protected function ledgered(SmsReservation $reservation): SmsReservation
+    {
+        $reservation->sendUuid = SmsLedger::record($reservation->context, SmsSend::STATUS_RESERVED, [
+            'destination_country' => $reservation->country,
+            'destination_type'    => $reservation->type,
+            'meta'                => array_filter(['decision' => $reservation->decision, 'would_block' => $reservation->wouldBlock]),
+        ]);
+
+        return $reservation;
     }
 
     /**
@@ -144,6 +159,13 @@ class SmsGuard
         } else {
             Log::warning('sms.failed', $entry);
         }
+
+        SmsLedger::update($reservation->sendUuid, [
+            'status'              => $success ? SmsSend::STATUS_SENT : SmsSend::STATUS_FAILED,
+            'provider'            => $details['provider'] ?? null,
+            'provider_message_id' => isset($details['message_id']) ? (string) $details['message_id'] : null,
+            'error'               => $details['error'] ?? null,
+        ]);
     }
 
     public function breaker(): SmsBreaker
@@ -258,6 +280,7 @@ class SmsGuard
         }
 
         Log::warning('sms.blocked', $entry);
+        SmsLedger::record($context, SmsSend::STATUS_BLOCKED, ['block_reason' => $exception->reason()]);
 
         throw $exception;
     }

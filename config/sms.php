@@ -199,6 +199,20 @@ return [
             'alert_percentages'             => [50, 80],
             'distinct_destinations_per_10m' => 25,
             'auto_pauses_before_manual'     => 2,
+            // Sends in 10 minutes to a country the company has not texted in the last
+            // 30 days, once it has at least `new_country_min_history` ledgered sends.
+            'new_country_min_sends'         => 10,
+            'new_country_min_history'       => 50,
+            // Verification codes issued by SMS in the last hour versus codes actually
+            // verified: pumping has a conversion of about zero.
+            'conversion_min_issued'         => 20,
+            'conversion_min_percent'        => 10,
+        ],
+
+        // The send ledger (sms_sends): every send and refusal with who, where and why.
+        'ledger' => [
+            'retention_days'  => env('SMS_GUARD_LEDGER_RETENTION_DAYS', 90),
+            'mask_after_days' => env('SMS_GUARD_LEDGER_MASK_AFTER_DAYS', 30),
         ],
 
         // Per-purpose overrides, keyed by the verification code's `for` value.

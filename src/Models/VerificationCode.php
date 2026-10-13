@@ -7,6 +7,8 @@ use Fleetbase\Mail\VerificationMail;
 use Fleetbase\Services\SmsService;
 use Fleetbase\Support\Sms\SmsContext;
 use Fleetbase\Support\Sms\SmsGuard;
+use Fleetbase\Support\Sms\SmsLedger;
+use Fleetbase\Support\Sms\SmsReservation;
 use Fleetbase\Support\Utils;
 use Fleetbase\Traits\Expirable;
 use Fleetbase\Traits\HasMetaAttributes;
@@ -15,6 +17,7 @@ use Fleetbase\Traits\HasUuid;
 use Fleetbase\Twilio\Support\Laravel\Facade as Twilio;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Mail;
 
 class VerificationCode extends Model
@@ -36,7 +39,7 @@ class VerificationCode extends Model
      *
      * @var array
      */
-    protected $fillable = ['subject_uuid', 'subject_type', 'code', 'for', 'expires_at', 'meta', 'status'];
+    protected $fillable = ['subject_uuid', 'subject_type', 'code', 'for', 'expires_at', 'meta', 'status', 'company_uuid', 'identity', 'channel', 'ip_address', 'user_agent', 'sms_send_uuid', 'consumed_at'];
 
     /**
      * The attributes that should be cast to native types.
@@ -44,9 +47,13 @@ class VerificationCode extends Model
      * @var array
      */
     protected $casts = [
-        'expires_at' => 'datetime',
-        'meta'       => Json::class,
+        'expires_at'  => 'datetime',
+        'consumed_at' => 'datetime',
+        'meta'        => Json::class,
     ];
+
+    public const STATUS_USED   = 'used';
+    public const STATUS_LOCKED = 'locked';
 
     /**
      * Dynamic attributes that are appended to object.
@@ -168,6 +175,113 @@ class VerificationCode extends Model
     }
 
     /**
+     * Mark a code used so it cannot verify again. The row stays, for the ledger.
+     */
+    public function consume(): void
+    {
+        $this->status = self::STATUS_USED;
+        if (static::supportsTracingColumns()) {
+            $this->consumed_at = Carbon::now();
+        }
+        $this->setMeta('consumed_at', Carbon::now()->toIso8601String());
+        $this->save();
+    }
+
+    /**
+     * The newest live code filed under an identity for a purpose: not expired (the default
+     * scope), not used, not locked. Looks at the `identity` column where the table has it
+     * and at `meta->identity` otherwise, so rows written before the column exists resolve.
+     */
+    public static function findActiveFor(string $for, string $identity, ?string $subjectUuid = null): ?static
+    {
+        $query = static::query()->where('for', $for);
+
+        if (static::supportsTracingColumns()) {
+            $query->where(function ($query) use ($identity) {
+                $query->where('identity', $identity)->orWhere('meta->identity', $identity);
+            });
+        } else {
+            $query->where('meta->identity', $identity);
+        }
+
+        if ($subjectUuid) {
+            $query->where('subject_uuid', $subjectUuid);
+        }
+
+        return $query
+            ->where(function ($query) {
+                $query->whereNull('status')->orWhereNotIn('status', [self::STATUS_USED, self::STATUS_LOCKED]);
+            })
+            ->orderByDesc('created_at')
+            ->first();
+    }
+
+    /**
+     * The newest live code for a subject and purpose.
+     */
+    public static function findActiveForSubject(string $for, string $subjectUuid): ?static
+    {
+        return static::query()
+            ->where('for', $for)
+            ->where('subject_uuid', $subjectUuid)
+            ->where(function ($query) {
+                $query->whereNull('status')->orWhereNotIn('status', [self::STATUS_USED, self::STATUS_LOCKED]);
+            })
+            ->orderByDesc('created_at')
+            ->first();
+    }
+
+    /**
+     * Whether the table has the tracing columns added in October 2026 (company, identity,
+     * channel, address, ledger link, consumed_at). An install that has not migrated yet,
+     * and a test schema, keep working with `meta` alone. Remembered in the cache for five
+     * minutes, so a migration is picked up without a restart.
+     */
+    public static function supportsTracingColumns(): bool
+    {
+        $model = new static();
+        $check = function () use ($model): bool {
+            try {
+                return (bool) $model->getConnection()->getSchemaBuilder()->hasColumn($model->getTable(), 'identity');
+            } catch (\Throwable $e) {
+                return false;
+            }
+        };
+
+        try {
+            return (bool) Cache::remember('verification_codes:tracing_columns:' . ($model->getConnectionName() ?: 'default'), 300, $check);
+        } catch (\Throwable $e) {
+            return $check();
+        }
+    }
+
+    /**
+     * What a code row keeps about who asked for it, set only where the table has the columns.
+     */
+    protected static function tracingAttributes(?string $companyUuid, string $channel, ?string $identity, ?SmsReservation $reservation = null): array
+    {
+        if (!static::supportsTracingColumns()) {
+            return [];
+        }
+
+        $request = null;
+        try {
+            $request = request();
+        } catch (\Throwable $e) {
+            // no request: a console or queued send
+        }
+
+        return [
+            'company_uuid'  => $companyUuid ?: null,
+            'identity'      => $identity ?: null,
+            'channel'       => $channel,
+            'ip_address'    => $reservation?->context->ip ?? ($request ? $request->ip() : null),
+            'user_agent'    => $reservation?->context->userAgent ?? ($request && $request->userAgent() ? substr((string) $request->userAgent(), 0, 250) : null),
+            'sms_send_uuid' => $reservation?->sendUuid,
+        ];
+    }
+
+    /**
      * @return \Illuminate\Database\Eloquent\Relations\MorphTo
      */
     public function subject()
@@ -218,10 +332,16 @@ class VerificationCode extends Model
     public static function generateEmailVerificationFor($subject, $for = 'email_verification', array $options = [])
     {
         $expireAfter                  = data_get($options, 'expireAfter');
+        $meta                         = (array) data_get($options, 'meta', []);
         $verificationCode             = static::generateFor($subject, $for, false);
         $verificationCode->expires_at = $expireAfter === null ? Carbon::now()->addHour() : $expireAfter;
-        $verificationCode->meta       = data_get($options, 'meta', []);
+        $verificationCode->meta       = $meta;
         $verificationCode->status     = data_get($options, 'status', 'active');
+        $verificationCode->forceFill(static::tracingAttributes(
+            data_get($options, 'company_uuid') ?? session('company') ?? data_get($subject, 'company_uuid'),
+            'email',
+            (string) (data_get($meta, 'identity') ?? data_get($subject, 'email') ?? '')
+        ));
         $verificationCode->save();
 
         if (isset($subject->email)) {
@@ -292,16 +412,43 @@ class VerificationCode extends Model
             $meta['trace'] = $reservation->trace();
         }
 
-        $verificationCode             = static::generateFor($subject, $for, false);
-        $verificationCode->expires_at = $expireAfter === null ? Carbon::now()->addHour() : $expireAfter;
-        $verificationCode->meta       = $meta;
-        $verificationCode->save();
+        // With `hashed`, the row keeps an HMAC of the code (as issue() does) and the plain
+        // code exists only in the message and on the returned instance's `plainCode`.
+        $plainCode = null;
+        if (data_get($options, 'hashed')) {
+            $plainCode        = (string) random_int(100000, 999999);
+            $meta['hashed']   = true;
+            $meta['attempts'] = 0;
+        }
 
-        // Get message
-        $message         = 'Your ' . config('app.name') . ' verification code is ' . $verificationCode->code;
+        $identity                     = (string) (data_get($meta, 'identity') ?? data_get($meta, 'phone') ?? $destination ?? '');
+        $verificationCode             = static::generateFor($subject, $for, false);
+        $verificationCode->expires_at = $expireAfter === null ? ($plainCode !== null ? Carbon::now()->addMinutes(10) : Carbon::now()->addHour()) : $expireAfter;
+        $verificationCode->meta       = $meta;
+        $verificationCode->status     = data_get($options, 'status', $plainCode !== null ? 'active' : $verificationCode->status);
+        if ($plainCode !== null) {
+            $verificationCode->code = static::hashCode($plainCode);
+        }
+        $verificationCode->forceFill(static::tracingAttributes($companyUuid, 'sms', $identity, $reservation));
+        $verificationCode->save();
+        $verificationCode->plainCode = $plainCode;
+
+        if ($reservation && $reservation->sendUuid) {
+            SmsLedger::update($reservation->sendUuid, ['verification_code_uuid' => $verificationCode->uuid]);
+        }
+
+        // Get message. A message callback reads `->code` off the instance it is given; for
+        // a hashed code it gets a copy carrying the plain code, never the stored HMAC.
+        $forMessage = $verificationCode;
+        if ($plainCode !== null) {
+            $forMessage       = clone $verificationCode;
+            $forMessage->code = $plainCode;
+        }
+
+        $message         = 'Your ' . config('app.name') . ' verification code is ' . $forMessage->code;
         $messageCallback = data_get($options, 'messageCallback');
         if (is_callable($messageCallback)) {
-            $message = $messageCallback($verificationCode);
+            $message = $messageCallback($forMessage);
         }
 
         // SMS service options, including the reservation so the send is counted once

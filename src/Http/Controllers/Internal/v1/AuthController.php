@@ -26,7 +26,6 @@ use Fleetbase\Notifications\UserForgotPassword;
 use Fleetbase\Support\Auth;
 use Fleetbase\Support\TwoFactorAuth;
 use Fleetbase\Support\Utils;
-use Fleetbase\Twilio\Support\Laravel\Facade as Twilio;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -243,133 +242,6 @@ class AuthController extends Controller
     }
 
     /**
-     * Send a verification SMS code.
-     *
-     * @param \\Illuminate\Http\Request $request
-     *
-     * @return \Illuminate\Http\Response $response
-     */
-    public function sendVerificationSms(Request $request)
-    {
-        // Users phone number
-        $phone       = $queryPhone = $request->input('phone');
-        $countryCode = $request->input('countryCode');
-        $for         = $request->input('driver');
-
-        // set phone number
-        if (!Str::startsWith($queryPhone, '+')) {
-            $queryPhone = '+' . $countryCode . $phone;
-        }
-
-        // Make sure user exists with phone number
-        $userExistsQuery = User::where('phone', $queryPhone)->whereNull('deleted_at')->withoutGlobalScopes();
-
-        if ($for === 'driver') {
-            $userExistsQuery->where('type', 'driver');
-        }
-
-        $userExists = $userExistsQuery->exists();
-
-        if (!$userExists) {
-            return response()->error('No user with this phone # found.');
-        }
-
-        // Generate hto
-        $verifyCode    = mt_rand(100000, 999999);
-        $verifyCodeKey =  Str::slug($queryPhone . '_verify_code', '_');
-
-        // Send user their verification code
-        try {
-            Twilio::message($queryPhone, 'Your Fleetbase authentication code is ' . $verifyCode);
-        } catch (\Exception|\Twilio\Exceptions\RestException $e) {
-            return response()->json(['error' => $e->getMessage()], 400);
-        }
-
-        // Store verify code for this number with a 10-minute TTL to prevent replay attacks
-        Redis::setex($verifyCodeKey, 600, $verifyCode);
-
-        // 200 OK
-        return response()->json(['status' => 'OK']);
-    }
-
-    /**
-     * Authenticate a user with SMS code.
-     *
-     * @param \\Illuminate\Http\Request $request
-     *
-     * @return \Illuminate\Http\Response $response
-     */
-    public function authenticateSmsCode(Request $request)
-    {
-        // Users phone number
-        $phone       = $queryPhone = $request->input('phone');
-        $countryCode = $request->input('countryCode');
-
-        // set phone number
-        if (!Str::startsWith($queryPhone, '+')) {
-            $queryPhone = '+' . $countryCode . $phone;
-        }
-
-        // Users verfiy code entered
-        $verifyCode    = $request->input('code');
-        $verifyCodeKey =  Str::slug($queryPhone . '_verify_code', '_');
-
-        // Retrieve the stored verification code from Redis
-        $storedVerifyCode = Redis::get($verifyCodeKey);
-
-        // Retrieve the optional testing bypass code from configuration.
-        // This is configurable via the SMS_AUTH_BYPASS_CODE environment variable
-        // and is intended for development/testing environments only.
-        // It MUST be left unset (null) in production deployments.
-        $bypassCode = config('fleetbase.sms_auth_bypass_code');
-
-        // Verify the submitted code against the stored OTP using a constant-time
-        // comparison to prevent timing attacks. If a bypass code is configured
-        // and the environment is not production, also allow that code.
-        $isValidOtp    = !empty($storedVerifyCode) && hash_equals((string) $storedVerifyCode, (string) $verifyCode);
-        $isBypassValid = !empty($bypassCode) && !app()->environment('production') && hash_equals((string) $bypassCode, (string) $verifyCode);
-
-        if (!$isValidOtp && !$isBypassValid) {
-            return response()->error('Invalid verification code');
-        }
-
-        // Remove from redis
-        Redis::del($verifyCodeKey);
-
-        // get user for phone number
-        $user = User::where('phone', $queryPhone)->first();
-
-        // Attempt authentication
-        if ($user) {
-            // Set authenticatin user
-            Auth::login($user);
-
-            // Generate token
-            try {
-                $token = $user->createToken($user->phone)->plainTextToken;
-            } catch (\Exception $e) {
-                return response()->error($e->getMessage());
-            }
-
-            // @codeCoverageIgnoreStart
-            // The driver relation is supplied by Fleet-Ops; core-api tests cannot load that package relation directly.
-            if ($user->type === 'driver') {
-                $user->load(['driver']);
-            }
-            // @codeCoverageIgnoreEnd
-
-            // Send message to notify users authentication
-            return response()->json([
-                'token' => $token,
-                'user'  => $user,
-            ]);
-        }
-
-        // If unable to authenticate user, respond with error
-        return response()->json('Authentication failed', 401);
-    }
-
-    /**
      * Create resend verification code session.
      *
      * @param \\Illuminate\Http\Request $request
@@ -514,41 +386,6 @@ class AuthController extends Controller
             'verified_at' => $user->getDateVerified(),
             'token'       => null,
         ]);
-    }
-
-    /**
-     * Allow user to verify SMS code.
-     *
-     * @param \\Illuminate\Http\Request $request
-     *
-     * @return \Illuminate\Http\Response $response
-     */
-    public function verifySmsCode(Request $request)
-    {
-        // Users phone number
-        $phone = $request->input('phone');
-
-        // Users verfiy code entered
-        $verifyCode    = $request->input('code');
-        $verifyCodeKey =  Str::slug($phone . '_verify_code', '_');
-
-        // Generate hto
-        $storedVerifyCode = Redis::get($verifyCodeKey);
-
-        // Verify
-        if ($verifyCode === $storedVerifyCode) {
-            // Remove from redis
-            Redis::del($verifyCodeKey);
-
-            // 200 OK
-            return response()->json([
-                'status'  => 'OK',
-                'message' => 'Code verified',
-            ]);
-        }
-
-        // 400 ERROR
-        return response()->error('Invalid verification code');
     }
 
     /**
