@@ -135,4 +135,80 @@ return [
             ],
         ],
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Send Guard
+    |--------------------------------------------------------------------------
+    |
+    | Every SMS passes through Fleetbase\Support\Sms\SmsGuard before a provider
+    | is called (and, for verification codes, before the code row is written).
+    | The guard validates the destination with libphonenumber, enforces
+    | per-destination cooldowns and caps, per-tenant and platform-wide budgets,
+    | and pauses a tenant automatically when it crosses its budget or texts a
+    | burst of new numbers. This is what bounds the damage of a leaked public
+    | storefront key: see docs/security/storefront-sms-abuse-proposal.md.
+    |
+    | Everything here is a DEFAULT. A system administrator can change any of it
+    | at runtime (the stored override lives in the `system.sms-guard` setting and
+    | applies within a minute), so a deployment is never needed to switch modes,
+    | raise a tenant's budget or pause one.
+    |
+    |   mode: "enforce" blocks, "monitor" only logs what would have been blocked.
+    |   limits: counted in sends. null means no limit for that window.
+    |   company: the default per-tenant budget; an administrator adds exceptions
+    |            per company (raise, lower, unlimited).
+    |   tenant: a store or network inside a company; null inherits the company's.
+    |   probation: companies younger than `days` get this smaller daily budget,
+    |              so a self-signup farm cannot mint a fresh budget per account.
+    |   platform: enforced for all tenants together, deliberately high relative
+    |             to a single tenant's cap. The "trusted" bucket is for purposes
+    |             that already proved a password (2FA, admin actions).
+    |
+    */
+
+    'guard' => [
+        'enabled'      => env('SMS_GUARD_ENABLED', true),
+        'mode'         => env('SMS_GUARD_MODE', 'enforce'),
+        'cache_store'  => env('SMS_GUARD_CACHE_STORE'),
+        'alert_emails' => env('SMS_GUARD_ALERT_EMAILS', ''),
+
+        'validation' => [
+            'enabled'           => env('SMS_GUARD_VALIDATE', true),
+            'allowed_types'     => ['MOBILE', 'FIXED_LINE_OR_MOBILE'],
+            'blocked_countries' => env('SMS_GUARD_BLOCKED_COUNTRIES', ''),
+            // International freephone, shared-cost, satellite, personal-number and
+            // premium ranges: the destinations that pay out per message.
+            'blocked_prefixes'  => env('SMS_GUARD_BLOCKED_PREFIXES', '+800,+808,+870,+878,+881,+882,+883,+888,+979'),
+        ],
+
+        'limits' => [
+            'destination' => ['cooldown_seconds' => 60, 'per_hour' => 3, 'per_day' => 5],
+            'ip'          => ['per_15_minutes' => 5, 'per_day' => 20],
+            'company'     => ['per_minute' => 10, 'per_hour' => 60, 'per_day' => 200],
+            'tenant'      => ['per_minute' => null, 'per_hour' => null, 'per_day' => null],
+            'probation'   => ['days' => 7, 'per_day' => 20],
+            'platform'    => [
+                'public'  => ['per_minute' => 100, 'per_hour' => 1500, 'per_day' => 10000],
+                'trusted' => ['per_minute' => 100, 'per_hour' => 1500, 'per_day' => 10000],
+            ],
+        ],
+
+        'breaker' => [
+            'pause_minutes'                 => 60,
+            'alert_percentages'             => [50, 80],
+            'distinct_destinations_per_10m' => 25,
+            'auto_pauses_before_manual'     => 2,
+        ],
+
+        // Per-purpose overrides, keyed by the verification code's `for` value.
+        'purposes' => [
+            '2fa'                     => ['trusted' => true, 'destination' => ['cooldown_seconds' => 20, 'per_hour' => 10, 'per_day' => 30]],
+            'admin_test'              => ['trusted' => true],
+            'admin_user_verification' => ['trusted' => true],
+            'storefront_login'        => ['destination' => ['cooldown_seconds' => 30, 'per_hour' => 5, 'per_day' => 10]],
+            'fleetops_customer_login' => ['destination' => ['cooldown_seconds' => 30, 'per_hour' => 5, 'per_day' => 10]],
+            'driver_login'            => ['destination' => ['cooldown_seconds' => 30, 'per_hour' => 5, 'per_day' => 10]],
+        ],
+    ],
 ];

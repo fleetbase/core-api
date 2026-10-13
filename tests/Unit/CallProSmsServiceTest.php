@@ -50,6 +50,7 @@ beforeEach(function () {
             'routing_rules'    => [
                 '+976' => SmsService::PROVIDER_CALLPRO,
             ],
+            'guard' => ['enabled' => false],
         ],
     ]));
     $app->instance('log', new NullLogger());

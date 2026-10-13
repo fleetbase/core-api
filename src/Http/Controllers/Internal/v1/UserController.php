@@ -1355,7 +1355,7 @@ class UserController extends FleetbaseController
         try {
             if ($channel === 'phone') {
                 $url    = UserContactVerificationRequested::urlFor($verificationCode);
-                $result = app(SmsService::class)->send($value, 'Verify your ' . config('app.name') . ' phone number: ' . $url);
+                $result = app(SmsService::class)->send($value, 'Verify your ' . config('app.name') . ' phone number: ' . $url, ['purpose' => 'admin_user_verification']);
                 if (is_array($result) && array_key_exists('success', $result) && !$result['success']) {
                     throw new \RuntimeException((string) ($result['error'] ?? $result['message'] ?? 'The SMS provider refused the message.'));
                 }

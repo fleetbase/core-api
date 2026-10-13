@@ -5,6 +5,8 @@ namespace Fleetbase\Models;
 use Fleetbase\Casts\Json;
 use Fleetbase\Mail\VerificationMail;
 use Fleetbase\Services\SmsService;
+use Fleetbase\Support\Sms\SmsContext;
+use Fleetbase\Support\Sms\SmsGuard;
 use Fleetbase\Support\Utils;
 use Fleetbase\Traits\Expirable;
 use Fleetbase\Traits\HasMetaAttributes;
@@ -263,14 +265,36 @@ class VerificationCode extends Model
      *
      * @return static returns the verification code instance after persisting it to the database and sending the SMS
      *
-     * @throws \Exception throws an exception if the SMS cannot be sent
+     * @throws \Fleetbase\Exceptions\SmsBlockedException when the SMS guard refuses the send; no code row is written
+     * @throws \Exception                                throws an exception if the SMS cannot be sent
      */
     public static function generateSmsVerificationFor($subject, $for = 'phone_verification', array $options = [])
     {
-        $expireAfter                  = data_get($options, 'expireAfter');
+        $expireAfter = data_get($options, 'expireAfter');
+        $destination = data_get($subject, 'phone');
+        $companyUuid = data_get($options, 'company_uuid') ?? session('company') ?? data_get($subject, 'company_uuid');
+
+        // Ask the guard BEFORE the code row exists: a refused send must leave nothing
+        // behind, and the budgets must be counted even when the provider later fails.
+        $reservation = null;
+        if ($destination) {
+            $reservation = SmsGuard::make()->reserve(SmsContext::resolve((string) $destination, [
+                'purpose'      => $for,
+                'company_uuid' => $companyUuid,
+                'source'       => data_get($options, 'source'),
+                'subject'      => $subject,
+            ]));
+        }
+
+        $meta = (array) data_get($options, 'meta', []);
+        if ($reservation && $reservation->isGuarded()) {
+            // Who asked for this code and from where, so an incident traces from the table.
+            $meta['trace'] = $reservation->trace();
+        }
+
         $verificationCode             = static::generateFor($subject, $for, false);
         $verificationCode->expires_at = $expireAfter === null ? Carbon::now()->addHour() : $expireAfter;
-        $verificationCode->meta       = data_get($options, 'meta', []);
+        $verificationCode->meta       = $meta;
         $verificationCode->save();
 
         // Get message
@@ -280,11 +304,10 @@ class VerificationCode extends Model
             $message = $messageCallback($verificationCode);
         }
 
-        // SMS service options
-        $smsOptions = [];
+        // SMS service options, including the reservation so the send is counted once
+        $smsOptions = ['sms_reservation' => $reservation];
 
         // Check for company-specific sender ID
-        $companyUuid = data_get($options, 'company_uuid') ?? session('company') ?? data_get($subject, 'company_uuid');
         if ($companyUuid) {
             $company = Company::select(['uuid', 'options'])->find($companyUuid);
 

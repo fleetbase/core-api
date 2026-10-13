@@ -156,6 +156,7 @@ beforeEach(function () {
                 '+44' => SmsService::PROVIDER_MESSAGEBIRD,
             ],
             'providers' => [],
+            'guard'     => ['enabled' => false],
         ],
     ]));
     $app->instance('log', new NullLogger());

@@ -15,7 +15,9 @@ class Handler extends ExceptionHandler
      *
      * @var array
      */
-    protected $dontReport = [];
+    protected $dontReport = [
+        SmsBlockedException::class,
+    ];
 
     /**
      * A list of the inputs that are never flashed for validation exceptions.
@@ -79,6 +81,12 @@ class Handler extends ExceptionHandler
      */
     public function render($request, \Throwable $exception)
     {
+        // A refused SMS answers with its own status (422 bad number, 429 limited with
+        // Retry-After, 423 paused) and the same error envelope as every other API error.
+        if ($exception instanceof SmsBlockedException) {
+            return response()->json(['errors' => [$exception->getMessage()]], $exception->status(), $exception->headers());
+        }
+
         if ($this->shouldManuallyHandleException($exception)) {
             return $this->manuallyHandleException($exception);
         }

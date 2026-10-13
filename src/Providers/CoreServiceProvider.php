@@ -103,6 +103,9 @@ class CoreServiceProvider extends ServiceProvider
         \Fleetbase\Console\Commands\DeleteUser::class,
         \Fleetbase\Console\Commands\BackupDatabase::class,
         \Fleetbase\Console\Commands\TelemetryPing::class,
+        \Fleetbase\Console\Commands\SmsGuardMode::class,
+        \Fleetbase\Console\Commands\SmsGuardPause::class,
+        \Fleetbase\Console\Commands\SmsGuardUnpause::class,
     ];
 
     /**
