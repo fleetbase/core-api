@@ -106,6 +106,7 @@ class CoreServiceProvider extends ServiceProvider
         \Fleetbase\Console\Commands\SmsGuardMode::class,
         \Fleetbase\Console\Commands\SmsGuardPause::class,
         \Fleetbase\Console\Commands\SmsGuardUnpause::class,
+        \Fleetbase\Console\Commands\SmsLedgerPrune::class,
     ];
 
     /**

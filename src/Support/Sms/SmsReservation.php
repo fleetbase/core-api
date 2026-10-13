@@ -25,6 +25,9 @@ final class SmsReservation
 
     public bool $settled = false;
 
+    /** the ledger row for this send, when the ledger could be written */
+    public ?string $sendUuid = null;
+
     public function __construct(
         public readonly SmsContext $context,
         public readonly string $decision = self::DECISION_ALLOWED,
@@ -62,6 +65,7 @@ final class SmsReservation
             'destination_country' => $this->country,
             'decision'            => $this->decision,
             'would_block'         => $this->wouldBlock,
+            'sms_send_uuid'       => $this->sendUuid,
         ], fn ($value) => $value !== null);
     }
 
@@ -72,6 +76,7 @@ final class SmsReservation
             'would_block'         => $this->wouldBlock,
             'destination_country' => $this->country,
             'destination_type'    => $this->type,
+            'sms_send_uuid'       => $this->sendUuid,
         ]);
     }
 }

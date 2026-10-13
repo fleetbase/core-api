@@ -2,7 +2,6 @@
 
 namespace Fleetbase\Console\Commands;
 
-use Fleetbase\Models\Company;
 use Fleetbase\Support\Sms\SmsBreaker;
 use Fleetbase\Support\Sms\SmsGuard;
 use Illuminate\Console\Command;
@@ -46,22 +45,11 @@ class SmsGuardPause extends Command
      */
     public static function resolveScope(string $input): ?string
     {
-        $input = trim($input);
-
-        if ($input === SmsBreaker::SCOPE_PLATFORM || str_starts_with($input, 'company:') || str_starts_with($input, 'tenant:')) {
-            return $input;
-        }
-
-        $company = Company::withoutGlobalScopes()
-            ->where('uuid', $input)
-            ->orWhere('public_id', $input)
-            ->first(['uuid']);
-
-        return $company ? 'company:' . $company->uuid : null;
+        return SmsBreaker::resolveScope($input);
     }
 
     public static function companyUuidFromScope(string $scope): ?string
     {
-        return str_starts_with($scope, 'company:') ? substr($scope, strlen('company:')) : null;
+        return SmsBreaker::companyUuidFromScope($scope);
     }
 }
