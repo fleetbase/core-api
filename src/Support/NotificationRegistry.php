@@ -392,7 +392,33 @@ class NotificationRegistry
     }
 
     /**
+     * Determine whether a notifiable definition was registered with `registerNotifiable()`.
+     *
+     * @param mixed $definition a notifiable class name or a `dynamic:<property>` name
+     */
+    public static function isRegisteredNotifiable($definition): bool
+    {
+        if (!is_string($definition) || $definition === '') {
+            return false;
+        }
+
+        $definition = ltrim($definition, '\\');
+        foreach (static::$notifiables as $notifiable) {
+            if (is_string($notifiable) && ltrim($notifiable, '\\') === $definition) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Resolve a notifiable object to an Eloquent model.
+     *
+     * The notifiable object comes from the company's saved notification settings, so only registered
+     * notifiables are resolved. An unregistered `dynamic:<property>` would reach any public method on the
+     * subject that takes no arguments, through `resolveDynamicNotifiable()` or Eloquent's relation getter,
+     * and an unregistered class would be built by the container. Anything else is skipped.
      *
      * @param array $notifiableObject an associative array containing the definition and primary key to resolve the notifiable object
      *
@@ -403,6 +429,10 @@ class NotificationRegistry
         $definition = data_get($notifiableObject, 'definition');
         $primaryKey = data_get($notifiableObject, 'primaryKey');
         $key        = data_get($notifiableObject, 'key');
+
+        if (!static::isRegisteredNotifiable($definition)) {
+            return null;
+        }
 
         // Handle dynamic subject resolution
         if (Str::startsWith($definition, 'dynamic:')) {
