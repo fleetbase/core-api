@@ -3,6 +3,7 @@
 use Fleetbase\Models\Setting;
 use Fleetbase\Support\Sms\SmsContext;
 use Fleetbase\Support\Sms\SmsPolicy;
+use Fleetbase\Tests\Fixtures\Support\SmsGuardFixture;
 use Illuminate\Cache\ArrayStore;
 use Illuminate\Cache\Repository as CacheRepository;
 use Illuminate\Database\Capsule\Manager as Capsule;
@@ -252,4 +253,27 @@ test('sms policy merge replaces lists and merges associative arrays', function (
         'mode'       => 'monitor',
         'extra'      => ['a' => 1],
     ]);
+});
+
+test('sms policy tolerates a missing cache and tables it cannot query', function () {
+    bind_test_container(['sms.guard' => sms_policy_config()]);
+    app()->forgetInstance('cache');
+    Facade::clearResolvedInstances();
+
+    SmsPolicy::flush();
+
+    expect(SmsPolicy::settings()['mode'])->toBe('enforce');
+
+    // A database with neither a companies nor a users table: the lookups fail quietly.
+    SmsGuardFixture::database(['sms.guard' => sms_policy_config()]);
+
+    expect(SmsPolicy::isOnProbation('company-new', 7))->toBeFalse()
+        ->and(SmsPolicy::adminUsers()->isEmpty())->toBeTrue()
+        ->and(SmsPolicy::alertRecipients())->toBe(['ops@example.test']);
+});
+
+test('sms policy drops purposes that are not named or carry no rules', function () {
+    $normalized = SmsPolicy::normalize(['purposes' => ['' => ['trusted' => true], 'login' => 'yes', 7 => ['trusted' => true], '2fa' => ['trusted' => true]]]);
+
+    expect(array_keys($normalized['purposes']))->toBe(['2fa']);
 });

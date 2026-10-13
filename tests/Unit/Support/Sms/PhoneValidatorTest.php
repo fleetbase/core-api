@@ -40,6 +40,11 @@ test('phone validator refuses numbers that are invalid or cannot receive texts',
         ->and($land)->toMatchArray(['valid' => false, 'type' => 'FIXED_LINE', 'reason' => PhoneValidator::REASON_TYPE_NOT_ALLOWED]);
 });
 
+test('phone validator treats a number the parser rejects outright as invalid', function () {
+    expect(PhoneValidator::validate('+12'))->toMatchArray(['valid' => false, 'reason' => PhoneValidator::REASON_INVALID])
+        ->and(PhoneValidator::validate('+12', ['enabled' => false]))->toMatchArray(['valid' => true, 'e164' => '+12', 'reason' => null]);
+});
+
 test('phone validator applies blocked prefixes, blocked countries and a company allowlist', function () {
     $prefix  = PhoneValidator::validate('+447400100123', ['blocked_prefixes' => '+800, +4474']);
     $country = PhoneValidator::validate('+447400100123', ['blocked_countries' => 'gb,fr']);

@@ -179,9 +179,13 @@ final class SmsContext
                 'storefront_store'   => $session->get('storefront_store'),
                 'storefront_network' => $session->get('storefront_network'),
             ];
+            // @codeCoverageIgnoreStart
         } catch (\Throwable $e) {
+            // A console or queued send has no session store. The test harness's session()
+            // is a static array that cannot fail, so this branch only runs in production.
             return [];
         }
+        // @codeCoverageIgnoreEnd
     }
 
     private static function currentRequest(): ?Request

@@ -120,3 +120,21 @@ test('sms ledger stops writing for a minute after a failure and never throws', f
     expect(SmsLedger::record(sms_ledger_context(), 'reserved'))->toBeString()
         ->and(SmsSend::count())->toBe(1);
 });
+
+test('sms ledger keeps going when the cache that remembers a failure is itself unreachable', function () {
+    $capsule = SmsGuardFixture::database();
+    $capsule->getConnection('mysql')->getSchemaBuilder()->drop('sms_sends');
+    app()->forgetInstance('cache');
+    Facade::clearResolvedInstance('cache');
+
+    expect(SmsLedger::available())->toBeTrue()
+        ->and(SmsLedger::record(sms_ledger_context(), 'reserved'))->toBeNull()
+        ->and(SmsLedger::countriesFor('company-1'))->toBe([])
+        ->and(SmsLedger::sentCountFor('company-1'))->toBe(0)
+        // Nothing could remember the failure, so the ledger is still "available" and tries again.
+        ->and(SmsLedger::available())->toBeTrue();
+
+    SmsLedger::update('some-uuid', ['status' => 'sent']);
+
+    expect(collect(app('log')->entries)->where(1, 'sms.ledger_unavailable'))->toHaveCount(2);
+});

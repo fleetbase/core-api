@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Facade;
 
 class VerificationCodeTracingTwilioFake
@@ -215,4 +216,44 @@ it('traces email codes too and leaves tracing alone without the guard', function
         ->and($sms->sms_send_uuid)->toBeNull()
         ->and($sms->meta)->toBe([])
         ->and(SmsSend::count())->toBe(0);
+});
+
+it('finds legacy codes by their meta identity on a table without the tracing columns', function () {
+    verification_code_tracing_database(false);
+    $db = EloquentModel::getConnectionResolver()->connection('mysql');
+    $db->getSchemaBuilder()->drop('verification_codes');
+    $db->getSchemaBuilder()->create('verification_codes', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('subject_uuid')->nullable();
+        $table->string('subject_type')->nullable();
+        $table->string('code')->nullable();
+        $table->string('for')->nullable();
+        $table->timestamp('expires_at')->nullable();
+        $table->text('meta')->nullable();
+        $table->string('status')->nullable();
+        $table->timestamp('deleted_at')->nullable();
+        $table->timestamps();
+    });
+    Cache::forget('verification_codes:tracing_columns:mysql');
+    $db->table('verification_codes')->insert([
+        ['uuid' => 'legacy', 'code' => '111111', 'for' => 'storefront_login', 'subject_uuid' => 'user-1', 'status' => 'active', 'meta' => json_encode(['identity' => '+447400100001']), 'expires_at' => Carbon::now()->addHour(), 'created_at' => Carbon::now(), 'updated_at' => Carbon::now()],
+    ]);
+
+    expect(VerificationCode::supportsTracingColumns())->toBeFalse()
+        ->and(VerificationCode::findActiveFor('storefront_login', '+447400100001')?->uuid)->toBe('legacy')
+        ->and(VerificationCode::findActiveFor('storefront_login', '+447400100002'))->toBeNull();
+});
+
+it('records no client address when there is no request to read it from', function () {
+    verification_code_tracing_database(false);
+    app()->bind('request', fn () => throw new RuntimeException('no request bound'));
+
+    $code = VerificationCode::generateEmailVerificationFor(verification_code_tracing_subject(), 'storefront_create_customer', ['meta' => ['identity' => 'ada@example.test']]);
+
+    app()->instance('request', Request::create('/'));
+
+    expect($code->channel)->toBe('email')
+        ->and($code->identity)->toBe('ada@example.test')
+        ->and($code->ip_address)->toBeNull()
+        ->and($code->user_agent)->toBeNull();
 });

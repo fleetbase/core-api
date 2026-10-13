@@ -2,6 +2,7 @@
 
 use Fleetbase\Exceptions\SmsBlockedException;
 use Fleetbase\Models\SmsSend;
+use Fleetbase\Models\VerificationCode;
 use Fleetbase\Notifications\SmsGuardAlert;
 use Fleetbase\Support\Sms\SmsBreaker;
 use Fleetbase\Support\Sms\SmsContext;
@@ -10,10 +11,13 @@ use Fleetbase\Support\Sms\SmsPolicy;
 use Fleetbase\Tests\Fixtures\Support\SmsGuardFixture;
 use Illuminate\Cache\ArrayStore;
 use Illuminate\Cache\Repository as CacheRepository;
+use Illuminate\Contracts\Notifications\Dispatcher as NotificationDispatcher;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Http\Request;
+use Illuminate\Notifications\AnonymousNotifiable;
+use Illuminate\Notifications\ChannelManager;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\Str;
@@ -27,6 +31,38 @@ class SmsGuardLedgerTestBreaker extends SmsBreaker
     {
         $this->alerts[] = $alert;
     }
+}
+
+/**
+ * What the Notification facade and an anonymous (mail only) notifiable hand the alert to.
+ */
+class SmsGuardLedgerTestChannelManager
+{
+    /** @var array<int, array{0: mixed, 1: SmsGuardAlert}> */
+    public array $sent = [];
+
+    public function __construct(public bool $broken = false)
+    {
+    }
+
+    public function sendNow($notifiables, $notification, ?array $channels = null): void
+    {
+        if ($this->broken) {
+            throw new RuntimeException('mail server down');
+        }
+
+        $this->sent[] = [$notifiables, $notification];
+    }
+}
+
+function sms_guard_ledger_channel_manager(bool $broken = false): SmsGuardLedgerTestChannelManager
+{
+    $manager = new SmsGuardLedgerTestChannelManager($broken);
+    app()->instance(ChannelManager::class, $manager);
+    app()->instance(NotificationDispatcher::class, $manager);
+    Facade::clearResolvedInstance(ChannelManager::class);
+
+    return $manager;
 }
 
 /**
@@ -257,4 +293,61 @@ test('codes that are sent by sms but never verified pause the company', function
     $healthyGuard->reserve(SmsContext::resolve('+447400100123', ['purpose' => 'storefront_create_customer']));
 
     expect($healthyBreaker->alerts)->toBe([]);
+});
+
+test('sms breaker alerts every administrator in app and by mail, and plain addresses by mail only', function () {
+    [, , $capsule] = sms_guard_ledger_setup([
+        'alert_emails' => 'ops@example.test, root@example.test',
+        'limits'       => ['company' => ['per_minute' => 100, 'per_hour' => 100, 'per_day' => 1]],
+    ]);
+    SmsGuardFixture::usersSchema($capsule, [
+        ['uuid' => 'admin-1', 'type' => 'admin', 'name' => 'Root', 'email' => 'Root@example.test'],
+        ['uuid' => 'user-1', 'type' => 'user', 'name' => 'Member', 'email' => 'member@example.test'],
+    ]);
+    $manager = sms_guard_ledger_channel_manager();
+
+    // The real breaker, so the alert is dispatched rather than collected.
+    $guard       = new SmsGuard(app('cache'));
+    $reservation = $guard->reserve(SmsContext::resolve('+447400100123', ['purpose' => 'storefront_create_customer']));
+
+    expect($reservation->decision)->toBe('allowed')
+        ->and($manager->sent)->toHaveCount(2)
+        ->and($manager->sent[0][0]->pluck('uuid')->all())->toBe(['admin-1'])
+        ->and($manager->sent[0][1])->toBeInstanceOf(SmsGuardAlert::class)
+        ->and($manager->sent[0][1]->signal)->toBe(SmsBreaker::SIGNAL_COMPANY_DAILY_BUDGET)
+        ->and($manager->sent[1][0])->toBeInstanceOf(AnonymousNotifiable::class)
+        ->and($manager->sent[1][0]->routeNotificationFor('mail'))->toBe(['ops@example.test'])
+        ->and($manager->sent[1][1])->toBe($manager->sent[0][1])
+        ->and(collect(app('log')->entries)->pluck(1)->all())->toContain('sms.alert')
+        ->and($guard->breaker()->pausedUntil('company:company-1'))->not->toBeNull();
+});
+
+test('sms breaker keeps sending when an alert cannot be delivered or the conversion data cannot be read', function () {
+    sms_guard_ledger_setup([
+        'alert_emails' => 'ops@example.test',
+        'limits'       => ['company' => ['per_minute' => 100, 'per_hour' => 100, 'per_day' => 1]],
+    ]);
+    sms_guard_ledger_channel_manager(broken: true);
+
+    // No users table either: the administrator lookup fails quietly and the addresses from
+    // the policy are still tried.
+    $guard       = new SmsGuard(app('cache'));
+    $reservation = $guard->reserve(SmsContext::resolve('+447400100123', ['purpose' => 'storefront_create_customer']));
+
+    expect($reservation->decision)->toBe('allowed')
+        ->and($guard->breaker()->pausedUntil('company:company-1'))->not->toBeNull()
+        ->and(collect(app('log')->entries)->where(1, 'sms.alert_not_sent')->first()[2]['error'])->toBe('mail server down');
+
+    // The conversion signal needs the verification code table; losing it mid-flight is not an error.
+    [$guard, $breaker, $capsule] = sms_guard_ledger_setup();
+    expect(VerificationCode::supportsTracingColumns())->toBeTrue();
+    $capsule->getConnection('mysql')->getSchemaBuilder()->drop('verification_codes');
+
+    $sent = $guard->reserve(SmsContext::resolve('+447400100124', ['purpose' => 'storefront_create_customer']));
+
+    expect($sent->decision)->toBe('allowed')
+        ->and($breaker->alerts)->toBe([])
+        // Likewise an operator's scope lookup when the companies table cannot be queried.
+        ->and(SmsBreaker::resolveScope('company-1'))->toBeNull()
+        ->and(SmsBreaker::resolveScope('company:company-1'))->toBe('company:company-1');
 });

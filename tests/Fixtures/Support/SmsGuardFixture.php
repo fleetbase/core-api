@@ -124,6 +124,23 @@ final class SmsGuardFixture
         }
     }
 
+    public static function usersSchema(Capsule $capsule, array $rows = [], string $connection = 'mysql'): void
+    {
+        $capsule->getConnection($connection)->getSchemaBuilder()->create('users', function ($table) {
+            $table->string('uuid')->primary();
+            $table->string('company_uuid')->nullable();
+            $table->string('type')->nullable();
+            $table->string('name')->nullable();
+            $table->string('email')->nullable();
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        if ($rows) {
+            $capsule->getConnection($connection)->table('users')->insert($rows);
+        }
+    }
+
     public static function settingsSchema(Capsule $capsule, string $connection = 'mysql'): void
     {
         $capsule->getConnection($connection)->getSchemaBuilder()->create('settings', function ($table) {

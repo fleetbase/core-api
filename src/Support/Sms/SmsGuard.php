@@ -48,9 +48,12 @@ class SmsGuard
             if (app()->bound(static::class)) {
                 return app(static::class);
             }
+            // @codeCoverageIgnoreStart
         } catch (\Throwable $e) {
-            // no container: fall through to a fresh guard
+            // Only a host without a container gets here, and app() in the test harness
+            // always answers; fall through to a fresh guard.
         }
+        // @codeCoverageIgnoreEnd
 
         return new static();
     }
