@@ -1081,7 +1081,8 @@ test('api model behavior without adds to the hidden attributes instead of replac
     ]));
 
     expect($results->first()->getHidden())->toContain('amount', 'slug')
-        ->and($results->first()->toArray())->not->toHaveKeys(['amount', 'slug']);
+        ->and($results->first()->toArray())->not->toHaveKeys(['amount', 'slug'])
+        ->and(HasApiModelBehaviorHiddenRecord::mutateModelWithRequest(has_api_model_behavior_request(['with' => 'childItems']), null))->toBeNull();
 });
 
 test('api model behavior never calls a requested method that is not a relation', function (array $input) {

@@ -39,6 +39,11 @@ class RequestRelationsParent extends EloquentModel
         return $this->morphTo();
     }
 
+    public function brokenChildren(): HasMany
+    {
+        throw new RuntimeException('relation cannot be built on a blank model');
+    }
+
     public function untypedChildren()
     {
         return $this->hasMany(RequestRelationsChild::class, 'parent_id');
@@ -167,6 +172,11 @@ test('request relations never call a method that is not a relation', function ()
 
 test('request relations drop static protected and argument taking methods', function () {
     expect(RequestRelations::eagerLoads(new RequestRelationsParent(), ['staticChildren', 'hiddenChildren', 'typedChildrenFor']))->toBe([]);
+});
+
+test('request relations drop a typed relation that cannot be built instead of failing the request', function () {
+    expect(RequestRelations::eagerLoads(new RequestRelationsParent(), ['brokenChildren', 'children']))->toBe(['children'])
+        ->and(RequestRelations::counts(new RequestRelationsParent(), ['brokenChildren']))->toBe([]);
 });
 
 test('request relations check each nested segment against the related model', function () {

@@ -152,13 +152,9 @@ class RequestRelations
             return $method->isPublic() && !$method->isStatic() && $method->getNumberOfRequiredParameters() === 0 ? $method : null;
         }
 
+        // isExpansion() only holds for a registered Closure
         if (method_exists($model, 'isExpansion') && $model::isExpansion($name)) {
-            $closure = $model::getExpansionClosure($name);
-            if (!$closure instanceof \Closure) {
-                return null;
-            }
-
-            $closure = new \ReflectionFunction($closure);
+            $closure = new \ReflectionFunction($model::getExpansionClosure($name));
 
             return $closure->getNumberOfRequiredParameters() === 0 ? $closure : null;
         }
