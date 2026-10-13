@@ -496,7 +496,7 @@ class ApiModelCache
     protected static function getCompanyUuid(Request $request): ?string
     {
         // Try to get from session
-        if ($request->session()->has('company')) {
+        if ($request->hasSession() && $request->session()->has('company')) {
             return $request->session()->get('company');
         }
 
