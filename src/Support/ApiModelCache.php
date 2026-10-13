@@ -99,6 +99,11 @@ class ApiModelCache
     protected const REQUEST_PATH_LIMIT = 50;
 
     /**
+     * Depth of withoutInvalidating() scopes currently running.
+     */
+    protected static int $invalidationSuppressed = 0;
+
+    /**
      * Generate a cache key for a query.
      *
      * Besides the table, company and query string, the key covers the request path
@@ -690,7 +695,7 @@ class ApiModelCache
      */
     public static function invalidateModelCache(Model $model, ?string $companyUuid = null): void
     {
-        if (!static::isCachingEnabled()) {
+        if (!static::isCachingEnabled() || static::$invalidationSuppressed > 0) {
             return;
         }
 
@@ -727,6 +732,31 @@ class ApiModelCache
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
+        }
+    }
+
+    /**
+     * Run a callback without invalidating API caches.
+     *
+     * For high frequency writes (telemetry pings) whose model events should still
+     * fire, but whose cache invalidation the caller coalesces itself, e.g. once per
+     * window per table. Everything else the callback writes is not invalidated
+     * either, so keep the callback to the write itself.
+     *
+     * @template T
+     *
+     * @param \Closure(): T $callback
+     *
+     * @return T
+     */
+    public static function withoutInvalidating(\Closure $callback): mixed
+    {
+        static::$invalidationSuppressed++;
+
+        try {
+            return $callback();
+        } finally {
+            static::$invalidationSuppressed--;
         }
     }
 

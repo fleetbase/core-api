@@ -910,6 +910,29 @@ test('api model cache invalidation never fails the write when the cache is unava
         ->and($logger->errors[1]['message'])->toBe('Failed to invalidate cache');
 });
 
+test('api model cache skips invalidation inside a withoutInvalidating scope only', function () {
+    $store = api_model_cache_fixture();
+    $model = api_model_cache_model();
+
+    $result = ApiModelCache::withoutInvalidating(function () use ($model) {
+        ApiModelCache::invalidateModelCache($model, 'company-1');
+        // Nested scopes stay suppressed until the outermost one ends
+        ApiModelCache::withoutInvalidating(fn () => ApiModelCache::invalidateModelCache($model, 'company-1'));
+        ApiModelCache::invalidateModelCache($model, 'company-1');
+
+        return 'written';
+    });
+
+    expect($result)->toBe('written')
+        ->and($store->get('api_query_version:orders:company-1'))->toBeNull();
+
+    // A callback that throws still ends the scope
+    expect(fn () => ApiModelCache::withoutInvalidating(fn () => throw new RuntimeException('write failed')))->toThrow(RuntimeException::class);
+
+    ApiModelCache::invalidateModelCache($model, 'company-1');
+    expect($store->get('api_query_version:orders:company-1'))->toBe(1);
+});
+
 test('api model cache falls back to the query when reading versions fails', function () {
     $store              = api_model_cache_fixture();
     $store->throwOnMany = true;
