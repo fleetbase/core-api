@@ -363,6 +363,24 @@ class HasApiModelBehaviorChild extends Model
     public $timestamps = false;
 }
 
+/**
+ * Mirrors fleetops' Order::dispatch(): a public method with no required arguments
+ * that writes a row and would fire events. A request naming it must never run it.
+ */
+class HasApiModelBehaviorSideEffectRecord extends HasApiModelBehaviorRecord
+{
+    public static int $dispatched = 0;
+
+    public function dispatch(bool $save = true)
+    {
+        static::$dispatched++;
+
+        $this->forceFill(['uuid' => 'junk-' . static::$dispatched, 'name' => 'Junk dispatch'])->saveQuietly();
+
+        return $this;
+    }
+}
+
 function has_api_model_behavior_database(): Capsule
 {
     EloquentModel::clearBootedModels();
@@ -1046,6 +1064,47 @@ test('api model behavior applies explicit filter operators and relation normaliz
         ->and(array_keys($snakeRelationBuilder->getEagerLoads()))->toBe(['child_items'])
         ->and($countBuilder->toSql())->toContain('api_model_behavior_children', 'child_items_count');
 });
+
+test('api model behavior never calls a requested method that is not a relation', function (array $input) {
+    $capsule = has_api_model_behavior_database();
+    has_api_model_behavior_seed_records($capsule);
+    session(['user' => 'session-user', 'company' => 'company-a']);
+    HasApiModelBehaviorSideEffectRecord::$dispatched = 0;
+
+    $model   = new HasApiModelBehaviorSideEffectRecord();
+    $errors  = [];
+    $attempt = function (string $path, Closure $call) use (&$errors) {
+        try {
+            return $call();
+        } catch (Throwable $e) {
+            $errors[$path] = get_class($e);
+        }
+    };
+
+    $results = $attempt('list', fn () => $model->queryFromRequest(has_api_model_behavior_request(array_merge(['company_uuid' => 'company-a'], $input))));
+    $found   = $attempt('find', fn () => $model->getById('record_alpha', null, has_api_model_behavior_request($input)));
+    $created = $attempt('create', fn () => $model->createRecordFromRequest(has_api_model_behavior_request(array_merge([
+        'api_model_behavior_record' => ['uuid' => 'record-created', 'public_id' => 'record_created', 'name' => 'Created'],
+    ], $input), method: 'POST')));
+
+    $records = $capsule->getConnection('mysql')->table('api_model_behavior_records');
+
+    expect(HasApiModelBehaviorSideEffectRecord::$dispatched)->toBe(0)
+        ->and((clone $records)->where('name', 'like', 'Junk%')->orWhereNull('name')->count())->toBe(0)
+        ->and($errors)->toBe([])
+        ->and($results)->toHaveCount(2)
+        ->and($found->uuid)->toBe('record-1')
+        ->and($created->uuid)->toBe('record-created');
+})->with([
+    'with array'          => [['with' => ['dispatch']]],
+    'with string'         => [['with' => 'dispatch']],
+    'expand'              => [['expand' => ['dispatch']]],
+    'nested'              => [['with' => ['childItems', 'child_items.dispatch']]],
+    'with_count'          => [['with_count' => 'dispatch']],
+    'with_count array'    => [['with_count' => ['dispatch']]],
+    'count'               => [['count' => 'dispatch']],
+    'base model method'   => [['with' => ['saveInstance']]],
+]);
 
 test('api model behavior covers cached queries and create update response relation loading', function () {
     $capsule = has_api_model_behavior_database();
