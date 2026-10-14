@@ -381,9 +381,11 @@ class VerificationCode extends Model
      * @param mixed  $subject the subject (typically a User model) to whom the SMS will be sent
      * @param string $for     Context or purpose of the verification. Default is 'phone_verification'.
      * @param array  $options Options to customize the verification process. Can include 'expireAfter' to set a custom expiration,
-     *                        'meta' for additional metadata, and 'messageCallback' to customize the SMS message content.
+     *                        'meta' for additional metadata, 'messageCallback' to customize the SMS message content, and 'phone'
+     *                        to text another number than the subject's own (a number the subject is changing to).
      *
-     * @return static returns the verification code instance after persisting it to the database and sending the SMS
+     * @return static returns the verification code instance after persisting it to the database and sending the SMS.
+     *                Without a number to text (no 'phone' option and none on the subject) the code is saved but not sent.
      *
      * @throws \Fleetbase\Exceptions\SmsBlockedException when the SMS guard refuses the send; no code row is written
      * @throws \Exception                                throws an exception if the SMS cannot be sent
@@ -391,7 +393,7 @@ class VerificationCode extends Model
     public static function generateSmsVerificationFor($subject, $for = 'phone_verification', array $options = [])
     {
         $expireAfter = data_get($options, 'expireAfter');
-        $destination = data_get($subject, 'phone');
+        $destination = data_get($options, 'phone') ?: data_get($subject, 'phone');
         $companyUuid = data_get($options, 'company_uuid') ?? session('company') ?? data_get($subject, 'company_uuid');
 
         // Ask the guard BEFORE the code row exists: a refused send must leave nothing
@@ -474,14 +476,14 @@ class VerificationCode extends Model
         $provider = data_get($options, 'provider');
 
         // Send SMS using SmsService with automatic provider routing
-        if ($subject->phone) {
+        if ($destination) {
             try {
                 $smsService = new SmsService();
-                $smsService->send($subject->phone, $message, $smsOptions, $provider);
+                $smsService->send($destination, $message, $smsOptions, $provider);
             } catch (\Throwable $e) {
                 // Log error but don't fail the verification code generation
                 \Illuminate\Support\Facades\Log::error('Failed to send SMS verification', [
-                    'phone' => $subject->phone,
+                    'phone' => $destination,
                     'error' => $e->getMessage(),
                 ]);
 
