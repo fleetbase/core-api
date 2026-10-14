@@ -173,6 +173,46 @@ it('traces an allowed send on the code row, sends once and refuses the repeat in
         ->and($entries->filter(fn ($name) => $name === 'sms.blocked')->count())->toBe(1);
 });
 
+it('texts the number given in the phone option instead of the subject\'s own, and guards that number', function () {
+    $twilio = verification_code_guard_database();
+
+    $code = VerificationCode::generateSmsVerificationFor(verification_code_guard_subject('+447400100123'), 'storefront_verify_phone', [
+        'phone' => '+447400100999',
+        'meta'  => ['phone' => '+447400100999'],
+    ]);
+
+    // The new number has its own cooldown; the subject's own number was never texted.
+    $repeat = null;
+    try {
+        VerificationCode::generateSmsVerificationFor(verification_code_guard_subject('+447400100123'), 'storefront_verify_phone', ['phone' => '+447400100999']);
+    } catch (SmsBlockedException $e) {
+        $repeat = $e;
+    }
+    VerificationCode::generateSmsVerificationFor(verification_code_guard_subject('+447400100123'), 'storefront_verify_phone');
+
+    expect($code->meta['phone'])->toBe('+447400100999')
+        ->and($code->meta['trace']['destination_country'])->toBe('GB')
+        ->and($repeat)->toBeInstanceOf(SmsBlockedException::class)
+        ->and(collect($twilio->messages)->pluck('to')->all())->toBe(['+447400100999', '+447400100123']);
+});
+
+it('texts the phone option when the subject has no number of its own', function () {
+    $twilio = verification_code_guard_database();
+
+    VerificationCode::generateSmsVerificationFor(verification_code_guard_subject(''), 'storefront_verify_phone', ['phone' => '+447400100999']);
+
+    expect(collect($twilio->messages)->pluck('to')->all())->toBe(['+447400100999']);
+});
+
+it('saves the code without texting anyone when there is no number at all', function () {
+    $twilio = verification_code_guard_database();
+
+    $code = VerificationCode::generateSmsVerificationFor(verification_code_guard_subject(''), 'phone_verification', ['phone' => null]);
+
+    expect($code->exists)->toBeTrue()
+        ->and($twilio->messages)->toBe([]);
+});
+
 it('leaves the code row untouched when the guard is disabled', function () {
     $twilio = verification_code_guard_database(['enabled' => false]);
 
