@@ -265,6 +265,18 @@ it('constructs socket cluster clients from normalized connection options without
         ->and($service->getClient())->toBeInstanceOf(Client::class);
 });
 
+it('sends configured handshake headers such as Origin to the websocket client', function () {
+    $service = new SocketClusterService([
+        'secure'  => false,
+        'host'    => 'socket.test',
+        'headers' => ['Origin' => 'https://console.example.test'],
+    ]);
+
+    $clientOptions = (fn () => $this->options)->call($service->getClient());
+
+    expect($clientOptions['headers'])->toBe(['Origin' => 'https://console.example.test']);
+});
+
 it('broadcasts payloads to every channel through the socket cluster service', function () {
     $service     = new RecordingSocketClusterService();
     $broadcaster = new SocketClusterBroadcaster($service);

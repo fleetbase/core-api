@@ -365,6 +365,28 @@ namespace {
             ->toBe('Fleetbase\Http\Controllers\Internal\v1\NotificationController@registry');
     });
 
+    test('route file exposes socket token minting per client type and a signature-only authorize endpoint', function () {
+        $routes     = routes_contract_rows(routes_contract_router());
+        $controller = 'Fleetbase\\Http\\Controllers\\SocketAuthController';
+
+        $consoleToken = routes_contract_find($routes, 'POST', 'int/v1/socket/token');
+        $apiToken     = routes_contract_find($routes, 'POST', 'v1/socket/token');
+        $systemToken  = routes_contract_find($routes, 'POST', 'v1/socket/system-token');
+        $authorize    = routes_contract_find($routes, 'POST', 'int/v1/socket/authorize');
+
+        expect($consoleToken['action'])->toBe($controller . '@token')
+            ->and($consoleToken['middleware'])->toContain('fleetbase.protected')
+            ->and($apiToken['action'])->toBe($controller . '@apiToken')
+            ->and($apiToken['middleware'])->toContain('fleetbase.api')
+            ->and($apiToken['middleware'])->not->toContain('fleetbase.platform-api')
+            ->and($systemToken['action'])->toBe($controller . '@systemToken')
+            ->and($systemToken['middleware'])->toContain('fleetbase.platform-api')
+            ->and($systemToken['middleware'])->not->toContain('fleetbase.api')
+            // Only the socket server calls this; its signature is the whole of its authentication.
+            ->and($authorize['action'])->toBe($controller . '@authorizeChannel')
+            ->and($authorize['middleware'])->toBe([Fleetbase\Http\Middleware\VerifySocketSignature::class]);
+    });
+
     test('route file exposes api rate limit administration as protected routes', function () {
         $routes     = routes_contract_rows(routes_contract_router());
         $controller = 'Fleetbase\\Http\\Controllers\\Internal\\v1\\RateLimitController';
@@ -375,6 +397,27 @@ namespace {
             ['DELETE', 'int/v1/rate-limits/settings', 'resetSettings'],
             ['GET', 'int/v1/rate-limits/consumers', 'consumers'],
             ['POST', 'int/v1/rate-limits/consumers/{signature}/reset', 'resetConsumer'],
+        ];
+
+        foreach ($expected as [$method, $uri, $action]) {
+            $route = routes_contract_find($routes, $method, $uri);
+
+            expect($route)->not->toBeNull()
+                ->and($route['action'])->toBe($controller . '@' . $action)
+                ->and($route['middleware'])->toContain('fleetbase.protected');
+        }
+    });
+
+    test('route file exposes database backup administration as protected routes', function () {
+        $routes     = routes_contract_rows(routes_contract_router());
+        $controller = 'Fleetbase\\Http\\Controllers\\Internal\\v1\\DatabaseBackupController';
+
+        $expected = [
+            ['GET', 'int/v1/database-backups/settings', 'getSettings'],
+            ['POST', 'int/v1/database-backups/settings', 'saveSettings'],
+            ['DELETE', 'int/v1/database-backups/settings', 'resetSettings'],
+            ['GET', 'int/v1/database-backups/runs', 'runs'],
+            ['POST', 'int/v1/database-backups/run', 'run'],
         ];
 
         foreach ($expected as [$method, $uri, $action]) {

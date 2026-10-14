@@ -64,6 +64,8 @@ jobs:
       run: composer coverage:baseline
 
     - name: Upload Coverage Baseline
+      # Keep the report when the gate fails: that is when the line detail is needed.
+      if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v4
       with:
         name: coverage-baseline

@@ -28,7 +28,8 @@ function setting_controller_external_probe_fixtures(array $config = []): void
             'token' => 'existing-token',
             'from'  => '+15555550100',
         ],
-        'broadcasting.connections.socketcluster.options' => [
+        'broadcasting.connections.socketcluster.auth_key' => null,
+        'broadcasting.connections.socketcluster.options'  => [
             'secure'  => false,
             'host'    => '127.0.0.1',
             'port'    => 9,
@@ -168,9 +169,11 @@ test('test twilio config returns php warning failures as stable probe errors', f
         ->and($twilio->messages)->toBe([]);
 });
 
-test('test socketcluster returns stable json when the configured socket cannot send', function () {
+test('test socketcluster publishes to the requested channel while socket authentication is off', function () {
     setting_controller_external_probe_fixtures();
+    session()->flush();
 
+    // Existing consoles pick their own test channel; that keeps working until auth is switched on.
     $response = (new SettingController())->testSocketcluster(setting_controller_external_probe_request([
         'channel' => 'settings-probe',
     ]));
@@ -182,6 +185,66 @@ test('test socketcluster returns stable json when the configured socket cannot s
             'channel'  => 'settings-probe',
             'response' => null,
         ]);
+
+    $default = (new SettingController())->testSocketcluster(setting_controller_external_probe_request());
+
+    expect($default->getData(true)['channel'])->toBe('test');
+});
+
+test('test socketcluster ignores the key while the auth switch is off', function () {
+    setting_controller_external_probe_fixtures([
+        'broadcasting.connections.socketcluster.auth_enabled' => false,
+        'broadcasting.connections.socketcluster.auth_key'     => str_repeat('k', 40),
+    ]);
+    session()->flush();
+
+    $response = (new SettingController())->testSocketcluster(setting_controller_external_probe_request([
+        'channel' => 'settings-probe',
+    ]));
+
+    expect($response->getData(true)['channel'])->toBe('settings-probe');
+});
+
+test('test socketcluster only publishes to the admin test channel while socket authentication is on', function () {
+    setting_controller_external_probe_fixtures([
+        'broadcasting.connections.socketcluster.auth_enabled' => true,
+        'broadcasting.connections.socketcluster.auth_key'     => str_repeat('k', 40),
+        'broadcasting.connections.socketcluster.publish_url'  => 'http://socket.test:8001',
+    ]);
+    app()->instance(Illuminate\Http\Client\Factory::class, new Illuminate\Http\Client\Factory());
+    Facade::clearResolvedInstances();
+    Illuminate\Support\Facades\Http::fake(['*' => Illuminate\Support\Facades\Http::response('unavailable', 503)]);
+    session(['user' => 'user-probe']);
+
+    // Any requested channel is ignored: the probe only ever publishes to the admin's own test channel.
+    $response = (new SettingController())->testSocketcluster(setting_controller_external_probe_request([
+        'channel' => 'company.someone-else',
+    ]));
+
+    session()->flush();
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($response->getData(true))->toBe([
+            'status'   => 'error',
+            'message'  => 'Socket broadcasted message successfully.',
+            'channel'  => 'test.user-probe',
+            'response' => 'unavailable',
+        ]);
+
+    $refused = (new SettingController())->testSocketcluster(setting_controller_external_probe_request([
+        'channel' => 'company.someone-else',
+    ]));
+
+    expect($refused->getData(true))->toBe([
+        'status'   => 'error',
+        'message'  => 'No signed-in user to publish the test message for.',
+        'channel'  => null,
+        'response' => null,
+    ]);
+
+    // Http::fake() swaps the container's client; put a real one back for later files.
+    app()->instance(Illuminate\Http\Client\Factory::class, new Illuminate\Http\Client\Factory());
+    Facade::clearResolvedInstances();
 });
 
 test('test sentry config rejects invalid dsns before sdk fallback handling', function () {

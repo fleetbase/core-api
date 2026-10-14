@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Http\Requests;
 
+use Fleetbase\Models\Comment;
 use Illuminate\Validation\Rule;
 
 class CreateCommentRequest extends FleetbaseRequest
@@ -43,6 +44,7 @@ class CreateCommentRequest extends FleetbaseRequest
                 return !$this->filled('parent') && !$this->filled('subject') && !$this->filled('subject_type') && !$this->filled('subject_id') && !$this->filled('subject_uuid') && $this->isMethod('POST');
             })],
             'content'         => ['required'],
+            'visibility'      => ['nullable', Rule::in(Comment::VISIBILITIES)],
         ];
     }
 }

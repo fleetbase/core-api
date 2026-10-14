@@ -148,6 +148,9 @@ namespace {
     use Fleetbase\Services\TemplateRenderService;
     use Fleetbase\Support\NotificationRegistry;
     use Fleetbase\Support\Reporting\ReportSchemaRegistry;
+    use Fleetbase\Support\SocketCluster\ChannelAuthorizer;
+    use Fleetbase\Support\SocketCluster\ModelChannelResolver;
+    use Fleetbase\Support\SocketCluster\SocketChannelRegistry;
     use Fleetbase\Support\SocketCluster\SocketClusterBroadcaster;
     use Fleetbase\Webhook\Events\FinalWebhookCallFailedEvent;
     use Fleetbase\Webhook\Events\WebhookCallFailedEvent;
@@ -1010,6 +1013,23 @@ namespace {
             ->and($broadcaster)->toBeInstanceOf(SocketClusterBroadcaster::class);
 
         Facade::clearResolvedInstance('Broadcast');
+    });
+
+    test('socket cluster provider shares one channel registry with core resolvers and one authorizer', function () {
+        $container = bind_test_container();
+
+        (new SocketClusterServiceProvider($container))->register();
+
+        $registry = $container->make(SocketChannelRegistry::class);
+
+        expect($container->make(SocketChannelRegistry::class))->toBe($registry)
+            ->and($registry->resolve('chat'))->toBeInstanceOf(ModelChannelResolver::class)
+            ->and($registry->resolve('company'))->not->toBeNull()
+            ->and($container->make(ChannelAuthorizer::class))->toBeInstanceOf(ChannelAuthorizer::class)
+            ->and($container->make(ChannelAuthorizer::class))->toBe($container->make(ChannelAuthorizer::class));
+
+        $container->offsetUnset(SocketChannelRegistry::class);
+        $container->offsetUnset(ChannelAuthorizer::class);
     });
 
     test('webhook server provider configures package name and config file', function () {

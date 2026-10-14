@@ -8,6 +8,7 @@ use Fleetbase\Traits\HasApiModelCache;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Model as EloquentModel;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Http\JsonResponse;
@@ -56,6 +57,11 @@ class HasApiModelBehaviorCacheFake
     public function get(string $key, mixed $default = null): mixed
     {
         return $this->store[$key] ?? $default;
+    }
+
+    public function many(array $keys): array
+    {
+        return array_combine($keys, array_map(fn ($key) => $this->store[$key] ?? null, $keys));
     }
 
     public function put(string $key, mixed $value, mixed $ttl = null): bool
@@ -172,7 +178,7 @@ class HasApiModelBehaviorRecord extends Model
         'updated_at',
     ];
 
-    public function childItems()
+    public function childItems(): HasMany
     {
         return $this->hasMany(HasApiModelBehaviorChild::class, 'record_uuid', 'uuid');
     }
@@ -348,7 +354,7 @@ class HasApiModelBehaviorSnakeRelationRecord extends Model
         'name',
     ];
 
-    public function child_items()
+    public function child_items(): HasMany
     {
         return $this->hasMany(HasApiModelBehaviorChild::class, 'record_uuid', 'uuid');
     }
@@ -361,6 +367,29 @@ class HasApiModelBehaviorChild extends Model
     protected $guarded = [];
 
     public $timestamps = false;
+}
+
+class HasApiModelBehaviorHiddenRecord extends HasApiModelBehaviorRecord
+{
+    protected $hidden = ['amount'];
+}
+
+/**
+ * Mirrors fleetops' Order::dispatch(): a public method with no required arguments
+ * that writes a row and would fire events. A request naming it must never run it.
+ */
+class HasApiModelBehaviorSideEffectRecord extends HasApiModelBehaviorRecord
+{
+    public static int $dispatched = 0;
+
+    public function dispatch(bool $save = true)
+    {
+        static::$dispatched++;
+
+        $this->forceFill(['uuid' => 'junk-' . static::$dispatched, 'name' => 'Junk dispatch'])->saveQuietly();
+
+        return $this;
+    }
 }
 
 function has_api_model_behavior_database(): Capsule
@@ -836,6 +865,8 @@ test('api model behavior validates update parameters and find record scoping con
 
     expect($model->isColumn('company_uuid'))->toBeTrue()
         ->and($model->isColumn('missing_column'))->toBeFalse()
+        // isColumn takes a bare column name; a table-qualified name never matches.
+        ->and($model->isColumn($model->qualifyColumn('company_uuid')))->toBeFalse()
         ->and($model->shouldQualifyColumn('uuid'))->toBeTrue()
         ->and($model->shouldQualifyColumn('name'))->toBeFalse()
         ->and($model->isInvalidUpdateParam('name'))->toBeFalse()
@@ -1039,11 +1070,66 @@ test('api model behavior applies explicit filter operators and relation normaliz
         ->and($nullStatuses)->toBe(['record-3'])
         ->and($notNullStatuses)->toBe(['record-1', 'record-2'])
         ->and($likeNames)->toBe(['record-1'])
-        ->and(array_keys($relationshipBuilder->getEagerLoads()))->toBe(['childItems', 'childItems.grandChildren'])
+        ->and(array_keys($relationshipBuilder->getEagerLoads()))->toBe(['childItems'])
         ->and($relationshipBuilder->getQuery()->columns)->toBeNull()
         ->and(array_keys($snakeRelationBuilder->getEagerLoads()))->toBe(['child_items'])
         ->and($countBuilder->toSql())->toContain('api_model_behavior_children', 'child_items_count');
 });
+
+test('api model behavior without adds to the hidden attributes instead of replacing them', function () {
+    $capsule = has_api_model_behavior_database();
+    has_api_model_behavior_seed_records($capsule);
+
+    $results = (new HasApiModelBehaviorHiddenRecord())->queryFromRequest(has_api_model_behavior_request([
+        'company_uuid' => 'company-a',
+        'without'      => ['slug'],
+    ]));
+
+    expect($results->first()->getHidden())->toContain('amount', 'slug')
+        ->and($results->first()->toArray())->not->toHaveKeys(['amount', 'slug'])
+        ->and(HasApiModelBehaviorHiddenRecord::mutateModelWithRequest(has_api_model_behavior_request(['with' => 'childItems']), null))->toBeNull();
+});
+
+test('api model behavior never calls a requested method that is not a relation', function (array $input) {
+    $capsule = has_api_model_behavior_database();
+    has_api_model_behavior_seed_records($capsule);
+    session(['user' => 'session-user', 'company' => 'company-a']);
+    HasApiModelBehaviorSideEffectRecord::$dispatched = 0;
+
+    $model   = new HasApiModelBehaviorSideEffectRecord();
+    $errors  = [];
+    $attempt = function (string $path, Closure $call) use (&$errors) {
+        try {
+            return $call();
+        } catch (Throwable $e) {
+            $errors[$path] = get_class($e);
+        }
+    };
+
+    $results = $attempt('list', fn () => $model->queryFromRequest(has_api_model_behavior_request(array_merge(['company_uuid' => 'company-a'], $input))));
+    $found   = $attempt('find', fn () => $model->getById('record_alpha', null, has_api_model_behavior_request($input)));
+    $created = $attempt('create', fn () => $model->createRecordFromRequest(has_api_model_behavior_request(array_merge([
+        'api_model_behavior_record' => ['uuid' => 'record-created', 'public_id' => 'record_created', 'name' => 'Created'],
+    ], $input), method: 'POST')));
+
+    $records = $capsule->getConnection('mysql')->table('api_model_behavior_records');
+
+    expect(HasApiModelBehaviorSideEffectRecord::$dispatched)->toBe(0)
+        ->and((clone $records)->where('name', 'like', 'Junk%')->orWhereNull('name')->count())->toBe(0)
+        ->and($errors)->toBe([])
+        ->and($results)->toHaveCount(2)
+        ->and($found->uuid)->toBe('record-1')
+        ->and($created->uuid)->toBe('record-created');
+})->with([
+    'with array'          => [['with' => ['dispatch']]],
+    'with string'         => [['with' => 'dispatch']],
+    'expand'              => [['expand' => ['dispatch']]],
+    'nested'              => [['with' => ['childItems', 'child_items.dispatch']]],
+    'with_count'          => [['with_count' => 'dispatch']],
+    'with_count array'    => [['with_count' => ['dispatch']]],
+    'count'               => [['count' => 'dispatch']],
+    'base model method'   => [['with' => ['saveInstance']]],
+]);
 
 test('api model behavior covers cached queries and create update response relation loading', function () {
     $capsule = has_api_model_behavior_database();

@@ -3,6 +3,7 @@
 namespace Fleetbase\Http\Resources;
 
 use Fleetbase\Support\Http;
+use Fleetbase\Support\Utils;
 
 class ChatMessage extends FleetbaseResource
 {
@@ -21,9 +22,10 @@ class ChatMessage extends FleetbaseResource
             'chat_channel_uuid'                   => $this->when(Http::isInternalRequest(), $this->chat_channel_uuid),
             'chat_channel'                        => $this->when(Http::isPublicRequest(), $this->chatChannel->public_id),
             'sender_uuid'                         => $this->when(Http::isInternalRequest(), $this->sender_uuid),
-            'sender'                              => $this->when(Http::isPublicRequest(), $this->sender->public_id),
             'content'                             => $this->content,
-            'sender'                              => new ChatParticipant($this->sender),
+            'sender'                              => $this->sender ? new ChatParticipant($this->sender) : null,
+            'system'                              => method_exists($this->resource, 'isSystem') && $this->resource->isSystem(),
+            'meta'                                => data_get($this, 'meta') ?: Utils::createObject(),
             'attachments'                         => ChatAttachment::collection($this->attachments),
             'receipts'                            => ChatReceipt::collection($this->receipts),
             'updated_at'                          => $this->updated_at,

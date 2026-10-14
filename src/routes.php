@@ -35,12 +35,16 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
             ->middleware(['fleetbase.platform-api'])
             ->group(function ($router) {
                 $router->get('organizations', 'OrganizationController@listOrganizations');
+                // Realtime socket token for the platform itself.
+                $router->post('socket/system-token', [Fleetbase\Http\Controllers\SocketAuthController::class, 'systemToken']);
             });
 
         $router->prefix('v1')
             ->namespace('Api\v1')
             ->middleware(['fleetbase.api'])
             ->group(function ($router) {
+                // Realtime socket token for an API credential or a Sanctum user token.
+                $router->post('socket/token', [Fleetbase\Http\Controllers\SocketAuthController::class, 'apiToken']);
                 $router->group(
                     ['prefix' => 'organizations'],
                     function ($router) {
@@ -129,7 +133,9 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 $router->get('should-onboard', 'OnboardController@shouldOnboard');
                                 $router->post('create-account', 'OnboardController@createAccount');
                                 $router->post('verify-email', 'OnboardController@verifyEmail');
-                                $router->post('send-verification-sms', 'OnboardController@sendVerificationSms');
+                                // Anyone with a signup session can ask for the SMS again; a tight
+                                // per-address limit sits in front of the guard's own budgets.
+                                $router->post('send-verification-sms', 'OnboardController@sendVerificationSms')->middleware(Illuminate\Routing\Middleware\ThrottleRequests::class . ':3,1,onboard-sms');
                                 $router->post('send-verification-email', 'OnboardController@sendVerificationEmail');
                             }
                         );
@@ -163,6 +169,10 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 $router->get('branding', 'SettingController@getBrandingSettings');
                             }
                         );
+                        // Called by the socket server only: authenticated by its request signature,
+                        // never by a session or user token.
+                        $router->post('socket/authorize', [Fleetbase\Http\Controllers\SocketAuthController::class, 'authorizeChannel'])
+                            ->middleware(Fleetbase\Http\Middleware\VerifySocketSignature::class);
                         $router->group(
                             ['prefix' => 'two-fa', 'middleware' => [Fleetbase\Http\Middleware\ThrottleRequests::class]],
                             function ($router) {
@@ -176,6 +186,8 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                         $router->group(
                             ['middleware' => ['fleetbase.protected']],
                             function ($router) {
+                                // Realtime socket token for the signed-in console user.
+                                $router->post('socket/token', [Fleetbase\Http\Controllers\SocketAuthController::class, 'token']);
                                 $router->group(
                                     ['prefix' => 'lookup'],
                                     function ($router) {
@@ -254,12 +266,29 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     $router->post('test-notification-channels-config', $controller('testNotificationChannelsConfig'));
                                 }
                                 );
+                                $router->group(['prefix' => 'database-backups'], function ($router) {
+                                    $router->get('settings', 'DatabaseBackupController@getSettings');
+                                    $router->post('settings', 'DatabaseBackupController@saveSettings');
+                                    $router->delete('settings', 'DatabaseBackupController@resetSettings');
+                                    $router->get('runs', 'DatabaseBackupController@runs');
+                                    $router->post('run', 'DatabaseBackupController@run');
+                                });
                                 $router->group(['prefix' => 'rate-limits'], function ($router) {
                                     $router->get('settings', 'RateLimitController@getSettings');
                                     $router->post('settings', 'RateLimitController@saveSettings');
                                     $router->delete('settings', 'RateLimitController@resetSettings');
                                     $router->get('consumers', 'RateLimitController@consumers');
                                     $router->post('consumers/{signature}/reset', 'RateLimitController@resetConsumer');
+                                });
+                                $router->group(['prefix' => 'sms-guard'], function ($router) {
+                                    $router->get('settings', 'SmsGuardController@getSettings');
+                                    $router->post('settings', 'SmsGuardController@saveSettings');
+                                    $router->delete('settings', 'SmsGuardController@resetSettings');
+                                    $router->get('usage', 'SmsGuardController@usage');
+                                    $router->get('ledger', 'SmsGuardController@ledger');
+                                    $router->get('pauses', 'SmsGuardController@pauses');
+                                    $router->post('pauses', 'SmsGuardController@pause');
+                                    $router->delete('pauses/{scope}', 'SmsGuardController@unpause')->where('scope', '.*');
                                 });
                                 $router->fleetbaseRoutes('schedule-monitor', null, [], function ($router, $controller) {
                                     $router->get('tasks', $controller('tasks'));

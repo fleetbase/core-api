@@ -59,7 +59,10 @@ class LogApiRequests
      */
     protected function shouldLog($request): bool
     {
-        if (!Http::isPublicRequest($request)) {
+        // Every route that runs this middleware opted in to logging through its
+        // middleware group (core's public API or an extension's), so only skip
+        // requests without a route and internal routes such as "int/v1/..."
+        if ($request->route() === null || Http::isInternalRequest($request)) {
             return false;
         }
 

@@ -15,6 +15,9 @@ class CommentFilter extends Filter
     public function queryForPublic()
     {
         $this->queryForInternal();
+
+        // Internal notes (`meta.visibility = internal`) never leave the console.
+        $this->builder->visibleToCustomers();
     }
 
     public function subject(string $id)

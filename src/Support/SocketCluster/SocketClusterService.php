@@ -2,12 +2,17 @@
 
 namespace Fleetbase\Support\SocketCluster;
 
+use Illuminate\Support\Facades\Http;
 use WebSocket\Client;
 
 /**
  * Class SocketClusterService.
  *
  * Service class for managing SocketCluster connections and messages.
+ *
+ * With SOCKETCLUSTER_AUTH_KEY configured, messages are published with one signed HTTP
+ * request to the socket server's internal publish endpoint. Without it they are sent over
+ * the websocket as before.
  */
 class SocketClusterService
 {
@@ -152,6 +157,10 @@ class SocketClusterService
      */
     public function send($channel, array $data = []): bool
     {
+        if (static::publishesOverHttp()) {
+            return $this->sendMany([$channel], $data);
+        }
+
         $cid        = rand();
         $message    = new SocketClusterMessage($channel, $data, $cid);
         $this->sent = false;
@@ -166,6 +175,97 @@ class SocketClusterService
             $this->error = $e->getMessage();
         } catch (\WebSocket\ConnectionException $e) {
             $this->error = $e->getMessage();
+        } catch (\Throwable $e) {
+            $this->error = $e->getMessage();
+        }
+
+        return $this->sent;
+    }
+
+    /**
+     * Sends one message to several channels.
+     *
+     * Channels with an empty suffix (for example "company." from a session read in a queue
+     * worker) are dropped. Over HTTP all channels go in a single request; over the websocket
+     * each channel is sent in turn. Returns true when every send succeeded.
+     */
+    public function sendMany(array $channels, array $data = []): bool
+    {
+        $channels = static::filterChannels($channels);
+
+        if ($channels === []) {
+            return true;
+        }
+
+        if (static::publishesOverHttp()) {
+            return $this->publishOverHttp($channels, $data);
+        }
+
+        $sent = true;
+
+        foreach ($channels as $channel) {
+            $sent = $this->send($channel, $data) && $sent;
+        }
+
+        return $sent;
+    }
+
+    /**
+     * Normalizes channels to unique names, dropping those ending in "." and any the socket
+     * server would reject (empty, longer than 255 characters or containing whitespace).
+     */
+    public static function filterChannels(array $channels): array
+    {
+        $names = array_map(fn ($channel) => trim((string) $channel), $channels);
+
+        return array_values(array_unique(array_filter($names, fn ($name) => ChannelAuthorizer::isValidChannel($name) && !str_ends_with($name, '.'))));
+    }
+
+    /**
+     * Whether messages are published over the signed HTTP endpoint rather than the websocket.
+     */
+    public static function publishesOverHttp(): bool
+    {
+        return SocketToken::enabled();
+    }
+
+    /**
+     * The socket server's internal publish endpoint.
+     */
+    public static function publishUrl(): string
+    {
+        $base = config('broadcasting.connections.socketcluster.publish_url');
+
+        if (!is_string($base) || $base === '') {
+            $base = 'http://' . config('broadcasting.connections.socketcluster.options.host', 'socket') . ':8001';
+        }
+
+        return rtrim($base, '/') . '/publish';
+    }
+
+    /**
+     * Publishes to all channels with one request signed by the derived publish key.
+     */
+    protected function publishOverHttp(array $channels, array $data): bool
+    {
+        $this->sent  = false;
+        $this->error = null;
+
+        try {
+            $body     = json_encode(['channels' => $channels, 'data' => $data === [] ? new \stdClass() : $data], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            $response = Http::withHeaders(SocketSignature::headers(SocketSignature::PUBLISH, $body))
+                ->withBody($body, 'application/json')
+                ->acceptJson()
+                ->connectTimeout(2)
+                ->timeout(3)
+                ->post(static::publishUrl());
+
+            $this->response = $response->body();
+            $this->sent     = $response->successful();
+
+            if (!$this->sent) {
+                $this->error = 'Socket publish failed with HTTP status ' . $response->status() . '.';
+            }
         } catch (\Throwable $e) {
             $this->error = $e->getMessage();
         }

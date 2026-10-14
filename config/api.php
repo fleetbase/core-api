@@ -60,6 +60,22 @@ return [
             'relationship' => env('API_CACHE_RELATIONSHIP_TTL', 1800),
         ],
 
+        // List cache scope below the company
+        'scope' => [
+            // Session keys whose values are part of every list cache key, so lists
+            // filtered on them are not shared between their values. Add any key a
+            // query callback reads from the session but not from the query string.
+            // Default: the API credential and the Storefront store and network
+            'session' => ['api_credential', 'storefront_store', 'storefront_network'],
+        ],
+
+        // Throw when a model's $apiCacheDependencies entry cannot be resolved, instead
+        // of logging it and skipping the entry. Meant for test suites; keep it off in
+        // production so an extension's bad declaration never fails a request.
+        // Default: false
+        // Example: API_CACHE_STRICT_DEPENDENCIES=true
+        'strict_dependencies' => env('API_CACHE_STRICT_DEPENDENCIES', false),
+
         // Cache driver (uses Laravel's cache configuration)
         // Options: redis, memcached, database, file
         // Default: uses config('cache.default')

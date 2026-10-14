@@ -432,3 +432,254 @@ test('public comment controller query applies subject parent and active company 
         ->and($withoutParent->collection->pluck('public_id')->all())->toEqualCanonicalizing(['comment_root', 'comment_other_subject'])
         ->and($parentScoped->collection->pluck('public_id')->all())->toBe(['comment_reply']);
 });
+
+class CommentVisibilityRoute
+{
+    public object $controller;
+
+    public function __construct(private string $uri = 'int/v1/comments', private string $method = 'create')
+    {
+        $this->controller = new class {
+        };
+    }
+
+    public function getAction(?string $key = null): mixed
+    {
+        $action = [
+            'controller' => CommentController::class . '@' . $this->method,
+        ];
+
+        return $key ? $action[$key] ?? null : $action;
+    }
+
+    public function getActionMethod(): string
+    {
+        return $this->method;
+    }
+
+    public function uri(): string
+    {
+        return $this->uri;
+    }
+}
+
+function comment_visibility_database(): Capsule
+{
+    $capsule = comment_controller_database();
+    $capsule->getConnection('mysql')->getSchemaBuilder()->create('orders', function ($table) {
+        $table->string('uuid')->primary();
+        $table->string('public_id')->nullable()->index();
+        $table->string('company_uuid')->nullable()->index();
+        $table->timestamps();
+    });
+    $capsule->getConnection('mysql')->table('orders')->insert([
+        ['uuid' => 'order-uuid-1', 'public_id' => 'order_1234567', 'company_uuid' => 'company-1'],
+    ]);
+
+    return $capsule;
+}
+
+function comment_visibility_use_route(string $uri): void
+{
+    $request = Request::create('/' . $uri, 'POST');
+    $request->setRouteResolver(fn () => new CommentVisibilityRoute($uri));
+    Container::getInstance()->instance('request', $request);
+}
+
+function comment_visibility_publish(array $attributes = []): Comment
+{
+    return Comment::publish(array_merge([
+        'subject_uuid' => 'order-uuid-1',
+        'subject_type' => Fleetbase\Tests\Fixtures\Models\Order::class,
+        'content'      => 'Leave at the side door.',
+    ], $attributes));
+}
+
+test('comments on orders default to internal from the console and customer from everywhere else', function () {
+    comment_visibility_database();
+
+    comment_visibility_use_route('int/v1/comments');
+    $console = comment_visibility_publish();
+
+    comment_visibility_use_route('storefront/int/v1/orders/order_1234567/notes');
+    $storefrontConsole = comment_visibility_publish();
+
+    comment_visibility_use_route('v1/comments');
+    $publicApi = comment_visibility_publish();
+
+    comment_visibility_use_route('int/v1/comments');
+    $explicit = comment_visibility_publish(['visibility' => 'customer']);
+    $viaMeta  = comment_visibility_publish(['meta' => ['visibility' => 'customer', 'pinned' => true]]);
+    $invalid  = comment_visibility_publish(['meta' => ['visibility' => 'everyone']]);
+
+    expect(Comment::find($console->uuid)->meta)->toBe(['visibility' => 'internal'])
+        ->and($console->isInternal())->toBeTrue()
+        ->and($storefrontConsole->getVisibility())->toBe('internal')
+        ->and(Comment::find($publicApi->uuid)->meta)->toBe(['visibility' => 'customer'])
+        ->and($publicApi->isVisibleToCustomers())->toBeTrue()
+        ->and(Comment::find($explicit->uuid)->meta)->toBe(['visibility' => 'customer'])
+        ->and(Comment::find($viaMeta->uuid)->meta)->toBe(['visibility' => 'customer', 'pinned' => true])
+        ->and(Comment::find($invalid->uuid)->meta)->toBe(['visibility' => 'internal']);
+});
+
+test('comments on other subjects keep no visibility unless given and replies follow their parent', function () {
+    $capsule = comment_visibility_database();
+
+    comment_visibility_use_route('int/v1/comments');
+    $userComment = Comment::publish([
+        'subject_uuid' => 'user-subject',
+        'subject_type' => User::class,
+        'content'      => 'Note on a user',
+    ]);
+    $internalRoot = comment_visibility_publish();
+    $reply        = comment_visibility_publish(['parent_comment_uuid' => $internalRoot->uuid]);
+
+    comment_visibility_use_route('v1/comments');
+    $publicReplyToInternal = comment_visibility_publish(['parent_comment_uuid' => $internalRoot->uuid]);
+
+    expect($capsule->getConnection('mysql')->table('comments')->where('uuid', $userComment->uuid)->value('meta'))->toBeNull()
+        ->and($userComment->getVisibility())->toBe('customer')
+        ->and($reply->getVisibility())->toBe('internal')
+        ->and($publicReplyToInternal->getVisibility())->toBe('internal');
+});
+
+test('visible to customers scope excludes only internal comments', function () {
+    $capsule = comment_visibility_database();
+    $now     = '2026-07-18 00:10:00';
+    $capsule->getConnection('mysql')->table('comments')->insert([
+        ['id' => 10, 'uuid' => 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'public_id' => 'comment_internal', 'company_uuid' => 'company-1', 'subject_uuid' => 'order-uuid-1', 'subject_type' => Fleetbase\Tests\Fixtures\Models\Order::class, 'author_uuid' => 'user-author', 'content' => 'Internal', 'meta' => '{"visibility":"internal"}', 'created_at' => $now, 'updated_at' => $now],
+        ['id' => 11, 'uuid' => 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'public_id' => 'comment_customer', 'company_uuid' => 'company-1', 'subject_uuid' => 'order-uuid-1', 'subject_type' => Fleetbase\Tests\Fixtures\Models\Order::class, 'author_uuid' => 'user-author', 'content' => 'Customer', 'meta' => '{"visibility":"customer"}', 'created_at' => $now, 'updated_at' => $now],
+        ['id' => 12, 'uuid' => 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'public_id' => 'comment_other_meta', 'company_uuid' => 'company-1', 'subject_uuid' => 'order-uuid-1', 'subject_type' => Fleetbase\Tests\Fixtures\Models\Order::class, 'author_uuid' => 'user-author', 'content' => 'Other meta', 'meta' => '{"pinned":true}', 'created_at' => $now, 'updated_at' => $now],
+        ['id' => 13, 'uuid' => 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'public_id' => 'comment_json_null', 'company_uuid' => 'company-1', 'subject_uuid' => 'order-uuid-1', 'subject_type' => Fleetbase\Tests\Fixtures\Models\Order::class, 'author_uuid' => 'user-author', 'content' => 'Json null', 'meta' => 'null', 'created_at' => $now, 'updated_at' => $now],
+    ]);
+
+    $visible  = Comment::query()->without(['author', 'replies'])->visibleToCustomers()->pluck('public_id')->all();
+    $internal = Comment::query()->without(['author', 'replies'])->internal()->pluck('public_id')->all();
+
+    expect($visible)->toEqualCanonicalizing(['comment_root', 'comment_foreign', 'comment_customer', 'comment_other_meta', 'comment_json_null'])
+        ->and($internal)->toBe(['comment_internal']);
+});
+
+test('public comment api hides internal comments and internal replies and accepts a visibility', function () {
+    $capsule = comment_visibility_database();
+    $now     = '2026-07-18 00:10:00';
+    $capsule->getConnection('mysql')->table('comments')->insert([
+        ['id' => 10, 'uuid' => 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'public_id' => 'comment_internal', 'company_uuid' => 'company-1', 'subject_uuid' => 'user-subject', 'subject_type' => '\\' . User::class, 'author_uuid' => 'user-author', 'parent_comment_uuid' => null, 'content' => 'Internal', 'meta' => '{"visibility":"internal"}', 'created_at' => $now, 'updated_at' => $now],
+        ['id' => 11, 'uuid' => 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'public_id' => 'comment_internal_reply', 'company_uuid' => 'company-1', 'subject_uuid' => 'user-subject', 'subject_type' => '\\' . User::class, 'author_uuid' => 'user-author', 'parent_comment_uuid' => '11111111-1111-4111-8111-111111111111', 'content' => 'Internal reply', 'meta' => '{"visibility":"internal"}', 'created_at' => $now, 'updated_at' => $now],
+        ['id' => 12, 'uuid' => 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'public_id' => 'comment_customer_reply', 'company_uuid' => 'company-1', 'subject_uuid' => 'user-subject', 'subject_type' => '\\' . User::class, 'author_uuid' => 'user-author', 'parent_comment_uuid' => '11111111-1111-4111-8111-111111111111', 'content' => 'Customer reply', 'meta' => '{"visibility":"customer"}', 'created_at' => $now, 'updated_at' => $now],
+    ]);
+
+    $listed = comment_controller()->query(comment_controller_query_request(['limit' => -1, 'without_parent' => '1']));
+    $hidden = comment_controller()->find('comment_internal');
+
+    // resources resolve replies against the current request: a public route hides internal replies
+    comment_visibility_use_route('v1/comments');
+    $root          = collect($listed->collection)->firstWhere('public_id', 'comment_root');
+    $publicReplies = collect((new Fleetbase\Http\Resources\Comment($root->resource))->resolve(request())['replies'])->map(fn ($reply) => $reply->resource->public_id)->all();
+
+    comment_visibility_use_route('int/v1/comments');
+    $internalReplies = collect((new Fleetbase\Http\Resources\Comment($root->resource))->resolve(request())['replies'])->map(fn ($reply) => $reply->resource->public_id)->all();
+
+    $created = comment_controller()->create(comment_controller_create_request([
+        'subject'    => ['id' => 'user_subject', 'type' => 'user'],
+        'content'    => 'Only for the team',
+        'visibility' => 'internal',
+    ]));
+
+    expect($listed->collection->pluck('public_id')->all())->not->toContain('comment_internal')
+        ->and($listed->collection->pluck('public_id')->all())->toContain('comment_root')
+        ->and($hidden->getStatusCode())->toBe(404)
+        ->and($publicReplies)->toBe(['comment_customer_reply'])
+        ->and($internalReplies)->toEqualCanonicalizing(['comment_customer_reply', 'comment_internal_reply'])
+        ->and($created->resource->getVisibility())->toBe('internal')
+        ->and((new CreateCommentRequest())->rules()['visibility'])->toContain('nullable');
+});
+
+test('comment created broadcasts internal notes to the company only and customer comments to the subject too', function () {
+    comment_visibility_database();
+
+    comment_visibility_use_route('int/v1/comments');
+    $internal = comment_visibility_publish();
+
+    comment_visibility_use_route('v1/comments');
+    $customer = comment_visibility_publish();
+    $unknown  = Comment::publish(['subject_uuid' => 'missing-order', 'subject_type' => Fleetbase\Tests\Fixtures\Models\Order::class, 'content' => 'Lost', 'visibility' => 'customer']);
+
+    $channels = fn (Comment $comment) => array_map(fn ($channel) => (string) $channel, (new Fleetbase\Events\CommentCreated($comment))->broadcastOn());
+
+    $event   = new Fleetbase\Events\CommentCreated($customer);
+    $payload = $event->broadcastWith();
+
+    expect($event->broadcastAs())->toBe('comment.created')
+        ->and($channels($internal))->toBe(['company.company-1'])
+        ->and($channels($customer))->toBe(['company.company-1', 'order.order_1234567', 'order.order-uuid-1'])
+        ->and($channels($unknown))->toBe(['company.company-1'])
+        ->and($payload['event'])->toBe('comment.created')
+        ->and($payload['subject_id'])->toBe('order_1234567')
+        ->and($payload['data']['content'])->toBe('Leave at the side door.')
+        ->and($payload['data']['visibility'])->toBe('customer');
+});
+
+test('creating a comment dispatches comment created and never fails when broadcasting does', function () {
+    comment_visibility_database();
+
+    $dispatched = new ArrayObject();
+    Container::getInstance()->instance('events', new class($dispatched) {
+        public function __construct(private ArrayObject $dispatched)
+        {
+        }
+
+        public function dispatch($event, $payload = [], $halt = false)
+        {
+            $this->dispatched->append($event);
+
+            return null;
+        }
+    });
+    Facade::clearResolvedInstance('events');
+
+    comment_visibility_use_route('v1/comments');
+    $comment = comment_visibility_publish();
+
+    Container::getInstance()->instance('events', new class {
+        public function dispatch($event, $payload = [], $halt = false)
+        {
+            throw new RuntimeException('socket server unavailable');
+        }
+    });
+    Facade::clearResolvedInstance('events');
+    $stillCreated = comment_visibility_publish(['content' => 'Second note']);
+
+    expect($dispatched)->toHaveCount(1)
+        ->and($dispatched[0])->toBeInstanceOf(Fleetbase\Events\CommentCreated::class)
+        ->and($dispatched[0]->comment->is($comment))->toBeTrue()
+        ->and($stillCreated->exists)->toBeTrue();
+});
+
+test('comment created broadcasts to the subject only when the subject can be resolved', function () {
+    comment_visibility_database();
+
+    $channels = fn (Comment $comment) => array_map(fn ($channel) => (string) $channel, (new Fleetbase\Events\CommentCreated($comment))->broadcastOn());
+    $comment  = function (array $attributes): Comment {
+        $comment = new Comment();
+        $comment->setRawAttributes(array_merge(['uuid' => 'comment-x', 'company_uuid' => 'company-1'], $attributes), true);
+        $comment->meta = ['visibility' => 'customer'];
+
+        return $comment;
+    };
+
+    $bare   = $comment(['subject_type' => null, 'subject_uuid' => null]);
+    $loaded = $comment(['subject_type' => Fleetbase\Tests\Fixtures\Models\Order::class, 'subject_uuid' => 'order-uuid-9']);
+    $loaded->setRelation('subject', new Fleetbase\Tests\Fixtures\Models\Order(['uuid' => 'order-uuid-9', 'public_id' => 'order_9']));
+    $missing = $comment(['subject_type' => 'Fleetbase\\Missing\\Model', 'subject_uuid' => 'order-uuid-1']);
+    $broken  = $comment(['subject_type' => stdClass::class, 'subject_uuid' => 'order-uuid-1']);
+
+    expect($channels($bare))->toBe(['company.company-1'])
+        ->and($channels($loaded))->toBe(['company.company-1', 'order.order_9', 'order.order-uuid-9'])
+        ->and($channels($missing))->toBe(['company.company-1'])
+        ->and($channels($broken))->toBe(['company.company-1'])
+        ->and(Comment::isVisibilityAwareSubjectType(null))->toBeFalse()
+        ->and(Comment::isVisibilityAwareSubjectType('order'))->toBeTrue()
+        ->and(Comment::isVisibilityAwareSubjectType(Fleetbase\Tests\Fixtures\Models\Order::class))->toBeTrue()
+        ->and(Comment::isVisibilityAwareSubjectType('contact'))->toBeFalse();
+});

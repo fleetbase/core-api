@@ -538,6 +538,12 @@ namespace {
             $container->make('config')->set($key, $value);
         }
 
+        // The SMS guard is off unless a test turns it on: its counters live in the shared
+        // cache, so otherwise one file's sends would rate-limit the next file's.
+        if (!$container->make('config')->has('sms.guard.enabled')) {
+            $container->make('config')->set('sms.guard.enabled', false);
+        }
+
         $container->instance('request', Request::create('/int/v1/test', 'GET'));
 
         // fresh resource transformer registry per test so registrations never leak between tests
@@ -641,9 +647,9 @@ namespace {
             );
         }
 
-        public function json(mixed $data, int $statusCode = 200): JsonResponse
+        public function json(mixed $data, int $statusCode = 200, array $headers = []): JsonResponse
         {
-            return new JsonResponse($data, $statusCode);
+            return new JsonResponse($data, $statusCode, $headers);
         }
 
         public function download(string $file, ?string $name = null, array $headers = []): Symfony\Component\HttpFoundation\BinaryFileResponse

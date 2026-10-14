@@ -542,3 +542,50 @@ it('defines chat channel ownership and feed relationship contracts', function ()
         ->and($channel->logs()->getRelated())->toBeInstanceOf(ChatLog::class)
         ->and($channel->logs()->getForeignKeyName())->toBe('chat_channel_uuid');
 });
+
+it('adds a nullable meta column for participant roles and system messages', function () {
+    $capsule    = chat_models_database();
+    $connection = $capsule->getConnection('testing');
+    $schema     = $connection->getSchemaBuilder();
+    app()->instance('db.schema', $schema);
+    Facade::clearResolvedInstance('db.schema');
+
+    $migration = require __DIR__ . '/../../../migrations/2026_10_13_000000_add_meta_to_chat_participants_and_chat_messages_tables.php';
+    $migration->up();
+    // guarded: running it twice is a no-op
+    $migration->up();
+
+    $now = '2026-07-18 12:00:00';
+    $connection->table('chat_channels')->insert(['uuid' => 'channel-1', 'public_id' => 'chat_1', 'created_at' => $now, 'updated_at' => $now]);
+    $connection->table('chat_participants')->insert([
+        ['uuid' => 'participant-store', 'chat_channel_uuid' => 'channel-1', 'user_uuid' => 'user-store', 'meta' => '{"role":"store"}', 'created_at' => $now, 'updated_at' => $now],
+        ['uuid' => 'participant-legacy', 'chat_channel_uuid' => 'channel-1', 'user_uuid' => 'user-legacy', 'meta' => null, 'created_at' => $now, 'updated_at' => $now],
+        ['uuid' => 'participant-odd', 'chat_channel_uuid' => 'channel-1', 'user_uuid' => 'user-odd', 'meta' => '{"role":"admin"}', 'created_at' => $now, 'updated_at' => $now],
+    ]);
+    $connection->table('chat_messages')->insert([
+        ['uuid' => 'message-system', 'chat_channel_uuid' => 'channel-1', 'sender_uuid' => 'participant-store', 'content' => 'Drop-off changed', 'meta' => '{"system":true,"kind":"order_updated"}', 'created_at' => $now, 'updated_at' => $now],
+        ['uuid' => 'message-plain', 'chat_channel_uuid' => 'channel-1', 'sender_uuid' => 'participant-legacy', 'content' => 'Hello', 'meta' => null, 'created_at' => $now, 'updated_at' => $now],
+    ]);
+
+    $store  = ChatParticipant::query()->without('user')->whereKey('participant-store')->firstOrFail();
+    $legacy = ChatParticipant::query()->without('user')->whereKey('participant-legacy')->firstOrFail();
+    $odd    = ChatParticipant::query()->without('user')->whereKey('participant-odd')->firstOrFail();
+    $system = ChatMessage::query()->without(['sender', 'attachments', 'receipts'])->whereKey('message-system')->firstOrFail();
+    $plain  = ChatMessage::query()->without(['sender', 'attachments', 'receipts'])->whereKey('message-plain')->firstOrFail();
+
+    $migration->down();
+
+    expect($store->meta)->toBe(['role' => 'store'])
+        ->and($store->getRole())->toBe(ChatParticipant::ROLE_STORE)
+        ->and($legacy->getRole())->toBeNull()
+        ->and($odd->getRole())->toBeNull()
+        ->and(ChatParticipant::ROLES)->toBe(['customer', 'driver', 'store', 'system'])
+        ->and($system->isSystem())->toBeTrue()
+        ->and($system->getSystemKind())->toBe('order_updated')
+        ->and($plain->isSystem())->toBeFalse()
+        ->and($plain->getSystemKind())->toBeNull()
+        ->and((new ChatParticipant())->isFillable('meta'))->toBeTrue()
+        ->and((new ChatMessage())->isFillable('meta'))->toBeTrue()
+        ->and($schema->hasColumn('chat_participants', 'meta'))->toBeFalse()
+        ->and($schema->hasColumn('chat_messages', 'meta'))->toBeFalse();
+});

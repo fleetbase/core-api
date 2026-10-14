@@ -636,6 +636,21 @@ it('publishes comments with session defaults sanitized payloads and timestamps',
     Carbon::setTestNow();
 });
 
+it('leaves models guarded when publishing a comment fails', function () {
+    operational_models_database();
+    session([
+        'user'    => 'user-1',
+        'company' => 'company-1',
+    ]);
+
+    // A duplicate primary key makes the insert throw.
+    Comment::publish(['uuid' => 'comment-dup', 'content' => 'First', 'subject_uuid' => 'order-1', 'subject_type' => User::class]);
+
+    expect(fn () => Comment::publish(['uuid' => 'comment-dup', 'content' => 'Second', 'subject_uuid' => 'order-1', 'subject_type' => User::class]))
+        ->toThrow(Exception::class)
+        ->and(Comment::isUnguarded())->toBeFalse();
+});
+
 it('defines comment company parent and replies relationship contracts', function () {
     operational_models_database();
 

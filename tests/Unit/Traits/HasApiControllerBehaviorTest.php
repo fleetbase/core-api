@@ -107,7 +107,8 @@ class HasApiControllerBehaviorModel extends Model
 
     public function isColumn($column): bool
     {
-        return $this->hasCompanyColumn && str_ends_with($column, 'company_uuid');
+        // Mirrors Schema::hasColumn: only the bare column name matches, never "table.column".
+        return $this->hasCompanyColumn && $column === 'company_uuid';
     }
 
     public function applyDirectivesToQuery(Request $request, $builder)
