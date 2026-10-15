@@ -2,7 +2,7 @@
 
 ## Added
 
-- **Category `parent_uuid` on internal responses.** The internal Category resource now includes `parent_uuid`, so a console can build a category tree from a flat list (Storefront's nested product categories). (#PR)
+- **Category `parent_uuid` on internal responses.** The internal Category resource now includes `parent_uuid`, so a console can build a category tree from a flat list (Storefront's nested product categories). (#316)
 
 ## Fixed
 
