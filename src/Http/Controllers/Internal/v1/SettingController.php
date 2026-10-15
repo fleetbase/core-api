@@ -20,6 +20,9 @@ use Fleetbase\Services\OAuth\OAuthConfigRepository;
 use Fleetbase\Services\OAuth\OAuthFlowService;
 use Fleetbase\Services\SmsService;
 use Fleetbase\Support\PlatformApi;
+use Fleetbase\Support\SocketCluster\SocketClusterService;
+use Fleetbase\Support\SocketCluster\SocketSettings;
+use Fleetbase\Support\SocketCluster\SocketToken;
 use Fleetbase\Support\Utils;
 use Fleetbase\Twilio\Manager as TwilioManager;
 use Fleetbase\Twilio\Support\Laravel\Facade as TwilioFacade;
@@ -1101,6 +1104,56 @@ class SettingController extends Controller
                 'response' => $response,
             ]
         );
+    }
+
+    /**
+     * Socket server settings: the effective values with their sources, and the socket
+     * server's live status.
+     *
+     * The auth key is never part of the response; `settings.key_configured` says whether it is set.
+     */
+    public function getSocketSettings(AdminRequest $request)
+    {
+        return response()->json($this->socketSettingsPayload());
+    }
+
+    /**
+     * Save any subset of the socket settings; a null value clears it back to the environment.
+     *
+     * Switching socket authentication on needs SOCKETCLUSTER_AUTH_KEY, which can only be set in
+     * the environment, so it is refused (422 `key_missing`) without one.
+     */
+    public function saveSocketSettings(AdminRequest $request)
+    {
+        $validated = $request->validate(SocketSettings::rules());
+
+        if (($validated['enabled'] ?? null) !== null && filter_var($validated['enabled'], FILTER_VALIDATE_BOOLEAN) && SocketToken::key() === null) {
+            return response()->error('Socket authentication cannot be switched on until SOCKETCLUSTER_AUTH_KEY is set on the API and the socket server.', 422, ['code' => 'key_missing']);
+        }
+
+        $change = SocketSettings::store($validated);
+
+        activity('settings')
+            ->causedBy($request->user())
+            ->event('socket_settings_updated')
+            ->withProperties(['fields' => array_keys(array_intersect_key($validated, array_flip(SocketSettings::FIELDS))), 'old' => $change['before'], 'new' => $change['after']])
+            ->log('Socket settings updated');
+
+        return response()->json($this->socketSettingsPayload());
+    }
+
+    /**
+     * @return array{settings: array, status: ?array, status_error: ?string}
+     */
+    protected function socketSettingsPayload(): array
+    {
+        $stats = SocketClusterService::stats();
+
+        return [
+            'settings'     => SocketSettings::effective(),
+            'status'       => $stats['status'],
+            'status_error' => $stats['error'],
+        ];
     }
 
     /**

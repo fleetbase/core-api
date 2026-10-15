@@ -387,6 +387,27 @@ namespace {
             ->and($authorize['middleware'])->toBe([Fleetbase\Http\Middleware\VerifySocketSignature::class]);
     });
 
+    test('route file exposes socket settings to administrators and signed config to the socket server', function () {
+        $routes   = routes_contract_rows(routes_contract_router());
+        $settings = 'Fleetbase\\Http\\Controllers\\Internal\\v1\\SettingController';
+
+        foreach ([['GET', 'getSocketSettings'], ['POST', 'saveSocketSettings']] as [$method, $action]) {
+            $route = routes_contract_find($routes, $method, 'int/v1/settings/socket');
+
+            expect($route)->not->toBeNull()
+                ->and($route['action'])->toBe($settings . '@' . $action)
+                ->and($route['middleware'])->toContain('fleetbase.protected');
+        }
+
+        $config = routes_contract_find($routes, 'GET', 'int/v1/socket/config');
+
+        expect(routes_contract_index($routes, 'GET', 'int/v1/settings/socket'))
+            ->toBeLessThan(routes_contract_index($routes, 'GET', 'int/v1/settings/{setting}'))
+            ->and($config['action'])->toBe('Fleetbase\\Http\\Controllers\\SocketAuthController@config')
+            // Signature only, and answered while the switch is off.
+            ->and($config['middleware'])->toBe([Fleetbase\Http\Middleware\VerifySocketSignature::class . ':key-only']);
+    });
+
     test('route file exposes api rate limit administration as protected routes', function () {
         $routes     = routes_contract_rows(routes_contract_router());
         $controller = 'Fleetbase\\Http\\Controllers\\Internal\\v1\\RateLimitController';
