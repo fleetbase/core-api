@@ -37,6 +37,12 @@ return [
         'auth_key'    => env('SOCKETCLUSTER_AUTH_KEY'),
         'publish_url' => env('SOCKETCLUSTER_PUBLISH_URL', 'http://' . env('SOCKETCLUSTER_HOST', 'socket') . ':8001'),
         'token_ttl'   => (int) env('SOCKETCLUSTER_TOKEN_TTL', 900),
+
+        // Environment fallbacks for the admin socket settings (Configure -> Socket). The
+        // socket server reads these itself; the API reads them only to report the effective
+        // values. Blank means "the socket server's own default".
+        'auth_mode'      => env('SOCKETCLUSTER_AUTH_MODE'),
+        'socket_options' => env('SOCKETCLUSTER_OPTIONS'),
     ],
 
     // for apple apn
