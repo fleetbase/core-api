@@ -1055,7 +1055,7 @@ class SettingController extends Controller
     public function testSocketcluster(AdminRequest $request)
     {
         $userUuid = session('user');
-        $scoped   = \Fleetbase\Support\SocketCluster\SocketToken::enabled();
+        $scoped   = SocketToken::enabled();
 
         if ($scoped && (!is_string($userUuid) || $userUuid === '')) {
             return response()->json([
@@ -1073,7 +1073,7 @@ class SettingController extends Controller
         $sent     = false;
         $response = null;
 
-        $socketClusterClient = new \Fleetbase\Support\SocketCluster\SocketClusterService();
+        $socketClusterClient = new SocketClusterService();
 
         try {
             $sent = $socketClusterClient->send($channel, [
