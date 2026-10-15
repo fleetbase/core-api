@@ -105,47 +105,31 @@ class Find
      */
     public static function httpRequestForModel(Model $model, ?string $namespace = null, ?int $version = 1): ?string
     {
-        // Create a unique cache key based on parameters.
-        $cacheKey = md5(get_class($model) . '|' . ($namespace ?? '') . '|' . $version . '|' . Http::action());
+        // A controller can name its model's request class (`$model->request`). It belongs in the key:
+        // the cache lives as long as the process, so in an Octane worker one controller's answer was
+        // otherwise served to every other controller of the same model.
+        $explicit = method_exists($model, 'getRequest') ? $model->getRequest() : null;
+        $cacheKey = md5(get_class($model) . '|' . ($namespace ?? '') . '|' . $version . '|' . Http::action() . '|' . (is_string($explicit) ? $explicit : ''));
 
         static $cache = [];
         if (isset($cache[$cacheKey])) {
             return $cache[$cacheKey];
         }
 
-        $requestNamespace = null;
+        $requestNamespace = $explicit;
         $defaultRequestNS = '\\Fleetbase\\Http\\Requests\\';
-        $requestNS        = $baseNamespace = $namespace ? $namespace . '\\Http\\Requests\\' : $defaultRequestNS;
+        $requestNS        = $namespace ? $namespace . '\\Http\\Requests\\' : $defaultRequestNS;
         $modelName        = Utils::classBasename($model);
-
-        if (method_exists($model, 'getRequest')) {
-            $requestNamespace = $model->getRequest();
-        }
 
         if ($requestNamespace === null) {
             $requestNamespace = $requestNS . Str::studly(ucfirst(Http::action()) . ucfirst($modelName) . 'Request');
         }
 
         if (!Utils::classExists($requestNamespace)) {
-            $internal = Http::isInternalRequest();
-            if ($internal) {
-                $baseNamespace .= 'Internal\\';
-            }
-            $requestNamespace = $baseNamespace . "v{$version}\\" . $modelName;
-
-            if (!Utils::classExists($requestNamespace)) {
-                $requestNamespace = str_replace('Internal\\', '', $requestNamespace);
-            }
-            if (!Utils::classExists($requestNamespace)) {
-                $requestNamespace = str_replace("v{$version}\\", '', $requestNamespace);
-            }
+            $requestNamespace = static::versionedClass($requestNS, $modelName, $version, Http::isInternalRequest());
         }
 
-        try {
-            if (!Utils::classExists($requestNamespace)) {
-                throw new \Exception('Missing resource');
-            }
-        } catch (\Error|\Exception $e) {
+        if (!Utils::classExists($requestNamespace)) {
             $requestNamespace = $defaultRequestNS . 'FleetbaseRequest';
         }
 
@@ -168,47 +152,55 @@ class Find
      */
     public static function httpFilterForModel(Model $model, ?string $namespace = null, ?int $version = 1): ?string
     {
-        // Create a unique cache key based on the model, namespace, version, and a filter flag.
-        $cacheKey     = md5(get_class($model) . '|' . ($namespace ?? '') . '|' . $version . '|filter');
         static $cache = [];
-        if (isset($cache[$cacheKey])) {
-            return $cache[$cacheKey];
+
+        // A controller names its model's filter (`$model->filter`): Fleet-Ops and Storefront both list
+        // orders with different filters. It belongs in the key: the cache lives as long as the process,
+        // so in an Octane worker the first controller's filter was otherwise applied to every later
+        // controller of the same model.
+        $explicit = method_exists($model, 'getFilter') ? $model->getFilter() : null;
+        $cacheKey = md5(get_class($model) . '|' . ($namespace ?? '') . '|' . $version . '|filter|' . (is_string($explicit) ? $explicit : ''));
+
+        if (!array_key_exists($cacheKey, $cache)) {
+            $namespaceSegments = explode('Models', get_class($model));
+            $baseNS            = '\\' . rtrim($namespaceSegments[0], '\\');
+            $filterNs          = $namespace ? $namespace . '\\Http\\Filter\\' : $baseNS . '\\Http\\Filter\\';
+            $modelName         = Utils::classBasename($model);
+            $filterNamespace   = $explicit ?? $filterNs . Str::studly(ucfirst($modelName) . 'Filter');
+            $orNull            = fn (string $class) => Utils::classExists($class) ? $class : null;
+
+            $cache[$cacheKey] = Utils::classExists($filterNamespace)
+                ? $filterNamespace
+                // The versioned fallback differs for internal routes, so both are kept and the request picks.
+                : [
+                    'internal' => $orNull(static::versionedClass($filterNs, $modelName, $version, true)),
+                    'public'   => $orNull(static::versionedClass($filterNs, $modelName, $version, false)),
+                ];
         }
 
-        $namespaceSegments = explode('Models', get_class($model));
-        $baseNS            = '\\' . rtrim($namespaceSegments[0], '\\');
-        $filterNamespace   = null;
-        $defaultFilterNS   = $baseNS . '\\Http\\Filter\\';
-        $filterNs          = $namespace ? $namespace . '\\Http\\Filter\\' : $defaultFilterNS;
-        $modelName         = Utils::classBasename($model);
+        $cached = $cache[$cacheKey];
 
-        if (method_exists($model, 'getFilter')) {
-            $filterNamespace = $model->getFilter();
+        return is_array($cached) ? (Http::isInternalRequest() ? $cached['internal'] : $cached['public']) : $cached;
+    }
+
+    /**
+     * The versioned class a model's request or filter falls back to: `Internal\v1\Model` for internal
+     * routes, then `v1\Model`, then `Model`, the first that exists (the last when none does).
+     */
+    protected static function versionedClass(string $baseNamespace, string $modelName, ?int $version, bool $internal): string
+    {
+        $candidates = [$baseNamespace . "v{$version}\\" . $modelName, $baseNamespace . $modelName];
+        if ($internal) {
+            array_unshift($candidates, $baseNamespace . "Internal\\v{$version}\\" . $modelName);
         }
 
-        if ($filterNamespace === null) {
-            $filterNamespace = $filterNs . Str::studly(ucfirst($modelName) . 'Filter');
-        }
-
-        if (!Utils::classExists($filterNamespace)) {
-            $internal      = Http::isInternalRequest();
-            $baseNamespace = $filterNs;
-            if ($internal) {
-                $baseNamespace = $filterNs . 'Internal\\';
+        foreach ($candidates as $candidate) {
+            if (Utils::classExists($candidate)) {
+                return $candidate;
             }
-            $filterNamespace = $baseNamespace . "v{$version}\\" . $modelName;
-
-            if (!Utils::classExists($filterNamespace)) {
-                $filterNamespace = str_replace('Internal\\', '', $filterNamespace);
-            }
-            if (!Utils::classExists($filterNamespace)) {
-                $filterNamespace = str_replace("v{$version}\\", '', $filterNamespace);
-            }
         }
 
-        $cache[$cacheKey] = Utils::classExists($filterNamespace) ? $filterNamespace : null;
-
-        return $cache[$cacheKey];
+        return end($candidates);
     }
 
     public static function getModelPackage(Model $model): ?string
