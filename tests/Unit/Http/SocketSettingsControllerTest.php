@@ -61,6 +61,10 @@ afterEach(function () {
 });
 
 test('the socket settings endpoints are for system administrators only', function () {
+    // The User models below boot their traits, which read config: bind a container first so
+    // this test does not depend on whatever an earlier test left behind.
+    SocketSettingsFixtures::setUp();
+
     foreach (['getSocketSettings', 'saveSocketSettings'] as $method) {
         $parameter = (new ReflectionMethod(SettingController::class, $method))->getParameters()[0];
 
