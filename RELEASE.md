@@ -1,7 +1,8 @@
-# v1.6.71 — Keep live and test-mode API caches apart; driver-assigned events on driver channels
+# v1.6.71 — Socket settings from the console; live and test-mode API caches kept apart; driver-assigned events on driver channels
 
 ## Added
 
+- **Socket settings from the console.** System administrators manage realtime channel authentication without touching the environment: `GET`/`POST int/v1/settings/socket` read and save the switch, the mode (`off`, `log`, `enforce`), the token TTL, the allowed origins and the publisher origin. Each value falls back to the environment when unset, so nothing changes until an administrator saves something. A signed `GET int/v1/socket/config` lets the socket server (fleetbase/fleetbase v0.7.70) poll the effective config and apply it at runtime, no restart. `SOCKETCLUSTER_AUTH_KEY` stays in the environment and is never stored or returned; turning the switch on without a key is refused. Every save is written to the activity log. (#314)
 - **Category `parent_uuid` on internal responses.** The internal Category resource now includes `parent_uuid`, so a console can build a category tree from a flat list (Storefront's nested product categories). (#316)
 
 ## Fixed
@@ -12,4 +13,5 @@
 
 ## Upgrade Steps
 
-- None. Existing cache entries keep their old keys and expire within their TTL (5 minutes for lists, 1 hour for models); `deploy.sh` already runs `php artisan cache:clear`.
+- Socket settings: nothing changes until an administrator saves one; the environment values stay the defaults. A socket server older than fleetbase/fleetbase v0.7.70 keeps reading its own environment.
+- Otherwise none. Existing cache entries keep their old keys and expire within their TTL (5 minutes for lists, 1 hour for models); `deploy.sh` already runs `php artisan cache:clear`.
