@@ -39,6 +39,16 @@ use Illuminate\Support\Str;
  * an already finished scan, so RedisTaggedCache::flush() deletes only the tag
  * sets and leaves every tagged value in Redis until its TTL expires. Bumping the
  * version moves readers to new keys and leaves the orphaned entries to expire.
+ *
+ * Every query, model and relationship key also carries the connection its model
+ * reads (see connectionName()). Sandbox requests (`Access-Console-Sandbox`,
+ * `flb_test_` keys) switch models to the separate sandbox database without any
+ * credential, company or path that would tell the two apart, and integer ids and
+ * synced uuids exist in both databases, so without it live and sandbox requests
+ * shared entries. Versions stay shared across connections: a list key also
+ * carries the versions of the tables it embeds, which other models (possibly on
+ * other connections) write, and a version is only known by table name. A write on
+ * either connection retiring the other's entries only over-invalidates.
  */
 class ApiModelCache
 {
@@ -111,11 +121,13 @@ class ApiModelCache
      * endpoints (which paginate and eager load differently) and endpoints whose
      * callbacks read route parameters; the session scope separates API keys, stores
      * and networks of one company. Both are hashed, so credentials never appear in
-     * the key or in the X-Cache-Key debug header.
+     * the key or in the X-Cache-Key debug header. The model's connection separates
+     * live from sandbox data.
      */
     public static function generateQueryCacheKey(Model $model, Request $request, array $additionalParams = []): string
     {
         $table       = $model->getTable();
+        $connection  = static::connectionName($model);
         $companyUuid = static::getCompanyUuid($request);
 
         // Get ALL query parameters from the request
@@ -164,14 +176,29 @@ class ApiModelCache
 
         // Add Redis hash tag {api_query} for Redis Cluster shard routing
         // Include version to ensure cache keys change after writes
-        return "{api_query}:{$table}:{$companyPart}:{$version}:{$paramsHash}";
+        return "{api_query}:{$connection}:{$table}:{$companyPart}:{$version}:{$paramsHash}";
+    }
+
+    /**
+     * Get the database connection a model reads, as cache keys carry it.
+     *
+     * Live and sandbox models share tables, ids, synced uuids, companies and
+     * request paths; the connection is the only thing that tells them apart.
+     * Fleetbase models resolve it from `fleetbase.connection.db` at call time,
+     * models without a connection fall back to the default connection, both of
+     * which Auth::setSandboxSession() switches to the sandbox.
+     */
+    public static function connectionName(Model $model): string
+    {
+        return $model->getConnectionName() ?? config('database.default') ?? 'default';
     }
 
     /**
      * Cache key holding the query version for a table/company.
      *
      * A null company is the table wide version, which every company's list keys
-     * include, so writes that know no company invalidate all of them.
+     * include, so writes that know no company invalidate all of them. Versions are
+     * shared by all connections (see the class docblock).
      */
     protected static function queryVersionKey(string $table, ?string $companyUuid): string
     {
@@ -478,14 +505,15 @@ class ApiModelCache
      */
     public static function generateModelCacheKey(Model $model, $id, array $with = []): string
     {
-        $table    = $model->getTable();
-        $withHash = !empty($with) ? ':' . md5(json_encode($with)) : '';
-        $tables   = [$table, ...static::dependencyTables($model, static::relationPaths($with))];
-        $version  = static::versionSegment(array_map(fn ($versionTable) => static::modelVersionKey($versionTable), $tables));
+        $table      = $model->getTable();
+        $connection = static::connectionName($model);
+        $withHash   = !empty($with) ? ':' . md5(json_encode($with)) : '';
+        $tables     = [$table, ...static::dependencyTables($model, static::relationPaths($with))];
+        $version    = static::versionSegment(array_map(fn ($versionTable) => static::modelVersionKey($versionTable), $tables));
 
         // Add Redis hash tag {api_model} for Redis Cluster shard routing
         // Include version to ensure cache keys change after writes
-        return "{api_model}:{$table}:{$version}:{$id}{$withHash}";
+        return "{api_model}:{$connection}:{$table}:{$version}:{$id}{$withHash}";
     }
 
     /**
@@ -493,14 +521,15 @@ class ApiModelCache
      */
     public static function generateRelationshipCacheKey(Model $model, string $relationshipName): string
     {
-        $table   = $model->getTable();
-        $id      = $model->getKey();
-        $tables  = [$table, ...static::dependencyTables($model, [$relationshipName])];
-        $version = static::versionSegment(array_map(fn ($versionTable) => static::modelVersionKey($versionTable), $tables));
+        $table      = $model->getTable();
+        $connection = static::connectionName($model);
+        $id         = $model->getKey();
+        $tables     = [$table, ...static::dependencyTables($model, [$relationshipName])];
+        $version    = static::versionSegment(array_map(fn ($versionTable) => static::modelVersionKey($versionTable), $tables));
 
         // Add Redis hash tag {api_relation} for Redis Cluster shard routing
         // Carries the parent's versions and the related tables', so a write to either side changes it
-        return "{api_relation}:{$table}:{$version}:{$id}:{$relationshipName}";
+        return "{api_relation}:{$connection}:{$table}:{$version}:{$id}:{$relationshipName}";
     }
 
     /**

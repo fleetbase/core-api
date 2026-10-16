@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Support\SocketCluster;
 
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use WebSocket\Client;
 
@@ -234,13 +235,60 @@ class SocketClusterService
      */
     public static function publishUrl(): string
     {
+        return static::internalUrl('/publish');
+    }
+
+    /**
+     * A path on the socket server's internal listener (SOCKETCLUSTER_PUBLISH_URL).
+     */
+    public static function internalUrl(string $path): string
+    {
         $base = config('broadcasting.connections.socketcluster.publish_url');
 
         if (!is_string($base) || $base === '') {
             $base = 'http://' . config('broadcasting.connections.socketcluster.options.host', 'socket') . ':8001';
         }
 
-        return rtrim($base, '/') . '/publish';
+        return rtrim($base, '/') . $path;
+    }
+
+    /**
+     * The socket server's counters from its internal `/stats` endpoint, signed with the publish key.
+     *
+     * Never throws: when the key is not configured or the server cannot be reached within two
+     * seconds, `status` is null and `error` gives a short reason.
+     *
+     * @return array{status: ?array, error: ?string}
+     */
+    public static function stats(): array
+    {
+        if (SocketToken::key() === null) {
+            return ['status' => null, 'error' => 'SOCKETCLUSTER_AUTH_KEY is not configured.'];
+        }
+
+        try {
+            $response = Http::withHeaders(SocketSignature::headers(SocketSignature::PUBLISH, ''))
+                ->acceptJson()
+                ->connectTimeout(2)
+                ->timeout(2)
+                ->get(static::internalUrl('/stats'));
+        } catch (ConnectionException $e) {
+            return ['status' => null, 'error' => 'The socket server could not be reached or did not answer within 2 seconds.'];
+        } catch (\Throwable $e) {
+            return ['status' => null, 'error' => 'The socket server status request failed.'];
+        }
+
+        if (!$response->successful()) {
+            return ['status' => null, 'error' => 'The socket server answered with HTTP status ' . $response->status() . '.'];
+        }
+
+        $status = $response->json();
+
+        if (!is_array($status)) {
+            return ['status' => null, 'error' => 'The socket server returned an invalid status response.'];
+        }
+
+        return ['status' => $status, 'error' => null];
     }
 
     /**
@@ -340,11 +388,19 @@ class SocketClusterService
     /**
      * Get the connection options.
      *
+     * The handshake Origin is the effective publisher origin (the `system.socket.publisher_origin`
+     * setting, else SOCKETCLUSTER_ORIGIN); options passed in still take precedence.
+     *
      * @param array|string $options connection options or URI
      */
     public function getOptions($options): array
     {
         $defaultConnectionOptions = config('broadcasting.connections.socketcluster.options', []);
+        $publisherOrigin          = SocketSettings::effective()['publisher_origin'];
+
+        if ($publisherOrigin !== null) {
+            $defaultConnectionOptions['headers'] = array_merge((array) ($defaultConnectionOptions['headers'] ?? []), ['Origin' => $publisherOrigin]);
+        }
 
         if (is_string($options)) {
             $options = parse_url($options);

@@ -173,6 +173,10 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                         // never by a session or user token.
                         $router->post('socket/authorize', [Fleetbase\Http\Controllers\SocketAuthController::class, 'authorizeChannel'])
                             ->middleware(Fleetbase\Http\Middleware\VerifySocketSignature::class);
+                        // Also socket server only, and answered while the auth switch is off: it is how
+                        // the socket server learns the effective settings, including the switch.
+                        $router->get('socket/config', [Fleetbase\Http\Controllers\SocketAuthController::class, 'config'])
+                            ->middleware(Fleetbase\Http\Middleware\VerifySocketSignature::class . ':' . Fleetbase\Http\Middleware\VerifySocketSignature::KEY_ONLY);
                         $router->group(
                             ['prefix' => 'two-fa', 'middleware' => [Fleetbase\Http\Middleware\ThrottleRequests::class]],
                             function ($router) {
@@ -261,6 +265,8 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     $router->post('branding', $controller('saveBrandingSettings'));
                                     $router->put('branding', $controller('saveBrandingSettings'));
                                     $router->post('test-socket', $controller('testSocketcluster'));
+                                    $router->get('socket', $controller('getSocketSettings'));
+                                    $router->post('socket', $controller('saveSocketSettings'));
                                     $router->get('notification-channels-config', $controller('getNotificationChannelsConfig'));
                                     $router->post('notification-channels-config', $controller('saveNotificationChannelsConfig'));
                                     $router->post('test-notification-channels-config', $controller('testNotificationChannelsConfig'));

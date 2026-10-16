@@ -258,7 +258,7 @@ test('category resource exposes public response shape with nested parent and sub
     ]));
 
     expect($payload['id'])->toBe('cat_1')
-        ->and($payload)->not->toHaveKeys(['uuid', 'company_uuid', 'owner_uuid', 'owner_type', 'public_id'])
+        ->and($payload)->not->toHaveKeys(['uuid', 'company_uuid', 'owner_uuid', 'owner_type', 'public_id', 'parent_uuid'])
         ->and($payload['name'])->toBe('Operations')
         ->and($payload['icon_url'])->toBe('https://flb-assets.s3.ap-southeast-1.amazonaws.com/images/fallback-placeholder-1.png')
         ->and($payload['tags'])->toBe(['ops', 'dispatch'])
@@ -283,7 +283,7 @@ test('category resource exposes internal identifiers and can suppress nested rel
         'public_id' => 'cat_child',
         'name'      => 'Child Category',
     ]);
-    $category = category_resource_model([]);
+    $category = category_resource_model(['parent_uuid' => 'category-parent']);
     $category->setRelation('parentCategory', $parent);
     $category->setRelation('subCategories', collect([$child]));
 
@@ -301,6 +301,8 @@ test('category resource exposes internal identifiers and can suppress nested rel
         ->and($payload['company_uuid'])->toBe('company-1')
         ->and($payload['owner_uuid'])->toBe('owner-1')
         ->and($payload['owner_type'])->toBe('company')
+        // A console builds its tree from parent_uuid without loading each parent.
+        ->and($payload['parent_uuid'])->toBe('category-parent')
         ->and($payload)->not->toHaveKeys(['parent', 'subcategories']);
 
     $withParent = (new CategoryResource($category))->resolve(resource_contract_request('/int/v1/categories/category-1', [

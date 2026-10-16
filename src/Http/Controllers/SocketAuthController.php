@@ -8,6 +8,7 @@ use Fleetbase\Support\SocketCluster\ChannelAuthorizer;
 use Fleetbase\Support\SocketCluster\ChannelDecision;
 use Fleetbase\Support\SocketCluster\SocketChannelRegistry;
 use Fleetbase\Support\SocketCluster\SocketPrincipal;
+use Fleetbase\Support\SocketCluster\SocketSettings;
 use Fleetbase\Support\SocketCluster\SocketToken;
 use Fleetbase\Support\Utils;
 use Illuminate\Http\Request;
@@ -15,8 +16,8 @@ use Laravel\Sanctum\PersonalAccessToken;
 
 /**
  * Socket token minting for console, API and platform clients, and the channel authorize
- * endpoint the socket server calls. Every action answers 404 while SOCKETCLUSTER_AUTH_KEY
- * is unset, which clients read as "connect anonymously".
+ * and config endpoints the socket server calls. Every action answers 404 while
+ * SOCKETCLUSTER_AUTH_KEY is unset, which clients read as "connect anonymously".
  */
 class SocketAuthController extends Controller
 {
@@ -104,6 +105,24 @@ class SocketAuthController extends Controller
         }
 
         return response()->json($decision->toArray());
+    }
+
+    /**
+     * GET int/v1/socket/config: the effective socket settings the socket server applies at runtime.
+     *
+     * Signed with the authorize key and answered while the switch is off, so the socket
+     * server learns when an administrator switches socket authentication on.
+     */
+    public function config(Request $request)
+    {
+        $settings = SocketSettings::effective();
+
+        return response()->json([
+            'enabled'    => $settings['enabled'],
+            'mode'       => $settings['mode'],
+            'origins'    => $settings['origins'],
+            'updated_at' => SocketSettings::updatedAt(),
+        ]);
     }
 
     protected static function disabled()

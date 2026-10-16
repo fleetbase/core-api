@@ -156,7 +156,26 @@ class ResourceLifecycleEvent implements ShouldBroadcast
         $this->addRelationshipSpecificChannels($model, $channels);
         $this->addChatChannels($model, $channels);
 
-        return $channels;
+        return static::uniqueChannels($channels);
+    }
+
+    /**
+     * Drops channels whose name is already in the list, keeping the first, so the event goes out
+     * once per channel name (e.g. `company.{uuid}` from both the session and the model, or a
+     * driver's own `driver.{id}` channel).
+     *
+     * @param array<int, Channel> $channels
+     *
+     * @return array<int, Channel>
+     */
+    public static function uniqueChannels(array $channels): array
+    {
+        $unique = [];
+        foreach ($channels as $channel) {
+            $unique[(string) $channel] ??= $channel;
+        }
+
+        return array_values($unique);
     }
 
     /**
@@ -218,20 +237,33 @@ class ResourceLifecycleEvent implements ShouldBroadcast
     /**
      * Adds channels related to relationships defined in the model such as driver, customer, facilitator, and vendor.
      *
+     * A record assigned to a driver is published on the driver's own channel (`driver.{public_id}`
+     * and `driver.{uuid}`), next to the driver's location and geofence events.
+     *
+     * Deprecated: `driverAssigned.{uuid}` and `driverAssigned.{public_id}` are still published so
+     * existing subscribers keep working. New clients should subscribe to `driver.{public_id}`.
+     *
      * @param object $model    the model related to the event
      * @param array  $channels reference to the channels array
      */
     protected function addRelationshipSpecificChannels($model, &$channels)
     {
-        $relationships = ['driverAssigned', 'customer', 'facilitator', 'vendor'];
-        foreach ($relationships as $relationship) {
+        $relationships = [
+            'driverAssigned' => ['driver', 'driverAssigned'],
+            'customer'       => ['customer'],
+            'facilitator'    => ['facilitator'],
+            'vendor'         => ['vendor'],
+        ];
+        foreach ($relationships as $relationship => $prefixes) {
             // Foreign keys are snake case (`driver_assigned_uuid`), the relationship names are camel case.
             $foreignKey = Str::snake($relationship) . '_uuid';
-            if ($model && isset($model->{$foreignKey})) {
-                $channels[] = new Channel($relationship . '.' . $model->{$foreignKey});
-            }
-            if ($model && isset($model->{$relationship})) {
-                $channels[] = new Channel($relationship . '.' . $model->{$relationship}->public_id);
+            foreach ($prefixes as $prefix) {
+                if ($model && isset($model->{$foreignKey})) {
+                    $channels[] = new Channel($prefix . '.' . $model->{$foreignKey});
+                }
+                if ($model && isset($model->{$relationship})) {
+                    $channels[] = new Channel($prefix . '.' . $model->{$relationship}->public_id);
+                }
             }
         }
 

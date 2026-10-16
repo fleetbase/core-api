@@ -759,6 +759,8 @@ test('resource lifecycle events broadcast relationship storefront and direct cha
         ->and($channels)->toContain('company.company_7654321')
         ->and($channels)->toContain('chat_channel.chat_7654321')
         ->and($channels)->toContain('chat_channel.33333333-3333-4333-8333-333333333333')
+        ->and($channels)->toContain('driver.driver-assigned-uuid')
+        ->and($channels)->toContain('driver.user_7654321')
         ->and($channels)->toContain('driverAssigned.driver-assigned-uuid')
         ->and($channels)->toContain('driverAssigned.user_7654321')
         ->and($channels)->toContain('customer.customer-uuid')
@@ -813,10 +815,78 @@ test('resource lifecycle events read relationship uuid channels from the snake c
 
     $channels = array_map(fn ($channel) => (string) $channel, $event->broadcastOn());
 
-    expect($channels)->toContain('driverAssigned.driver-uuid-only')
+    expect($channels)->toContain('driver.driver-uuid-only')
+        ->and($channels)->toContain('driverAssigned.driver-uuid-only')
         ->and($channels)->toContain('customer.customer-uuid-only')
+        ->and($channels)->not->toContain('driver.')
         ->and($channels)->not->toContain('driverAssigned.')
         ->and($channels)->not->toContain('customer.');
+});
+
+test('resource lifecycle events publish each channel name once', function () {
+    bind_test_container();
+    session()->flush();
+    // The session company and the model's company are the same uuid, so `company.{uuid}` is
+    // produced twice before deduplication.
+    session(['company' => 'same-company', 'user' => 'session-user']);
+
+    $driver = new User();
+    $driver->setRawAttributes(['public_id' => 'driver_abc123'], true);
+
+    $channel = new ChatChannel();
+    $channel->setRawAttributes([
+        'uuid'                 => '55555555-5555-4555-8555-555555555555',
+        'public_id'            => 'chat_2222222',
+        'company_uuid'         => 'same-company',
+        'created_by_uuid'      => 'creator-user',
+        'driver_assigned_uuid' => 'driver-uuid',
+    ], true);
+    $channel->setRelation('company', null);
+    $channel->setRelation('driverAssigned', $driver);
+
+    $event = EventsAndExceptionsLifecycleEvent::fake([
+        'modelName'           => 'chat_channel',
+        'modelClassNamespace' => ChatChannel::class,
+        'modelClassName'      => 'ChatChannel',
+        'modelHumanName'      => 'chat channel',
+        'modelRecordName'     => null,
+        'modelUuid'           => '55555555-5555-4555-8555-555555555555',
+        'namespace'           => '\\Fleetbase',
+        'version'             => 1,
+        'eventName'           => 'updated',
+        'sentAt'              => '2026-10-15 12:00:00',
+        'eventId'             => 'event_unique_channels',
+        'apiVersion'          => 'v1',
+        'requestMethod'       => 'PUT',
+        'apiCredential'       => 'console',
+        'apiSecret'           => 'internal',
+        'apiKey'              => null,
+        'apiEnvironment'      => 'live',
+        'isSandbox'           => false,
+        'data'                => [],
+        'userSession'         => 'session-user',
+        'companySession'      => 'same-company',
+    ], $channel);
+
+    $broadcastOn = $event->broadcastOn();
+    $channels    = array_map(fn ($channel) => (string) $channel, $broadcastOn);
+
+    expect($broadcastOn)->each->toBeInstanceOf(Channel::class)
+        ->and($channels)->toBe(array_values(array_unique($channels)))
+        ->and(array_count_values($channels)['company.same-company'])->toBe(1)
+        ->and($channels)->toContain('driver.driver_abc123')
+        ->and($channels)->toContain('driver.driver-uuid')
+        ->and($channels)->toContain('driverAssigned.driver_abc123')
+        ->and($channels)->toContain('driverAssigned.driver-uuid');
+});
+
+test('unique channels keeps the first channel of each name in order', function () {
+    $first  = new Channel('driver.driver_abc123');
+    $second = new Channel('order.order_abc123');
+
+    expect(ResourceLifecycleEvent::uniqueChannels([$first, $second, new Channel('driver.driver_abc123'), $second]))
+        ->toBe([$first, $second])
+        ->and(ResourceLifecycleEvent::uniqueChannels([]))->toBe([]);
 });
 
 test('resource lifecycle events prefer webhook payloads when resources provide them', function () {

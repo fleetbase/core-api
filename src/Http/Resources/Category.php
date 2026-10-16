@@ -34,6 +34,8 @@ class Category extends FleetbaseResource
             'company_uuid' => $this->when(Http::isInternalRequest(), $this->company_uuid),
             'owner_uuid'   => $this->when(Http::isInternalRequest(), $this->owner_uuid),
             'owner_type'   => $this->when(Http::isInternalRequest(), $this->owner_type),
+            // Lets a console build a category tree from a flat list without loading each parent.
+            'parent_uuid'  => $this->when(Http::isInternalRequest(), $this->parent_uuid),
             'icon'         => $this->icon,
             'icon_url'     => $this->icon_url,
             'name'         => $this->name,

@@ -19,8 +19,9 @@ use Lcobucci\JWT\Validation\Constraint\StrictValidAt;
  * Mints and verifies the HS256 tokens realtime clients present to the socket server.
  *
  * The signing key is SOCKETCLUSTER_AUTH_KEY, shared with the socket server. The feature is
- * on only when SOCKETCLUSTER_AUTH_ENABLED is true and that key is at least 32 bytes long;
- * otherwise nothing is minted and broadcasts use the websocket publisher.
+ * on only when the switch is on (the `system.socket.enabled` setting, else
+ * SOCKETCLUSTER_AUTH_ENABLED) and that key is at least 32 bytes long; otherwise nothing is
+ * minted and broadcasts use the websocket publisher.
  */
 class SocketToken
 {
@@ -59,16 +60,21 @@ class SocketToken
      * Whether realtime channel authentication is switched on.
      *
      * The switch is separate from the key so the key can be provisioned (for example on
-     * the socket server) before every socket client is ready for tokens.
+     * the socket server) before every socket client is ready for tokens. An administrator's
+     * setting overrides SOCKETCLUSTER_AUTH_ENABLED.
      */
     public static function switchedOn(): bool
     {
-        return filter_var(config('broadcasting.connections.socketcluster.auth_enabled', false), FILTER_VALIDATE_BOOLEAN);
+        return SocketSettings::effective()['enabled'];
     }
 
+    /**
+     * Whether socket tokens are minted and checked: a valid key and the switch on. The key is
+     * checked first so installs without one never read the stored settings.
+     */
     public static function enabled(): bool
     {
-        return static::switchedOn() && static::key() !== null;
+        return static::key() !== null && static::switchedOn();
     }
 
     /**
@@ -204,12 +210,10 @@ class SocketToken
 
     public static function defaultTtl(string $kind): int
     {
-        $configured = (int) config('broadcasting.connections.socketcluster.token_ttl', self::DEFAULT_TTL);
-
         return match ($kind) {
             'tracking' => self::TRACKING_TTL,
             'system'   => self::SYSTEM_TTL,
-            default    => $configured > 0 ? $configured : self::DEFAULT_TTL,
+            default    => SocketSettings::effective()['token_ttl'],
         };
     }
 

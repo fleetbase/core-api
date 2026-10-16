@@ -61,10 +61,15 @@ class SocketSignature
 
     /**
      * Whether a request's timestamp and signature are valid for the raw body, compared in constant time.
+     *
+     * By default the switch must be on too. With $requireSwitch false only the key is needed,
+     * for the config endpoint the socket server polls to learn that the switch was turned on.
      */
-    public static function verify(string $purpose, ?string $timestamp, ?string $signature, string $body): bool
+    public static function verify(string $purpose, ?string $timestamp, ?string $signature, string $body, bool $requireSwitch = true): bool
     {
-        if (!SocketToken::enabled() || !is_string($timestamp) || !ctype_digit($timestamp) || !is_string($signature) || $signature === '') {
+        $configured = $requireSwitch ? SocketToken::enabled() : SocketToken::key() !== null;
+
+        if (!$configured || !is_string($timestamp) || !ctype_digit($timestamp) || !is_string($signature) || $signature === '') {
             return false;
         }
 

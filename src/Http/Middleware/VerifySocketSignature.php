@@ -9,14 +9,20 @@ use Illuminate\Http\Request;
 /**
  * Admits only requests the socket server signed with the derived authorize key.
  *
- * Used instead of session or token auth on the channel authorize endpoint, which only the
- * socket server calls.
+ * Used instead of session or token auth on the endpoints only the socket server calls. They
+ * answer 404 while socket authentication is off; with the `key-only` parameter
+ * (`VerifySocketSignature:key-only`) a configured key is enough, whatever the switch.
  */
 class VerifySocketSignature
 {
-    public function handle(Request $request, \Closure $next)
+    public const KEY_ONLY = 'key-only';
+
+    public function handle(Request $request, \Closure $next, ?string $requirement = null)
     {
-        if (!SocketToken::enabled()) {
+        $requireSwitch = $requirement !== self::KEY_ONLY;
+        $configured    = $requireSwitch ? SocketToken::enabled() : SocketToken::key() !== null;
+
+        if (!$configured) {
             return response()->json(['error' => 'Not Found'], 404);
         }
 
@@ -24,7 +30,8 @@ class VerifySocketSignature
             SocketSignature::AUTHORIZE,
             $request->header(SocketSignature::HEADER_TIMESTAMP),
             $request->header(SocketSignature::HEADER_SIGNATURE),
-            $request->getContent()
+            $request->getContent(),
+            $requireSwitch
         );
 
         if (!$valid) {

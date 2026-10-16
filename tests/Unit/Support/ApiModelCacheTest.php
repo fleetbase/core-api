@@ -1,6 +1,8 @@
 <?php
 
+use Fleetbase\Models\Model as FleetbaseModel;
 use Fleetbase\Support\ApiModelCache;
+use Fleetbase\Support\Auth;
 use Fleetbase\Traits\HasApiModelCache;
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Database\DatabaseTransactionsManager;
@@ -19,6 +21,26 @@ use Illuminate\Support\Facades\Facade;
 
 class ApiModelCacheTestModel extends Model
 {
+    protected $table      = 'orders';
+    protected $primaryKey = 'uuid';
+    public $incrementing  = false;
+    protected $keyType    = 'string';
+}
+
+/**
+ * A Fleetbase model: resolves its connection from fleetbase.connection.db at call time.
+ */
+class ApiModelCacheFleetbaseTestModel extends FleetbaseModel
+{
+    protected $table = 'orders';
+}
+
+/**
+ * A model pinned to one connection, which sandbox requests do not switch.
+ */
+class ApiModelCachePinnedTestModel extends Model
+{
+    protected $connection = 'storefront';
     protected $table      = 'orders';
     protected $primaryKey = 'uuid';
     public $incrementing  = false;
@@ -432,6 +454,7 @@ function api_model_cache_fixture(array $config = []): ApiModelCacheTestStore
         'api.cache.ttl.relationship' => 333,
         'api.cache.scope.session'    => null,
         'cache.default'              => 'array',
+        'database.default'           => 'mysql',
     ], $config));
 
     app()->instance('cache', $store);
@@ -451,6 +474,23 @@ function api_model_cache_model(string $uuid = 'order-1', ?string $companyUuid = 
     $model->exists = true;
 
     return $model;
+}
+
+/**
+ * Run a callback inside a sandbox session as Auth::setSandboxSession() opens one
+ * for a console request with `Access-Console-Sandbox: true`, then restore live.
+ */
+function api_model_cache_in_sandbox(Closure $callback): mixed
+{
+    $request = Request::create('/int/v1/orders', 'GET', [], [], [], ['HTTP_ACCESS_CONSOLE_SANDBOX' => 'true']);
+    Auth::setSandboxSession($request);
+
+    try {
+        return $callback();
+    } finally {
+        config(['database.default' => 'mysql', 'fleetbase.connection.db' => 'mysql']);
+        session(['is_sandbox' => false]);
+    }
 }
 
 function api_model_cache_request(array $query = [], mixed $company = 'company-1'): Request
@@ -624,13 +664,117 @@ test('api model cache generates tenant scoped stable query model and relationshi
     ]), ['callback' => true]);
 
     expect($first)->toBe($second)
-        ->and($first)->toStartWith('{api_query}:orders:company_company-1:v0.7:')
+        ->and($first)->toStartWith('{api_query}:mysql:orders:company_company-1:v0.7:')
         ->and(ApiModelCache::generateModelCacheKey($model, 'order-1', ['customer', 'payload']))
-        ->toBe('{api_model}:orders:v0:order-1:' . md5(json_encode(['customer', 'payload'])))
+        ->toBe('{api_model}:mysql:orders:v0:order-1:' . md5(json_encode(['customer', 'payload'])))
         ->and(ApiModelCache::generateRelationshipCacheKey($model, 'payload'))
-        ->toBe('{api_relation}:orders:v0:order-1:payload')
+        ->toBe('{api_relation}:mysql:orders:v0:order-1:payload')
         ->and(ApiModelCache::generateCacheTags($model, 'company-1', true))
         ->toBe(['api_cache', 'api_model:orders', 'api_query:orders', 'company:company-1']);
+});
+
+test('api model cache keys the same request apart under live and sandbox sessions', function () {
+    api_model_cache_fixture(['fleetbase.connection.db' => 'mysql']);
+    $request = fn () => api_model_cache_request(['status' => 'active', 'limit' => '1']);
+
+    $keys = function () use ($request) {
+        $model     = api_model_cache_model();
+        $fleetbase = new ApiModelCacheFleetbaseTestModel();
+        $fleetbase->setAttribute('uuid', 'order-1');
+
+        return [
+            'query'              => ApiModelCache::generateQueryCacheKey($model, $request()),
+            'model'              => ApiModelCache::generateModelCacheKey($model, 'order-1', ['payload']),
+            'relationship'       => ApiModelCache::generateRelationshipCacheKey($model, 'payload'),
+            'fleetbase_query'    => ApiModelCache::generateQueryCacheKey($fleetbase, $request()),
+            'fleetbase_model'    => ApiModelCache::generateModelCacheKey($fleetbase, 1),
+            'fleetbase_relation' => ApiModelCache::generateRelationshipCacheKey($fleetbase, 'payload'),
+            'pinned_query'       => ApiModelCache::generateQueryCacheKey(new ApiModelCachePinnedTestModel(), $request()),
+        ];
+    };
+
+    $live    = $keys();
+    $sandbox = api_model_cache_in_sandbox($keys);
+
+    foreach (['query', 'model', 'relationship', 'fleetbase_query', 'fleetbase_model', 'fleetbase_relation'] as $kind) {
+        expect($sandbox[$kind])->not->toBe($live[$kind]);
+    }
+
+    expect($live['query'])->toStartWith('{api_query}:mysql:orders:company_company-1:v0.0:')
+        ->and($sandbox['query'])->toStartWith('{api_query}:sandbox:orders:company_company-1:v0.0:')
+        ->and($live['model'])->toBe('{api_model}:mysql:orders:v0:order-1:' . md5(json_encode(['payload'])))
+        ->and($sandbox['model'])->toBe('{api_model}:sandbox:orders:v0:order-1:' . md5(json_encode(['payload'])))
+        ->and($live['relationship'])->toBe('{api_relation}:mysql:orders:v0:order-1:payload')
+        ->and($sandbox['relationship'])->toBe('{api_relation}:sandbox:orders:v0:order-1:payload')
+        ->and($live['fleetbase_model'])->toBe('{api_model}:mysql:orders:v0:1')
+        ->and($sandbox['fleetbase_model'])->toBe('{api_model}:sandbox:orders:v0:1')
+        ->and($sandbox['fleetbase_query'])->toStartWith('{api_query}:sandbox:orders:')
+        ->and($sandbox['fleetbase_relation'])->toBe('{api_relation}:sandbox:orders:v0:order-1:payload')
+        // A model pinned to a connection reads the same data in both, so it keeps one key
+        ->and($live['pinned_query'])->toStartWith('{api_query}:storefront:orders:')
+        ->and($sandbox['pinned_query'])->toBe($live['pinned_query']);
+});
+
+test('api model cache never serves a live list to a sandbox request or a sandbox list to a live one', function () {
+    api_model_cache_fixture(['fleetbase.connection.db' => 'mysql']);
+    $request = fn () => api_model_cache_request(['limit' => '1', '_probe' => '1']);
+
+    $live = ApiModelCache::cacheQueryResult(api_model_cache_model(), $request(), fn () => collect(['live-order']));
+    expect($live->all())->toBe(['live-order'])
+        ->and(ApiModelCache::getCacheStatus())->toBe('MISS');
+    $liveKey = ApiModelCache::getCacheKey();
+
+    [$sandbox, $sandboxStatus, $sandboxKey] = api_model_cache_in_sandbox(function () use ($request) {
+        ApiModelCache::resetCacheStatus();
+        $result = ApiModelCache::cacheQueryResult(api_model_cache_model(), $request(), fn () => collect([]));
+
+        return [$result, ApiModelCache::getCacheStatus(), ApiModelCache::getCacheKey()];
+    });
+
+    expect($sandbox->all())->toBe([])
+        ->and($sandboxStatus)->toBe('MISS')
+        ->and($sandboxKey)->not->toBe($liveKey);
+
+    // Each environment then hits its own entry
+    ApiModelCache::resetCacheStatus();
+    expect(ApiModelCache::cacheQueryResult(api_model_cache_model(), $request(), fn () => collect(['unexpected']))->all())->toBe(['live-order'])
+        ->and(ApiModelCache::getCacheStatus())->toBe('HIT');
+
+    $sandboxAgain = api_model_cache_in_sandbox(fn () => ApiModelCache::cacheQueryResult(api_model_cache_model(), $request(), fn () => collect(['unexpected'])));
+    expect($sandboxAgain->all())->toBe([]);
+});
+
+test('api model cache never serves a live model or relationship lookup to a sandbox request', function () {
+    api_model_cache_fixture(['fleetbase.connection.db' => 'mysql']);
+    $model = new ApiModelCacheFleetbaseTestModel();
+    $model->setAttribute('uuid', 'user-1');
+
+    expect(ApiModelCache::cacheModel($model, 1, fn () => 'live-record'))->toBe('live-record')
+        ->and(ApiModelCache::cacheRelationship($model, 'payload', fn () => 'live-relation'))->toBe('live-relation');
+
+    [$record, $relation] = api_model_cache_in_sandbox(fn () => [
+        ApiModelCache::cacheModel($model, 1, fn () => 'sandbox-record'),
+        ApiModelCache::cacheRelationship($model, 'payload', fn () => 'sandbox-relation'),
+    ]);
+
+    expect($record)->toBe('sandbox-record')
+        ->and($relation)->toBe('sandbox-relation')
+        ->and(ApiModelCache::cacheModel($model, 1, fn () => 'unexpected'))->toBe('live-record')
+        ->and(ApiModelCache::cacheRelationship($model, 'payload', fn () => 'unexpected'))->toBe('live-relation');
+});
+
+test('api model cache shares versions across connections so a sandbox write only over invalidates live lists', function () {
+    $store   = api_model_cache_fixture(['fleetbase.connection.db' => 'mysql']);
+    $request = fn () => api_model_cache_request(['status' => 'active']);
+
+    $liveBefore = ApiModelCache::generateQueryCacheKey(api_model_cache_model(), $request());
+    api_model_cache_in_sandbox(fn () => ApiModelCache::invalidateModelCache(api_model_cache_model(), 'company-1'));
+
+    expect($store->get('api_query_version:orders:company-1'))->toBe(1)
+        ->and($store->get('api_model_version:orders'))->toBe(1)
+        ->and(ApiModelCache::generateQueryCacheKey(api_model_cache_model(), $request()))
+        ->not->toBe($liveBefore)
+        ->toStartWith('{api_query}:mysql:orders:company_company-1:v0.1:');
 });
 
 test('api model cache stores query results with miss hit status and disabled bypass behavior', function () {
@@ -648,7 +792,7 @@ test('api model cache stores query results with miss hit status and disabled byp
     expect($first->all())->toBe(['fresh-result'])
         ->and($calls)->toBe(1)
         ->and(ApiModelCache::getCacheStatus())->toBe('MISS')
-        ->and(ApiModelCache::getCacheKey())->toStartWith('{api_query}:orders:company_company-1:v0.0:');
+        ->and(ApiModelCache::getCacheKey())->toStartWith('{api_query}:mysql:orders:company_company-1:v0.0:');
 
     $second = ApiModelCache::cacheQueryResult($model, $request, function () use (&$calls) {
         $calls++;
@@ -720,7 +864,7 @@ test('api model cache stores model and relationship lookups with status tracking
         ->and($secondModel)->toBe(['uuid' => 'order-1'])
         ->and($modelCalls)->toBe(1)
         ->and(ApiModelCache::getCacheStatus())->toBe('HIT')
-        ->and(ApiModelCache::getCacheKey())->toStartWith('{api_model}:orders:v0:order-1:');
+        ->and(ApiModelCache::getCacheKey())->toStartWith('{api_model}:mysql:orders:v0:order-1:');
 
     ApiModelCache::resetCacheStatus();
     $relationshipCalls = 0;
@@ -739,7 +883,7 @@ test('api model cache stores model and relationship lookups with status tracking
         ->and($secondRelation)->toBe(['uuid' => 'payload-1'])
         ->and($relationshipCalls)->toBe(1)
         ->and(ApiModelCache::getCacheStatus())->toBe('HIT')
-        ->and(ApiModelCache::getCacheKey())->toBe('{api_relation}:orders:v0:order-1:payload');
+        ->and(ApiModelCache::getCacheKey())->toBe('{api_relation}:mysql:orders:v0:order-1:payload');
 });
 
 test('api model cache bypasses model relationship and invalidation work when disabled', function () {
@@ -795,7 +939,7 @@ test('api model cache invalidates scoped query and model caches and advances que
     ApiModelCache::invalidateQueryCache($model, $request);
 
     expect($store->forgotten[0]['tags'])->toBe(['api_cache', 'api_model:orders', 'api_query:orders', 'company:company-1'])
-        ->and($store->forgotten[0]['key'])->toStartWith('{api_query}:orders:company_company-1:v0.1:');
+        ->and($store->forgotten[0]['key'])->toStartWith('{api_query}:mysql:orders:company_company-1:v0.1:');
 
     ApiModelCache::invalidateCompanyCache('company-1');
 
@@ -1102,7 +1246,7 @@ test('api model cache does not serve a list after a write to a declared dependen
     expect(ApiModelCache::cacheQueryResult($order, $request, fn () => collect(['fresher'])))->toEqual(collect(['fresher']))
         ->and(ApiModelCache::getCacheStatus())->toBe('MISS')
         // orders, then audit_logs, order_tags, payloads, tags; each table wide then company-1
-        ->and(ApiModelCache::getCacheKey())->toStartWith('{api_query}:orders:company_company-1:v0.0.0.0.1.0.0.1.0.0:');
+        ->and(ApiModelCache::getCacheKey())->toStartWith('{api_query}:mysql:orders:company_company-1:v0.0.0.0.1.0.0.1.0.0:');
 });
 
 test('has api model cache invalidates a parent list when a dependency or custom pivot is written through eloquent', function () {
@@ -1151,7 +1295,7 @@ test('api model cache does not serve relationship or eager loaded lookups after 
     ApiModelCache::invalidateModelCache(new ApiModelCacheDependencyPayload(), 'company-1');
 
     expect(ApiModelCache::cacheRelationship($order, 'payload', fn () => ['name' => 'fresh']))->toBe(['name' => 'fresh'])
-        ->and(ApiModelCache::getCacheKey())->toBe('{api_relation}:orders:v0.1:order-1:payload')
+        ->and(ApiModelCache::getCacheKey())->toBe('{api_relation}:mysql:orders:v0.1:order-1:payload')
         ->and(ApiModelCache::cacheModel($order, 'order-1', fn () => ['payload' => 'fresh'], ['payload:uuid,name']))->toBe(['payload' => 'fresh'])
         // A lookup that does not load the payload keeps its cache
         ->and(ApiModelCache::cacheModel($order, 'order-1', fn () => ['status' => 'unexpected']))->toBe(['status' => 'cached']);
@@ -1195,7 +1339,7 @@ test('api model cache keeps lists of storefront stores and networks of the same 
         ->and(ApiModelCache::getCacheStatus())->toBe('MISS')
         ->and(ApiModelCache::cacheQueryResult($model, $storeA, fn () => collect(['not reached']), $callback))->toEqual(collect(['store a product']))
         ->and(ApiModelCache::getCacheStatus())->toBe('HIT')
-        ->and($storeAKey)->toStartWith('{api_query}:orders:company_company-1:v0.0:')
+        ->and($storeAKey)->toStartWith('{api_query}:mysql:orders:company_company-1:v0.0:')
         ->and($storeAKey)->not->toContain('store_key_a');
 });
 
@@ -1248,7 +1392,7 @@ test('api model cache keys requests without a session by company input and leave
         'company_uuid' => 'company-1',
     ]));
 
-    expect($sessionless)->toStartWith('{api_query}:orders:company_company-1:v0.0:')
+    expect($sessionless)->toStartWith('{api_query}:mysql:orders:company_company-1:v0.0:')
         ->and($sessionless)->toBe($unscoped);
 });
 
@@ -1265,9 +1409,9 @@ test('api model cache resolves tenant scope from authenticated user and request 
     ], null);
 
     expect(ApiModelCache::generateQueryCacheKey($model, $userRequest))
-        ->toStartWith('{api_query}:orders:company_company-from-user:v0.0:')
+        ->toStartWith('{api_query}:mysql:orders:company_company-from-user:v0.0:')
         ->and(ApiModelCache::generateQueryCacheKey($model, $inputRequest))
-        ->toStartWith('{api_query}:orders:company_company-from-input:v0.0:');
+        ->toStartWith('{api_query}:mysql:orders:company_company-from-input:v0.0:');
 });
 
 test('api model cache invalidation methods swallow tagged cache backend failures', function () {
@@ -1303,13 +1447,13 @@ test('api model cache falls back to callbacks when tagged cache operations fail'
 
     expect($modelResult)->toBe(['fallback' => true])
         ->and(ApiModelCache::getCacheStatus())->toBe('ERROR')
-        ->and(ApiModelCache::getCacheKey())->toBe('{api_model}:orders:v0:order-1');
+        ->and(ApiModelCache::getCacheKey())->toBe('{api_model}:mysql:orders:v0:order-1');
 
     $relationshipResult = ApiModelCache::cacheRelationship($model, 'payload', fn () => ['relationship' => true]);
 
     expect($relationshipResult)->toBe(['relationship' => true])
         ->and(ApiModelCache::getCacheStatus())->toBe('ERROR')
-        ->and(ApiModelCache::getCacheKey())->toBe('{api_relation}:orders:v0:order-1:payload');
+        ->and(ApiModelCache::getCacheKey())->toBe('{api_relation}:mysql:orders:v0:order-1:payload');
 });
 
 test('api model cache warmup logs failures without leaking exceptions', function () {
@@ -1357,7 +1501,7 @@ test('has api model cache caches request queries with callback markers page offs
         ->and($second->pluck('uuid')->all())->toBe(['order-2'])
         ->and($callbackCalls)->toBe(1)
         ->and(ApiModelCache::getCacheStatus())->toBe('HIT')
-        ->and(ApiModelCache::getCacheKey())->toStartWith('{api_query}:orders:company_company-1:v0.0:')
+        ->and(ApiModelCache::getCacheKey())->toStartWith('{api_query}:mysql:orders:company_company-1:v0.0:')
         ->and(ApiModelCacheTraitTestModel::$mutatedRequestQueries)->toHaveCount(1)
         ->and(ApiModelCacheTraitTestModel::$mutatedRequestQueries[0])->toMatchArray([
             'status' => 'active',
@@ -1522,7 +1666,7 @@ test('has api model cache wraps id public id relationship invalidation and stats
         ->and($model->getRelation('cached_payload'))->toBe($firstRelation)
         ->and($store->flushedTags)->toContain(['api_cache', 'api_model:orders', 'company:company-1'])
         ->and($store->flushedTags)->toContain(['api_cache', 'api_model:orders', 'api_query:orders', 'company:company-1'])
-        ->and($store->forgotten[0]['key'])->toStartWith('{api_query}:orders:company_company-1:')
+        ->and($store->forgotten[0]['key'])->toStartWith('{api_query}:mysql:orders:company_company-1:')
         ->and(ApiModelCacheTraitTestModel::getCacheStats())->toMatchArray([
             'enabled' => true,
             'driver'  => 'array',
