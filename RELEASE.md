@@ -1,5 +1,9 @@
 # v1.6.71 — Keep live and test-mode API caches apart; driver-assigned events on driver channels
 
+## Added
+
+- **Category `parent_uuid` on internal responses.** The internal Category resource now includes `parent_uuid`, so a console can build a category tree from a flat list (Storefront's nested product categories). (#316)
+
 ## Fixed
 
 - **A controller's filter is used for every query it serves.** `Find::httpFilterForModel()` cached its answer per model class for the life of the process, ignoring the filter a controller sets on its model (`$filter`) and whether the request was internal. Under Octane, the first controller to list a model decided the filter for every other: Fleet-Ops' order filter was applied to Storefront's order lists, so a network's orders page listed every order in the company. The cache is now keyed by the model's own filter, and a filter found by convention is picked per request audience. `Find::httpRequestForModel()` is keyed by the model's own request class too. (#315)
