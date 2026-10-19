@@ -150,8 +150,10 @@ trait HasApiModelBehavior
      */
     public function searcheableFields()
     {
-        if ($this->searchableColumns) {
-            return $this->searchableColumns;
+        // Columns registered at runtime (Searchable::addSearchableColumns) count as searchable too.
+        $runtime = method_exists($this, 'runtimeSearchableColumns') ? static::runtimeSearchableColumns() : [];
+        if ($this->searchableColumns || $runtime) {
+            return array_values(array_unique(array_merge((array) $this->searchableColumns, $runtime)));
         }
 
         return array_merge(

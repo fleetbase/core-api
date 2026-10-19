@@ -10,6 +10,34 @@ trait Searchable
     public static $searchable = true;
 
     /**
+     * Searchable columns added at runtime, per model class. Extensions use this to make their own
+     * data findable through a core or Fleet-Ops model's search (e.g. a companion record's reference
+     * number on orders) without editing the model. Dot notation names a relation column, as in
+     * `$searchableColumns`; the relation may be one added with `Model::resolveRelationUsing()`.
+     *
+     * @var array<class-string, string[]>
+     */
+    protected static array $runtimeSearchableColumns = [];
+
+    /**
+     * Registers extra searchable columns for this model class.
+     *
+     * @param string[] $columns column names, or `relation.column`
+     */
+    public static function addSearchableColumns(array $columns): void
+    {
+        $existing = static::$runtimeSearchableColumns[static::class] ?? [];
+
+        static::$runtimeSearchableColumns[static::class] = array_values(array_unique(array_merge($existing, array_values(array_filter($columns, 'is_string')))));
+    }
+
+    /** Columns registered through addSearchableColumns() for this model class. */
+    public static function runtimeSearchableColumns(): array
+    {
+        return static::$runtimeSearchableColumns[static::class] ?? [];
+    }
+
+    /**
      * Searches a column where LIKE.
      *
      * @param \Illuminate\Database\Query\Builder $query
@@ -107,6 +135,8 @@ trait Searchable
      */
     public function getSearchableColumns()
     {
-        return property_exists($this, 'searchableColumns') ? $this->searchableColumns : [];
+        $columns = property_exists($this, 'searchableColumns') ? (array) $this->searchableColumns : [];
+
+        return array_values(array_unique(array_merge($columns, static::runtimeSearchableColumns())));
     }
 }
