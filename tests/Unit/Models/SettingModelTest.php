@@ -367,7 +367,9 @@ it('exposes JSON value helpers and database connection checks', function () {
 
 it('treats database connection exceptions as an unavailable settings connection', function () {
     bind_test_container();
-    app()->instance('db', new class {
+    $db = new class {
+        public int $purges = 0;
+
         public function connection()
         {
             return new class {
@@ -377,11 +379,18 @@ it('treats database connection exceptions as an unavailable settings connection'
                 }
             };
         }
-    });
+
+        public function purge(?string $name = null): void
+        {
+            $this->purges++;
+        }
+    };
+    app()->instance('db', $db);
     Facade::clearResolvedInstance('db');
 
     expect(Setting::hasConnection())->toBeFalse()
-        ->and(Setting::doesntHaveConnection())->toBeTrue();
+        ->and(Setting::doesntHaveConnection())->toBeTrue()
+        ->and($db->purges)->toBe(2);
 });
 
 it('resolves branding logo and icon urls from files with default fallbacks', function () {

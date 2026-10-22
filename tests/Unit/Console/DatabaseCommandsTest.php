@@ -32,12 +32,19 @@ class CreateDatabaseTestCommand extends CreateDatabase
 class CreateDatabaseDbFake
 {
     public array $statements = [];
+    public array $calls      = [];
 
     public function statement(string $query): bool
     {
         $this->statements[] = $query;
+        $this->calls[]      = 'statement';
 
         return true;
+    }
+
+    public function purge(?string $name = null): void
+    {
+        $this->calls[] = 'purge:' . $name;
     }
 }
 
@@ -88,4 +95,15 @@ it('uses explicit schema names and suffixes non-primary Fleetbase connections', 
     expect($db->statements)->toContain('CREATE DATABASE IF NOT EXISTS customer_portal CHARACTER SET "utf8mb4" COLLATE "utf8mb4_unicode_ci";')
         ->and($db->statements)->toContain('CREATE DATABASE IF NOT EXISTS customer_portal_sandbox CHARACTER SET "utf8" COLLATE "utf8_unicode_ci";')
         ->and(config('database.connections.mysql.database'))->toBe('customer_portal_sandbox');
+});
+
+it('purges the cached mysql connection before each CREATE DATABASE and after restoring the schema', function () {
+    $db = create_database_command_container();
+
+    (new CreateDatabaseTestCommand(['schemaName' => null]))->handle();
+
+    expect($db->calls)->toBe([
+        'purge:mysql', 'statement', 'purge:mysql',
+        'purge:mysql', 'statement', 'purge:mysql',
+    ]);
 });

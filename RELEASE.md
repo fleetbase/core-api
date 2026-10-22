@@ -1,9 +1,9 @@
-# v1.6.72 — Searchable columns registered at runtime
+# v1.6.73 — `mysql:createdb` works on a fresh install again
 
-## Added
+## Fixed
 
-- **Searchable columns registered at runtime.** `Searchable::addSearchableColumns([...])` lets an extension make its own data findable through a core or Fleet-Ops model's search without editing the model: `Order::addSearchableColumns(['companion.reference_number', 'customerContact.name'])`. Columns may use the existing `relation.column` dot notation, and the relation may be one the extension adds with Eloquent's `Model::resolveRelationUsing()`. Registered columns are merged into `getSearchableColumns()` (search) and `searcheableFields()` (filters), per model class. (#317)
+- **`mysql:createdb` failed on a fresh install with "Unknown database".** At boot, `Setting::doesntHaveConnection()` opens the `mysql` connection with the configured schema selected and Laravel caches it. Clearing the schema name in config afterwards had no effect on that cached connection, so `CREATE DATABASE` ran on a connection pointing at the database it was meant to create. The command now purges the `mysql` connection before each `CREATE DATABASE`, and again after restoring the schema name. `Setting::hasConnection()` also purges the connection when its check fails, so a broken connection isn't left cached for other code.
 
 ## Upgrade Steps
 
-- None. Nothing changes until an extension registers columns.
+- None. Deployments that worked around this with an override of `CreateDatabase` in `api/app/Console/Commands` can delete the override and its binding in `AppServiceProvider`.
