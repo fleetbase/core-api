@@ -429,11 +429,11 @@ function public_file_controller_failing_upload_request(array $input = []): Uploa
     return UploadFileRequest::create('/v1/files', 'POST', $input, [], ['file' => $file]);
 }
 
-function file_controller_upload_request(array $input = [], string $contents = 'uploaded body'): UploadFileRequest
+function file_controller_upload_request(array $input = [], string $contents = 'uploaded body', string $originalName = 'manifest.txt'): UploadFileRequest
 {
     $path = tempnam(sys_get_temp_dir(), 'fleetbase-upload-');
     file_put_contents($path, $contents);
-    $file = new UploadedFile($path, 'manifest.txt', 'text/plain', null, true);
+    $file = new UploadedFile($path, $originalName, 'text/plain', null, true);
 
     return UploadFileRequest::create('/int/v1/files', 'POST', $input, [], ['file' => $file]);
 }
@@ -508,6 +508,19 @@ test('file controller uploads base64 data with session ownership storage and sub
         ->and($record->subject_uuid)->toBe('user-subject')
         ->and($record->subject_type)->toBe(User::class)
         ->and(Storage::disk('testing')->get('uploads/documents/manifest.txt'))->toBe('plain text body');
+});
+
+test('file controller stores uploads under the extension of their detected type, never a script extension', function () {
+    $capsule = file_controller_fixtures();
+    $png     = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAoMBgBzq7oQAAAAASUVORK5CYII=');
+
+    $response = file_controller()->upload(file_controller_upload_request(['path' => 'uploads'], $png . '<?php echo 1; ?>', 'shell.php'));
+    $record   = $capsule->getConnection('mysql')->table('files')->first();
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and($record->path)->toStartWith('uploads/')
+        ->and($record->path)->toEndWith('.png')
+        ->and(Storage::disk('testing')->get($record->path))->toBe($png . '<?php echo 1; ?>');
 });
 
 test('file controller uploads multipart files with generated storage path and subject metadata', function () {
