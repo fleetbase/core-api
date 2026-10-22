@@ -36,6 +36,11 @@ class OnboardController extends Controller
      */
     public function createAccount(OnboardRequest $request)
     {
+        // A self-hosted install can close sign-up once its first organization exists
+        if (!config('fleetbase.onboard.allow_registration', true) && Company::exists()) {
+            return response()->error('Sign-ups are not available.', 403, ['code' => 'registration_disabled']);
+        }
+
         // if first user make admin
         $isAdmin = !User::exists();
 
