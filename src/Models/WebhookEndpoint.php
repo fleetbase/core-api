@@ -39,12 +39,18 @@ class WebhookEndpoint extends Model
     protected $fillable = ['_key', 'company_uuid', 'created_by_uuid', 'updated_by_uuid', 'api_credential_uuid', 'url', 'mode', 'version', 'description', 'events', 'status'];
 
     /**
+     * Prefix of generated signing secrets, so a leaked value is recognisable.
+     */
+    public const SECRET_PREFIX = 'whsec_';
+
+    /**
      * The attributes that should be casted to native types.
      *
      * @var array
      */
     protected $casts = [
         'events' => 'array',
+        'secret' => 'encrypted',
     ];
 
     /**
@@ -59,7 +65,7 @@ class WebhookEndpoint extends Model
      *
      * @var array
      */
-    protected $hidden = ['apiCredential'];
+    protected $hidden = ['apiCredential', 'secret'];
 
     /**
      * Get the activity log options for the model.
@@ -143,6 +149,51 @@ class WebhookEndpoint extends Model
     /**
      * Enables the webhook.
      */
+    /**
+     * New endpoints get a signing secret when they are created.
+     */
+    protected static function booted(): void
+    {
+        static::creating(function (WebhookEndpoint $endpoint) {
+            if (empty($endpoint->secret)) {
+                $endpoint->secret = static::generateSecret();
+            }
+        });
+    }
+
+    /**
+     * A new random signing secret.
+     */
+    public static function generateSecret(): string
+    {
+        return static::SECRET_PREFIX . bin2hex(random_bytes(24));
+    }
+
+    /**
+     * The endpoint's signing secret, created (and saved) on first use for endpoints that predate
+     * per-endpoint secrets.
+     */
+    public function signingSecret(): string
+    {
+        if (empty($this->secret)) {
+            $this->secret = static::generateSecret();
+            $this->saveQuietly();
+        }
+
+        return $this->secret;
+    }
+
+    /**
+     * Replace the signing secret and return the new one. Receivers must be updated.
+     */
+    public function rotateSecret(): string
+    {
+        $this->secret = static::generateSecret();
+        $this->saveQuietly();
+
+        return $this->secret;
+    }
+
     public function enable(): bool
     {
         $this->status = 'enabled';

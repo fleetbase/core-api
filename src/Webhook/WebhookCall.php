@@ -7,6 +7,7 @@ use Fleetbase\Webhook\Exceptions\CouldNotCallWebhook;
 use Fleetbase\Webhook\Exceptions\InvalidBackoffStrategy;
 use Fleetbase\Webhook\Exceptions\InvalidSigner;
 use Fleetbase\Webhook\Exceptions\InvalidWebhookJob;
+use Fleetbase\Webhook\Signer\EndpointSignature;
 use Fleetbase\Webhook\Signer\Signer;
 use Illuminate\Foundation\Bus\PendingDispatch;
 use Illuminate\Support\Str;
@@ -18,6 +19,8 @@ class WebhookCall
     protected string $uuid = '';
 
     protected string $secret;
+
+    protected ?string $endpointSecret = null;
 
     protected Signer $signer;
 
@@ -99,6 +102,16 @@ class WebhookCall
     public function useSecret(string $secret): self
     {
         $this->secret = $secret;
+
+        return $this;
+    }
+
+    /**
+     * Also sign the delivery with the endpoint's own secret (X-Fleetbase-Signature).
+     */
+    public function useEndpointSecret(?string $secret): self
+    {
+        $this->endpointSecret = $secret ?: null;
 
         return $this;
     }
@@ -279,6 +292,16 @@ class WebhookCall
         $signature = $this->signer->calculateSignature($this->callWebhookJob->webhookUrl, $this->payload, $this->secret);
 
         $headers[$this->signer->signatureHeaderName()] = $signature;
+
+        // Signed over the exact body CallWebhookJob sends (json_encode of the payload)
+        // (skipped if a deployment configured the legacy header under the same name)
+        if (
+            $this->endpointSecret !== null
+            && strtolower($this->callWebhookJob->httpVerb) !== 'get'
+            && strcasecmp($this->signer->signatureHeaderName(), EndpointSignature::HEADER) !== 0
+        ) {
+            $headers[EndpointSignature::HEADER] = EndpointSignature::header(json_encode($this->payload), $this->endpointSecret);
+        }
 
         return $headers;
     }

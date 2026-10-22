@@ -79,6 +79,18 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                         $router->delete('remove-participant/{participantId}', 'ChatChannelController@removeParticipant');
                     }
                 );
+                // Webhook endpoints for API keys; signing secrets are only returned on create and rotate.
+                $router->group(
+                    ['prefix' => 'webhook-endpoints'],
+                    function ($router) {
+                        $router->post('/', 'WebhookEndpointController@create');
+                        $router->get('/', 'WebhookEndpointController@query');
+                        $router->get('{id}', 'WebhookEndpointController@find');
+                        $router->put('{id}', 'WebhookEndpointController@update');
+                        $router->post('{id}/rotate-secret', 'WebhookEndpointController@rotateSecret');
+                        $router->delete('{id}', 'WebhookEndpointController@delete');
+                    }
+                );
                 $router->group(
                     ['prefix' => 'comments'],
                     function ($router) {
@@ -315,6 +327,8 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     function ($router, $controller) {
                                         $router->patch('enable/{id}', $controller('enable'));
                                         $router->patch('disable/{id}', $controller('disable'));
+                                        $router->get('{id}/secret', $controller('revealSecret'));
+                                        $router->post('{id}/rotate-secret', $controller('rotateSecret'));
                                         $router->get('events', $controller('events'));
                                         $router->get('versions', $controller('versions'));
                                     }
