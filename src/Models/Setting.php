@@ -473,7 +473,10 @@ class Setting extends EloquentModel
                 return false;
             }
         } catch (\Throwable $e) {
-            // Connection failed, or other error occurred
+            // Connection failed, or other error occurred. Don't leave the failed
+            // connection cached for later code, such as mysql:createdb.
+            DB::purge();
+
             return false;
         }
 

@@ -61,12 +61,16 @@ class CreateDatabase extends Command
             $charset   = config("database.connections.$connection.charset", 'utf8mb4');
             $collation = config("database.connections.$connection.collation", 'utf8mb4_unicode_ci');
 
+            // Drop the connection cached at boot: it was opened with the configured schema
+            // selected, so CREATE DATABASE would fail when that schema doesn't exist yet.
             config(['database.connections.mysql.database' => null]);
+            DB::purge('mysql');
 
             $query = "CREATE DATABASE IF NOT EXISTS $schemaName CHARACTER SET \"$charset\" COLLATE \"$collation\";";
             DB::statement($query);
 
             config(['database.connections.mysql.database' => $schemaName]);
+            DB::purge('mysql');
         }
     }
 }
