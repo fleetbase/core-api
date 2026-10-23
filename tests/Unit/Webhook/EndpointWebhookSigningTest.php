@@ -250,6 +250,7 @@ namespace {
             ->and($raw)->not->toBe($endpoint->secret)
             ->and($raw)->not->toContain('whsec_')
             ->and($endpoint->getHidden())->toContain('secret')
+            ->and($endpoint->getActivitylogOptions()->logExceptAttributes)->toContain('secret')
             ->and($endpoint->signingSecret())->toBe($endpoint->secret);
 
         // An endpoint created before secrets existed gets one the first time it is needed

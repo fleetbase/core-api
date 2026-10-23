@@ -72,7 +72,8 @@ class WebhookEndpoint extends Model
      */
     public function getActivitylogOptions(): LogOptions
     {
-        return LogOptions::defaults()->logOnly(['*'])->logOnlyDirty();
+        // Never write the signing secret (decrypted by its cast) into the activity log
+        return LogOptions::defaults()->logOnly(['*'])->logExcept(['secret'])->logOnlyDirty();
     }
 
     /**
@@ -147,9 +148,6 @@ class WebhookEndpoint extends Model
     }
 
     /**
-     * Enables the webhook.
-     */
-    /**
      * New endpoints get a signing secret when they are created.
      */
     protected static function booted(): void
@@ -194,6 +192,9 @@ class WebhookEndpoint extends Model
         return $this->secret;
     }
 
+    /**
+     * Enables the webhook.
+     */
     public function enable(): bool
     {
         $this->status = 'enabled';
