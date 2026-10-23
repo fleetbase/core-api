@@ -106,6 +106,32 @@ class WebhookEndpointController extends FleetbaseController
     }
 
     /**
+     * Show an endpoint's signing secret to a console user who can manage webhooks.
+     */
+    public function revealSecret(string $id)
+    {
+        $webhook = WebhookEndpoint::where('uuid', $id)->where('company_uuid', session('company'))->first();
+        if (!$webhook) {
+            return response()->error('No webhook found', 404);
+        }
+
+        return response()->json(['secret' => $webhook->signingSecret()]);
+    }
+
+    /**
+     * Replace an endpoint's signing secret; the new value is returned once.
+     */
+    public function rotateSecret(string $id)
+    {
+        $webhook = WebhookEndpoint::where('uuid', $id)->where('company_uuid', session('company'))->first();
+        if (!$webhook) {
+            return response()->error('No webhook found', 404);
+        }
+
+        return response()->json(['secret' => $webhook->rotateSecret()]);
+    }
+
+    /**
      * Get all webhook versions applicable.
      *
      * @return \Illuminate\Http\Response

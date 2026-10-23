@@ -33,6 +33,21 @@ class File extends Model
     use SendsWebhooks;
 
     /**
+     * Extensions an uploaded file is never stored under, because a web server may execute them.
+     */
+    public const EXECUTABLE_UPLOAD_EXTENSIONS = [
+        'php', 'php3', 'php4', 'php5', 'php6', 'php7', 'php8', 'phtml', 'phar', 'pht', 'phps', 'shtml', 'htaccess', 'cgi',
+    ];
+
+    /**
+     * Data formats whose extension is kept even when content detection reports a looser type.
+     */
+    public const DATA_UPLOAD_EXTENSIONS = [
+        'csv', 'tsv', 'txt', 'json', 'xls', 'xlsx', 'doc', 'docx', 'ppt', 'pptx', 'pdf',
+        'zip', 'tar', 'gz', 'tgz', 'bz2', 'xz', 'p12', 'pfx', 'pem', 'crt', 'cer', 'der', 'p7b', 'p7c',
+    ];
+
+    /**
      * The type of public Id to generate.
      *
      * @var string
@@ -608,7 +623,7 @@ class File extends Model
         /** @var \Illuminate\Http\File|Symfony\Component\HttpFoundation\File\File|\Symfony\Component\HttpFoundation\File\UploadedFile $file */
         if ($request->hasFile($filename)) {
             $file      = $request->file($filename);
-            $extension = $extension ?? strtolower($file->getClientOriginalExtension());
+            $extension = $extension ?? static::storageExtensionForUpload($file);
             $extension = Str::startsWith($extension, '.') ? $extension : '.' . $extension;
             $sqids     = new \Sqids\Sqids();
 
@@ -616,6 +631,30 @@ class File extends Model
         }
 
         return static::randomFileName($extension);
+    }
+
+    /**
+     * The extension to store an uploaded file under.
+     *
+     * The client's extension is kept when it matches the type detected from the file's
+     * contents, or when it is a plain data format that detection often reports loosely
+     * (a CSV as text/plain, an XLSX as application/zip). Otherwise the extension is taken
+     * from the detected type, falling back to "bin". Extensions a web server may execute
+     * are never used.
+     */
+    public static function storageExtensionForUpload(UploadedFile $file): string
+    {
+        $clientExtension = strtolower($file->getClientOriginalExtension());
+        $detectedType    = $file->getMimeType();
+        $typeExtensions  = $detectedType ? \Symfony\Component\Mime\MimeTypes::getDefault()->getExtensions($detectedType) : [];
+
+        if ($clientExtension !== '' && (in_array($clientExtension, $typeExtensions, true) || in_array($clientExtension, static::DATA_UPLOAD_EXTENSIONS, true))) {
+            $extension = $clientExtension;
+        } else {
+            $extension = strtolower($file->guessExtension() ?? 'bin');
+        }
+
+        return in_array($extension, static::EXECUTABLE_UPLOAD_EXTENSIONS, true) ? 'bin' : $extension;
     }
 
     /**

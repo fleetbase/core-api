@@ -379,6 +379,7 @@ namespace {
                 $table->string('mode')->nullable();
                 $table->text('events')->nullable();
                 $table->string('status')->nullable();
+                $table->text('secret')->nullable();
                 $table->timestamps();
                 $table->softDeletes();
             });
