@@ -140,6 +140,7 @@ class SendResourceLifecycleWebhook implements ShouldQueue
                     ->url($webhook->url)
                     ->payload($payload)
                     ->useSecret($apiSecret)
+                    ->useEndpointSecret($this->endpointSecret($webhook))
                     ->dispatch();
             } catch (\Exception|\Aws\Sqs\Exception\SqsException $exception) {
                 // get webhook attempt request/response interfaces
@@ -300,5 +301,20 @@ class SendResourceLifecycleWebhook implements ShouldQueue
 
         // return description
         return $description;
+    }
+
+    /**
+     * The endpoint's own signing secret, or null when it cannot be loaded. A missing secret only
+     * drops the X-Fleetbase-Signature header; the delivery still goes out with the legacy signature.
+     */
+    protected function endpointSecret(WebhookEndpoint $webhook): ?string
+    {
+        try {
+            return $webhook->signingSecret();
+        } catch (\Throwable $exception) {
+            logger()->warning('Webhook endpoint signing secret unavailable: ' . $exception->getMessage(), ['webhook_uuid' => $webhook->uuid]);
+
+            return null;
+        }
     }
 }
