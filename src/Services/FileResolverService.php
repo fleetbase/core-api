@@ -95,7 +95,7 @@ class FileResolverService
         $disk = $disk ?? config('filesystems.default');
 
         // Generate a unique filename to prevent collisions
-        $extension = $upload->getClientOriginalExtension();
+        $extension = File::storageExtensionForUpload($upload);
         $fileName  = File::randomFileName($extension);
 
         // Ensure path doesn't have trailing slash
