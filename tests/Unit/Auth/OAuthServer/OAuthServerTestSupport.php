@@ -102,7 +102,7 @@ function oauth_test_setup(): Capsule
     (require __DIR__ . '/../../../../migrations/2026_10_25_000001_create_oauth_server_tables.php')->up();
 
     $db  = $capsule->getConnection('mysql');
-    $now = '2026-10-25 00:00:00';
+    $now = '2026-10-01 00:00:00';
     $db->table('users')->insert([
         ['uuid' => 'user-owner', 'public_id' => 'user_owner', 'type' => 'user', 'status' => 'active', 'email' => 'owner@example.com', 'name' => 'Olive Owner', 'email_verified_at' => $now, 'created_at' => $now, 'updated_at' => $now],
         ['uuid' => 'user-admin', 'public_id' => 'user_admin', 'type' => 'user', 'status' => 'active', 'email' => 'admin@example.com', 'name' => 'Ada Admin', 'email_verified_at' => null, 'created_at' => $now, 'updated_at' => $now],
