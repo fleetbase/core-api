@@ -60,7 +60,7 @@ class InstanceIdentity
         return static::get()['secret'];
     }
 
-    protected static function isValid($identity): bool
+    protected static function isValid(mixed $identity): bool
     {
         return is_array($identity) && !empty($identity['id']) && !empty($identity['secret']);
     }

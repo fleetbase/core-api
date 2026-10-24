@@ -157,6 +157,9 @@ class HostedRouting
         ];
     }
 
+    /**
+     * @return array<string, mixed>
+     */
     protected static function valhallaSettings(): array
     {
         $settings = Setting::lookup(static::VALHALLA_KEY, []);
@@ -167,6 +170,8 @@ class HostedRouting
     /**
      * A Valhalla host of the admin's own, other than the public OSM demo
      * servers (Fleet-Ops never uses those) and the hosted service.
+     *
+     * @param array<string, mixed> $valhalla
      */
     protected static function usesOwnServer(array $valhalla): bool
     {
@@ -178,6 +183,9 @@ class HostedRouting
         return !str_contains(strtolower((string) parse_url($host, PHP_URL_HOST)), 'openstreetmap.de');
     }
 
+    /**
+     * @return array<string, string>
+     */
     protected static function result(string $status, ?string $reason, string $message): array
     {
         return array_filter(['status' => $status, 'reason' => $reason, 'message' => $message], fn ($value) => $value !== null);
