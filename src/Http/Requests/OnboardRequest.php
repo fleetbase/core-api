@@ -45,6 +45,7 @@ class OnboardRequest extends FleetbaseRequest
             // the same standard as a password one.
             'password'              => ['required_without:oauth_intent', 'nullable', 'confirmed', 'string', Password::min(8)->mixedCase()->letters()->numbers()->symbols()->uncompromised()],
             'password_confirmation' => ['required_with:password', 'nullable', 'min:4', 'max:64'],
+            'hosted_routing'        => ['nullable', 'boolean'],
             'oauth_intent'          => ['required_without:password', 'nullable', 'string', new ValidOAuthRegistrationIntent()],
             'organization_name'     => ['required', 'min:4', 'max:100', 'regex:/^(?!.*\b[a-z0-9]+(?:\.[a-z0-9]+){1,}\b)[a-zA-ZÀ-ÿ0-9\'\-\s\.]+$/u', new ExcludeWords($this->excludedWords)],
         ];

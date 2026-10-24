@@ -388,9 +388,74 @@ test('onboard controller reports whether first organization setup is required', 
     $existing = onboard_controller()->shouldOnboard();
 
     expect($empty->getStatusCode())->toBe(200)
-        ->and($empty->getData(true))->toBe(['should_onboard' => true])
+        ->and($empty->getData(true))->toBe(['should_onboard' => true, 'hosted_routing' => true])
         ->and($existing->getStatusCode())->toBe(200)
-        ->and($existing->getData(true))->toBe(['should_onboard' => false]);
+        ->and($existing->getData(true))->toBe(['should_onboard' => false, 'hosted_routing' => false]);
+});
+
+test('onboard controller offers hosted routing only when it is turned on and no own server is set', function () {
+    $capsule = onboard_controller_database();
+
+    config(['fleetbase.hosted_routing.auto_register' => false]);
+    $disabled = onboard_controller()->shouldOnboard()->getData(true);
+
+    config(['fleetbase.hosted_routing.auto_register' => true]);
+    Fleetbase\Models\Setting::configure('valhalla', ['api_host' => 'https://valhalla.internal.acme.test']);
+    $ownServer = onboard_controller()->shouldOnboard()->getData(true);
+    config(['fleetbase.hosted_routing' => null]);
+
+    expect($disabled)->toBe(['should_onboard' => true, 'hosted_routing' => false])
+        ->and($ownServer)->toBe(['should_onboard' => true, 'hosted_routing' => false]);
+});
+
+function onboard_controller_bus(): object
+{
+    $bus = new class {
+        public array $dispatched = [];
+
+        public function dispatchAfterResponse($job): void
+        {
+            $this->dispatched[] = $job;
+        }
+    };
+    app()->instance(Illuminate\Bus\Dispatcher::class, $bus);
+
+    return $bus;
+}
+
+test('the first admin who keeps hosted routing on is registered after the response', function () {
+    onboard_controller_database();
+    $bus = onboard_controller_bus();
+
+    onboard_controller()->createAccount(onboard_create_account_request(['hosted_routing' => true]));
+
+    expect($bus->dispatched)->toHaveCount(1)
+        ->and($bus->dispatched[0])->toBeInstanceOf(Fleetbase\Jobs\RegisterHostedRouting::class)
+        ->and($bus->dispatched[0]->email)->toBe('grace@example.test')
+        ->and($bus->dispatched[0]->domain)->toBe('http://localhost');
+    app()->forgetInstance(Illuminate\Bus\Dispatcher::class);
+});
+
+test('hosted routing is not registered without consent, for later accounts or when turned off', function () {
+    $capsule = onboard_controller_database();
+    $bus     = onboard_controller_bus();
+
+    // Unchecked (or an older console that never sends the field).
+    onboard_controller()->createAccount(onboard_create_account_request(['hosted_routing' => false]));
+    // A later account is never the first admin.
+    onboard_controller()->createAccount(onboard_create_account_request(['email' => 'ada@example.test', 'phone' => '+15555550125', 'hosted_routing' => true]));
+
+    expect($bus->dispatched)->toBeEmpty();
+
+    // Turned off on a fresh install.
+    $capsule = onboard_controller_database();
+    $bus     = onboard_controller_bus();
+    config(['fleetbase.hosted_routing.auto_register' => false]);
+    onboard_controller()->createAccount(onboard_create_account_request(['hosted_routing' => true]));
+    config(['fleetbase.hosted_routing' => null]);
+
+    expect($bus->dispatched)->toBeEmpty();
+    app()->forgetInstance(Illuminate\Bus\Dispatcher::class);
 });
 
 test('onboard controller creates the first account as an administrator and completes setup', function () {
