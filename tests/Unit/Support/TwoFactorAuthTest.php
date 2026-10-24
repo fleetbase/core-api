@@ -217,7 +217,7 @@ function two_factor_auth_fixtures(): array
         'uuid'         => '11111111-1111-4111-8111-111111111111',
         'company_uuid' => $company->uuid,
         'email'        => 'user@example.com',
-        'phone'        => '+15555550100',
+        'phone'        => '+15555551000',
         'username'     => 'test-user',
         'name'         => 'Test User',
     ]);

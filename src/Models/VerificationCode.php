@@ -5,6 +5,7 @@ namespace Fleetbase\Models;
 use Fleetbase\Casts\Json;
 use Fleetbase\Mail\VerificationMail;
 use Fleetbase\Services\SmsService;
+use Fleetbase\Support\AppReview;
 use Fleetbase\Support\Sms\SmsContext;
 use Fleetbase\Support\Sms\SmsGuard;
 use Fleetbase\Support\Sms\SmsLedger;
@@ -396,10 +397,15 @@ class VerificationCode extends Model
         $destination = data_get($options, 'phone') ?: data_get($subject, 'phone');
         $companyUuid = data_get($options, 'company_uuid') ?? session('company') ?? data_get($subject, 'company_uuid');
 
+        // A number reserved for fiction (an App Review number) is never texted: the code is
+        // saved as usual, but nothing is reserved or sent. App reviewers sign in with the code
+        // their app's owner set up instead (Fleetbase\Support\AppReview).
+        $fictional = $destination && AppReview::isFictionalPhone((string) $destination);
+
         // Ask the guard BEFORE the code row exists: a refused send must leave nothing
         // behind, and the budgets must be counted even when the provider later fails.
         $reservation = null;
-        if ($destination) {
+        if ($destination && !$fictional) {
             $reservation = SmsGuard::make()->reserve(SmsContext::resolve((string) $destination, [
                 'purpose'      => $for,
                 'company_uuid' => $companyUuid,
@@ -476,7 +482,7 @@ class VerificationCode extends Model
         $provider = data_get($options, 'provider');
 
         // Send SMS using SmsService with automatic provider routing
-        if ($destination) {
+        if ($destination && !$fictional) {
             try {
                 $smsService = new SmsService();
                 $smsService->send($destination, $message, $smsOptions, $provider);

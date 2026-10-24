@@ -103,7 +103,7 @@ namespace {
             'services.twilio'         => [
                 'sid'   => 'twilio-sid',
                 'token' => 'twilio-token',
-                'from'  => '+15555550100',
+                'from'  => '+15555551000',
             ],
             'sentry.dsn'              => 'https://sentry.example.test/1',
             'sms.default_provider'    => SmsService::PROVIDER_TWILIO,
@@ -153,7 +153,7 @@ namespace {
                 'googleMapsLocale' => 'mn',
                 'twilioSid'        => 'twilio-sid',
                 'twilioToken'      => 'twilio-token',
-                'twilioFrom'       => '+15555550100',
+                'twilioFrom'       => '+15555551000',
                 'sentryDsn'        => 'https://sentry.example.test/1',
             ])
             ->and($payload['sms']['defaultProvider'])->toBe(SmsService::PROVIDER_TWILIO)
@@ -172,7 +172,7 @@ namespace {
                 SmsService::PROVIDER_TWILIO      => [
                     'sid'   => 'twilio-sid',
                     'token' => 'twilio-token',
-                    'from'  => '+15555550100',
+                    'from'  => '+15555551000',
                 ],
             ])
             ->and($payload['sms']['available'][SmsService::PROVIDER_TWILIO])->toBe([
@@ -207,7 +207,7 @@ namespace {
 
         $response = (new SettingController())->testSmsProviderConfig(setting_controller_services_request([
             'provider' => 'unsupported_gateway',
-            'phone'    => '+15555550123',
+            'phone'    => '+15555551023',
             'message'  => 'Hello from Fleetbase',
             'config'   => [
                 'api_key' => 'unsupported-key',
@@ -237,7 +237,7 @@ namespace {
 
         $response = (new SettingController())->testSmsProviderConfig(setting_controller_services_request([
             'provider' => SmsService::PROVIDER_TWILIO,
-            'phone'    => '+15555550123',
+            'phone'    => '+15555551023',
             'message'  => 'Hello from Fleetbase',
             'config'   => [
                 'sid'   => 'temporary-twilio-sid',
