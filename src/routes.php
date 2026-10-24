@@ -38,11 +38,11 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
             $router->prefix('oauth')->group(function ($router) {
                 $router->get('authorize', [Fleetbase\Http\Controllers\OAuthServer\AuthorizationController::class, 'authorize']);
                 $router->get('jwks', [Fleetbase\Http\Controllers\OAuthServer\DiscoveryController::class, 'jwks']);
-                $router->middleware(['throttle:60,1'])->group(function ($router) {
+                $router->middleware(['throttle:600,1'])->group(function ($router) {
                     $router->post('token', [Fleetbase\Http\Controllers\OAuthServer\TokenController::class, 'token']);
                     $router->post('revoke', [Fleetbase\Http\Controllers\OAuthServer\TokenController::class, 'revoke']);
                 });
-                $router->middleware(['throttle:120,1'])->group(function ($router) {
+                $router->middleware(['throttle:600,1'])->group(function ($router) {
                     $router->match(['GET', 'POST'], 'userinfo', [Fleetbase\Http\Controllers\OAuthServer\ResourceController::class, 'userinfo'])
                         ->middleware(Fleetbase\Http\Middleware\AuthenticateOAuthToken::class . ':openid');
                     $router->get('v1/organization', [Fleetbase\Http\Controllers\OAuthServer\ResourceController::class, 'organization'])

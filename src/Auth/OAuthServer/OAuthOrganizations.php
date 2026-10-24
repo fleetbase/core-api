@@ -14,6 +14,9 @@ use Illuminate\Support\Collection;
  * hold its Administrator role, or are a system admin. Plain sign-in (openid, profile, email)
  * needs no organization. The same check runs again on every token refresh and API call, so an
  * app loses access when the user leaves the organization or stops administering it.
+ *
+ * Lookups go to the core database explicitly: the consent screen runs on the console session,
+ * which a console in sandbox (test) mode would otherwise point at the sandbox copy.
  */
 class OAuthOrganizations
 {
@@ -26,7 +29,7 @@ class OAuthOrganizations
 
     public static function membership(User $user, Company $company): ?CompanyUser
     {
-        return CompanyUser::where('user_uuid', $user->uuid)
+        return CompanyUser::on('mysql')->where('user_uuid', $user->uuid)
             ->where('company_uuid', $company->uuid)
             ->where(function ($query) {
                 $query->whereNull('status')->orWhere('status', 'active');
@@ -68,7 +71,7 @@ class OAuthOrganizations
      */
     public static function forPicker(User $user): Collection
     {
-        $companies = Company::whereIn('uuid', CompanyUser::where('user_uuid', $user->uuid)->pluck('company_uuid'))
+        $companies = Company::on('mysql')->whereIn('uuid', CompanyUser::on('mysql')->where('user_uuid', $user->uuid)->pluck('company_uuid'))
             ->whereNotNull('owner_uuid')
             ->orderBy('name')
             ->get();
@@ -91,7 +94,7 @@ class OAuthOrganizations
             return null;
         }
 
-        $company = Company::where(fn ($query) => $query->where('public_id', $id)->orWhere('uuid', $id))->first();
+        $company = Company::on('mysql')->where(fn ($query) => $query->where('public_id', $id)->orWhere('uuid', $id))->first();
         if (!$company || !static::membership($user, $company)) {
             return null;
         }

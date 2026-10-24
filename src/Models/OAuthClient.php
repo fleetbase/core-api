@@ -18,6 +18,14 @@ use Illuminate\Support\Str;
 class OAuthClient extends EloquentModel
 {
     /**
+     * Always the core database, also when the console is in sandbox (test) mode: an app's
+     * access is never a test record.
+     *
+     * @var string
+     */
+    protected $connection = 'mysql';
+
+    /**
      * The database table used by the model.
      *
      * @var string
@@ -84,14 +92,6 @@ class OAuthClient extends EloquentModel
      * @var array<int, string>
      */
     protected $appends = ['confidential'];
-
-    /**
-     * Get the correct current connection to use.
-     */
-    public function getConnectionName()
-    {
-        return $this->connection ?: config('fleetbase.connection.db', 'mysql');
-    }
 
     /**
      * Generate the client id on create.

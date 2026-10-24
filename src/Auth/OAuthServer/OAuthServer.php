@@ -387,7 +387,7 @@ class OAuthServer
         }
 
         if ($grant->company_uuid) {
-            $company = Company::where('uuid', $grant->company_uuid)->first();
+            $company = Company::on('mysql')->where('uuid', $grant->company_uuid)->first();
             if (!$company || !OAuthOrganizations::canShare($user, $company)) {
                 $grant->revoke();
 

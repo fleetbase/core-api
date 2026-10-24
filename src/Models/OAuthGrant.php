@@ -18,6 +18,14 @@ use Illuminate\Support\Str;
 class OAuthGrant extends EloquentModel
 {
     /**
+     * Always the core database, also when the console is in sandbox (test) mode: an app's
+     * access is never a test record.
+     *
+     * @var string
+     */
+    protected $connection = 'mysql';
+
+    /**
      * The database table used by the model.
      *
      * @var string
@@ -69,14 +77,6 @@ class OAuthGrant extends EloquentModel
         'last_used_at' => 'datetime',
         'revoked_at'   => 'datetime',
     ];
-
-    /**
-     * Get the correct current connection to use.
-     */
-    public function getConnectionName()
-    {
-        return $this->connection ?: config('fleetbase.connection.db', 'mysql');
-    }
 
     /**
      * Generate the uuid on create.
@@ -146,8 +146,7 @@ class OAuthGrant extends EloquentModel
             return;
         }
 
-        $connection ??= config('fleetbase.connection.db', 'mysql');
-        $db = DB::connection($connection);
+        $db = DB::connection($connection ?? 'mysql');
 
         $db->table('oauth_auth_codes')->whereIn('grant_uuid', $grantUuids)->update(['revoked' => true]);
         $db->table('oauth_access_tokens')->whereIn('grant_uuid', $grantUuids)->update(['revoked' => true, 'updated_at' => now()]);

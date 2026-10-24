@@ -41,7 +41,7 @@ class IdTokenResponse extends BearerTokenResponse
             return $params;
         }
 
-        $company = $this->context->companyUuid ? Company::where('uuid', $this->context->companyUuid)->first() : null;
+        $company = $this->context->companyUuid ? Company::on('mysql')->where('uuid', $this->context->companyUuid)->first() : null;
         $config  = Configuration::forAsymmetricSigner(
             new Sha256(),
             InMemory::plainText($this->keys->privateKeyContents()),

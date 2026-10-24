@@ -9,6 +9,14 @@ use Illuminate\Database\Eloquent\Model as EloquentModel;
  */
 class OAuthAuthCode extends EloquentModel
 {
+    /**
+     * Always the core database, also when the console is in sandbox (test) mode: an app's
+     * access is never a test record.
+     *
+     * @var string
+     */
+    protected $connection = 'mysql';
+
     protected $table = 'oauth_auth_codes';
 
     protected $keyType = 'string';
@@ -26,12 +34,4 @@ class OAuthAuthCode extends EloquentModel
         'expires_at' => 'datetime',
         'created_at' => 'datetime',
     ];
-
-    /**
-     * Get the correct current connection to use.
-     */
-    public function getConnectionName()
-    {
-        return $this->connection ?: config('fleetbase.connection.db', 'mysql');
-    }
 }

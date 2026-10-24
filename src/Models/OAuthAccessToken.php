@@ -13,6 +13,14 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class OAuthAccessToken extends EloquentModel
 {
+    /**
+     * Always the core database, also when the console is in sandbox (test) mode: an app's
+     * access is never a test record.
+     *
+     * @var string
+     */
+    protected $connection = 'mysql';
+
     protected $table = 'oauth_access_tokens';
 
     protected $keyType = 'string';
@@ -26,14 +34,6 @@ class OAuthAccessToken extends EloquentModel
         'revoked'    => 'boolean',
         'expires_at' => 'datetime',
     ];
-
-    /**
-     * Get the correct current connection to use.
-     */
-    public function getConnectionName()
-    {
-        return $this->connection ?: config('fleetbase.connection.db', 'mysql');
-    }
 
     public function grant(): BelongsTo
     {
