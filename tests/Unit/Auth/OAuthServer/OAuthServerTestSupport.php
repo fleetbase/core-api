@@ -131,6 +131,85 @@ function oauth_test_setup(): Capsule
 }
 
 /**
+ * Real spatie/permission roles for company memberships, keyed by company_users.uuid.
+ *
+ * @param array<string, string> $roles
+ */
+function oauth_test_roles(array $roles): void
+{
+    config([
+        'auth.defaults.guard'                          => 'sanctum',
+        'permission.models.permission'                 => Fleetbase\Models\Permission::class,
+        'permission.models.role'                       => Fleetbase\Models\Role::class,
+        'permission.table_names.roles'                 => 'roles',
+        'permission.table_names.permissions'           => 'permissions',
+        'permission.table_names.model_has_permissions' => 'model_has_permissions',
+        'permission.table_names.model_has_roles'       => 'model_has_roles',
+        'permission.table_names.role_has_permissions'  => 'role_has_permissions',
+        'permission.column_names.model_morph_key'      => 'model_uuid',
+    ]);
+    Container::getInstance()->instance(Spatie\Permission\PermissionRegistrar::class, new class {
+        public string $pivotRole       = 'role_id';
+        public string $pivotPermission = 'permission_id';
+        public bool $teams             = false;
+        public string $teamsKey        = 'team_id';
+
+        public function getRoleClass(): string
+        {
+            return Fleetbase\Models\Role::class;
+        }
+
+        public function getPermissionClass(): string
+        {
+            return Fleetbase\Models\Permission::class;
+        }
+
+        public function getPermissions(array $params = [], bool $onlyOne = false): Illuminate\Database\Eloquent\Collection
+        {
+            return new Illuminate\Database\Eloquent\Collection();
+        }
+    });
+
+    $schema = Capsule::connection('mysql')->getSchemaBuilder();
+    $schema->create('roles', function ($table) {
+        $table->string('id')->primary();
+        $table->string('name');
+        $table->string('guard_name')->default('sanctum');
+        $table->timestamps();
+        $table->softDeletes();
+    });
+    $schema->create('model_has_roles', function ($table) {
+        $table->string('role_id');
+        $table->string('model_type');
+        $table->string('model_uuid');
+    });
+    $schema->create('permissions', function ($table) {
+        $table->string('id')->primary();
+        $table->string('name');
+        $table->string('guard_name')->default('sanctum');
+        $table->timestamps();
+    });
+    $schema->create('model_has_permissions', function ($table) {
+        $table->string('permission_id');
+        $table->string('model_type');
+        $table->string('model_uuid');
+    });
+    $schema->create('role_has_permissions', function ($table) {
+        $table->string('permission_id');
+        $table->string('role_id');
+    });
+
+    $db = Capsule::connection('mysql');
+    foreach (array_values(array_unique($roles)) as $index => $name) {
+        $db->table('roles')->insert(['id' => 'role-' . $index, 'name' => $name, 'guard_name' => 'sanctum']);
+    }
+    $ids = $db->table('roles')->pluck('id', 'name');
+    foreach ($roles as $membership => $name) {
+        $db->table('model_has_roles')->insert(['role_id' => $ids[$name], 'model_type' => Fleetbase\Models\CompanyUser::class, 'model_uuid' => $membership]);
+    }
+}
+
+/**
  * Register an app. Returns [client, plain secret or null].
  */
 function oauth_test_client(array $attributes = [], bool $confidential = true): array

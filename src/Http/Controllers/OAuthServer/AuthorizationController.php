@@ -27,12 +27,12 @@ class AuthorizationController extends Controller
             $server->validateAuthorizationRequest($request->query());
         } catch (AuthorizeError $e) {
             if ($e->canRedirect()) {
-                return redirect()->away($e->redirectUrl($server->issuer()));
+                return new RedirectResponse($e->redirectUrl($server->issuer()));
             }
 
-            return redirect()->away(Utils::consoleUrl($consentPath, ['error' => $e->error, 'error_description' => $e->description]));
+            return new RedirectResponse(Utils::consoleUrl($consentPath, ['error' => $e->error, 'error_description' => $e->description]));
         }
 
-        return redirect()->away(Utils::consoleUrl($consentPath, $request->query()));
+        return new RedirectResponse(Utils::consoleUrl($consentPath, $request->query()));
     }
 }

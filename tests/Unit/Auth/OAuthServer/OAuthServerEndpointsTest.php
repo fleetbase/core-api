@@ -155,6 +155,15 @@ describe('review access', function () {
             ->and($response->getData(true)['error'])->toBe('insufficient_scope');
     });
 
+    it('does not know a type nobody registered', function () {
+        $token   = oauth_endpoint_token('openid navigator:review-access');
+        $request = Request::create('/oauth/v1/review-access/unknown/company_a', 'GET', [], [], [], ['HTTP_AUTHORIZATION' => 'Bearer ' . $token]);
+
+        $response = oauth_endpoint_call($request, [], fn ($request) => (new ResourceController())->reviewAccess($request, 'unknown', 'company_a'));
+
+        expect($response->getStatusCode())->toBe(404);
+    });
+
     it('cannot reach another organization', function () {
         $token = oauth_endpoint_token('openid navigator:review-access');
 
