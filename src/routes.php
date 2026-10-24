@@ -204,6 +204,9 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                             function ($router) {
                                 // Realtime socket token for the signed-in console user.
                                 $router->post('socket/token', [Fleetbase\Http\Controllers\SocketAuthController::class, 'token']);
+                                // App Review access for whatever an extension registered (stores, Navigator, ...).
+                                $router->get('review-access/{type}/{id}', 'ReviewAccessController@show');
+                                $router->put('review-access/{type}/{id}', 'ReviewAccessController@update');
                                 $router->group(
                                     ['prefix' => 'lookup'],
                                     function ($router) {
