@@ -20,6 +20,32 @@ class AppReviewTestStore extends FleetbaseModel
     protected $guarded = [];
 }
 
+class AppReviewTestUnregistered extends FleetbaseModel
+{
+    protected $table   = 'app_review_test_stores';
+    protected $guarded = [];
+}
+
+class AppReviewTestUnreachable extends FleetbaseModel
+{
+    protected $connection = 'missing-connection';
+    protected $table      = 'app_review_test_stores';
+}
+
+/**
+ * A Console user whose permissions are a plain list, so the endpoint's permission check can
+ * be exercised without the role tables.
+ */
+class AppReviewTestUser extends Fleetbase\Models\User
+{
+    public array $granted = [];
+
+    public function doesntHavePermissions(Illuminate\Support\Collection|array $permissions): bool
+    {
+        return collect($permissions)->pluck('name')->intersect($this->granted)->isEmpty();
+    }
+}
+
 class AppReviewTestNetwork extends FleetbaseModel
 {
     protected $table   = 'app_review_test_networks';
@@ -132,7 +158,7 @@ function app_review_console_request(string $company, array $input = [], string $
 }
 
 afterEach(function () {
-    foreach (['test-store', 'test-network', 'test-navigator', 'test-guarded'] as $type) {
+    foreach (['test-store', 'test-network', 'test-navigator', 'test-guarded', 'test-resolved', 'test-unreachable'] as $type) {
         AppReview::forget($type);
     }
     EloquentModel::unsetConnectionResolver();
@@ -296,3 +322,120 @@ test('a registered permission is required to change access', function () {
     expect($response->getStatusCode())->toBe(401)
         ->and(ReviewAccess::count())->toBe(0);
 })->skip(fn () => !method_exists(Fleetbase\Support\Auth::class, 'getUserFromSession'));
+
+test('the registry answers for unknown types, any type\'s number and numbers it cannot format', function () {
+    app_review_database();
+
+    expect(array_keys(AppReview::types()))->toContain('test-store', 'test-network', 'test-navigator')
+        ->and(AppReview::typeOf(new AppReviewTestUnregistered()))->toBeNull()
+        ->and(AppReview::typeOf(null))->toBeNull()
+        ->and(AppReview::definition('nothing'))->toBeNull()
+        ->and(AppReview::phoneFor('nothing'))->toBeNull()
+        // Without a type, any registered number is a review number.
+        ->and(AppReview::isReviewPhone('+1 202 555 0144'))->toBeTrue()
+        ->and(AppReview::isReviewPhone('+12025550199'))->toBeFalse()
+        ->and(AppReview::isReviewPhone(''))->toBeFalse()
+        ->and(AppReview::isReviewPhone(null, 'test-store'))->toBeFalse()
+        // Only North American numbers are spaced out.
+        ->and(AppReview::formatPhone('+97699112233'))->toBe('+97699112233')
+        ->and(AppReview::formatPhone(null))->toBeNull();
+});
+
+test('a type can bring its own resolver for the subject a Console user may manage', function () {
+    app_review_database();
+    $calls = [];
+    AppReview::register('test-resolved', [
+        'model'   => AppReviewTestUnregistered::class,
+        'phone'   => '+12025550150',
+        'resolve' => function (string $id, ?string $companyUuid) use (&$calls) {
+            $calls[] = [$id, $companyUuid];
+
+            return AppReviewTestUnregistered::where('public_id', $id)->first();
+        },
+    ]);
+
+    expect(AppReview::resolveSubject('test-resolved', 'store_b', 'company-a')?->uuid)->toBe('store-b')
+        ->and($calls)->toBe([['store_b', 'company-a']]);
+});
+
+test('access is absent, not an error, for an unsaved subject, an unregistered one, or before the migration', function () {
+    $capsule = app_review_database();
+
+    expect(AppReview::accessFor(new AppReviewTestStore()))->toBeNull()
+        ->and(AppReview::accessFor(new AppReviewTestUnregistered(['uuid' => 'store-a'])))->toBeNull()
+        ->and(fn () => AppReview::update(new AppReviewTestUnregistered(['uuid' => 'store-a']), true))->toThrow(InvalidArgumentException::class);
+
+    $capsule->getConnection('testing')->getSchemaBuilder()->drop('review_accesses');
+
+    expect(AppReview::accessFor(app_review_store('store-a')))->toBeNull()
+        ->and(AppReview::isEnabledFor(app_review_store('store-a')))->toBeFalse()
+        ->and(AppReview::acceptsCode(app_review_store('store-a'), '+12025550143', '123456'))->toBeFalse();
+});
+
+test('a subject whose table cannot be read is matched by uuid only', function () {
+    app_review_database();
+    $hasColumn = new ReflectionMethod(AppReview::class, 'hasColumn');
+
+    expect($hasColumn->invoke(null, AppReviewTestUnreachable::class, 'public_id'))->toBeFalse()
+        ->and($hasColumn->invoke(null, AppReviewTestStore::class, 'public_id'))->toBeTrue();
+});
+
+test('the Console endpoint lets administrators and permission holders in, and nobody else', function () {
+    app_review_database();
+    app()->instance('validator', new Illuminate\Validation\Factory(new Illuminate\Translation\Translator(new Illuminate\Translation\ArrayLoader(), 'en'), app()));
+    Request::macro('validate', function (array $rules) {
+        return app('validator')->make($this->all(), $rules)->validate();
+    });
+    config(['permission.table_names.permissions' => 'permissions', 'auth.defaults.guard' => 'sanctum', 'auth.guards.sanctum' => ['driver' => 'sanctum']]);
+    Capsule::connection('mysql')->getSchemaBuilder()->create('permissions', function ($table) {
+        $table->string('id')->primary();
+        $table->string('name');
+        $table->string('guard_name')->nullable();
+        $table->timestamps();
+    });
+    Capsule::connection('mysql')->table('permissions')->insert([
+        ['id' => 'permission-manage', 'name' => 'storefront manage-app-review store', 'guard_name' => 'sanctum'],
+        ['id' => 'permission-wildcard', 'name' => 'storefront * store', 'guard_name' => 'sanctum'],
+        ['id' => 'permission-view', 'name' => 'storefront view store', 'guard_name' => 'sanctum'],
+    ]);
+    AppReview::forget('test-store');
+    AppReview::register('test-guarded', [
+        'model'           => AppReviewTestStore::class,
+        'phone'           => '+12025550143',
+        'permission'      => 'storefront manage-app-review store',
+        'view_permission' => 'storefront view store',
+    ]);
+
+    $as = function (?AppReviewTestUser $user, array $input = [], string $method = 'PUT') {
+        $request = app_review_console_request('company-a', $input, $method);
+        $request->setUserResolver(fn () => $user);
+
+        return $request;
+    };
+    $user = function (string $type, array $granted = []) {
+        $user          = new AppReviewTestUser();
+        $user->type    = $type;
+        $user->granted = $granted;
+
+        return $user;
+    };
+    $controller = new ReviewAccessController();
+
+    $nobody    = $controller->show('test-guarded', 'store_a', $as(null, [], 'GET'));
+    $viewer    = $controller->show('test-guarded', 'store_a', $as($user('user', ['storefront view store']), [], 'GET'));
+    $readOnly  = $controller->update('test-guarded', 'store_a', $as($user('user', ['storefront view store']), ['enabled' => true]));
+    $manager   = $controller->update('test-guarded', 'store_a', $as($user('user', ['storefront manage-app-review store']), ['enabled' => true]));
+    $wildcard  = $controller->update('test-guarded', 'store_a', $as($user('user', ['storefront * store']), ['enabled' => false]));
+    $admin     = $controller->update('test-guarded', 'store_a', $as($user('admin'), ['regenerate_code' => true]));
+
+    expect($nobody->getStatusCode())->toBe(401)
+        ->and($viewer->getData(true)['review_access']['type'])->toBe('test-guarded')
+        ->and($readOnly->getStatusCode())->toBe(401)
+        ->and($manager->getData(true)['review_access'])->toHaveKey('code')
+        ->and($wildcard->getData(true)['review_access']['enabled'])->toBeFalse()
+        ->and($admin->getData(true)['review_access'])->toHaveKey('code');
+
+    // A permission the install never seeded lets nobody but administrators in.
+    AppReview::register('test-guarded', ['model' => AppReviewTestStore::class, 'phone' => '+12025550143', 'permission' => 'storefront unseeded store']);
+    expect($controller->update('test-guarded', 'store_a', $as($user('user', ['storefront unseeded store']), ['enabled' => true]))->getStatusCode())->toBe(401);
+});
