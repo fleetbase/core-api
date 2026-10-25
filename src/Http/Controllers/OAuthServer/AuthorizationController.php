@@ -19,7 +19,7 @@ use Illuminate\Http\Request;
  */
 class AuthorizationController extends Controller
 {
-    public function authorize(Request $request, OAuthServer $server): RedirectResponse
+    public function start(Request $request, OAuthServer $server): RedirectResponse
     {
         $consentPath = config('oauth-server.console_authorize_path', '/oauth/authorize');
 
