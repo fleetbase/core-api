@@ -3,37 +3,55 @@
 /**
  * -------------------------------------------
  * Fleetbase Core API Configuration
- * -------------------------------------------
+ * -------------------------------------------.
  */
 
 return [
     'api' => [
         'version' => 'v1',
         'routing' => [
-            'prefix' => env('API_PREFIX'),
-            'internal_prefix' => env('INTERNAL_API_PREFIX', 'int')
-        ]
+            'prefix'          => env('API_PREFIX'),
+            'internal_prefix' => env('INTERNAL_API_PREFIX', 'int'),
+        ],
     ],
     'console' => [
-        'path' => env('CONSOLE_PATH', '/fleetbase/console'),
-        'host' => env('CONSOLE_HOST', 'fleetbase.io'),
+        'path'      => env('CONSOLE_PATH', '/fleetbase/console'),
+        'host'      => env('CONSOLE_HOST', 'fleetbase.io'),
         'subdomain' => env('CONSOLE_SUBDOMAIN'),
-        'secure' => env('CONSOLE_SECURE', !app()->environment(['development', 'local']))
+        'secure'    => env('CONSOLE_SECURE', !app()->environment(['development', 'local'])),
     ],
     'services' => [
         'ipinfo' => [
-            'api_key' => env('IPINFO_API_KEY')
-        ]
+            'api_key' => env('IPINFO_API_KEY'),
+        ],
     ],
     'connection' => [
-        'db' => env('DB_CONNECTION', 'mysql'),
-        'sandbox' => env('SANDBOX_DB_CONNECTION', 'sandbox')
+        'db'      => env('DB_CONNECTION', 'mysql'),
+        'sandbox' => env('SANDBOX_DB_CONNECTION', 'sandbox'),
     ],
     'branding' => [
         'logo_url' => 'https://flb-assets.s3.ap-southeast-1.amazonaws.com/static/fleetbase-logo.png',
-        'icon_url' => 'https://flb-assets.s3.ap-southeast-1.amazonaws.com/static/fleetbase-icon.png'
+        'icon_url' => 'https://flb-assets.s3.ap-southeast-1.amazonaws.com/static/fleetbase-icon.png',
     ],
     'version' => env('FLEETBASE_VERSION', '0.7.1'),
+
+    /*
+     |--------------------------------------------------------------------------
+     | Fleetbase Hosted Routing
+     |--------------------------------------------------------------------------
+     |
+     | A free routing key at install time (Support\HostedRouting), with the
+     | first admin's consent at onboarding or `php artisan routing:register`.
+     | ROUTING_AUTO_REGISTER=false hides the onboarding choice and makes the
+     | command refuse unless --force.
+     */
+    'hosted_routing' => [
+        'auto_register'    => env('ROUTING_AUTO_REGISTER', true),
+        'registration_url' => env('ROUTING_REGISTRATION_URL', 'https://api.fleetbase.io/__/licenses/register-instance'),
+        'api_host'         => env('ROUTING_API_HOST', 'https://valhalla.routing.fleetbase.io'),
+        'domain'           => env('ROUTING_HOSTED_DOMAIN', 'routing.fleetbase.io'),
+        'timeout'          => env('ROUTING_REGISTRATION_TIMEOUT', 10),
+    ],
     'instance_id' => env('FLEETBASE_INSTANCE_ID') ?? (file_exists(base_path('.fleetbase-id')) ? trim(file_get_contents(base_path('.fleetbase-id'))) : null),
 
     /*
@@ -52,8 +70,8 @@ return [
     'sms_auth_bypass_code' => env('SMS_AUTH_BYPASS_CODE'),
 
     'user_cache' => [
-        'enabled' => env('USER_CACHE_ENABLED', true),
-        'server_ttl' => (int) env('USER_CACHE_SERVER_TTL', 900), // 15 minutes
+        'enabled'     => env('USER_CACHE_ENABLED', true),
+        'server_ttl'  => (int) env('USER_CACHE_SERVER_TTL', 900), // 15 minutes
         'browser_ttl' => (int) env('USER_CACHE_BROWSER_TTL', 300), // 5 minutes
     ],
 
