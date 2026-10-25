@@ -25,6 +25,37 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
 
         /*
         |--------------------------------------------------------------------------
+        | OAuth 2.0 / OpenID Connect provider ("Continue with Fleetbase")
+        |--------------------------------------------------------------------------
+        |
+        | Apps sign people in with their Fleetbase account and, with consent, act on
+        | one organization. The consent screen itself is in the console, backed by
+        | the int/v1/oauth-server routes below.
+        */
+        if (config('oauth-server.enabled', true)) {
+            $router->get('.well-known/openid-configuration', [Fleetbase\Http\Controllers\OAuthServer\DiscoveryController::class, 'configuration']);
+            $router->get('.well-known/oauth-authorization-server', [Fleetbase\Http\Controllers\OAuthServer\DiscoveryController::class, 'configuration']);
+            $router->prefix('oauth')->group(function ($router) {
+                $router->get('authorize', [Fleetbase\Http\Controllers\OAuthServer\AuthorizationController::class, 'authorize']);
+                $router->get('jwks', [Fleetbase\Http\Controllers\OAuthServer\DiscoveryController::class, 'jwks']);
+                $router->middleware(['throttle:600,1'])->group(function ($router) {
+                    $router->post('token', [Fleetbase\Http\Controllers\OAuthServer\TokenController::class, 'token']);
+                    $router->post('revoke', [Fleetbase\Http\Controllers\OAuthServer\TokenController::class, 'revoke']);
+                });
+                $router->middleware(['throttle:600,1'])->group(function ($router) {
+                    $router->match(['GET', 'POST'], 'userinfo', [Fleetbase\Http\Controllers\OAuthServer\ResourceController::class, 'userinfo'])
+                        ->middleware(Fleetbase\Http\Middleware\AuthenticateOAuthToken::class . ':openid');
+                    $router->get('v1/organization', [Fleetbase\Http\Controllers\OAuthServer\ResourceController::class, 'organization'])
+                        ->middleware(Fleetbase\Http\Middleware\AuthenticateOAuthToken::class . ':organization:read');
+                    // The scope is checked in the controller: each extension says which scope covers its types.
+                    $router->match(['GET', 'PUT', 'DELETE'], 'v1/review-access/{type}/{id}', [Fleetbase\Http\Controllers\OAuthServer\ResourceController::class, 'reviewAccess'])
+                        ->middleware(Fleetbase\Http\Middleware\AuthenticateOAuthToken::class);
+                });
+            });
+        }
+
+        /*
+        |--------------------------------------------------------------------------
         | Public/Consumable Routes
         |--------------------------------------------------------------------------
         |
@@ -207,6 +238,24 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                 // App Review access for whatever an extension registered (stores, Navigator, ...).
                                 $router->get('review-access/{type}/{id}', 'ReviewAccessController@show');
                                 $router->put('review-access/{type}/{id}', 'ReviewAccessController@update');
+                                // "Continue with Fleetbase": the console's consent screen, Connected apps,
+                                // and Admin → OAuth Apps (AdminRequest checks for a system admin).
+                                $router->group(['prefix' => 'oauth-server'], function ($router) {
+                                    $router->get('authorization', 'OAuthConsentController@show');
+                                    $router->post('authorization', 'OAuthConsentController@approve');
+                                    $router->delete('authorization', 'OAuthConsentController@deny');
+                                    $router->get('connected-apps', 'ConnectedAppController@index');
+                                    $router->delete('connected-apps/{uuid}', 'ConnectedAppController@destroy');
+                                    $router->get('apps', 'OAuthAppController@index');
+                                    $router->post('apps', 'OAuthAppController@store');
+                                    $router->get('apps/{id}', 'OAuthAppController@show');
+                                    $router->put('apps/{id}', 'OAuthAppController@update');
+                                    $router->post('apps/{id}/rotate-secret', 'OAuthAppController@rotateSecret');
+                                    $router->post('apps/{id}/disable', 'OAuthAppController@disable');
+                                    $router->post('apps/{id}/enable', 'OAuthAppController@enable');
+                                    $router->get('apps/{id}/grants', 'OAuthAppController@grants');
+                                    $router->delete('grants/{uuid}', 'OAuthAppController@revokeGrant');
+                                });
                                 $router->group(
                                     ['prefix' => 'lookup'],
                                     function ($router) {

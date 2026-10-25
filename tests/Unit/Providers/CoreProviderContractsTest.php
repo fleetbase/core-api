@@ -939,7 +939,7 @@ namespace {
                     ['loadMigrationsFrom', dirname(__DIR__, 3) . '/src/Providers/../../migrations'],
                     ['loadViewsFrom', dirname(__DIR__, 3) . '/src/Providers/../../views', 'fleetbase']
                 )
-                ->and($provider->schedule->commands)->toHaveCount(9)
+                ->and($provider->schedule->commands)->toHaveCount(10)
                 ->and(array_map(fn ($event) => $event->name, $provider->schedule->commands))->toBe([
                     'cache:prune-stale-tags',
                     'model:prune',
@@ -948,13 +948,15 @@ namespace {
                     'purge:activity-logs --force --no-interaction --days 2 --keep-backups=30',
                     'purge:scheduled-task-logs --force --no-interaction --days 1 --keep-backups=30',
                     'model:prune',
+                    'oauth-server:prune',
                     'telemetry:ping',
                     'sandbox:sync',
                 ])
                 ->and($provider->schedule->commands[1]->parameters)->toBe(['--model' => Spatie\ScheduleMonitor\Models\MonitoredScheduledTaskLogItem::class])
                 ->and($provider->schedule->commands[6]->parameters)->toBe(['--model' => Fleetbase\Models\OAuthState::class])
                 ->and($provider->schedule->commands[6]->methods)->toBe([['hourly']])
-                ->and($provider->schedule->commands[8]->methods)->toBe([['hourly'], ['name', 'sandbox-sync'], ['withoutOverlapping']])
+                ->and($provider->schedule->commands[7]->methods)->toBe([['daily']])
+                ->and($provider->schedule->commands[9]->methods)->toBe([['hourly'], ['name', 'sandbox-sync'], ['withoutOverlapping']])
                 ->and($provider->schedule->jobs)->toHaveCount(1)
                 ->and($provider->schedule->jobs[0]->name)->toBe(Fleetbase\Jobs\MaterializeSchedulesJob::class)
                 ->and($provider->schedule->jobs[0]->methods)->toBe([['dailyAt', '01:00'], ['name', 'materialize-schedules'], ['withoutOverlapping']])

@@ -107,6 +107,9 @@ class CoreServiceProvider extends ServiceProvider
         \Fleetbase\Console\Commands\SmsGuardPause::class,
         \Fleetbase\Console\Commands\SmsGuardUnpause::class,
         \Fleetbase\Console\Commands\SmsLedgerPrune::class,
+        \Fleetbase\Console\Commands\OAuthServerKeys::class,
+        \Fleetbase\Console\Commands\OAuthServerClient::class,
+        \Fleetbase\Console\Commands\OAuthServerPrune::class,
     ];
 
     /**
@@ -153,6 +156,7 @@ class CoreServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__ . '/../../config/image.php', 'image');
         $this->mergeConfigFrom(__DIR__ . '/../../config/sms.php', 'sms');
         $this->mergeConfigFrom(__DIR__ . '/../../config/oauth.php', 'oauth');
+        $this->mergeConfigFrom(__DIR__ . '/../../config/oauth-server.php', 'oauth-server');
 
         // setup report schema registry
         $this->app->singleton(ReportSchemaRegistry::class, function () {
@@ -211,6 +215,7 @@ class CoreServiceProvider extends ServiceProvider
             // are high-churn and short-lived; the model keeps a day's grace past expiry so a
             // support investigation can still tell an expired token from one that never existed.
             $schedule->command('model:prune', ['--model' => \Fleetbase\Models\OAuthState::class])->hourly();
+            $schedule->command('oauth-server:prune')->daily();
             $schedule->command('telemetry:ping')->daily();
             $schedule->job(new \Fleetbase\Jobs\MaterializeSchedulesJob())->dailyAt('01:00')->name('materialize-schedules')->withoutOverlapping();
             // Keep sandbox users/companies in sync with production so that
@@ -230,6 +235,7 @@ class CoreServiceProvider extends ServiceProvider
         $this->registerTransformersFrom();
         $this->registerMiddleware();
         $this->registerNotifications();
+        \Fleetbase\Auth\OAuthServer\OAuthScopes::registerDefaults();
         $this->loadRoutesFrom(__DIR__ . '/../routes.php');
         $this->loadMigrationsFrom(__DIR__ . '/../../migrations');
         $this->loadViewsFrom(__DIR__ . '/../../views', 'fleetbase');

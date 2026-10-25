@@ -1,10 +1,18 @@
-# v1.6.74 — Webhook endpoints for API keys, signed per endpoint, safer upload names, and App Review access
+# v1.6.74 — Webhook endpoints for API keys, signed per endpoint, safer upload names, App Review access, and Sign in with Fleetbase
 
 ## Added
 
 - **Webhook endpoints can be managed with an API key** (#319). `/v1/webhook-endpoints` supports create, list (optionally filtered by `url`), show, update, `POST {id}/rotate-secret` and delete. Endpoints are scoped to the key's company and environment (`live`/`test`). The URL must pass `PublicWebhookUrl`, and events are checked against `config('api.events')` when it is set. Integrations such as WooCommerce and Shopify connectors can now register their own endpoints instead of merchants copying URLs into the console.
 - **Per-endpoint signing secrets** (#319). Each endpoint has its own secret (`whsec_…`), stored encrypted, hidden from serialisation and kept out of the activity log. Endpoints that already exist get one the first time it is needed. Deliveries now also carry `X-Fleetbase-Signature: t=<unix>,v1=<hmac_sha256("<t>.<body>", secret)>`; `EndpointSignature::verify()` documents the receiver side. The legacy `Signature` header is unchanged. The console can reveal (`GET int/v1/webhook-endpoints/{id}/secret`, view permission) and rotate (`POST int/v1/webhook-endpoints/{id}/rotate-secret`, create permission) the secret.
 - **App Review access** (#323). Apple and Google reviewers can't receive a texted sign-in code. Extensions register what their app signs reviewers in to (`Fleetbase\Support\AppReview::register()`, e.g. a Storefront store or an organization's Navigator app) with a review number from the 555-0100–0199 range reserved for fiction. Owners turn access on in the Console (`GET|PUT int/v1/review-access/{type}/{id}`) and give the app store that number and a six-digit code, stored hashed, shown once, and accepted only for that subject. Works on Fleetbase Cloud and self-hosted. `AppReview::configuredAccountMatches()` is the shared env fallback for self-hosted review accounts.
+- **Sign in with Fleetbase** (OAuth 2.0 / OpenID Connect provider). Registered apps can offer "Continue with Fleetbase" and, with the user's consent, act on one organization they administer. Built on league/oauth2-server.
+  - Authorization code flow with PKCE (`S256`) required for every client, rotating refresh tokens, RFC 7009 revocation, ID tokens, `/oauth/userinfo`, `/oauth/jwks` and `/.well-known/openid-configuration`.
+  - The consent screen runs in the console, so the console's sign-in and two-factor rules apply. Endpoints: `int/v1/oauth-server/authorization` (GET, POST, DELETE).
+  - Each consent is an `oauth_grants` row bound to the organization the user picked. Every refresh and every API call checks that the user is still active and still administers that organization.
+  - Scopes: `openid`, `profile`, `email` and `organization:read` (`GET /oauth/v1/organization`). Extensions register their own scopes with `Fleetbase\Auth\OAuthServer\OAuthScopes::register()`, optionally covering App Review types served by `/oauth/v1/review-access/{type}/{id}`.
+  - Replayed codes revoke their tokens; a replayed refresh token revokes the whole grant.
+  - System admins register apps, rotate secrets, turn apps off and revoke grants (`int/v1/oauth-server/apps`). Users list and remove their connected apps (`int/v1/oauth-server/connected-apps`) and get an email when they authorize a new one.
+  - Artisan: `oauth-server:keys`, `oauth-server:client create|rotate|list`, `oauth-server:prune` (scheduled daily).
 
 ## Security
 
@@ -14,4 +22,5 @@
 
 ## Upgrade Steps
 
-- Run migrations: `php artisan migrate` adds the nullable `webhook_endpoints.secret` column and the `review_accesses` table.
+- Run migrations: `php artisan migrate` adds the nullable `webhook_endpoints.secret` column, the `review_accesses` table and the `oauth_*` provider tables (`oauth_clients`, `oauth_grants`, `oauth_auth_codes`, `oauth_access_tokens`, `oauth_refresh_tokens`).
+- To use Sign in with Fleetbase, give every API instance the same signing key pair: `php artisan oauth-server:keys` (key files in `storage/`), or `php artisan oauth-server:keys --show` and set `OAUTH_SERVER_PRIVATE_KEY` / `OAUTH_SERVER_PUBLIC_KEY`. Set `OAUTH_SERVER_ISSUER` if the public API URL differs from `APP_URL`. New dependencies: `league/oauth2-server`, `nyholm/psr7`, `symfony/psr-http-message-bridge`.
