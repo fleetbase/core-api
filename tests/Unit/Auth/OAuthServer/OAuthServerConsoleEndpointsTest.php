@@ -159,7 +159,7 @@ describe('the authorization endpoint', function () {
     it('sends a valid request to the console consent screen, and errors where they belong', function () {
         [$client]   = oauth_test_client();
         $controller = new AuthorizationController();
-        $authorize  = fn (array $query) => $controller->authorize(Request::create('/oauth/authorize', 'GET', $query), oauth_test_server())->getTargetUrl();
+        $authorize  = fn (array $query) => $controller->start(Request::create('/oauth/authorize', 'GET', $query), oauth_test_server())->getTargetUrl();
 
         expect($authorize(oauth_test_params($client, oauth_test_verifier())))->toStartWith('https://console.fleetbase.test/oauth/authorize?response_type=code&client_id=' . $client->id)
             ->and($authorize(oauth_test_params($client, oauth_test_verifier(), ['response_type' => 'token'])))->toStartWith(OAUTH_TEST_REDIRECT . '?error=unsupported_response_type')

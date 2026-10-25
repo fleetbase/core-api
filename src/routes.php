@@ -36,7 +36,7 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
             $router->get('.well-known/openid-configuration', [Fleetbase\Http\Controllers\OAuthServer\DiscoveryController::class, 'configuration']);
             $router->get('.well-known/oauth-authorization-server', [Fleetbase\Http\Controllers\OAuthServer\DiscoveryController::class, 'configuration']);
             $router->prefix('oauth')->group(function ($router) {
-                $router->get('authorize', [Fleetbase\Http\Controllers\OAuthServer\AuthorizationController::class, 'authorize']);
+                $router->get('authorize', [Fleetbase\Http\Controllers\OAuthServer\AuthorizationController::class, 'start']);
                 $router->get('jwks', [Fleetbase\Http\Controllers\OAuthServer\DiscoveryController::class, 'jwks']);
                 $router->middleware(['throttle:600,1'])->group(function ($router) {
                     $router->post('token', [Fleetbase\Http\Controllers\OAuthServer\TokenController::class, 'token']);
