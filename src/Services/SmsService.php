@@ -2,6 +2,7 @@
 
 namespace Fleetbase\Services;
 
+use Fleetbase\Support\AppReview;
 use Fleetbase\Support\Sms\SmsContext;
 use Fleetbase\Support\Sms\SmsGuard;
 use Fleetbase\Support\Sms\SmsReservation;
@@ -69,6 +70,14 @@ class SmsService
     {
         // Normalize phone number
         $normalizedPhone = $this->normalizePhoneNumber($to);
+
+        // A number reserved for fiction (the App Review numbers among them) can never reach
+        // anyone: answer as sent without calling a provider or counting it.
+        if (AppReview::isFictionalPhone($normalizedPhone)) {
+            Log::info('SMS to a fictional number skipped', ['to' => $to]);
+
+            return ['success' => true, 'skipped' => true, 'provider' => null, 'message_id' => null];
+        }
 
         // Every send passes the guard before a provider is called. A caller that already
         // reserved the send (VerificationCode) hands its reservation over so it counts once.

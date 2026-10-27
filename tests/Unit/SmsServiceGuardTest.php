@@ -142,3 +142,13 @@ test('sms service treats a provider result with success false as a failed send',
     expect($failed)->not->toBeNull()
         ->and($failed[2]['error'])->toBe('invalid sender');
 });
+
+test('sms service never texts a number reserved for fiction, such as an App Review number', function () {
+    sms_service_guard_setup();
+    $service = new SmsServiceGuardProbe();
+
+    $result = $service->send('+1 202 555 0143', 'hello', ['purpose' => 'storefront_login']);
+
+    expect($result)->toMatchArray(['success' => true, 'skipped' => true])
+        ->and($service->dispatches)->toBe([]);
+});

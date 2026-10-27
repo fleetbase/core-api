@@ -213,6 +213,19 @@ it('saves the code without texting anyone when there is no number at all', funct
         ->and($twilio->messages)->toBe([]);
 });
 
+it('never texts a number reserved for fiction, such as an App Review number, and still saves the code', function () {
+    $twilio = verification_code_guard_database();
+
+    $code   = VerificationCode::generateSmsVerificationFor(verification_code_guard_subject('+12025550143'), 'storefront_login', ['hashed' => true]);
+    $repeat = VerificationCode::generateSmsVerificationFor(verification_code_guard_subject('+12025550143'), 'storefront_login', ['hashed' => true]);
+
+    // Nothing was reserved, so the guard's cooldown never refuses the repeat either.
+    expect($code->exists)->toBeTrue()
+        ->and($repeat->exists)->toBeTrue()
+        ->and($code->meta)->not->toHaveKey('trace')
+        ->and($twilio->messages)->toBe([]);
+});
+
 it('leaves the code row untouched when the guard is disabled', function () {
     $twilio = verification_code_guard_database(['enabled' => false]);
 

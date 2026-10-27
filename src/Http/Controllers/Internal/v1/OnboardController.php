@@ -5,9 +5,11 @@ namespace Fleetbase\Http\Controllers\Internal\v1;
 use Fleetbase\Events\AccountCreated;
 use Fleetbase\Http\Controllers\Controller;
 use Fleetbase\Http\Requests\OnboardRequest;
+use Fleetbase\Jobs\RegisterHostedRouting;
 use Fleetbase\Models\Company;
 use Fleetbase\Models\User;
 use Fleetbase\Models\VerificationCode;
+use Fleetbase\Support\HostedRouting;
 use Fleetbase\Support\OAuth;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -24,7 +26,9 @@ class OnboardController extends Controller
     {
         return response()->json(
             [
-                'should_onboard' => Company::doesntExist(),
+                'should_onboard' => $shouldOnboard = Company::doesntExist(),
+                // Offer the first admin a free Fleetbase Hosted Routing key.
+                'hosted_routing' => $shouldOnboard && HostedRouting::isAvailable(),
             ]
         );
     }
@@ -95,6 +99,12 @@ class OnboardController extends Controller
 
         // send account created event
         event(new AccountCreated($user, $company));
+
+        // The first admin chose "Use Fleetbase hosted routing (free)": register
+        // for a key once the response is sent, so signup never waits on Cloud.
+        if ($isAdmin && $request->boolean('hosted_routing') && HostedRouting::isEnabled() && $user->email) {
+            RegisterHostedRouting::afterResponse($user->email, $request->getSchemeAndHttpHost());
+        }
 
         // create auth token
         $token = $user->createToken($user->uuid);

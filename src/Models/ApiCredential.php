@@ -40,7 +40,7 @@ class ApiCredential extends Model
      *
      * @var array
      */
-    protected $fillable = ['uuid', '_key', 'user_uuid', 'company_uuid', 'name', 'key', 'secret', 'test_mode', 'api', 'browser_origins', 'last_used_at', 'expires_at'];
+    protected $fillable = ['uuid', '_key', 'user_uuid', 'company_uuid', 'name', 'key', 'secret', 'test_mode', 'api', 'oauth_client_id', 'oauth_installation', 'browser_origins', 'last_used_at', 'expires_at'];
 
     /**
      * The attributes that should be cast to native types.

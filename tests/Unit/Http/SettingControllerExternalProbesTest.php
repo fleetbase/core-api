@@ -26,7 +26,7 @@ function setting_controller_external_probe_fixtures(array $config = []): void
         'twilio.twilio.connections.twilio'        => [
             'sid'   => 'existing-sid',
             'token' => 'existing-token',
-            'from'  => '+15555550100',
+            'from'  => '+15555551000',
         ],
         'broadcasting.connections.socketcluster.auth_key' => null,
         'broadcasting.connections.socketcluster.options'  => [
@@ -71,7 +71,7 @@ test('test twilio config requires a phone number before mutating runtime config'
         ->and(config('twilio.twilio.connections.twilio'))->toBe([
             'sid'   => 'existing-sid',
             'token' => 'existing-token',
-            'from'  => '+15555550100',
+            'from'  => '+15555551000',
         ]);
 });
 
@@ -82,7 +82,7 @@ test('test twilio config applies request credentials before returning provider e
         'sid'   => 'override-sid',
         'token' => 'override-token',
         'from'  => '+15555550999',
-        'phone' => '+15555550123',
+        'phone' => '+15555551023',
     ]));
 
     expect($response->getStatusCode())->toBe(200)
@@ -107,7 +107,7 @@ test('test twilio config returns twilio rest exceptions as provider errors', fun
         'sid'   => 'rest-sid',
         'token' => 'rest-token',
         'from'  => '+15555550999',
-        'phone' => '+15555550123',
+        'phone' => '+15555551023',
     ]));
 
     expect($response->getStatusCode())->toBe(200)
@@ -135,7 +135,7 @@ test('test twilio config returns fatal provider errors as stable probe errors', 
         'sid'   => 'error-sid',
         'token' => 'error-token',
         'from'  => '+15555550999',
-        'phone' => '+15555550123',
+        'phone' => '+15555551023',
     ]));
 
     expect($response->getStatusCode())->toBe(200)
@@ -158,7 +158,7 @@ test('test twilio config returns php warning failures as stable probe errors', f
         'sid'   => 'warning-sid',
         'token' => 'warning-token',
         'from'  => '+15555550999',
-        'phone' => '+15555550123',
+        'phone' => '+15555551023',
     ]));
 
     expect($response->getStatusCode())->toBe(200)
@@ -325,12 +325,12 @@ test('test twilio config sends with the credentials entered, not those the clien
         'sid'   => 'entered-sid',
         'token' => 'entered-token',
         'from'  => '+15555550999',
-        'phone' => '+15555550123',
+        'phone' => '+15555551023',
     ]));
 
     expect($response->getData(true)['message'])->toBe('recorded')
         ->and(SettingControllerRecordingTwilioManager::$sent)->toBe([
-            ['to' => '+15555550123', 'sid' => 'entered-sid', 'token' => 'entered-token', 'from' => '+15555550999'],
+            ['to' => '+15555551023', 'sid' => 'entered-sid', 'token' => 'entered-token', 'from' => '+15555550999'],
         ])
         ->and(setting_controller_twilio_facade_is_cached())->toBeFalse('the credentials under test do not outlive the request');
 });
@@ -341,13 +341,13 @@ test('test sms provider config sends through twilio with the credentials entered
 
     $response = (new SettingController())->testSmsProviderConfig(setting_controller_external_probe_request([
         'provider' => 'twilio',
-        'phone'    => '+15555550123',
+        'phone'    => '+15555551023',
         'config'   => ['sid' => 'entered-sid', 'token' => 'entered-token', 'from' => '+15555550999'],
     ]));
 
     expect($response->getData(true))->toMatchArray(['status' => 'error', 'message' => 'recorded'])
         ->and(SettingControllerRecordingTwilioManager::$sent)->toBe([
-            ['to' => '+15555550123', 'sid' => 'entered-sid', 'token' => 'entered-token', 'from' => '+15555550999'],
+            ['to' => '+15555551023', 'sid' => 'entered-sid', 'token' => 'entered-token', 'from' => '+15555550999'],
         ])
         ->and(setting_controller_twilio_facade_is_cached())->toBeFalse();
 });
@@ -361,11 +361,11 @@ test('a stand-in bound in place of the twilio manager is left in place', functio
         'sid'   => 'entered-sid',
         'token' => 'entered-token',
         'from'  => '+15555550999',
-        'phone' => '+15555550123',
+        'phone' => '+15555551023',
     ]));
 
     expect(app('twilio'))->toBe($twilio)
-        ->and($twilio->messages)->toBe([['+15555550123', 'This is a Twilio test from Fleetbase']]);
+        ->and($twilio->messages)->toBe([['+15555551023', 'This is a Twilio test from Fleetbase']]);
 });
 
 test('a twilio manager bound but not yet built is built from the config just applied', function () {

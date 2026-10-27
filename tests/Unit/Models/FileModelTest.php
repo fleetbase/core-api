@@ -569,3 +569,28 @@ it('generates random filenames with normalized lowercase extensions', function (
         ->and($gif)->toEndWith('.gif')
         ->and($png)->not->toBe($jpg);
 });
+
+it('stores uploads under an extension that matches their contents and never a script extension', function () {
+    $png    = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAoMBgBzq7oQAAAAASUVORK5CYII=');
+    $upload = function (string $contents, string $name): UploadedFile {
+        $path = tempnam(sys_get_temp_dir(), 'fleetbase-upload-');
+        file_put_contents($path, $contents);
+
+        return new UploadedFile($path, $name, 'application/octet-stream', null, true);
+    };
+
+    expect(File::storageExtensionForUpload($upload($png, 'photo.PNG')))->toBe('png')
+        ->and(File::storageExtensionForUpload($upload($png, 'photo.jpg')))->toBe('png')
+        ->and(File::storageExtensionForUpload($upload($png . '<?php echo 1; ?>', 'shell.php')))->toBe('png')
+        ->and(File::storageExtensionForUpload($upload($png, 'shell.phtml')))->toBe('png')
+        ->and(File::storageExtensionForUpload($upload($png, 'no-extension')))->toBe('png')
+        ->and(File::storageExtensionForUpload($upload("id,name\n1,Alpha\n2,Beta\n", 'orders.csv')))->toBe('csv')
+        ->and(File::storageExtensionForUpload($upload('{"a":1}', 'config.json')))->toBe('json')
+        ->and(File::storageExtensionForUpload($upload('plain notes', 'notes.phar')))->toBe('txt')
+        ->and(File::storageExtensionForUpload($upload(str_repeat("\x00\x9f\x01\xfe", 16), 'blob.php5')))->toBe('bin');
+
+    $request = Request::create('/int/v1/files/upload', 'POST', [], [], ['file' => $upload($png . '<?php echo 1; ?>', 'shell.php')]);
+
+    expect(File::randomFileNameFromRequest($request))->toEndWith('.png')
+        ->and(File::randomFileNameFromRequest($request, 'file', 'webp'))->toEndWith('.webp');
+});

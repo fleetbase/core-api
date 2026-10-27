@@ -25,6 +25,44 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
 
         /*
         |--------------------------------------------------------------------------
+        | OAuth 2.0 / OpenID Connect provider ("Continue with Fleetbase")
+        |--------------------------------------------------------------------------
+        |
+        | Apps sign people in with their Fleetbase account and, with consent, act on
+        | one organization. The consent screen itself is in the console, backed by
+        | the int/v1/oauth-server routes below.
+        */
+        if (config('oauth-server.enabled', true)) {
+            $router->get('.well-known/openid-configuration', [Fleetbase\Http\Controllers\OAuthServer\DiscoveryController::class, 'configuration']);
+            $router->get('.well-known/oauth-authorization-server', [Fleetbase\Http\Controllers\OAuthServer\DiscoveryController::class, 'configuration']);
+            $router->prefix('oauth')->group(function ($router) {
+                $router->get('authorize', [Fleetbase\Http\Controllers\OAuthServer\AuthorizationController::class, 'start']);
+                $router->get('jwks', [Fleetbase\Http\Controllers\OAuthServer\DiscoveryController::class, 'jwks']);
+                $router->middleware(['throttle:600,1'])->group(function ($router) {
+                    $router->post('token', [Fleetbase\Http\Controllers\OAuthServer\TokenController::class, 'token']);
+                    $router->post('revoke', [Fleetbase\Http\Controllers\OAuthServer\TokenController::class, 'revoke']);
+                });
+                // RFC 7591, for software installed on many sites; see config oauth-server.registration.
+                $router->post('register', [Fleetbase\Http\Controllers\OAuthServer\RegistrationController::class, 'register'])
+                    ->middleware(['throttle:10,1']);
+                $router->middleware(['throttle:600,1'])->group(function ($router) {
+                    $router->match(['GET', 'POST'], 'userinfo', [Fleetbase\Http\Controllers\OAuthServer\ResourceController::class, 'userinfo'])
+                        ->middleware(Fleetbase\Http\Middleware\AuthenticateOAuthToken::class . ':openid');
+                    $router->get('v1/organization', [Fleetbase\Http\Controllers\OAuthServer\ResourceController::class, 'organization'])
+                        ->middleware(Fleetbase\Http\Middleware\AuthenticateOAuthToken::class . ':organization:read');
+                    $router->post('v1/api-key', [Fleetbase\Http\Controllers\OAuthServer\ResourceController::class, 'apiKey'])
+                        ->middleware(Fleetbase\Http\Middleware\AuthenticateOAuthToken::class . ':api-key:create');
+                    $router->delete('v1/api-key', [Fleetbase\Http\Controllers\OAuthServer\ResourceController::class, 'revokeApiKey'])
+                        ->middleware(Fleetbase\Http\Middleware\AuthenticateOAuthToken::class . ':api-key:create');
+                    // The scope is checked in the controller: each extension says which scope covers its types.
+                    $router->match(['GET', 'PUT', 'DELETE'], 'v1/review-access/{type}/{id}', [Fleetbase\Http\Controllers\OAuthServer\ResourceController::class, 'reviewAccess'])
+                        ->middleware(Fleetbase\Http\Middleware\AuthenticateOAuthToken::class);
+                });
+            });
+        }
+
+        /*
+        |--------------------------------------------------------------------------
         | Public/Consumable Routes
         |--------------------------------------------------------------------------
         |
@@ -77,6 +115,18 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                         $router->delete('{id}', 'ChatChannelController@delete');
                         $router->post('{id}/add-participant', 'ChatChannelController@addParticipant');
                         $router->delete('remove-participant/{participantId}', 'ChatChannelController@removeParticipant');
+                    }
+                );
+                // Webhook endpoints for API keys; signing secrets are only returned on create and rotate.
+                $router->group(
+                    ['prefix' => 'webhook-endpoints'],
+                    function ($router) {
+                        $router->post('/', 'WebhookEndpointController@create');
+                        $router->get('/', 'WebhookEndpointController@query');
+                        $router->get('{id}', 'WebhookEndpointController@find');
+                        $router->put('{id}', 'WebhookEndpointController@update');
+                        $router->post('{id}/rotate-secret', 'WebhookEndpointController@rotateSecret');
+                        $router->delete('{id}', 'WebhookEndpointController@delete');
                     }
                 );
                 $router->group(
@@ -192,6 +242,27 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                             function ($router) {
                                 // Realtime socket token for the signed-in console user.
                                 $router->post('socket/token', [Fleetbase\Http\Controllers\SocketAuthController::class, 'token']);
+                                // App Review access for whatever an extension registered (stores, Navigator, ...).
+                                $router->get('review-access/{type}/{id}', 'ReviewAccessController@show');
+                                $router->put('review-access/{type}/{id}', 'ReviewAccessController@update');
+                                // "Continue with Fleetbase": the console's consent screen, Connected apps,
+                                // and Admin → OAuth Apps (AdminRequest checks for a system admin).
+                                $router->group(['prefix' => 'oauth-server'], function ($router) {
+                                    $router->get('authorization', 'OAuthConsentController@show');
+                                    $router->post('authorization', 'OAuthConsentController@approve');
+                                    $router->delete('authorization', 'OAuthConsentController@deny');
+                                    $router->get('connected-apps', 'ConnectedAppController@index');
+                                    $router->delete('connected-apps/{uuid}', 'ConnectedAppController@destroy');
+                                    $router->get('apps', 'OAuthAppController@index');
+                                    $router->post('apps', 'OAuthAppController@store');
+                                    $router->get('apps/{id}', 'OAuthAppController@show');
+                                    $router->put('apps/{id}', 'OAuthAppController@update');
+                                    $router->post('apps/{id}/rotate-secret', 'OAuthAppController@rotateSecret');
+                                    $router->post('apps/{id}/disable', 'OAuthAppController@disable');
+                                    $router->post('apps/{id}/enable', 'OAuthAppController@enable');
+                                    $router->get('apps/{id}/grants', 'OAuthAppController@grants');
+                                    $router->delete('grants/{uuid}', 'OAuthAppController@revokeGrant');
+                                });
                                 $router->group(
                                     ['prefix' => 'lookup'],
                                     function ($router) {
@@ -315,6 +386,8 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                                     function ($router, $controller) {
                                         $router->patch('enable/{id}', $controller('enable'));
                                         $router->patch('disable/{id}', $controller('disable'));
+                                        $router->get('{id}/secret', $controller('revealSecret'));
+                                        $router->post('{id}/rotate-secret', $controller('rotateSecret'));
                                         $router->get('events', $controller('events'));
                                         $router->get('versions', $controller('versions'));
                                     }
