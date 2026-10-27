@@ -63,6 +63,8 @@ class OAuthClient extends EloquentModel
         'official',
         'development',
         'created_by_uuid',
+        'software_id',
+        'registration_key',
     ];
 
     /**
@@ -103,6 +105,22 @@ class OAuthClient extends EloquentModel
                 $client->id = (string) Str::uuid();
             }
         });
+    }
+
+    /**
+     * The key that identifies a dynamically registered client: one per software and redirect URI.
+     */
+    public static function registrationKey(string $softwareId, string $redirectUri): string
+    {
+        return hash('sha256', $softwareId . '|' . $redirectUri);
+    }
+
+    /**
+     * Whether the client registered itself through POST /oauth/register.
+     */
+    public function isRegistered(): bool
+    {
+        return !empty($this->software_id);
     }
 
     /**

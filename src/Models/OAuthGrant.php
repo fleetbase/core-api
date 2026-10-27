@@ -132,7 +132,50 @@ class OAuthGrant extends EloquentModel
             }
 
             static::revokeTokensFor([$this->uuid], $connection);
+            static::expireMintedKeysFor([$this->uuid], $connection);
         });
+    }
+
+    /**
+     * Expire the API keys an app created through api-key:create once it has no grant left in that
+     * organization.
+     *
+     * A key belongs to the app and the organization rather than to one user, so it survives as
+     * long as any admin's grant for that pair does. Called after the grants have been revoked.
+     *
+     * @param array<int, string> $grantUuids
+     */
+    public static function expireMintedKeysFor(array $grantUuids, ?string $connection = null): void
+    {
+        if (empty($grantUuids)) {
+            return;
+        }
+
+        $db = DB::connection($connection ?? 'mysql');
+        if (!$db->getSchemaBuilder()->hasColumn('api_credentials', 'oauth_client_id')) {
+            return;
+        }
+
+        $pairs = $db->table('oauth_grants')->whereIn('uuid', $grantUuids)->whereNotNull('company_uuid')
+            ->select(['client_id', 'company_uuid'])->distinct()->get();
+
+        foreach ($pairs as $pair) {
+            $stillGranted = $db->table('oauth_grants')
+                ->where('client_id', $pair->client_id)
+                ->where('company_uuid', $pair->company_uuid)
+                ->whereNull('revoked_at')
+                ->exists();
+            if ($stillGranted) {
+                continue;
+            }
+
+            $db->table('api_credentials')
+                ->where('oauth_client_id', $pair->client_id)
+                ->where('company_uuid', $pair->company_uuid)
+                ->whereNull('deleted_at')
+                ->where(fn ($query) => $query->whereNull('expires_at')->orWhere('expires_at', '>', now()))
+                ->update(['expires_at' => now(), 'updated_at' => now()]);
+        }
     }
 
     /**

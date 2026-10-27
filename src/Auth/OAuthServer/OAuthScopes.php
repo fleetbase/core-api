@@ -55,6 +55,10 @@ class OAuthScopes
             'description'  => "See {organization}'s name, logo, currency and country",
             'organization' => true,
         ]);
+        static::register('api-key:create', [
+            'description'  => 'Create an API key for this app in {organization}',
+            'organization' => true,
+        ]);
     }
 
     public static function has(string $scope): bool

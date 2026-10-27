@@ -42,11 +42,18 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                     $router->post('token', [Fleetbase\Http\Controllers\OAuthServer\TokenController::class, 'token']);
                     $router->post('revoke', [Fleetbase\Http\Controllers\OAuthServer\TokenController::class, 'revoke']);
                 });
+                // RFC 7591, for software installed on many sites; see config oauth-server.registration.
+                $router->post('register', [Fleetbase\Http\Controllers\OAuthServer\RegistrationController::class, 'register'])
+                    ->middleware(['throttle:10,1']);
                 $router->middleware(['throttle:600,1'])->group(function ($router) {
                     $router->match(['GET', 'POST'], 'userinfo', [Fleetbase\Http\Controllers\OAuthServer\ResourceController::class, 'userinfo'])
                         ->middleware(Fleetbase\Http\Middleware\AuthenticateOAuthToken::class . ':openid');
                     $router->get('v1/organization', [Fleetbase\Http\Controllers\OAuthServer\ResourceController::class, 'organization'])
                         ->middleware(Fleetbase\Http\Middleware\AuthenticateOAuthToken::class . ':organization:read');
+                    $router->post('v1/api-key', [Fleetbase\Http\Controllers\OAuthServer\ResourceController::class, 'apiKey'])
+                        ->middleware(Fleetbase\Http\Middleware\AuthenticateOAuthToken::class . ':api-key:create');
+                    $router->delete('v1/api-key', [Fleetbase\Http\Controllers\OAuthServer\ResourceController::class, 'revokeApiKey'])
+                        ->middleware(Fleetbase\Http\Middleware\AuthenticateOAuthToken::class . ':api-key:create');
                     // The scope is checked in the controller: each extension says which scope covers its types.
                     $router->match(['GET', 'PUT', 'DELETE'], 'v1/review-access/{type}/{id}', [Fleetbase\Http\Controllers\OAuthServer\ResourceController::class, 'reviewAccess'])
                         ->middleware(Fleetbase\Http\Middleware\AuthenticateOAuthToken::class);

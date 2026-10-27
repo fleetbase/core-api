@@ -6,10 +6,13 @@ use Fleetbase\Auth\OAuthServer\OAuthClaims;
 use Fleetbase\Auth\OAuthServer\OAuthScopes;
 use Fleetbase\Http\Controllers\Controller;
 use Fleetbase\Http\Middleware\AuthenticateOAuthToken;
+use Fleetbase\Models\ApiCredential;
 use Fleetbase\Models\Company;
 use Fleetbase\Support\AppReview;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Illuminate\Support\Str;
 
 /**
  * Endpoints an app calls with an access token from "Continue with Fleetbase".
@@ -37,6 +40,121 @@ class ResourceController extends Controller
         $company = AuthenticateOAuthToken::company($request);
 
         return new JsonResponse(['organization' => static::organizationPayload($company)], 200, ['Cache-Control' => 'no-store']);
+    }
+
+    /**
+     * POST /oauth/v1/api-key (scope: api-key:create).
+     *
+     * The live Fleetbase API key (`flb_live_…`) for this app in the token's organization. Creates
+     * one, named after the app, or returns the one this app created before; a key someone else
+     * created is never returned, whatever its name. It is listed under Developers → API Keys, and
+     * revoking the app's last grant in the organization expires it.
+     *
+     * An app that serves many installations from one client (one Shopify app, many shops) passes
+     * `installation`, e.g. "store.myshopify.com": each installation gets its own key, named
+     * "{app} ({installation})". Without it the app has one key per organization.
+     */
+    public function apiKey(Request $request): JsonResponse
+    {
+        $token        = AuthenticateOAuthToken::token($request);
+        $company      = AuthenticateOAuthToken::company($request);
+        $client       = $token->client;
+        $installation = static::installation($request);
+        if ($installation === false) {
+            return static::invalidInstallation();
+        }
+
+        // ApiCredential decides test mode from this console header; a key minted here is always live.
+        $request->headers->remove('Access-Console-Sandbox');
+
+        $credential = static::mintedKeys($company->uuid, $client->id, $installation)->where('test_mode', false)->first();
+
+        $created = false;
+        if (!$credential) {
+            $credential = ApiCredential::create([
+                'company_uuid'       => $company->uuid,
+                'user_uuid'          => $token->user_uuid,
+                'name'               => $installation === null ? $client->name : Str::limit($client->name . ' (' . $installation . ')', 250, ''),
+                'oauth_client_id'    => $client->id,
+                'oauth_installation' => $installation,
+                'test_mode'          => false,
+            ]);
+            $created = true;
+        }
+
+        $credential = $credential->fresh() ?? $credential;
+
+        return new JsonResponse([
+            'api_key' => [
+                'id'           => $credential->public_id ?? $credential->uuid,
+                'name'         => $credential->name,
+                'key'          => $credential->key,
+                'installation' => $installation,
+                'created'      => $created,
+                'created_at'   => $credential->created_at,
+            ],
+        ], $created ? 201 : 200, ['Cache-Control' => 'no-store']);
+    }
+
+    /**
+     * DELETE /oauth/v1/api-key (scope: api-key:create).
+     *
+     * Expires the key this app minted in the token's organization for one installation (or the
+     * app-wide key when `installation` is omitted), without touching the grant or other
+     * installations' keys. Idempotent: 204 whether or not there was a key.
+     */
+    public function revokeApiKey(Request $request): JsonResponse|Response
+    {
+        $token        = AuthenticateOAuthToken::token($request);
+        $company      = AuthenticateOAuthToken::company($request);
+        $installation = static::installation($request);
+        if ($installation === false) {
+            return static::invalidInstallation();
+        }
+
+        static::mintedKeys($company->uuid, $token->client->id, $installation)
+            ->get()
+            ->each(fn (ApiCredential $credential) => $credential->forceFill(['expires_at' => now()])->save());
+
+        return new Response('', 204, ['Cache-Control' => 'no-store']);
+    }
+
+    /**
+     * The unexpired keys an app minted in an organization for one installation (null = app-wide).
+     */
+    protected static function mintedKeys(string $companyUuid, string $clientId, ?string $installation)
+    {
+        return ApiCredential::where('company_uuid', $companyUuid)
+            ->where('oauth_client_id', $clientId)
+            ->when(
+                $installation === null,
+                fn ($query) => $query->whereNull('oauth_installation'),
+                fn ($query) => $query->where('oauth_installation', $installation)
+            )
+            ->where(fn ($query) => $query->whereNull('expires_at')->orWhere('expires_at', '>', now()));
+    }
+
+    /**
+     * The optional `installation`: null when absent or blank, false when it isn't a usable string.
+     */
+    protected static function installation(Request $request): string|false|null
+    {
+        $installation = $request->input('installation');
+        if ($installation === null) {
+            return null;
+        }
+        if (!is_string($installation) || mb_strlen(trim($installation)) > 190 || preg_match('/[\x00-\x1F\x7F]/', $installation)) {
+            return false;
+        }
+
+        $installation = trim($installation);
+
+        return $installation === '' ? null : $installation;
+    }
+
+    protected static function invalidInstallation(): JsonResponse
+    {
+        return new JsonResponse(['error' => 'invalid_request', 'error_description' => '`installation` must be a string of at most 190 characters.'], 400, ['Cache-Control' => 'no-store']);
     }
 
     /**

@@ -92,6 +92,7 @@ class OAuthAppController extends Controller
         $grants = OAuthGrant::active()->where('client_id', $client->id)->pluck('uuid')->all();
         OAuthGrant::whereIn('uuid', $grants)->update(['revoked_at' => now()]);
         OAuthGrant::revokeTokensFor($grants);
+        OAuthGrant::expireMintedKeysFor($grants);
 
         return new JsonResponse(['app' => $client->fresh()]);
     }
