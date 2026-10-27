@@ -69,6 +69,23 @@ return [
      */
     'sms_auth_bypass_code' => env('SMS_AUTH_BYPASS_CODE'),
 
+    /*
+     |--------------------------------------------------------------------------
+     | Self-service Sign-up
+     |--------------------------------------------------------------------------
+     |
+     | When false, the onboarding endpoint only creates the first organization.
+     | Once an organization exists, new sign-ups are refused, so a self-hosted
+     | install can stay invite-only. OAUTH_ALLOW_REGISTRATION covers sign-ups
+     | that start from an OAuth provider.
+     |
+     | Environment variable: ONBOARD_ALLOW_REGISTRATION
+     |
+     */
+    'onboard' => [
+        'allow_registration' => env('ONBOARD_ALLOW_REGISTRATION', true),
+    ],
+
     'user_cache' => [
         'enabled'     => env('USER_CACHE_ENABLED', true),
         'server_ttl'  => (int) env('USER_CACHE_SERVER_TTL', 900), // 15 minutes

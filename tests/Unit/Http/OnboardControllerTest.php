@@ -136,6 +136,7 @@ function onboard_controller_database(): Capsule
         'database.default'                             => 'mysql',
         'database.connections.mysql'                   => $connection,
         'fleetbase.connection.db'                      => 'mysql',
+        'fleetbase.onboard.allow_registration'         => true,
         'permission.models.permission'                 => Fleetbase\Models\Permission::class,
         'permission.models.role'                       => Fleetbase\Models\Role::class,
         'permission.cache.key'                         => 'spatie.permission.cache',
@@ -510,6 +511,35 @@ test('onboard controller creates later accounts without returning an admin token
         ->and($company->owner_uuid)->toBe($user->uuid)
         ->and($company->onboarding_completed_by_uuid)->toBe($user->uuid)
         ->and($capsule->getConnection('mysql')->table('personal_access_tokens')->count())->toBe(1);
+});
+
+test('onboard controller refuses new sign-ups once an organization exists when registration is closed', function () {
+    $capsule = onboard_controller_database();
+    onboard_controller_seed_user($capsule);
+    config(['fleetbase.onboard.allow_registration' => false]);
+
+    $response = onboard_controller()->createAccount(onboard_create_account_request([
+        'name'              => 'Katherine Johnson',
+        'email'             => 'katherine@example.test',
+        'organization_name' => 'Orbital Logistics',
+    ]));
+
+    expect($response->getStatusCode())->toBe(403)
+        ->and($response->getData(true)['code'])->toBe('registration_disabled')
+        ->and(User::where('email', 'katherine@example.test')->exists())->toBeFalse()
+        ->and(Company::where('name', 'Orbital Logistics')->exists())->toBeFalse()
+        ->and($capsule->getConnection('mysql')->table('companies')->count())->toBe(1);
+});
+
+test('onboard controller still creates the first organization when registration is closed', function () {
+    onboard_controller_database();
+    config(['fleetbase.onboard.allow_registration' => false]);
+
+    $response = onboard_controller()->createAccount(onboard_create_account_request());
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and(User::where('email', 'grace@example.test')->first()->type)->toBe('admin')
+        ->and(Company::where('name', 'Compiler Logistics')->exists())->toBeTrue();
 });
 
 test('onboard controller validates verification resend session identity before creating codes', function () {
