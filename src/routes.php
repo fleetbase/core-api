@@ -52,6 +52,8 @@ Route::prefix(config('fleetbase.api.routing.prefix', '/'))->namespace('Fleetbase
                         ->middleware(Fleetbase\Http\Middleware\AuthenticateOAuthToken::class . ':organization:read');
                     $router->post('v1/api-key', [Fleetbase\Http\Controllers\OAuthServer\ResourceController::class, 'apiKey'])
                         ->middleware(Fleetbase\Http\Middleware\AuthenticateOAuthToken::class . ':api-key:create');
+                    $router->delete('v1/api-key', [Fleetbase\Http\Controllers\OAuthServer\ResourceController::class, 'revokeApiKey'])
+                        ->middleware(Fleetbase\Http\Middleware\AuthenticateOAuthToken::class . ':api-key:create');
                     // The scope is checked in the controller: each extension says which scope covers its types.
                     $router->match(['GET', 'PUT', 'DELETE'], 'v1/review-access/{type}/{id}', [Fleetbase\Http\Controllers\OAuthServer\ResourceController::class, 'reviewAccess'])
                         ->middleware(Fleetbase\Http\Middleware\AuthenticateOAuthToken::class);

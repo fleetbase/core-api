@@ -83,7 +83,10 @@ function oauth_registration_api_credentials(): void
             return 'hashed:' . $value;
         }
     });
+    // The test cache has no tags, so keep only the listeners that shape the row: the uuid
+    // (HasUuid) and the generated key (ApiCredentialObserver), as in production.
     ApiCredential::flushEventListeners();
+    ApiCredential::creating(fn (ApiCredential $credential) => $credential->uuid ??= (string) Illuminate\Support\Str::uuid());
     ApiCredential::created(fn (ApiCredential $credential) => (new ApiCredentialObserver())->created($credential));
 }
 
@@ -103,20 +106,38 @@ function oauth_registration_tokens(OAuthClient $client, string $userUuid = 'user
 }
 
 /**
- * Call POST /oauth/v1/api-key the way the route does: the middleware first, then the controller.
+ * Call /oauth/v1/api-key the way the route does: the middleware first, then the controller.
  */
-function oauth_registration_api_key(string $accessToken, array $headers = []): array
+function oauth_registration_api_key(string $accessToken, array $headers = [], string $method = 'POST', array $input = []): array
 {
-    $server  = [];
+    $server = [];
     foreach ($headers as $name => $value) {
         $server['HTTP_' . strtoupper(str_replace('-', '_', $name))] = $value;
     }
-    $request = Request::create('/oauth/v1/api-key', 'POST', [], [], [], array_merge(['HTTP_AUTHORIZATION' => 'Bearer ' . $accessToken], $server));
+    $request = Request::create('/oauth/v1/api-key', $method, $input, [], [], array_merge(['HTTP_AUTHORIZATION' => 'Bearer ' . $accessToken], $server));
     Container::getInstance()->instance('request', $request);
 
-    $response = (new AuthenticateOAuthToken(oauth_test_server()))->handle($request, fn (Request $request) => (new ResourceController())->apiKey($request), 'api-key:create');
+    $controller = new ResourceController();
+    $response   = (new AuthenticateOAuthToken(oauth_test_server()))->handle(
+        $request,
+        fn (Request $request) => $method === 'DELETE' ? $controller->revokeApiKey($request) : $controller->apiKey($request),
+        'api-key:create'
+    );
 
-    return [$response->getStatusCode(), json_decode($response->getContent(), true)];
+    return [$response->getStatusCode(), json_decode($response->getContent() ?: 'null', true)];
+}
+
+/**
+ * Tokens for a pre-registered official app that serves many installations (the Shopify app's shape).
+ */
+function oauth_registration_shared_client_tokens(): array
+{
+    [$client, $secret] = oauth_test_client(['name' => 'Fleetbase for Shopify', 'allowed_scopes' => ['organization:read', 'api-key:create']]);
+    $verifier          = oauth_test_verifier();
+    $code              = oauth_test_code($client, $verifier, ['scope' => 'organization:read api-key:create', 'nonce' => null]);
+    [, $tokens]        = oauth_test_exchange($client, $secret, $code, $verifier);
+
+    return [$client, $tokens['access_token']];
 }
 
 describe('registration', function () {
@@ -377,3 +398,92 @@ function oauth_flow_registration_error(OAuthClient $client, string $redirect): s
 
     return 'accepted';
 }
+
+describe('installations of one shared app', function () {
+    it('gives each installation its own key, named after it, and returns it again', function () {
+        oauth_registration_api_credentials();
+        [$client, $token] = oauth_registration_shared_client_tokens();
+
+        [$statusA, $a]  = oauth_registration_api_key($token, [], 'POST', ['installation' => 'alpha.myshopify.com']);
+        [$statusB, $b]  = oauth_registration_api_key($token, [], 'POST', ['installation' => ' beta.myshopify.com ']);
+        [$again, $a2]   = oauth_registration_api_key($token, [], 'POST', ['installation' => 'alpha.myshopify.com']);
+        [$wide, $plain] = oauth_registration_api_key($token);
+
+        expect([$statusA, $statusB, $again, $wide])->toBe([201, 201, 200, 201])
+            ->and($a['api_key']['name'])->toBe('Fleetbase for Shopify (alpha.myshopify.com)')
+            ->and($a['api_key']['installation'])->toBe('alpha.myshopify.com')
+            ->and($b['api_key']['installation'])->toBe('beta.myshopify.com')
+            ->and($b['api_key']['key'])->not->toBe($a['api_key']['key'])
+            ->and($a2['api_key']['key'])->toBe($a['api_key']['key'])
+            ->and($plain['api_key']['name'])->toBe('Fleetbase for Shopify')
+            ->and($plain['api_key']['installation'])->toBeNull()
+            ->and($plain['api_key']['key'])->not->toBeIn([$a['api_key']['key'], $b['api_key']['key']])
+            ->and(ApiCredential::query()->where('oauth_client_id', $client->id)->count())->toBe(3);
+    });
+
+    it('deletes one installation\'s key, leaving the others and the grant', function () {
+        oauth_registration_api_credentials();
+        [$client, $token] = oauth_registration_shared_client_tokens();
+        [, $a]            = oauth_registration_api_key($token, [], 'POST', ['installation' => 'alpha.myshopify.com']);
+        [, $b]            = oauth_registration_api_key($token, [], 'POST', ['installation' => 'beta.myshopify.com']);
+        [, $wide]         = oauth_registration_api_key($token);
+
+        [$status, $body] = oauth_registration_api_key($token, [], 'DELETE', ['installation' => 'alpha.myshopify.com']);
+        [$repeat]        = oauth_registration_api_key($token, [], 'DELETE', ['installation' => 'alpha.myshopify.com']);
+        $live            = ApiCredential::query()->pluck('key')->all();
+
+        expect($status)->toBe(204)
+            ->and($body)->toBeNull()
+            ->and($repeat)->toBe(204)
+            ->and($live)->not->toContain($a['api_key']['key'])
+            ->and($live)->toContain($b['api_key']['key'], $wide['api_key']['key'])
+            ->and(OAuthGrant::active()->where('client_id', $client->id)->count())->toBe(1);
+
+        // Without an installation only the app-wide key goes; installation keys stay.
+        oauth_registration_api_key($token, [], 'DELETE');
+        expect(ApiCredential::query()->pluck('key')->all())->toBe([$b['api_key']['key']]);
+
+        // A new key for the deleted installation is minted on request.
+        [$minted, $fresh] = oauth_registration_api_key($token, [], 'POST', ['installation' => 'alpha.myshopify.com']);
+        expect($minted)->toBe(201)->and($fresh['api_key']['key'])->not->toBe($a['api_key']['key']);
+    });
+
+    it('expires every installation\'s key when the grant is revoked', function () {
+        oauth_registration_api_credentials();
+        [$client, $token] = oauth_registration_shared_client_tokens();
+        oauth_registration_api_key($token, [], 'POST', ['installation' => 'alpha.myshopify.com']);
+        oauth_registration_api_key($token, [], 'POST', ['installation' => 'beta.myshopify.com']);
+        oauth_registration_api_key($token);
+
+        OAuthGrant::where('client_id', $client->id)->first()->revoke();
+
+        expect(ApiCredential::query()->count())->toBe(0)
+            ->and(Capsule::connection('mysql')->table('api_credentials')->whereNull('expires_at')->count())->toBe(0);
+    });
+
+    it('refuses an installation that is not a short plain string', function (mixed $installation) {
+        oauth_registration_api_credentials();
+        [, $token] = oauth_registration_shared_client_tokens();
+
+        foreach (['POST', 'DELETE'] as $method) {
+            [$status, $body] = oauth_registration_api_key($token, [], $method, ['installation' => $installation]);
+            expect($status)->toBe(400)->and($body['error'])->toBe('invalid_request');
+        }
+        expect(ApiCredential::query()->count())->toBe(0);
+    })->with([
+        'too long'      => [str_repeat('a', 191)],
+        'array'         => [['shop']],
+        'control chars' => ["shop\nevil"],
+    ]);
+
+    it('treats a blank installation as none', function () {
+        oauth_registration_api_credentials();
+        [, $token] = oauth_registration_shared_client_tokens();
+
+        [, $blank] = oauth_registration_api_key($token, [], 'POST', ['installation' => '   ']);
+        [, $none]  = oauth_registration_api_key($token);
+
+        expect($blank['api_key']['installation'])->toBeNull()
+            ->and($none['api_key']['key'])->toBe($blank['api_key']['key']);
+    });
+});
