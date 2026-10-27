@@ -47,4 +47,31 @@ return [
      * The console page that shows the consent screen.
      */
     'console_authorize_path' => '/oauth/authorize',
+
+    /*
+     * Dynamic client registration (RFC 7591), for software installed on many sites.
+     *
+     * A plugin such as Fleetbase for WooCommerce runs on every merchant's own domain, so it cannot
+     * share one registered redirect URI. Each install registers its own public PKCE client at
+     * POST /oauth/register instead, naming the software it is and its one redirect URI.
+     *
+     * Only the software listed here can register, and only with the scopes listed for it. The
+     * client is named "{name} ({redirect host})" and is never marked official, so the consent
+     * screen always shows which site is asking. Registering again with the same software and
+     * redirect URI returns the same client. Clients that never get a grant are pruned after
+     * `unused_client_hours`.
+     */
+    'registration' => [
+        'enabled'             => env('OAUTH_SERVER_REGISTRATION_ENABLED', true),
+        'unused_client_hours' => (int) env('OAUTH_SERVER_REGISTRATION_UNUSED_HOURS', 24),
+        'software'            => [
+            'fleetbase-woocommerce' => [
+                'name'        => 'Fleetbase for WooCommerce',
+                'description' => 'Live delivery quotes, order sync and tracking for a WooCommerce store.',
+                'website_url' => 'https://github.com/fleetbase/woocommerce',
+                'logo_url'    => env('OAUTH_SERVER_WOOCOMMERCE_LOGO_URL'),
+                'scopes'      => ['organization:read', 'api-key:create'],
+            ],
+        ],
+    ],
 ];

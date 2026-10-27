@@ -537,7 +537,9 @@ class OAuthServer
      */
     public function discovery(): array
     {
-        return [
+        $registration = config('oauth-server.registration.enabled', true) ? ['registration_endpoint' => $this->endpoint('oauth/register')] : [];
+
+        return $registration + [
             'issuer'                                         => $this->issuer(),
             'authorization_endpoint'                         => $this->endpoint('oauth/authorize'),
             'token_endpoint'                                 => $this->endpoint('oauth/token'),

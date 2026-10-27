@@ -395,7 +395,7 @@ describe('artisan', function () {
         [$code, $output] = oauth_console_command(new OAuthServerPrune(), ['--days' => '7']);
 
         expect($code)->toBe(0)
-            ->and($output)->toContain('Deleted 1 codes, 1 access tokens and 1 refresh tokens.')
+            ->and($output)->toContain('Deleted 1 codes, 1 access tokens, 1 refresh tokens and 0 unused registered clients.')
             ->and(OAuthAuthCode::count())->toBe(1)
             ->and($fresh)->toBeString();
     });

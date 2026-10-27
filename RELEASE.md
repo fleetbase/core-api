@@ -13,6 +13,8 @@
   - Replayed codes revoke their tokens; a replayed refresh token revokes the whole grant.
   - System admins register apps, rotate secrets, turn apps off and revoke grants (`int/v1/oauth-server/apps`). Users list and remove their connected apps (`int/v1/oauth-server/connected-apps`) and get an email when they authorize a new one.
   - Artisan: `oauth-server:keys`, `oauth-server:client create|rotate|list`, `oauth-server:prune` (scheduled daily).
+- **Dynamic client registration for software installed on many sites** (RFC 7591). A plugin on a merchant's own domain cannot share one registered redirect URI, so each install registers its own public PKCE client at `POST /oauth/register` (throttled, advertised as `registration_endpoint` in discovery). Only software listed under `oauth-server.registration.software` can register, with the scopes listed there; today that is `fleetbase-woocommerce` (`organization:read`, `api-key:create`). Each client has exactly one redirect URI (https, or http on loopback as a development client), is never official, and is named after its host, e.g. "Fleetbase for WooCommerce (shop.example.com)", which is what the consent screen and Connected apps show. Registering again returns the same client; clients that never get a grant are pruned after a day. `OAUTH_SERVER_REGISTRATION_ENABLED=false` turns it off.
+- **`api-key:create` scope** and `POST /oauth/v1/api-key`. Creates a live API key named after the app in the token's organization, or returns the one that app created before (tracked by the new `api_credentials.oauth_client_id`, never by name). The key is listed under Developers → API Keys. When the app's last grant in that organization is revoked (Connected apps, an admin revoking it, or the app being turned off), the key expires. This lets an integration such as Fleetbase for WooCommerce connect without anyone pasting a key.
 
 ## Security
 
@@ -22,6 +24,6 @@
 
 ## Upgrade Steps
 
-- Run migrations: `php artisan migrate` adds the nullable `webhook_endpoints.secret` column, the `review_accesses` table and the `oauth_*` provider tables (`oauth_clients`, `oauth_grants`, `oauth_auth_codes`, `oauth_access_tokens`, `oauth_refresh_tokens`).
+- Run migrations: `php artisan migrate` adds the nullable `webhook_endpoints.secret` column, the `review_accesses` table, the `oauth_*` provider tables (`oauth_clients`, `oauth_grants`, `oauth_auth_codes`, `oauth_access_tokens`, `oauth_refresh_tokens`), `oauth_clients.software_id` and `registration_key`, and `api_credentials.oauth_client_id`.
 - To use Sign in with Fleetbase, give every API instance the same signing key pair: `php artisan oauth-server:keys` (key files in `storage/`), or `php artisan oauth-server:keys --show` and set `OAUTH_SERVER_PRIVATE_KEY` / `OAUTH_SERVER_PUBLIC_KEY`. Set `OAUTH_SERVER_ISSUER` if the public API URL differs from `APP_URL`. New dependencies: `league/oauth2-server`, `nyholm/psr7`, `symfony/psr-http-message-bridge`.
 - The consent screen, Admin → Auth Config → OAuth Apps and Account → Auth → Connected apps ship in the console (fleetbase/fleetbase#734). Storefront's `storefront:*` scopes ship in fleetbase/storefront#163.

@@ -6,6 +6,7 @@ use Fleetbase\Auth\OAuthServer\OAuthClaims;
 use Fleetbase\Auth\OAuthServer\OAuthScopes;
 use Fleetbase\Http\Controllers\Controller;
 use Fleetbase\Http\Middleware\AuthenticateOAuthToken;
+use Fleetbase\Models\ApiCredential;
 use Fleetbase\Models\Company;
 use Fleetbase\Support\AppReview;
 use Illuminate\Http\JsonResponse;
@@ -37,6 +38,54 @@ class ResourceController extends Controller
         $company = AuthenticateOAuthToken::company($request);
 
         return new JsonResponse(['organization' => static::organizationPayload($company)], 200, ['Cache-Control' => 'no-store']);
+    }
+
+    /**
+     * POST /oauth/v1/api-key (scope: api-key:create).
+     *
+     * The live Fleetbase API key (`flb_live_…`) for this app in the token's organization. Creates
+     * one, named after the app, or returns the one this app created before; a key someone else
+     * created is never returned, whatever its name. It is listed under Developers → API Keys, and
+     * revoking the app's last grant in the organization expires it.
+     */
+    public function apiKey(Request $request): JsonResponse
+    {
+        $token   = AuthenticateOAuthToken::token($request);
+        $company = AuthenticateOAuthToken::company($request);
+        $client  = $token->client;
+
+        // ApiCredential decides test mode from this console header; a key minted here is always live.
+        $request->headers->remove('Access-Console-Sandbox');
+
+        $credential = ApiCredential::where('company_uuid', $company->uuid)
+            ->where('oauth_client_id', $client->id)
+            ->where('test_mode', false)
+            ->where(fn ($query) => $query->whereNull('expires_at')->orWhere('expires_at', '>', now()))
+            ->first();
+
+        $created = false;
+        if (!$credential) {
+            $credential = ApiCredential::create([
+                'company_uuid'    => $company->uuid,
+                'user_uuid'       => $token->user_uuid,
+                'name'            => $client->name,
+                'oauth_client_id' => $client->id,
+                'test_mode'       => false,
+            ]);
+            $created = true;
+        }
+
+        $credential = $credential->fresh() ?? $credential;
+
+        return new JsonResponse([
+            'api_key' => [
+                'id'         => $credential->public_id ?? $credential->uuid,
+                'name'       => $credential->name,
+                'key'        => $credential->key,
+                'created'    => $created,
+                'created_at' => $credential->created_at,
+            ],
+        ], $created ? 201 : 200, ['Cache-Control' => 'no-store']);
     }
 
     /**
