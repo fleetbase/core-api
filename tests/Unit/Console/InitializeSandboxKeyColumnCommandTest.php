@@ -28,31 +28,13 @@ class InitializeSandboxKeyColumnDbFake
 class InitializeSandboxKeyColumnConnectionFake
 {
     public function __construct(
-        public InitializeSandboxKeyColumnDoctrineSchemaManagerFake $doctrineSchemaManager,
         public InitializeSandboxKeyColumnSchemaBuilderFake $schemaBuilder,
     ) {
-    }
-
-    public function getDoctrineSchemaManager(): InitializeSandboxKeyColumnDoctrineSchemaManagerFake
-    {
-        return $this->doctrineSchemaManager;
     }
 
     public function getSchemaBuilder(): InitializeSandboxKeyColumnSchemaBuilderFake
     {
         return $this->schemaBuilder;
-    }
-}
-
-class InitializeSandboxKeyColumnDoctrineSchemaManagerFake
-{
-    public function __construct(private array $tables)
-    {
-    }
-
-    public function listTableNames(): array
-    {
-        return $this->tables;
     }
 }
 
@@ -62,6 +44,11 @@ class InitializeSandboxKeyColumnSchemaBuilderFake
 
     public function __construct(private array $columnsByTable)
     {
+    }
+
+    public function getTables(): array
+    {
+        return array_map(fn ($table) => ['name' => $table], array_keys($this->columnsByTable));
     }
 
     public function hasColumn(string $table, string $column): bool
@@ -133,11 +120,9 @@ function initialize_sandbox_key_column_database(): InitializeSandboxKeyColumnDbF
 
     return new InitializeSandboxKeyColumnDbFake([
         'sandbox' => new InitializeSandboxKeyColumnConnectionFake(
-            new InitializeSandboxKeyColumnDoctrineSchemaManagerFake(['orders', 'permissions', 'telescope_entries', 'files']),
             $sandboxSchema
         ),
         'mysql' => new InitializeSandboxKeyColumnConnectionFake(
-            new InitializeSandboxKeyColumnDoctrineSchemaManagerFake(['orders', 'users', 'api_credentials']),
             $mysqlSchema
         ),
     ]);
