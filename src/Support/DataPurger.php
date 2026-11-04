@@ -275,42 +275,26 @@ class DataPurger
 
         $tables = collect();
 
-        if (method_exists(Schema::getConnection(), 'getDoctrineSchemaManager')) {
-            // Doctrine path (works for most drivers)
-            try {
-                $sm = Schema::getConnection()->getDoctrineSchemaManager();
-                foreach ($sm->listTableNames() as $t) {
-                    $tables->push($t);
-                }
-            } catch (\Throwable $e) {
-                // fallback below
-            }
+        // Schema builder path (works for most drivers)
+        try {
+            $tables = collect(array_column(Schema::getTables(), 'name'));
+        } catch (\Throwable $e) {
+            // fallback below
         }
 
         if ($tables->isEmpty()) {
             // Fallback per driver
             if ($driver === 'mysql') {
                 $dbName = $this->db->getDatabaseName();
+                // MySQL 8 reports catalog columns in upper case, so alias the name
                 $tables = $this->db->table('information_schema.tables')
+                    ->select('table_name as name')
                     ->where('table_schema', $dbName)
-                    ->pluck('table_name');
+                    ->pluck('name');
             } elseif ($driver === 'pgsql') {
                 $tables = $this->db->table('pg_catalog.pg_tables')
                     ->where('schemaname', 'public')
                     ->pluck('tablename');
-            } else {
-                // last resort: let Laravel try (may be driver-specific)
-                $tables = collect(Schema::getAllTables() ?? [])
-                    ->map(function ($row) {
-                        if (is_object($row) && isset($row->name)) {
-                            return $row->name;
-                        }
-                        if (is_array($row) && isset($row['name'])) {
-                            return $row['name'];
-                        }
-
-                        return (string) $row;
-                    });
             }
         }
 

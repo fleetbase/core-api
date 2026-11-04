@@ -4,7 +4,6 @@ namespace Fleetbase\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 class ForceResetDatabase extends Command
@@ -44,9 +43,8 @@ class ForceResetDatabase extends Command
             return;
         }
 
-        // Set the connection for the schema builder and DB facade
+        // Set the connection for the schema builder
         $schema = Schema::connection($connection);
-        $db     = DB::connection($connection);
 
         $this->info("Using connection: {$connection}");
 
@@ -54,7 +52,7 @@ class ForceResetDatabase extends Command
         $schema->disableForeignKeyConstraints();
 
         // Get all table names
-        $tables = $db->getDoctrineSchemaManager()->listTableNames();
+        $tables = array_column($schema->getTables(), 'name');
 
         // Delete all tables
         foreach ($tables as $table) {
