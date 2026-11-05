@@ -69,7 +69,7 @@ class Request implements Expansion
      *                  or directly returns the array parameter
      *
      * Not named `array`: Laravel 11+ ships a native Request::array(), and native methods
-     * win over macros, so a macro of that name silently stops running.
+     * win over macros, so a macro of that name silently stops running
      */
     public function inputArray()
     {

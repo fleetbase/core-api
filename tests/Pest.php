@@ -538,6 +538,11 @@ namespace {
             $container->make('config')->set($key, $value);
         }
 
+        // cknow/laravel-money 8 reads this from its package config, which this harness never loads.
+        if (!$container->make('config')->has('money.isoCurrenciesPath')) {
+            $container->make('config')->set('money.isoCurrenciesPath', dirname(__DIR__) . '/vendor/moneyphp/money/resources/currency.php');
+        }
+
         // The SMS guard is off unless a test turns it on: its counters live in the shared
         // cache, so otherwise one file's sends would rate-limit the next file's.
         if (!$container->make('config')->has('sms.guard.enabled')) {

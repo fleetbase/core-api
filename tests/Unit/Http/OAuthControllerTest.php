@@ -79,6 +79,16 @@ class OAuthControllerRedirectorFake
 
 class OAuthControllerEncrypterFake implements Encrypter
 {
+    public function getAllKeys(): array
+    {
+        return [];
+    }
+
+    public function getPreviousKeys(): array
+    {
+        return [];
+    }
+
     public function encrypt($value, $serialize = true)
     {
         return 'enc:' . base64_encode($serialize ? serialize($value) : (string) $value);
