@@ -1156,7 +1156,7 @@ namespace {
 
     test('a key with no profile is never limited and a profile only reaches its routes', function () {
         middleware_contracts_fixture();
-        \Illuminate\Support\Facades\Log::swap(new class {
+        Illuminate\Support\Facades\Log::swap(new class {
             public function notice(): void
             {
             }
@@ -1179,7 +1179,7 @@ namespace {
 
     test('a customer token is limited to customer routes only when enforcing', function () {
         middleware_contracts_fixture();
-        \Illuminate\Support\Facades\Log::swap(new class {
+        Illuminate\Support\Facades\Log::swap(new class {
             public function notice(): void
             {
             }
