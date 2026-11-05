@@ -7,6 +7,7 @@ use Fleetbase\Models\User;
 use Fleetbase\Support\Auth;
 use Fleetbase\Support\Utils;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\PersonalAccessToken;
 use Symfony\Component\HttpFoundation\Response;
@@ -107,6 +108,10 @@ class AuthenticateOnceWithBasicAuth
             return response()->error('Oops! These api credentials have expired', 401);
         }
 
+        if ($this->outsideKeyProfile($apiCredential, $request)) {
+            return response()->error('This API key cannot access this resource.', 403);
+        }
+
         // Login user
         //
         // Fails when the credential's creating user no longer resolves — the credential has
@@ -146,6 +151,10 @@ class AuthenticateOnceWithBasicAuth
                 return response()->error('Oops! The api credentials provided were not valid', 401);
             }
 
+            if ($request && $this->customerTokenOutOfBounds($sanctumToken, $request)) {
+                return response()->error('A customer token cannot access this resource.', 403);
+            }
+
             // Set user to session
             Auth::setSession($sanctumToken->tokenable);
 
@@ -166,6 +175,41 @@ class AuthenticateOnceWithBasicAuth
         }
 
         return response()->error('Oops! The api credentials provided were not valid', 401);
+    }
+
+    /**
+     * Whether a key with a profile is being used outside it. Only refuses when enforcing.
+     */
+    protected function outsideKeyProfile(ApiCredential $apiCredential, Request $request): bool
+    {
+        $profile = $apiCredential->profile;
+        if (!$profile) {
+            return false;
+        }
+
+        // An unknown profile allows nothing, so a typo can't leave a key unrestricted.
+        if ($request->is(...config('api.key_profiles.' . $profile, []))) {
+            return false;
+        }
+
+        Log::notice('API key used outside its profile.', ['credential' => $apiCredential->uuid, 'profile' => $profile, 'path' => $request->path()]);
+
+        return (bool) config('api.key_profiles_enforce', true);
+    }
+
+    /**
+     * Whether a customer's token is being used on a route that acts for the whole company.
+     * Only refuses when enforcing.
+     */
+    protected function customerTokenOutOfBounds(PersonalAccessToken $sanctumToken, Request $request): bool
+    {
+        if (!$sanctumToken->tokenable->isType('customer') || $request->is(...config('api.customer_token_paths', []))) {
+            return false;
+        }
+
+        Log::notice('Customer token used outside customer routes.', ['user' => $sanctumToken->tokenable->uuid, 'path' => $request->path()]);
+
+        return (bool) config('api.customer_tokens_enforce', false);
     }
 
     /**

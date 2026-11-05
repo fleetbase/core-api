@@ -89,4 +89,33 @@ return [
         // Default: false (only enabled when APP_DEBUG=true)
         'debug' => env('API_CACHE_DEBUG', false),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | API Key Profiles
+    |--------------------------------------------------------------------------
+    |
+    | The paths a key with a `profile` may reach. Keys with no profile are unrestricted.
+    | Set API_KEY_PROFILES_ENFORCE=false to only log what a profile would refuse.
+    |
+    */
+    'key_profiles' => [
+        'rider' => ['v1/customers', 'v1/customers/*', 'v1/service-quotes', 'v1/service-quotes/*', 'v1/order-configs', 'v1/order-configs/*'],
+    ],
+
+    'key_profiles_enforce' => env('API_KEY_PROFILES_ENFORCE', true),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Customer Tokens
+    |--------------------------------------------------------------------------
+    |
+    | Where a customer's own token may be used as a Bearer token. Anywhere else it acts for the
+    | whole company, so set API_CUSTOMER_TOKENS_ENFORCE=true to refuse it. It only logs by
+    | default, so that any integration relying on this shows up before it is switched on.
+    |
+    */
+    'customer_token_paths' => ['v1/customers', 'v1/customers/*', 'v1/socket/token'],
+
+    'customer_tokens_enforce' => env('API_CUSTOMER_TOKENS_ENFORCE', false),
 ];

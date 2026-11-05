@@ -69,6 +69,16 @@ namespace {
 
     class MiddlewareContractsBasicAuthHarness extends AuthenticateOnceWithBasicAuth
     {
+        public function outsideKeyProfilePublic($credential, Request $request): bool
+        {
+            return $this->outsideKeyProfile($credential, $request);
+        }
+
+        public function customerTokenOutOfBoundsPublic($token, Request $request): bool
+        {
+            return $this->customerTokenOutOfBounds($token, $request);
+        }
+
         public static function bindUserResolverPublic(?Request $request, $user): void
         {
             static::bindUserResolver($request, $user);
@@ -1142,6 +1152,73 @@ namespace {
             ->not->toBe($signature->invoke($middleware, $request('user-2', '10.0.0.5')))
             ->and($signature->invoke($middleware, $request(null, '10.0.0.5')))
             ->not->toBe($signature->invoke($middleware, $request(null, '10.0.0.6')));
+    });
+
+    test('a key with no profile is never limited and a profile only reaches its routes', function () {
+        middleware_contracts_fixture();
+        \Illuminate\Support\Facades\Log::swap(new class {
+            public function notice(): void
+            {
+            }
+        });
+        config(['api.key_profiles' => ['rider' => ['v1/customers', 'v1/customers/*']], 'api.key_profiles_enforce' => true]);
+
+        $harness = new MiddlewareContractsBasicAuthHarness();
+        $key     = fn (?string $profile) => (new Fleetbase\Models\ApiCredential())->forceFill(['profile' => $profile]);
+        $orders  = Request::create('/v1/orders', 'GET');
+        $me      = Request::create('/v1/customers/me', 'GET');
+
+        expect($harness->outsideKeyProfilePublic($key(null), $orders))->toBeFalse()
+            ->and($harness->outsideKeyProfilePublic($key('rider'), $me))->toBeFalse()
+            ->and($harness->outsideKeyProfilePublic($key('rider'), $orders))->toBeTrue()
+            ->and($harness->outsideKeyProfilePublic($key('typo'), $me))->toBeTrue();
+
+        config(['api.key_profiles_enforce' => false]);
+        expect($harness->outsideKeyProfilePublic($key('rider'), $orders))->toBeFalse();
+    });
+
+    test('a customer token is limited to customer routes only when enforcing', function () {
+        middleware_contracts_fixture();
+        \Illuminate\Support\Facades\Log::swap(new class {
+            public function notice(): void
+            {
+            }
+        });
+        config(['api.customer_token_paths' => ['v1/customers/*', 'v1/socket/token'], 'api.customer_tokens_enforce' => true]);
+
+        $harness = new MiddlewareContractsBasicAuthHarness();
+        $token   = fn (bool $customer) => new class($customer) extends PersonalAccessToken {
+            public function __construct(public bool $customer)
+            {
+            }
+
+            public function __get($key)
+            {
+                $customer = $this->customer;
+
+                return new class($customer) {
+                    public ?string $uuid = 'user-uuid';
+
+                    public function __construct(private bool $customer)
+                    {
+                    }
+
+                    public function isType(string $type): bool
+                    {
+                        return $this->customer && $type === 'customer';
+                    }
+                };
+            }
+        };
+        $contacts = Request::create('/v1/contacts', 'GET');
+
+        expect($harness->customerTokenOutOfBoundsPublic($token(true), $contacts))->toBeTrue()
+            ->and($harness->customerTokenOutOfBoundsPublic($token(false), $contacts))->toBeFalse()
+            ->and($harness->customerTokenOutOfBoundsPublic($token(true), Request::create('/v1/customers/me', 'GET')))->toBeFalse()
+            ->and($harness->customerTokenOutOfBoundsPublic($token(true), Request::create('/v1/socket/token', 'POST')))->toBeFalse();
+
+        config(['api.customer_tokens_enforce' => false]);
+        expect($harness->customerTokenOutOfBoundsPublic($token(true), $contacts))->toBeFalse();
     });
 
     test('basic auth middleware rejects requests without bearer credentials before continuing', function () {
