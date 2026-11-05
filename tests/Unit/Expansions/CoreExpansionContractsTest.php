@@ -379,6 +379,7 @@ test('request expansion helpers normalize parameters and global filter payloads'
         ->and($expansion->or()->call($request, ['missing', 'status'], 'fallback'))->toBe('active')
         ->and($expansion->or()->call($request, ['missing'], 'fallback'))->toBe('fallback')
         ->and($expansion->inputArray()->call($request, 'ids'))->toBe(['one', 'two', 'three'])
+        ->and($expansion->array()->call($request, 'ids'))->toBe(['one', 'two', 'three'])
         ->and($expansion->inputArray()->call($request, 'tags'))->toBe(['fragile', 'cold'])
         ->and($expansion->inputArray()->call($request, 'missing'))->toBe([])
         ->and($expansion->isString()->call($request, 'status'))->toBeTrue()
