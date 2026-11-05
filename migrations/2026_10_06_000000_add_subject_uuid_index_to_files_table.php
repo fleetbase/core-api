@@ -34,11 +34,7 @@ return new class extends Migration {
     protected function indexExists(string $table, string $index): bool
     {
         try {
-            $indexes = Schema::getConnection()
-                ->getDoctrineSchemaManager()
-                ->listTableIndexes($table);
-
-            return isset($indexes[$index]);
+            return collect(Schema::getIndexes($table))->contains('name', strtolower($index));
         } catch (Throwable $e) {
             return false;
         }
