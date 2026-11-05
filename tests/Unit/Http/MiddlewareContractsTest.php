@@ -332,6 +332,7 @@ namespace {
             });
             $schema->create('api_credentials', function ($table) {
                 $table->string('uuid')->primary();
+                $table->string('profile')->nullable();
                 $table->string('user_uuid')->nullable();
                 $table->string('company_uuid')->nullable();
                 $table->string('name')->nullable();
@@ -1152,6 +1153,61 @@ namespace {
             ->not->toBe($signature->invoke($middleware, $request('user-2', '10.0.0.5')))
             ->and($signature->invoke($middleware, $request(null, '10.0.0.5')))
             ->not->toBe($signature->invoke($middleware, $request(null, '10.0.0.6')));
+    });
+
+    test('basic auth middleware refuses a key outside its profile before it continues', function () {
+        $capsule = middleware_contracts_basic_auth_database();
+        session()->flush();
+        Illuminate\Support\Facades\Log::swap(new class {
+            public function notice(): void
+            {
+            }
+        });
+        config(['api.key_profiles' => ['rider' => ['v1/customers/*']], 'api.key_profiles_enforce' => true]);
+        $capsule->getConnection('mysql')->table('api_credentials')->where('uuid', 'credential-live')->update(['profile' => 'rider']);
+
+        $continued = false;
+        $next      = function () use (&$continued) {
+            $continued = true;
+
+            return new JsonResponse(['ok' => true]);
+        };
+        $refused = (new AuthenticateOnceWithBasicAuth())->handle(Request::create('/v1/orders', 'GET', [], [], [], ['HTTP_AUTHORIZATION' => 'Bearer flb_live_auth']), $next);
+
+        expect($continued)->toBeFalse()
+            ->and($refused->getStatusCode())->toBe(403)
+            ->and(session('api_credential'))->toBeNull();
+
+        (new AuthenticateOnceWithBasicAuth())->handle(Request::create('/v1/customers/me', 'GET', [], [], [], ['HTTP_AUTHORIZATION' => 'Bearer flb_live_auth']), $next);
+
+        expect($continued)->toBeTrue();
+    });
+
+    test('basic auth middleware refuses a customer token on company routes when enforcing', function () {
+        $capsule = middleware_contracts_basic_auth_database();
+        session()->flush();
+        Illuminate\Support\Facades\Log::swap(new class {
+            public function notice(): void
+            {
+            }
+        });
+        config(['api.customer_token_paths' => ['v1/customers/*'], 'api.customer_tokens_enforce' => true]);
+        $capsule->getConnection('mysql')->table('users')->where('uuid', 'sanctum-user-valid-company')->update(['type' => 'customer']);
+
+        $continued = false;
+        $next      = function () use (&$continued) {
+            $continued = true;
+
+            return new JsonResponse(['ok' => true]);
+        };
+        $refused = (new AuthenticateOnceWithBasicAuth())->handle(Request::create('/v1/contacts', 'GET', [], [], [], ['HTTP_AUTHORIZATION' => 'Bearer 2|plain-valid-company-token']), $next);
+
+        expect($continued)->toBeFalse()
+            ->and($refused->getStatusCode())->toBe(403);
+
+        (new AuthenticateOnceWithBasicAuth())->handle(Request::create('/v1/customers/me', 'GET', [], [], [], ['HTTP_AUTHORIZATION' => 'Bearer 2|plain-valid-company-token']), $next);
+
+        expect($continued)->toBeTrue();
     });
 
     test('a key with no profile is never limited and a profile only reaches its routes', function () {
