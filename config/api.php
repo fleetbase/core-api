@@ -100,7 +100,7 @@ return [
     |
     */
     'key_profiles' => [
-        'rider' => ['v1/customers', 'v1/customers/*', 'v1/service-quotes', 'v1/service-quotes/*', 'v1/order-configs', 'v1/order-configs/*'],
+        'rider' => ['v1/customers', 'v1/customers/*', 'v1/service-quotes', 'v1/service-quotes/*', 'v1/order-configs', 'v1/order-configs/*', 'ledger/v1/customers/*'],
     ],
 
     'key_profiles_enforce' => env('API_KEY_PROFILES_ENFORCE', true),
