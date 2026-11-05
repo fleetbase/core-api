@@ -27,7 +27,7 @@ trait HasPresence
     public function isPresent(): bool
     {
         $lastSeenAt = $this->lastSeenAt();
-        if (!is_null($lastSeenAt) && $lastSeenAt->diffInMinutes(now()) < 2) {
+        if (!is_null($lastSeenAt) && (int) $lastSeenAt->diffInMinutes(now(), true) < 2) {
             return true;
         }
 
