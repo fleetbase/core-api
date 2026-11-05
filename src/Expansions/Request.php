@@ -67,8 +67,11 @@ class Request implements Expansion
      *
      * @return \Closure returns a closure that splits a string parameter into an array,
      *                  or directly returns the array parameter
+     *
+     * Not named `array`: Laravel 11+ ships a native Request::array(), and native methods
+     * win over macros, so a macro of that name silently stops running.
      */
-    public function array()
+    public function inputArray()
     {
         return function (string $param) {
             /** @var \Illuminate\Http\Request $this */

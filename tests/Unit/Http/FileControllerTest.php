@@ -231,8 +231,8 @@ function file_controller_fixtures(): Capsule
     EloquentModel::clearBootedModels();
     $_SERVER['REQUEST_METHOD'] = 'GET';
 
-    if (!Request::hasMacro('array')) {
-        Request::macro('array', function (string $key, array $default = []): array {
+    if (!Request::hasMacro('inputArray')) {
+        Request::macro('inputArray', function (string $key, array $default = []): array {
             $value = $this->input($key, $default);
 
             return is_array($value) ? $value : $default;

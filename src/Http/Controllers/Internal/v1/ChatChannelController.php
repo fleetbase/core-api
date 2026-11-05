@@ -28,7 +28,7 @@ class ChatChannelController extends FleetbaseController
         try {
             $name         = $request->input('chatChannel.name');
             $meta         = $request->input('chatChannel.meta', []);
-            $participants = $request->array('chatChannel.participants');
+            $participants = $request->inputArray('chatChannel.participants');
 
             $chatChannel = ChatChannel::create([
                 'company_uuid'    => session('company'),
