@@ -20,6 +20,16 @@ use Illuminate\Support\Facades\Facade;
  */
 class OAuthConfigEncrypterFake implements Encrypter
 {
+    public function getAllKeys(): array
+    {
+        return [];
+    }
+
+    public function getPreviousKeys(): array
+    {
+        return [];
+    }
+
     public function __construct(private string $key = 'primary')
     {
     }

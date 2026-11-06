@@ -21,6 +21,16 @@ use Illuminate\Support\Facades\Facade;
  */
 class OAuthStateServiceEncrypterFake implements Encrypter
 {
+    public function getAllKeys(): array
+    {
+        return [];
+    }
+
+    public function getPreviousKeys(): array
+    {
+        return [];
+    }
+
     public function __construct(private string $key)
     {
     }
@@ -396,6 +406,16 @@ it('reads a payload that does not decrypt to a string as empty', function () {
     // decrypt(..., false) is typed mixed; anything but a JSON string was not written by
     // this service and is not coerced into one.
     $service = new OAuthStateService(new class implements Encrypter {
+        public function getAllKeys(): array
+        {
+            return [];
+        }
+
+        public function getPreviousKeys(): array
+        {
+            return [];
+        }
+
         public function encrypt($value, $serialize = true)
         {
             return 'unused';

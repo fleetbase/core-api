@@ -6,7 +6,7 @@ use Fleetbase\LaravelMysqlSpatial\Eloquent\Builder as SpatialQueryBuilder;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Database\Query\Expression;
-use Illuminate\Database\Query\Grammars\Grammar;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -90,7 +90,7 @@ class QueryOptimizer
             $baseQuery->bindings['where'] = $uniqueBindings;
 
             return $query;
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             // If anything goes wrong, log and return original query
             Log::error('QueryOptimizer: Exception during optimization', [
                 'message' => $e->getMessage(),
@@ -286,7 +286,7 @@ class QueryOptimizer
      */
     protected static function normalizeExpressionValue(Expression $expression): string|int|float
     {
-        return $expression->getValue(new Grammar());
+        return $expression->getValue(DB::connection()->getQueryGrammar());
     }
 
     /**

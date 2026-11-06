@@ -133,7 +133,7 @@ class PushNotification
     protected static function getFcmMessagingClient(): Messaging
     {
         $container      = Container::getInstance();
-        $projectManager = new FirebaseProjectManager($container);
+        $projectManager = new FirebaseProjectManager($container, $container->make('config'));
 
         return $projectManager->project('app')->messaging();
     }
