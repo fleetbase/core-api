@@ -275,8 +275,8 @@ function setting_controller_save_config_database(array $config = []): array
 {
     EloquentModel::clearBootedModels();
 
-    if (!Request::hasMacro('array')) {
-        Request::macro('array', function (string $key, array $default = []): array {
+    if (!Request::hasMacro('inputArray')) {
+        Request::macro('inputArray', function (string $key, array $default = []): array {
             $value = $this->input($key, $default);
 
             return is_array($value) ? $value : $default;

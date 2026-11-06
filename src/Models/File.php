@@ -673,7 +673,7 @@ class File extends Model
      */
     public static function fromRequest(Request $request, string $param = 'files'): Collection
     {
-        $ids = $request->array($param);
+        $ids = $request->inputArray($param);
 
         return static::whereIn('uuid', $ids)->get();
     }

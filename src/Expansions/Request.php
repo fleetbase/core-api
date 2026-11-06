@@ -63,12 +63,25 @@ class Request implements Expansion
     }
 
     /**
+     * Alias of inputArray() for extensions that haven't moved to the new name yet.
+     *
+     * @deprecated use inputArray(); on Laravel 11+ the native Request::array() wins over this macro
+     */
+    public function array()
+    {
+        return $this->inputArray();
+    }
+
+    /**
      * Converts a specified request parameter into an array by splitting it by commas.
      *
      * @return \Closure returns a closure that splits a string parameter into an array,
      *                  or directly returns the array parameter
+     *
+     * Not named `array`: Laravel 11+ ships a native Request::array(), and native methods
+     * win over macros, so a macro of that name silently stops running.
      */
-    public function array()
+    public function inputArray()
     {
         return function (string $param) {
             /** @var \Illuminate\Http\Request $this */

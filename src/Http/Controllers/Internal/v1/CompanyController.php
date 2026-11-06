@@ -179,7 +179,7 @@ class CompanyController extends FleetbaseController
      */
     public function saveTwoFactorSettings(Request $request)
     {
-        $twoFaSettings = $request->array('twoFaSettings');
+        $twoFaSettings = $request->inputArray('twoFaSettings');
         $company       = Auth::getCompany();
 
         if (!$company) {
@@ -269,7 +269,7 @@ class CompanyController extends FleetbaseController
         $searchQuery = $request->searchQuery();
         $limit       = $request->input(['limit', 'nestedLimit'], 20);
         $paginate    = $request->boolean('paginate');
-        $exclude     = $request->array('exclude');
+        $exclude     = $request->inputArray('exclude');
 
         // Start user query
         $usersQuery = CompanyUser::where('company_uuid', $company->uuid)
@@ -580,7 +580,7 @@ class CompanyController extends FleetbaseController
     public function export(ExportRequest $request)
     {
         $format       = $request->input('format', 'xlsx');
-        $selections   = $request->array('selections');
+        $selections   = $request->inputArray('selections');
         $fileName     = trim(Str::slug('company-' . date('Y-m-d-H:i')) . '.' . $format);
 
         return Excel::download(new CompanyExport($selections), $fileName);

@@ -163,8 +163,8 @@ function group_controller_boot_request_macros(): void
         });
     }
 
-    if (!Request::hasMacro('array')) {
-        Request::macro('array', function (string $param) {
+    if (!Request::hasMacro('inputArray')) {
+        Request::macro('inputArray', function (string $param) {
             return (array) $this->input($param, []);
         });
     }

@@ -25,7 +25,7 @@ class ChatMessageController extends FleetbaseController
     {
         try {
             $record = $this->model->createRecordFromRequest($request, null, function (&$request, &$chatMessage) {
-                $attachmentFiles = $request->array('chatMessage.attachment_files');
+                $attachmentFiles = $request->inputArray('chatMessage.attachment_files');
 
                 // If has attachment files create the attachments
                 foreach ($attachmentFiles as $attachmentFileId) {
