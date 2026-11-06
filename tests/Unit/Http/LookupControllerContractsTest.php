@@ -149,8 +149,8 @@ function lookup_controller_boot(?LookupControllerContractsCacheFake $cache = nul
 {
     bind_test_container();
 
-    if (!Request::hasMacro('array')) {
-        Request::macro('array', function (string $key, array $default = []): array {
+    if (!Request::hasMacro('inputArray')) {
+        Request::macro('inputArray', function (string $key, array $default = []): array {
             $value = $this->input($key, $default);
 
             return is_array($value) ? $value : $default;

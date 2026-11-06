@@ -95,7 +95,7 @@ namespace {
         expect($source)->toContain('$this->getAssignablePolicies(')
             ->and($source)->toContain("->where('company_uuid', session('company'))")
             ->and($source)->toContain('->orWhereNull(\'company_uuid\')')
-            ->and($source)->not->toContain('Policy::whereIn(\'id\', $request->array(\'role.policies\'))->get()');
+            ->and($source)->not->toContain('Policy::whereIn(\'id\', $request->inputArray(\'role.policies\'))->get()');
     });
 
     // File download cross-tenant scoping is covered behaviorally (ModelNotFoundException on a

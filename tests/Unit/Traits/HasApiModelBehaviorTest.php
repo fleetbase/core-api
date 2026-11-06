@@ -479,8 +479,8 @@ function has_api_model_behavior_request(array $input = [], string $uri = '/api/v
         });
     }
 
-    if (!Request::hasMacro('array')) {
-        Request::macro('array', function (string $key, array $default = []): array {
+    if (!Request::hasMacro('inputArray')) {
+        Request::macro('inputArray', function (string $key, array $default = []): array {
             $value = $this->input($key, $default);
 
             if (is_string($value) && str_contains($value, ',')) {

@@ -158,7 +158,7 @@ class SendResourceLifecycleWebhook implements ShouldQueue
                     'method'              => $request->getMethod(),
                     'status_code'         => $exception->getStatusCode(),
                     'reason_phrase'       => $response->getReasonPhrase(),
-                    'duration'            => $durationStart->diffInSeconds(now()),
+                    'duration'            => (int) $durationStart->diffInSeconds(now(), true),
                     'url'                 => $request->getUri(),
                     'attempt'             => 1,
                     'response'            => $response->getBody(),

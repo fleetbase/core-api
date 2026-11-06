@@ -163,7 +163,9 @@ class ReportQueryErrorHandler
      */
     protected function determineErrorCode(\Throwable $exception): string
     {
-        $message = strtolower($exception->getMessage());
+        // Laravel 11+ adds the connection's host, port and database name to QueryException's
+        // message. Those are install-specific values, so they must not decide the category.
+        $message = strtolower((string) preg_replace('/\b(Host|Port|Database): [^,]*, /', '', $exception->getMessage()));
 
         if (str_contains($message, 'table') && str_contains($message, 'not found')) {
             return 'TABLE_NOT_FOUND';

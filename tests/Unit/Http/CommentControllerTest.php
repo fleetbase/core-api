@@ -104,8 +104,8 @@ function comment_controller_database(): Capsule
         SupportStr::macro('humanize', $strExpansion->humanize());
     }
 
-    if (!Request::hasMacro('array')) {
-        Request::macro('array', function (string $key, array $default = []): array {
+    if (!Request::hasMacro('inputArray')) {
+        Request::macro('inputArray', function (string $key, array $default = []): array {
             $value = $this->input($key, $default);
 
             return is_array($value) ? $value : $default;

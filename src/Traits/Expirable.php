@@ -72,7 +72,7 @@ trait Expirable
         $column = $this->getExpiredAtColumn();
 
         if (is_object($this->{$column})) {
-            return -1 * $this->{$column}->diffInSeconds(Carbon::now(), false);
+            return -1 * (int) $this->{$column}->diffInSeconds(Carbon::now(), false);
         }
 
         return false;

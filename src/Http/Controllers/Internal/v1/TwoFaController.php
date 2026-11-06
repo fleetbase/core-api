@@ -34,7 +34,7 @@ class TwoFaController extends Controller
      */
     public function saveSystemConfig(Request $request)
     {
-        $twoFaSettings = $request->array('twoFaSettings');
+        $twoFaSettings = $request->inputArray('twoFaSettings');
         if (isset($twoFaSettings['enabled']) && $twoFaSettings['enabled'] === false) {
             $twoFaSettings['enforced'] = false;
         }

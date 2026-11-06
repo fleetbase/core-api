@@ -31,7 +31,7 @@ class ChatChannelController extends Controller
     {
         // get request input
         $name         = $request->input('name');
-        $participants = $request->array('participants');
+        $participants = $request->inputArray('participants');
 
         // create the chat channel
         $chatChannel = ChatChannel::create([
@@ -273,7 +273,7 @@ class ChatChannelController extends Controller
 
         // Get the message contents and attachment file id
         $content          = $request->input('content');
-        $attachments      = $request->array('files');
+        $attachments      = $request->inputArray('files');
 
         // Create chat message
         $chatMessage = ChatMessage::create([

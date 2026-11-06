@@ -201,28 +201,17 @@ class DataPurgerSchemaFallback
     {
     }
 
-    public function getConnection(): object
-    {
-        return new class {
-        };
-    }
-
-    public function getAllTables(): array
+    public function getTables(): array
     {
         return $this->tables;
     }
 }
 
-class DataPurgerThrowingDoctrineSchemaFallback extends DataPurgerSchemaFallback
+class DataPurgerThrowingSchemaFallback extends DataPurgerSchemaFallback
 {
-    public function getConnection(): object
+    public function getTables(): array
     {
-        return new class {
-            public function getDoctrineSchemaManager(): never
-            {
-                throw new RuntimeException('Doctrine table discovery unavailable');
-            }
-        };
+        throw new RuntimeException('Schema table discovery unavailable');
     }
 }
 
@@ -467,15 +456,15 @@ test('data purger discovers allowed tenant tables and detects safe key columns',
         ->and($purger->keyFor('audit_rows'))->toBeNull();
 });
 
-test('data purger falls back to driver metadata when doctrine table discovery is unavailable', function () {
+test('data purger falls back to driver metadata when schema table discovery is unavailable', function () {
     bind_test_container();
-    app()->instance('db.schema', new DataPurgerThrowingDoctrineSchemaFallback());
+    app()->instance('db.schema', new DataPurgerThrowingSchemaFallback());
     Facade::clearResolvedInstance('db.schema');
 
     $mysql = new DataPurgerMetadataConnection('mysql', [
-        (object) ['table_name' => 'orders'],
-        (object) ['table_name' => 'jobs'],
-        (object) ['table_name' => 'global_settings'],
+        (object) ['name' => 'orders'],
+        (object) ['name' => 'jobs'],
+        (object) ['name' => 'global_settings'],
     ], [], 'fleetbase_core');
     $pgsql = new DataPurgerMetadataConnection('pgsql', [], [
         (object) ['tablename' => 'companies'],
@@ -494,13 +483,13 @@ test('data purger falls back to driver metadata when doctrine table discovery is
         ->and($pgsql->queries[0]['table'])->toBe('pg_catalog.pg_tables');
 });
 
-test('data purger maps generic schema table rows as a last resort', function () {
+test('data purger lists tables through the schema builder', function () {
     bind_test_container();
     app()->instance('db.schema', new DataPurgerSchemaFallback([
-        (object) ['name' => 'orders'],
+        ['name' => 'orders'],
         ['name' => 'api_events'],
-        'jobs',
-        'global_settings',
+        ['name' => 'jobs'],
+        ['name' => 'global_settings'],
     ]));
     Facade::clearResolvedInstance('db.schema');
 

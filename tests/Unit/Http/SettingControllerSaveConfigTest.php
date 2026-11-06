@@ -133,6 +133,21 @@ class SettingControllerSaveConfigFilesystemFake
 
 class SettingControllerSaveConfigDiskFake implements Filesystem
 {
+    public function path($path)
+    {
+        return $path;
+    }
+
+    public function putFile($path, $file = null, $options = [])
+    {
+        return false;
+    }
+
+    public function putFileAs($path, $file, $name = null, $options = [])
+    {
+        return false;
+    }
+
     public array $files = [];
 
     public function get($path)
@@ -275,8 +290,8 @@ function setting_controller_save_config_database(array $config = []): array
 {
     EloquentModel::clearBootedModels();
 
-    if (!Request::hasMacro('array')) {
-        Request::macro('array', function (string $key, array $default = []): array {
+    if (!Request::hasMacro('inputArray')) {
+        Request::macro('inputArray', function (string $key, array $default = []): array {
             $value = $this->input($key, $default);
 
             return is_array($value) ? $value : $default;

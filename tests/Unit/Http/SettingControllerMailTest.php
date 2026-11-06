@@ -25,8 +25,8 @@ class SettingControllerMailFake
 
 function setting_controller_mail_fixtures(): SettingControllerMailFake
 {
-    if (!Request::hasMacro('array')) {
-        Request::macro('array', function (string $key, array $default = []): array {
+    if (!Request::hasMacro('inputArray')) {
+        Request::macro('inputArray', function (string $key, array $default = []): array {
             $value = $this->input($key, $default);
 
             return is_array($value) ? $value : $default;

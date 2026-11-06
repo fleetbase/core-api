@@ -34,7 +34,7 @@ class PolicyController extends FleetbaseController
         try {
             $record = $this->model->createRecordFromRequest($request, null, function ($request, &$policy) {
                 if ($request->isArray('policy.permissions')) {
-                    $permissions = Permission::whereIn('id', $request->array('policy.permissions'))->get();
+                    $permissions = Permission::whereIn('id', $request->inputArray('policy.permissions'))->get();
                     $policy->syncPermissions($permissions);
                 }
             });
@@ -59,7 +59,7 @@ class PolicyController extends FleetbaseController
         try {
             $record = $this->model->updateRecordFromRequest($request, $id, function ($request, &$policy) {
                 if ($request->isArray('policy.permissions')) {
-                    $permissions = Permission::whereIn('id', $request->array('policy.permissions'))->get();
+                    $permissions = Permission::whereIn('id', $request->inputArray('policy.permissions'))->get();
                     $policy->syncPermissions($permissions);
                 }
             });

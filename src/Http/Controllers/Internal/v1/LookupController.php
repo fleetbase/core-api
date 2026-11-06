@@ -132,9 +132,9 @@ class LookupController extends Controller
     {
         $query   = strtolower($request->input('query', null));
         $simple  = $request->boolean('simple');
-        $columns = $request->array('columns');
-        $only    = array_map(fn ($s) => strtolower($s), $request->array('only'));
-        $except  = array_map(fn ($s) => strtolower($s), $request->array('except'));
+        $columns = $request->inputArray('columns');
+        $only    = array_map(fn ($s) => strtolower($s), $request->inputArray('only'));
+        $except  = array_map(fn ($s) => strtolower($s), $request->inputArray('except'));
 
         $countries = Country::search($query);
 

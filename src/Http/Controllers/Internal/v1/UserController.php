@@ -228,13 +228,13 @@ class UserController extends FleetbaseController
 
                 // Sync Permissions
                 if ($request->isArray('user.permissions')) {
-                    $permissions = Permission::whereIn('id', $request->array('user.permissions'))->get();
+                    $permissions = Permission::whereIn('id', $request->inputArray('user.permissions'))->get();
                     $user->syncPermissions($permissions);
                 }
 
                 // Sync Policies
                 if ($request->isArray('user.policies')) {
-                    $policies = $this->getAssignablePolicies($request->array('user.policies'));
+                    $policies = $this->getAssignablePolicies($request->inputArray('user.policies'));
                     $user->syncPolicies($policies);
                 }
             });
@@ -306,13 +306,13 @@ class UserController extends FleetbaseController
 
             // Sync Permissions
             if ($request->isArray('user.permissions')) {
-                $permissions = Permission::whereIn('id', $request->array('user.permissions'))->get();
+                $permissions = Permission::whereIn('id', $request->inputArray('user.permissions'))->get();
                 $record->syncPermissions($permissions);
             }
 
             // Sync Policies
             if ($request->isArray('user.policies')) {
-                $policies = $this->getAssignablePolicies($request->array('user.policies'));
+                $policies = $this->getAssignablePolicies($request->inputArray('user.policies'));
                 $record->syncPolicies($policies);
             }
 
@@ -705,7 +705,7 @@ class UserController extends FleetbaseController
     #[SkipAuthorizationCheck]
     public function saveTwoFactorSettings(Request $request)
     {
-        $twoFaSettings = $request->array('twoFaSettings');
+        $twoFaSettings = $request->inputArray('twoFaSettings');
         $user          = $request->user();
 
         if (!$user) {
@@ -933,11 +933,11 @@ class UserController extends FleetbaseController
         $user->assignSingleRole($role);
 
         if ($request->isArray('user.permissions')) {
-            $user->syncPermissions(Permission::whereIn('id', $request->array('user.permissions'))->get());
+            $user->syncPermissions(Permission::whereIn('id', $request->inputArray('user.permissions'))->get());
         }
 
         if ($request->isArray('user.policies')) {
-            $user->syncPolicies($this->getAssignablePolicies($request->array('user.policies')));
+            $user->syncPolicies($this->getAssignablePolicies($request->inputArray('user.policies')));
         }
 
         if ($user->email && !Invite::isAlreadySentToJoinCompany($user, $company)) {
@@ -1528,7 +1528,7 @@ class UserController extends FleetbaseController
     public function export(ExportRequest $request)
     {
         $format       = $request->input('format', 'xlsx');
-        $selections   = $request->array('selections');
+        $selections   = $request->inputArray('selections');
         $fileName     = trim(Str::slug('users-' . date('Y-m-d-H:i')) . '.' . $format);
 
         return Excel::download(new UserExport($selections), $fileName);
