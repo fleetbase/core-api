@@ -218,9 +218,7 @@ class ApiCredentialController extends FleetbaseController
         }
 
         // update all resources
-        $tables = DB::connection('sandbox')
-            ->getDoctrineSchemaManager()
-            ->listTableNames();
+        $tables = array_column(DB::connection('sandbox')->getSchemaBuilder()->getTables(), 'name');
 
         // replace all resources created with this key with the new api key
         foreach ($tables as $table) {

@@ -396,29 +396,7 @@ class SqlDumper
             return array_map(fn ($r) => (string) $r->TABLE_NAME, $rows);
         }
 
-        // Fallback: try Doctrine or Schema
-        if (method_exists(Schema::getConnection(), 'getDoctrineSchemaManager')) {
-            try {
-                $sm = Schema::getConnection()->getDoctrineSchemaManager();
-
-                return $sm->listTableNames();
-            } catch (\Throwable $e) {
-                // ignore
-            }
-        }
-
-        $all = Schema::getAllTables();
-        $out = [];
-        foreach ($all as $row) {
-            if (is_object($row)) {
-                $out[] = $row->name ?? (string) ($row->TABLE_NAME ?? '');
-            } elseif (is_array($row)) {
-                $out[] = $row['name'] ?? (string) ($row['TABLE_NAME'] ?? '');
-            } else {
-                $out[] = (string) $row;
-            }
-        }
-
-        return array_values(array_filter($out));
+        // Fallback: the schema builder lists tables for every other driver
+        return array_column(Schema::getTables(), 'name');
     }
 }
