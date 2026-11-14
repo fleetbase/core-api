@@ -83,11 +83,7 @@ class AddPerformanceIndexes extends Migration
     protected function indexExists($table, $index)
     {
         try {
-            $indexes = Schema::getConnection()
-                ->getDoctrineSchemaManager()
-                ->listTableIndexes($table);
-
-            return isset($indexes[$index]);
+            return collect(Schema::getIndexes($table))->contains('name', strtolower($index));
         } catch (Exception $e) {
             return false;
         }

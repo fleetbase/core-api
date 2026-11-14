@@ -1,29 +1,34 @@
-# v1.6.74 — Webhook endpoints for API keys, signed per endpoint, safer upload names, App Review access, and Sign in with Fleetbase
+> v2.0.0 ~ "Laravel 12"
 
-## Added
+# v2.0.0 — Laravel 12, Sanctum 4 and Carbon 3
 
-- **Webhook endpoints can be managed with an API key** (#319). `/v1/webhook-endpoints` supports create, list (optionally filtered by `url`), show, update, `POST {id}/rotate-secret` and delete. Endpoints are scoped to the key's company and environment (`live`/`test`). The URL must pass `PublicWebhookUrl`, and events are checked against `config('api.events')` when it is set. Integrations such as WooCommerce and Shopify connectors can now register their own endpoints instead of merchants copying URLs into the console.
-- **Per-endpoint signing secrets** (#319). Each endpoint has its own secret (`whsec_…`), stored encrypted, hidden from serialisation and kept out of the activity log. Endpoints that already exist get one the first time it is needed. Deliveries now also carry `X-Fleetbase-Signature: t=<unix>,v1=<hmac_sha256("<t>.<body>", secret)>`; `EndpointSignature::verify()` documents the receiver side. The legacy `Signature` header is unchanged. The console can reveal (`GET int/v1/webhook-endpoints/{id}/secret`, view permission) and rotate (`POST int/v1/webhook-endpoints/{id}/rotate-secret`, create permission) the secret.
-- **App Review access** (#323). Apple and Google reviewers can't receive a texted sign-in code. Extensions register what their app signs reviewers in to (`Fleetbase\Support\AppReview::register()`, e.g. a Storefront store or an organization's Navigator app) with a review number from the 555-0100–0199 range reserved for fiction. Owners turn access on in the Console (`GET|PUT int/v1/review-access/{type}/{id}`) and give the app store that number and a six-digit code, stored hashed, shown once, and accepted only for that subject. Works on Fleetbase Cloud and self-hosted. `AppReview::configuredAccountMatches()` is the shared env fallback for self-hosted review accounts.
-- **Sign in with Fleetbase**, an OAuth 2.0 / OpenID Connect provider (#324). Registered apps can offer "Continue with Fleetbase" and, with the user's consent, act on one organization they administer. Built on league/oauth2-server.
-  - Authorization code flow with PKCE (`S256`) required for every client, rotating refresh tokens, RFC 7009 revocation, ID tokens, `/oauth/userinfo`, `/oauth/jwks` and `/.well-known/openid-configuration`.
-  - The consent screen runs in the console, so the console's sign-in and two-factor rules apply. Endpoints: `int/v1/oauth-server/authorization` (GET, POST, DELETE).
-  - Each consent is an `oauth_grants` row bound to the organization the user picked. Every refresh and every API call checks that the user is still active and still administers that organization.
-  - Scopes: `openid`, `profile`, `email` and `organization:read` (`GET /oauth/v1/organization`). Extensions register their own scopes with `Fleetbase\Auth\OAuthServer\OAuthScopes::register()`, optionally covering App Review types served by `/oauth/v1/review-access/{type}/{id}`.
-  - Replayed codes revoke their tokens; a replayed refresh token revokes the whole grant.
-  - System admins register apps, rotate secrets, turn apps off and revoke grants (`int/v1/oauth-server/apps`). Users list and remove their connected apps (`int/v1/oauth-server/connected-apps`) and get an email when they authorize a new one.
-  - Artisan: `oauth-server:keys`, `oauth-server:client create|rotate|list`, `oauth-server:prune` (scheduled daily).
-- **Dynamic client registration for software installed on many sites** (RFC 7591). A plugin on a merchant's own domain cannot share one registered redirect URI, so each install registers its own public PKCE client at `POST /oauth/register` (throttled, advertised as `registration_endpoint` in discovery). Only software listed under `oauth-server.registration.software` can register, with the scopes listed there; today that is `fleetbase-woocommerce` (`organization:read`, `api-key:create`). Each client has exactly one redirect URI (https, or http on loopback as a development client), is never official, and is named after its host, e.g. "Fleetbase for WooCommerce (shop.example.com)", which is what the consent screen and Connected apps show. Registering again returns the same client; clients that never get a grant are pruned after a day. `OAUTH_SERVER_REGISTRATION_ENABLED=false` turns it off.
-- **`api-key:create` scope** and `POST /oauth/v1/api-key`. Creates a live API key named after the app in the token's organization, or returns the one that app created before (tracked by the new `api_credentials.oauth_client_id`, never by name). The key is listed under Developers → API Keys. When the app's last grant in that organization is revoked (Connected apps, an admin revoking it, or the app being turned off), the key expires. This lets an integration such as Fleetbase for WooCommerce connect without anyone pasting a key. An app that serves many installations from one client (the Shopify app, one per shop) passes `installation` and gets a key per installation, named "{app} ({installation})" and tracked by `api_credentials.oauth_installation`. `DELETE /oauth/v1/api-key` (same scope, same optional `installation`) expires one installation's key without touching the grant or other installations.
+core-api now runs on Laravel 12 (`illuminate/* ^12.69|^13.0`) and PHP 8.2 or later. This is a major release: extensions must be released against `fleetbase/core-api ^2.0` to install with it, and Laravel 10 installs stay on 1.6.x.
 
-## Security
+## Breaking
 
-- **Numbers reserved for fiction are never texted** (#323). `SmsService::send()` answers as sent without calling a provider, and SMS verification codes for those numbers are saved but not sent.
-- **Uploaded files are stored under an extension that matches their contents** (#320). The stored name used to keep the client's extension, so a file that passed content-type validation could be stored as `.php`. The client's extension is now kept only when it matches the detected type (or is a loosely detected data format such as `csv`, `json` or `xlsx`); otherwise the extension comes from the detected type. Script extensions (`php`, `phtml`, `phar`, `shtml`, `htaccess`, `cgi`, …) are never used and become `bin`. `original_filename` is unchanged.
-- **OAuth provider hardening** (#324). OAuth client secrets are stored only as bcrypt hashes and shown once. Redirect URIs match exactly, and errors about an unknown client or unregistered redirect URI are never redirected. OAuth rows always use the core database connection, even when the console is in sandbox mode.
+- **Laravel 12 and PHP 8.2 required.** The constraint already admits Laravel 13, so the next step needs no change here.
+- **Sanctum 4.** Sanctum no longer loads its own migrations, so core-api ships a guarded `personal_access_tokens` create migration. It does nothing on databases that already have the table, so existing tokens keep working.
+- **Carbon 3.** `diffIn*` now returns signed floats. core-api's own calls are cast and given an explicit direction, so their results match Carbon 2. Extensions must check their own calls.
+- **`Request::array()` macro renamed to `inputArray()`** (#331). Laravel 11+ ships a native `Request::array()`, which wins over a macro of the same name and does not split comma-separated values. On Laravel 12, `?sort=a,b` and `?without=a,b` became one value and returned a 500. The old name is not available in 2.0.0, because the native method makes it unreachable. Extensions must call `inputArray()`.
+- **Doctrine DBAL removed** (#332). Schema introspection uses Laravel's own `Schema` builder, so `getDoctrineSchemaManager()` is gone from core-api's code paths. Migrations that used Doctrine to check for an index now use `Schema::getIndexes()`.
+- **New majors of Fleetbase's forks:** `fleetbase/laravel-mysql-spatial ^2.0`, `fleetbase/countries ^0.9.0` (drops `pragmarx/coollection`, which held Carbon at 2) and `fleetbase/twilio ^6.0` (Twilio SDK 8).
+
+## Fixed
+
+- **FCM push on kreait/laravel-firebase 6.** `FirebaseProjectManager` now requires the config repository. The previous one-argument construction would have failed every FCM push.
+- **`QueryOptimizer`** no longer constructs a query grammar without a connection, which Laravel 12 rejects, and catches `Throwable`, so a failure there returns the original query instead of an error.
+- **Report error categories** no longer depend on install-specific values. Laravel 11+ adds the host, port and database name to `QueryException` messages, so a database named with `memory` or `timeout`, say, could change the category. They are now stripped before classifying.
+
+## Dependencies
+
+- Notification channels: apn `^5.5`, fcm `^5.1`, twilio `^4.1`. Also `milon/barcode ^13`, `innoge/laravel-msgraph-mail ^2`.
+- `hammerstone/fast-paginate` is abandoned, so it's replaced by `aaronfrancis/fast-paginate ^2.0`, the same package under its new name. The `fastPaginate()` macro is unchanged.
+- `phpoffice/phpspreadsheet ^1.30.7`, which fixes the XXE bypass and denial of service advisories in 1.30.6.
+- `composer audit` reports no advisories and no abandoned packages, with no ignores configured.
+- Dev: Pest 3, collision 8, `cknow/laravel-money ^8`, mockery.
 
 ## Upgrade Steps
 
-- Run migrations: `php artisan migrate` adds the nullable `webhook_endpoints.secret` column, the `review_accesses` table, the `oauth_*` provider tables (`oauth_clients`, `oauth_grants`, `oauth_auth_codes`, `oauth_access_tokens`, `oauth_refresh_tokens`), `oauth_clients.software_id` and `registration_key`, and `api_credentials.oauth_client_id` and `oauth_installation`.
-- To use Sign in with Fleetbase, give every API instance the same signing key pair: `php artisan oauth-server:keys` (key files in `storage/`), or `php artisan oauth-server:keys --show` and set `OAUTH_SERVER_PRIVATE_KEY` / `OAUTH_SERVER_PUBLIC_KEY`. Set `OAUTH_SERVER_ISSUER` if the public API URL differs from `APP_URL`. New dependencies: `league/oauth2-server`, `nyholm/psr7`, `symfony/psr-http-message-bridge`.
-- The consent screen, Admin → Auth Config → OAuth Apps and Account → Auth → Connected apps ship in the console (fleetbase/fleetbase#734). Storefront's `storefront:*` scopes ship in fleetbase/storefront#163.
+- Run `php artisan migrate`. The `personal_access_tokens` migration is a no-op if the table exists.
+- Update every Fleetbase extension to its release that requires `fleetbase/core-api ^2.0`. Extensions built for 1.6.x call `$request->array()` and Doctrine-era APIs and will not work.
+- Flush the cache at upgrade if `CACHE_PREFIX` is set without a trailing `:`. Laravel 11+ no longer adds one. The root app's default prefix now includes it.

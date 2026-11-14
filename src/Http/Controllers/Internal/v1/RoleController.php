@@ -43,13 +43,13 @@ class RoleController extends FleetbaseController
             $record = $this->model->createRecordFromRequest($request, null, function ($request, &$role) {
                 // Sync Permissions
                 if ($request->isArray('role.permissions')) {
-                    $permissions = Permission::whereIn('id', $request->array('role.permissions'))->get();
+                    $permissions = Permission::whereIn('id', $request->inputArray('role.permissions'))->get();
                     $role->syncPermissions($permissions);
                 }
 
                 // Sync Policies
                 if ($request->isArray('role.policies')) {
-                    $policies = $this->getAssignablePolicies($request->array('role.policies'));
+                    $policies = $this->getAssignablePolicies($request->inputArray('role.policies'));
                     $role->syncPolicies($policies);
                 }
             });
@@ -75,13 +75,13 @@ class RoleController extends FleetbaseController
             $record = $this->model->updateRecordFromRequest($request, $id, function ($request, &$role) {
                 // Sync Permissions
                 if ($request->isArray('role.permissions')) {
-                    $permissions = Permission::whereIn('id', $request->array('role.permissions'))->get();
+                    $permissions = Permission::whereIn('id', $request->inputArray('role.permissions'))->get();
                     $role->syncPermissions($permissions);
                 }
 
                 // Sync Policies
                 if ($request->isArray('role.policies')) {
-                    $policies = $this->getAssignablePolicies($request->array('role.policies'));
+                    $policies = $this->getAssignablePolicies($request->inputArray('role.policies'));
                     $role->syncPolicies($policies);
                 }
             });

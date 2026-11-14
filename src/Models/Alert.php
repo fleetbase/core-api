@@ -248,7 +248,7 @@ class Alert extends Model
     public function getDurationMinutesAttribute(): ?int
     {
         if ($this->triggered_at && $this->resolved_at) {
-            return $this->triggered_at->diffInMinutes($this->resolved_at);
+            return (int) $this->triggered_at->diffInMinutes($this->resolved_at, true);
         }
 
         return null;
@@ -261,7 +261,7 @@ class Alert extends Model
     {
         $startTime = $this->triggered_at ?? $this->created_at;
 
-        return $startTime->diffInMinutes(now());
+        return (int) $startTime->diffInMinutes(now(), true);
     }
 
     /**

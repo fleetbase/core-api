@@ -297,7 +297,7 @@ class ScheduleItem extends Model
     public function calculateDuration(): int
     {
         if ($this->start_at && $this->end_at) {
-            return (int) $this->start_at->diffInMinutes($this->end_at);
+            return (int) $this->start_at->diffInMinutes($this->end_at, true);
         }
 
         return 0;

@@ -327,13 +327,13 @@ class SettingController extends Controller
     public function saveMailConfig(AdminRequest $request)
     {
         $mailer             = $request->input('mailer', 'smtp');
-        $from               = $request->array('from', []);
-        $smtp               = $request->array('smtp');
-        $mailgun            = $request->array('mailgun');
-        $postmark           = $request->array('postmark');
-        $sendgrid           = $request->array('sendgrid');
-        $resend             = $request->array('resend');
-        $microsoftGraph     = $request->array('microsoftGraph');
+        $from               = $request->inputArray('from', []);
+        $smtp               = $request->inputArray('smtp');
+        $mailgun            = $request->inputArray('mailgun');
+        $postmark           = $request->inputArray('postmark');
+        $sendgrid           = $request->inputArray('sendgrid');
+        $resend             = $request->inputArray('resend');
+        $microsoftGraph     = $request->inputArray('microsoftGraph');
 
         Setting::configureSystem('mail.mailer', $mailer);
         Setting::configureSystem('mail.from', $from);
@@ -372,11 +372,11 @@ class SettingController extends Controller
             ]
         );
         $smtp           = $request->input('smtp', []);
-        $microsoftGraph = $request->array('microsoftGraph');
-        $mailgun        = $request->array('mailgun');
-        $postmark       = $request->array('postmark');
-        $sendgrid       = $request->array('sendgrid');
-        $resend         = $request->array('resend');
+        $microsoftGraph = $request->inputArray('microsoftGraph');
+        $mailgun        = $request->inputArray('mailgun');
+        $postmark       = $request->inputArray('postmark');
+        $sendgrid       = $request->inputArray('sendgrid');
+        $resend         = $request->inputArray('resend');
         $user           = $request->user();
         $message        = 'Mail configuration is successful, check your inbox for the test email to confirm.';
         $status         = 'success';
@@ -646,8 +646,8 @@ class SettingController extends Controller
      */
     public function saveNotificationChannelsConfig(AdminRequest $request)
     {
-        $apn         = array_merge(config('broadcasting.connections.apn', []), $request->array('apn', []));
-        $firebase    = array_merge(config('firebase.projects.app', []), $request->array('firebase', []));
+        $apn         = array_merge(config('broadcasting.connections.apn', []), $request->inputArray('apn', []));
+        $firebase    = array_merge(config('firebase.projects.app', []), $request->inputArray('firebase', []));
 
         // Get the APN key file and it's contents and store to config
         $apn = static::_setupApnConfigUsingFileId($apn);
@@ -675,8 +675,8 @@ class SettingController extends Controller
         $message       = $request->input('message', 'This is a test push notification!');
         $apnToken      = $request->input('apnToken');
         $fcmToken      = $request->input('fcmToken');
-        $apn           = $request->array('apn', config('broadcasting.connections.apn'));
-        $firebase      = $request->array('firebase', config('firebase.projects.app'));
+        $apn           = $request->inputArray('apn', config('broadcasting.connections.apn'));
+        $firebase      = $request->inputArray('firebase', config('firebase.projects.app'));
 
         // Get the APN key file and it's contents and store to config
         $apn = static::_setupApnConfigUsingFileId($apn);

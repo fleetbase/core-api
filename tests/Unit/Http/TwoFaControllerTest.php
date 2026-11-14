@@ -167,8 +167,8 @@ function two_fa_controller_database(): TwoFaControllerRedisFake
         'fleetbase.connection.db'    => 'mysql',
     ]);
 
-    if (!Request::hasMacro('array')) {
-        Request::macro('array', function (string $key, array $default = []): array {
+    if (!Request::hasMacro('inputArray')) {
+        Request::macro('inputArray', function (string $key, array $default = []): array {
             $value = $this->input($key, $default);
 
             return is_array($value) ? $value : $default;

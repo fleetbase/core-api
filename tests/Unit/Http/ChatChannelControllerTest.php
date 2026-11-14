@@ -76,6 +76,21 @@ class ChatChannelControllerResponseCacheFake
 
 class ChatChannelControllerFilesystemFake implements Filesystem
 {
+    public function path($path)
+    {
+        return $path;
+    }
+
+    public function putFile($path, $file = null, $options = [])
+    {
+        return false;
+    }
+
+    public function putFileAs($path, $file, $name = null, $options = [])
+    {
+        return false;
+    }
+
     public function disk(string $name): self
     {
         return $this;
@@ -287,8 +302,8 @@ function chat_channel_controller_database(): Capsule
         SupportStr::macro('humanize', $strExpansion->humanize());
     }
 
-    if (!Request::hasMacro('array')) {
-        Request::macro('array', function (string $key, array $default = []): array {
+    if (!Request::hasMacro('inputArray')) {
+        Request::macro('inputArray', function (string $key, array $default = []): array {
             $value = $this->input($key, $default);
 
             return is_array($value) ? $value : $default;

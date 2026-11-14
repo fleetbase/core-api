@@ -78,6 +78,21 @@ class SettingModelFilesystemFake
 
 class SettingModelDiskFake implements Filesystem
 {
+    public function path($path)
+    {
+        return $path;
+    }
+
+    public function putFile($path, $file = null, $options = [])
+    {
+        return false;
+    }
+
+    public function putFileAs($path, $file, $name = null, $options = [])
+    {
+        return false;
+    }
+
     public function __construct(private string $name)
     {
     }

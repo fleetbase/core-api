@@ -40,6 +40,13 @@ return new class extends Migration {
 
             $table->integer('last_result_count')->nullable()->after('average_execution_time');
         });
+
+        // Blueprint::float() defaulted to total and places before Laravel 11, so set them in SQL.
+        if (Schema::getConnection()->getDriverName() === 'mysql') {
+            Schema::getConnection()->statement(
+                "ALTER TABLE `reports` MODIFY COLUMN `average_execution_time` DOUBLE(8,2) NULL COMMENT 'Mean execution time in milliseconds across all runs'"
+            );
+        }
     }
 
     /**

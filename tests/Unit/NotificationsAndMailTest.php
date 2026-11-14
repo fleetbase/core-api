@@ -18,6 +18,10 @@ use Fleetbase\Notifications\UserCreated;
 use Fleetbase\Notifications\UserEmailChange;
 use Fleetbase\Notifications\UserForgotPassword;
 use Fleetbase\Notifications\UserInvited;
+use Illuminate\Container\Container;
+use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Database\Capsule\Manager as Capsule;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Notifications\Messages\BroadcastMessage;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Facade;
@@ -31,6 +35,29 @@ function notification_mail_container(): void
         'fleetbase.console.secure'    => true,
         'fleetbase.console.subdomain' => null,
     ]);
+
+    // Eloquent's loadMissing() builds a query even when the relation is already set, so it
+    // needs a resolver although these tests never run a query.
+    $capsule = new Capsule();
+    $capsule->addConnection(['driver' => 'sqlite', 'database' => ':memory:'], 'mysql');
+    Model::setConnectionResolver($capsule->getDatabaseManager());
+}
+
+/**
+ * kreait/laravel-firebase 6 type-hints the application, which this harness's container isn't.
+ */
+function notification_with_firebase_app(callable $callback): mixed
+{
+    $container = Container::getInstance();
+    $app       = Mockery::mock(Container::class . ', ' . Application::class)->makePartial();
+    $app->instance('config', $container->make('config'));
+    Container::setInstance($app);
+
+    try {
+        return $callback();
+    } finally {
+        Container::setInstance($container);
+    }
 }
 
 function notification_user(array $attributes = []): User
@@ -358,7 +385,7 @@ test('test push notification builds fcm messages with configured metadata payloa
     ]);
     Carbon::setTestNow(Carbon::parse('2026-07-17 18:22:10'));
 
-    $message = (new TestPushNotification('Test title', 'Test body'))->toFcm(notification_user());
+    $message = notification_with_firebase_app(fn () => (new TestPushNotification('Test title', 'Test body'))->toFcm(notification_user()));
 
     expect($message)->toBeInstanceOf(NotificationChannels\Fcm\FcmMessage::class)
         ->and($message->notification->title)->toBe('Test title')
@@ -459,7 +486,7 @@ test('chat message received notification exposes broadcast channels and stable p
     $notification = new ChatMessageReceived($message, $recipient);
     $channels     = $notification->broadcastOn();
     $array        = $notification->toArray();
-    $fcmMessage   = $notification->toFcm($recipient->user);
+    $fcmMessage   = notification_with_firebase_app(fn () => $notification->toFcm($recipient->user));
     $apnMessage   = $notification->toApn($recipient->user);
 
     expect($notification->via($recipient->user))->toBe([

@@ -43,9 +43,7 @@ class InitializeSandboxKeyColumn extends Command
     public function handle()
     {
         $skipTables = ApiCredential::$skipTables;
-        $tables     = DB::connection('sandbox')
-            ->getDoctrineSchemaManager()
-            ->listTableNames();
+        $tables     = array_column(DB::connection('sandbox')->getSchemaBuilder()->getTables(), 'name');
 
         foreach ($tables as $tableName) {
             if (in_array($tableName, $skipTables) || Str::startsWith($tableName, 'telescope')) {
@@ -62,9 +60,7 @@ class InitializeSandboxKeyColumn extends Command
             }
         }
 
-        $tables = DB::connection('mysql')
-            ->getDoctrineSchemaManager()
-            ->listTableNames();
+        $tables = array_column(DB::connection('mysql')->getSchemaBuilder()->getTables(), 'name');
 
         foreach ($tables as $tableName) {
             $firstColumn = Arr::first(Schema::getColumnListing($tableName));

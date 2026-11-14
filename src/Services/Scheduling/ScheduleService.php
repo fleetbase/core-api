@@ -450,7 +450,7 @@ class ScheduleService
                 if ($template->break_duration && $template->break_duration > 0) {
                     // Place break at the midpoint of the shift
                     $shiftMidpoint = $startAt->copy()->addMinutes(
-                        (int) ($startAt->diffInMinutes($endAt) / 2)
+                        (int) ((int) $startAt->diffInMinutes($endAt, true) / 2)
                     );
                     $breakStartAt = $shiftMidpoint->copy()->subMinutes((int) ($template->break_duration / 2));
                     $breakEndAt   = $shiftMidpoint->copy()->addMinutes((int) ($template->break_duration / 2));

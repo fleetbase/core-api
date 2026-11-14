@@ -90,6 +90,21 @@ class SettingControllerBrandingFilesystemFake
 
 class SettingControllerBrandingDiskFake implements Filesystem
 {
+    public function path($path)
+    {
+        return $path;
+    }
+
+    public function putFile($path, $file = null, $options = [])
+    {
+        return false;
+    }
+
+    public function putFileAs($path, $file, $name = null, $options = [])
+    {
+        return false;
+    }
+
     public array $temporaryUrls = [];
 
     public function __construct(private string $disk)

@@ -152,8 +152,8 @@ class RoleControllerRoleFake extends EloquentModel
 
 function role_controller_boot_request_macros(): void
 {
-    if (!Request::hasMacro('array')) {
-        Request::macro('array', function (string $key, array $default = []): array {
+    if (!Request::hasMacro('inputArray')) {
+        Request::macro('inputArray', function (string $key, array $default = []): array {
             return (array) $this->input($key, $default);
         });
     }

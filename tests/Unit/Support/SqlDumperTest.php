@@ -80,30 +80,14 @@ class SqlDumperMetadataConnection extends Illuminate\Database\Connection
     }
 }
 
-class SqlDumperThrowingSchemaConnection
-{
-    public function getDoctrineSchemaManager(): never
-    {
-        throw new RuntimeException('Doctrine metadata unavailable');
-    }
-}
-
 class SqlDumperFallbackSchemaBuilder
 {
-    public function getConnection(): SqlDumperThrowingSchemaConnection
-    {
-        return new SqlDumperThrowingSchemaConnection();
-    }
-
-    public function getAllTables(): array
+    public function getTables(): array
     {
         return [
-            (object) ['name' => 'orders'],
-            (object) ['TABLE_NAME' => 'order_notes'],
-            ['name'       => 'api_events'],
-            ['TABLE_NAME' => 'audit_logs'],
-            'global_settings',
-            '',
+            ['name' => 'orders'],
+            ['name' => 'order_notes'],
+            ['name' => 'global_settings'],
         ];
     }
 }
@@ -455,7 +439,7 @@ test('sql dumper lists mysql and postgres tables through driver metadata queries
         ->and($pgsql->queries[0]['bindings'])->toBe([]);
 });
 
-test('sql dumper falls back to schema table listings when doctrine metadata fails', function () {
+test('sql dumper falls back to schema table listings for other drivers', function () {
     $container = bind_test_container();
     $container->instance('db.schema', new SqlDumperFallbackSchemaBuilder());
     Facade::clearResolvedInstance('db.schema');
@@ -465,8 +449,6 @@ test('sql dumper falls back to schema table listings when doctrine metadata fail
     expect((new SqlDumperInspectableTestDumper($connection, 100))->tables('ignored'))->toBe([
         'orders',
         'order_notes',
-        'api_events',
-        'audit_logs',
         'global_settings',
     ]);
 });

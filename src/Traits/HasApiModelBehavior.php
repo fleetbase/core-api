@@ -565,7 +565,7 @@ trait HasApiModelBehavior
         }
 
         $with    = RequestRelations::eagerLoads($result, $request->or(['with', 'expand'], []));
-        $without = array_filter($request->array('without'), 'is_string');
+        $without = array_filter($request->inputArray('without'), 'is_string');
 
         if ($with) {
             $result->load($with);
@@ -629,7 +629,7 @@ trait HasApiModelBehavior
     public function withRelationships(Request $request, $builder)
     {
         $with    = $request->or(['with', 'expand']);
-        $without = $request->array('without', []);
+        $without = $request->inputArray('without', []);
 
         if (!$with && !$without) {
             return $builder;
@@ -682,7 +682,7 @@ trait HasApiModelBehavior
     public function applySorts($request, $builder)
     {
         // Grab the raw sort input
-        $sorts = (array) $request->array('sort');
+        $sorts = (array) $request->inputArray('sort');
 
         // Nothing to sort by
         if (empty($sorts)) {
@@ -923,7 +923,7 @@ trait HasApiModelBehavior
 
         // handle with/without here
         $with             = $request->or(['with', 'expand'], []);
-        $without          = $request->array('without');
+        $without          = $request->inputArray('without');
         $withoutRelations = $request->boolean('without_relations');
 
         // apply only the requested names that are relations of this model

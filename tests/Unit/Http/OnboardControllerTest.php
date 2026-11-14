@@ -719,6 +719,16 @@ function onboard_controller_oauth_setup(Capsule $capsule): void
 
 class OnboardControllerOAuthEncrypterFake implements Illuminate\Contracts\Encryption\Encrypter
 {
+    public function getAllKeys(): array
+    {
+        return [];
+    }
+
+    public function getPreviousKeys(): array
+    {
+        return [];
+    }
+
     public function encrypt($value, $serialize = true)
     {
         return 'enc:' . base64_encode($serialize ? serialize($value) : (string) $value);

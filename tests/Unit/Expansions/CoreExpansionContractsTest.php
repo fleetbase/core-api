@@ -313,7 +313,7 @@ test('request expansion helpers normalize parameters and global filter payloads'
 
     $expansion = new RequestExpansion();
     HttpRequest::macro('or', $expansion->or());
-    HttpRequest::macro('array', $expansion->array());
+    HttpRequest::macro('inputArray', $expansion->inputArray());
 
     app('db')->connection('mysql')->table('companies')->insert([
         'uuid'       => 'company-1',
@@ -378,9 +378,9 @@ test('request expansion helpers normalize parameters and global filter payloads'
         ])
         ->and($expansion->or()->call($request, ['missing', 'status'], 'fallback'))->toBe('active')
         ->and($expansion->or()->call($request, ['missing'], 'fallback'))->toBe('fallback')
-        ->and($expansion->array()->call($request, 'ids'))->toBe(['one', 'two', 'three'])
-        ->and($expansion->array()->call($request, 'tags'))->toBe(['fragile', 'cold'])
-        ->and($expansion->array()->call($request, 'missing'))->toBe([])
+        ->and($expansion->inputArray()->call($request, 'ids'))->toBe(['one', 'two', 'three'])
+        ->and($expansion->inputArray()->call($request, 'tags'))->toBe(['fragile', 'cold'])
+        ->and($expansion->inputArray()->call($request, 'missing'))->toBe([])
         ->and($expansion->isString()->call($request, 'status'))->toBeTrue()
         ->and($expansion->isUuid()->call($request, 'uuid'))->toBeTrue()
         ->and($expansion->isArray()->call($request, 'tags'))->toBeTrue()
