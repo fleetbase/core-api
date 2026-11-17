@@ -1350,3 +1350,26 @@ test('api model behavior covers custom filter precedence count and distance sort
         ->and(substr_count($optimizedBuilder->toSql(), '"status" = ?'))->toBe(1)
         ->and($distanceSort)->toBe(['record-3', 'record-2', 'record-1']);
 });
+
+test('api model behavior orders by sort keys registered at runtime', function () {
+    has_api_model_behavior_database();
+    $model = new HasApiModelBehaviorRecord();
+    $calls = [];
+
+    HasApiModelBehaviorRecord::addSortHandler('reference_number', function ($builder, string $direction, $request) use (&$calls) {
+        $calls[] = [$direction, $request instanceof Request];
+        $builder->orderBy('name', $direction);
+    });
+
+    $ascending  = $model->applySorts(has_api_model_behavior_request(['sort' => ['reference_number']]), HasApiModelBehaviorRecord::query());
+    $descending = $model->applySorts(has_api_model_behavior_request(['sort' => ['-reference_number']]), HasApiModelBehaviorRecord::query());
+    $unusual    = $model->applySorts(has_api_model_behavior_request(['sort' => ['reference_number:sideways', 'amount:desc']]), HasApiModelBehaviorRecord::query());
+
+    expect(array_keys(HasApiModelBehaviorRecord::runtimeSortHandlers()))->toBe(['reference_number'])
+        ->and(HasApiModelBehaviorRecord::sortHandlerFor('amount'))->toBeNull()
+        ->and(HasApiModelBehaviorOptionRecord::runtimeSortHandlers())->toBe([], 'registration is per model class')
+        ->and($calls)->toBe([['asc', true], ['desc', true], ['asc', true]])
+        ->and($ascending->toSql())->toContain('order by "name" asc')->not->toContain('reference_number')
+        ->and($descending->toSql())->toContain('order by "name" desc')
+        ->and($unusual->toSql())->toContain('order by "name" asc')->toContain('"amount" desc');
+});

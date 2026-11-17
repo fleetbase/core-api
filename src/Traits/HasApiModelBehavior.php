@@ -722,11 +722,63 @@ trait HasApiModelBehavior
             [$column, $direction] = Http::useSort($sort);
 
             if (!empty($column)) {
+                // A sort key registered at runtime (addSortHandler) is ordered by its handler:
+                // it is not a column of this table, so it cannot be ordered by name.
+                if ($handler = static::sortHandlerFor($column)) {
+                    $handler($builder, strtolower((string) $direction) === 'desc' ? 'desc' : 'asc', $request);
+                    continue;
+                }
+
                 $builder->orderBy($this->qualifySortColumn($column), $direction ?: 'asc');
             }
         }
 
         return $builder;
+    }
+
+    /**
+     * Sort handlers added at runtime, per model class and sort key.
+     *
+     * @var array<class-string, array<string, \Closure>>
+     */
+    protected static array $runtimeSortHandlers = [];
+
+    /**
+     * Registers how to order this model's queries by a sort key that is not one of its columns.
+     *
+     * Extensions use this to make their own data sortable through a core or Fleet-Ops model's
+     * list endpoint (`?sort=key`, `?sort=-key`) without editing the model, e.g. to order by a
+     * column of a companion table. The handler receives the query builder, the direction
+     * (`asc` or `desc`) and the request, and adds the ordering itself:
+     *
+     *     Order::addSortHandler('reference_number', function ($builder, string $direction) {
+     *         $builder->orderBy(
+     *             Companion::select('reference_number')->whereColumn('companions.order_uuid', 'orders.uuid')->limit(1),
+     *             $direction
+     *         );
+     *     });
+     *
+     * A handler registered for a key that is also a real column takes precedence over the column.
+     */
+    public static function addSortHandler(string $key, \Closure $handler): void
+    {
+        static::$runtimeSortHandlers[static::class][$key] = $handler;
+    }
+
+    /**
+     * Sort handlers registered through addSortHandler() for this model class.
+     *
+     * @return array<string, \Closure>
+     */
+    public static function runtimeSortHandlers(): array
+    {
+        return static::$runtimeSortHandlers[static::class] ?? [];
+    }
+
+    /** The handler registered for a sort key, if any. */
+    public static function sortHandlerFor(string $key): ?\Closure
+    {
+        return static::$runtimeSortHandlers[static::class][$key] ?? null;
     }
 
     /**
