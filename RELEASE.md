@@ -1,11 +1,11 @@
-> v2.0.1 ~ "Sort keys registered at runtime"
+> v2.0.2 ~ "Migrations run on MySQL 8.4"
 
-# v2.0.1 — Sort keys registered at runtime
+# v2.0.2 — Migrations run on MySQL 8.4
 
-## Added
+## Fixed
 
-- **Sort keys registered at runtime.** `Model::addSortHandler('key', fn ($builder, string $direction, $request) => …)` lets an extension make its own data sortable through a core or Fleet-Ops model's list endpoint without editing the model: `?sort=key` and `?sort=-key` are ordered by the handler instead of being treated as a column of the model's table. A typical handler orders by a column of a companion table with a correlated subquery. Handlers are kept per model class; a handler registered for a key that is also a real column takes precedence. This completes the set an extension needs to add a column to a list view: values through resource transformers, filters through `Filter` expansions, search through `addSearchableColumns()`, and now sorting. (#335)
+- **Installs and upgrades run on MySQL 8.4 and later.** MySQL 8.4 turns on `restrict_fk_on_non_standard_key` by default. With it on, MySQL refuses to create a foreign key that points at a non-unique key (error 6125), and refuses any change to a table that such a key points at (error 1553, `Cannot drop index '<unknown key name>': needed in a foreign key constraint`). Many Fleetbase foreign keys point at `uuid` columns with an ordinary index. So on 8.4 a fresh install failed at the first of them, and upgrading to Fleetbase v0.8.0 failed at Fleet-Ops' adhoc dispatch migration. While `migrate` or `sandbox:migrate` runs, each MySQL connection it uses, including ones a migration opens such as storefront's, now has that setting off for its session and back on when the run ends. Nothing changes outside migrations, or on MySQL 8.0, MariaDB, SQLite or Postgres.
 
 ## Upgrade Steps
 
-- None. Nothing changes until an extension registers a handler.
+- If an upgrade stopped with either error, upgrade to core-api v2.0.2, then run `php artisan migrate` and `php artisan sandbox:migrate` again. Fleet-Ops v0.7.1 also lets its adhoc dispatch migration resume after a failed run.
