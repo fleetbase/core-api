@@ -197,6 +197,21 @@ class CoreServiceProvider extends ServiceProvider
     }
 
     /**
+     * Turn MySQL 8.4's `restrict_fk_on_non_standard_key` off for the connections a migration run
+     * uses, so installs and upgrades don't fail on foreign keys that point at non-unique keys.
+     *
+     * @see \Fleetbase\Support\MigrationForeignKeyCompatibility
+     */
+    public function registerMigrationCompatibility(): void
+    {
+        if (!$this->app->bound('events') || !$this->app->bound('db')) {
+            return;
+        }
+
+        \Fleetbase\Support\MigrationForeignKeyCompatibility::register($this->app['events'], $this->app['db']);
+    }
+
+    /**
      * Bootstrap any package services.
      *
      * @return void
@@ -231,6 +246,7 @@ class CoreServiceProvider extends ServiceProvider
             \Fleetbase\Support\DatabaseBackupSettings::schedule($schedule);
         });
         $this->registerObservers();
+        $this->registerMigrationCompatibility();
         $this->registerExpansionsFrom();
         $this->registerTransformers();
         $this->registerTransformersFrom();
