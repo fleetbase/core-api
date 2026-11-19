@@ -9,6 +9,15 @@ namespace Fleetbase\Support {
     }
 }
 
+namespace Fleetbase\Console\Commands {
+    if (!function_exists(__NAMESPACE__ . '\\base_path')) {
+        function base_path(string $path = ''): string
+        {
+            return $path ? getcwd() . DIRECTORY_SEPARATOR . ltrim($path, DIRECTORY_SEPARATOR) : getcwd();
+        }
+    }
+}
+
 namespace {
     use Fleetbase\Console\Commands\MigrateSandbox;
     use Fleetbase\Support\Utils;
@@ -43,6 +52,11 @@ namespace {
             return $this->makePathsRelative($paths);
         }
 
+        protected function applicationBasePath(): string
+        {
+            return '/srv/app';
+        }
+
         protected function getInstalledFleetbaseExtensions(): array
         {
             return $this->installedExtensions;
@@ -74,6 +88,11 @@ namespace {
         public function migrationDirectory(string $packageName): ?string
         {
             return $this->getMigrationDirectoryForExtension($packageName);
+        }
+
+        public function basePath(): string
+        {
+            return $this->applicationBasePath();
         }
     }
 
@@ -180,11 +199,39 @@ namespace {
             ]);
     });
 
+    it('keeps extensions-project and out-of-app migration paths pointing at the right directory', function () {
+        $command = migrate_sandbox_command([
+            'refresh' => false,
+            'seed'    => false,
+            'force'   => true,
+        ]);
+        $command->installedExtensions = [
+            'fleetbase/fleetops-api' => ['name' => 'fleetbase/fleetops-api'],
+            'fleetbase/linked-api'   => ['name' => 'fleetbase/linked-api'],
+        ];
+        $command->migrationDirectories = [
+            'fleetbase/fleetops-api' => '/srv/app/extensions/vendor/fleetbase/fleetops-api/server/migrations/',
+            'fleetbase/linked-api'   => '/srv/packages/linked/server/migrations',
+        ];
+
+        $command->handle();
+
+        expect($command->calls)->toHaveCount(3)
+            ->and($command->calls[1][1]['--path'])->toBe('extensions/vendor/fleetbase/fleetops-api/server/migrations')
+            ->and($command->calls[1][1])->not->toHaveKey('--realpath')
+            ->and($command->calls[2][1]['--path'])->toBe('/srv/packages/linked/server/migrations')
+            ->and($command->calls[2][1]['--realpath'])->toBeTrue();
+    });
+
     it('delegates extension metadata lookups to support utilities', function () {
         $command = new MigrateSandboxCommandProbe();
 
         expect($command->installedExtensions())->toBe(Utils::getInstalledFleetbaseExtensions())
             ->and($command->extensionProperty('fleetbase/missing-extension', 'sandbox-migrations'))->toBeNull()
             ->and($command->migrationDirectory('fleetbase/missing-extension'))->toBeNull();
+    });
+
+    it('makes paths relative to the application base path', function () {
+        expect((new MigrateSandboxCommandProbe())->basePath())->toBe(getcwd());
     });
 }
