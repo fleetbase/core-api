@@ -1339,3 +1339,35 @@ test('utils discovers extensions installed in a separate extensions composer pro
         Utils::deleteDirectory($project);
     }
 });
+
+test('utils skips an extensions project with nothing installed or a malformed lock, and survives a broken path binding', function () {
+    $project = sys_get_temp_dir() . '/fleetbase-extensions-empty-' . uniqid();
+    mkdir($project, 0777, true);
+    file_put_contents($project . '/composer.json', json_encode(['name' => 'fleetbase/extensions']));
+    $core = Utils::lockedComposerPackages();
+
+    try {
+        Utils::useExtensionsProjectPath($project);
+
+        // Nothing installed and no composer.lock yet: only core's packages.
+        expect(Utils::composerProjectPaths())->toBe([base_path(), $project])
+            ->and(count(Utils::installedComposerPackages()))->toBeGreaterThan(0)
+            ->and(Utils::lockedComposerPackages())->toBe($core);
+
+        // A lock file without packages is skipped too.
+        file_put_contents($project . '/composer.lock', json_encode(['content-hash' => 'x']));
+        expect(Utils::lockedComposerPackages())->toBe($core);
+    } finally {
+        Utils::useExtensionsProjectPath(null);
+        Utils::deleteDirectory($project);
+    }
+
+    // A path.extensions binding that throws falls back to base_path('extensions').
+    $container = app();
+    $container->bind('path.extensions', fn () => throw new RuntimeException('not configured'));
+    try {
+        expect(Utils::composerProjectPaths())->toBe(is_file(base_path('extensions/composer.json')) ? [base_path(), base_path('extensions')] : [base_path()]);
+    } finally {
+        $container->offsetUnset('path.extensions');
+    }
+});
