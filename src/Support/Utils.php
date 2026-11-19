@@ -2014,6 +2014,170 @@ class Utils
     }
 
     /**
+     * Overrides where the extensions Composer project lives (tests); null goes back to discovery.
+     */
+    protected static ?string $extensionsProjectPath = null;
+
+    /**
+     * Use this directory as the extensions Composer project, or null to discover it again.
+     */
+    public static function useExtensionsProjectPath(?string $path): void
+    {
+        static::$extensionsProjectPath = $path !== null ? rtrim($path, DIRECTORY_SEPARATOR) : null;
+    }
+
+    /**
+     * The separate Composer project installed extensions live in (fleetbase/fleetbase `api/extensions`),
+     * or null when the application has none. The app binds `path.extensions`; otherwise
+     * `base_path('extensions')` counts when it holds a composer.json.
+     */
+    public static function extensionsProjectPath(): ?string
+    {
+        $path = static::$extensionsProjectPath;
+
+        if ($path === null) {
+            try {
+                if (function_exists('app') && app()->bound('path.extensions')) {
+                    $path = (string) app('path.extensions');
+                }
+            } catch (\Throwable $e) {
+                $path = null;
+            }
+        }
+
+        $path = rtrim($path ?: base_path('extensions'), DIRECTORY_SEPARATOR);
+
+        if (!is_file($path . DIRECTORY_SEPARATOR . 'composer.json') || realpath($path) === realpath(base_path())) {
+            return null;
+        }
+
+        return $path;
+    }
+
+    /**
+     * Composer projects whose packages make up the application: core first, then the extensions project.
+     *
+     * @return list<string>
+     */
+    public static function composerProjectPaths(): array
+    {
+        $paths      = [base_path()];
+        $extensions = static::extensionsProjectPath();
+
+        if ($extensions !== null) {
+            $paths[] = $extensions;
+        }
+
+        return $paths;
+    }
+
+    /**
+     * Packages from `vendor/composer/installed.json` of every Composer project. Core's must exist; the extensions
+     * project's is optional (nothing installed yet). Core wins when both have a package.
+     *
+     * @return list<array<string, mixed>>
+     *
+     * @throws \RuntimeException if core's installed.json cannot be found
+     */
+    public static function installedComposerPackages(): array
+    {
+        $packages = [];
+
+        foreach (static::composerProjectPaths() as $index => $project) {
+            $installedJsonPath = realpath($project . '/vendor/composer/installed.json');
+
+            if (!$installedJsonPath) {
+                // @codeCoverageIgnoreStart
+                // This package always runs with Composer's installed metadata present; the branch protects broken installs.
+                if ($index === 0) {
+                    throw new \RuntimeException('Unable to find the installed.json file.');
+                }
+                // @codeCoverageIgnoreEnd
+
+                continue;
+            }
+
+            $installed = json_decode(file_get_contents($installedJsonPath), true);
+            foreach ($installed['packages'] ?? [] as $package) {
+                if (isset($package['name']) && !isset($packages[$package['name']])) {
+                    $packages[$package['name']] = $package;
+                }
+            }
+        }
+
+        return array_values($packages);
+    }
+
+    /**
+     * Packages from `composer.lock` of every Composer project. Core's must exist; the extensions project's is
+     * optional. Core wins when both lock a package.
+     *
+     * @return list<array<string, mixed>>
+     *
+     * @throws \Exception if core's composer.lock does not exist or does not define packages
+     */
+    public static function lockedComposerPackages(): array
+    {
+        $packages = [];
+
+        foreach (static::composerProjectPaths() as $index => $project) {
+            $filePath = $project . DIRECTORY_SEPARATOR . 'composer.lock';
+
+            if (!file_exists($filePath)) {
+                // @codeCoverageIgnoreStart
+                // The test and runtime package both require composer.lock; this protects incomplete installations.
+                if ($index === 0) {
+                    throw new \Exception('composer.lock file does not exist');
+                }
+                // @codeCoverageIgnoreEnd
+
+                continue;
+            }
+
+            $composerData = json_decode(file_get_contents($filePath), true);
+
+            if (!isset($composerData['packages'])) {
+                // @codeCoverageIgnoreStart
+                // Composer lock files produced by Composer define packages; this protects malformed lock files.
+                if ($index === 0) {
+                    throw new \Exception('Packages are not defined in the composer.lock file');
+                }
+                // @codeCoverageIgnoreEnd
+
+                continue;
+            }
+
+            foreach ($composerData['packages'] as $package) {
+                if (isset($package['name']) && !isset($packages[$package['name']])) {
+                    $packages[$package['name']] = $package;
+                }
+            }
+        }
+
+        return array_values($packages);
+    }
+
+    /**
+     * Where a Composer package is installed: the first project whose vendor folder has it, else core's vendor path.
+     *
+     * @param string $package package name, e.g. `fleetbase/storefront-api`
+     * @param string $path    path inside the package, without a leading slash
+     */
+    public static function composerPackagePath(string $package, string $path = ''): string
+    {
+        $suffix = $path !== '' ? DIRECTORY_SEPARATOR . ltrim($path, '/') : '';
+
+        foreach (static::composerProjectPaths() as $project) {
+            $root = $project . '/vendor/' . $package;
+            if (is_dir($root)) {
+                return $root . $suffix;
+            }
+        }
+
+        return base_path('vendor/' . $package) . $suffix;
+    }
+
+    /**
      * Retrieves the values of a specified key from the "extra" property of all packages
      * with the "fleetbase" key.
      *
@@ -2025,16 +2189,7 @@ class Utils
      */
     public static function fromFleetbaseExtensions(string $key): array
     {
-        $installedJsonPath = realpath(base_path('vendor/composer/installed.json'));
-
-        // @codeCoverageIgnoreStart
-        // This package always runs with Composer's installed metadata present; the branch protects broken installs.
-        if (!$installedJsonPath) {
-            throw new \RuntimeException('Unable to find the installed.json file.');
-        }
-        // @codeCoverageIgnoreEnd
-
-        $installedPackages   = json_decode(file_get_contents($installedJsonPath), true);
+        $installedPackages   = ['packages' => static::installedComposerPackages()];
         $fleetbaseExtensions = [];
 
         if (isset($installedPackages['packages'])) {
@@ -2064,16 +2219,7 @@ class Utils
      */
     public static function getFleetbaseExtensionProperty(string $extension, string $key)
     {
-        $installedJsonPath = realpath(base_path('vendor/composer/installed.json'));
-
-        // @codeCoverageIgnoreStart
-        // This package always runs with Composer's installed metadata present; the branch protects broken installs.
-        if (!$installedJsonPath) {
-            throw new \RuntimeException('Unable to find the installed.json file.');
-        }
-        // @codeCoverageIgnoreEnd
-
-        $installedPackages = json_decode(file_get_contents($installedJsonPath), true);
+        $installedPackages = ['packages' => static::installedComposerPackages()];
         $value             = null;
 
         if (isset($installedPackages['packages'])) {
@@ -2180,31 +2326,9 @@ class Utils
      */
     public static function findComposerPackagesWithKeyword($keyword = 'fleetbase-extension')
     {
-        // Path to composer.lock file.
-        $filePath = base_path('composer.lock');
-
-        // Check if file exists.
-        // @codeCoverageIgnoreStart
-        // The test and runtime package both require composer.lock; this protects incomplete installations.
-        if (!file_exists($filePath)) {
-            throw new \Exception('composer.lock file does not exist');
-        }
-        // @codeCoverageIgnoreEnd
-
-        // Read composer.lock content.
-        $fileContent  = file_get_contents($filePath);
-        $composerData = json_decode($fileContent, true);
-
-        // Check if packages are defined.
-        // @codeCoverageIgnoreStart
-        // Composer lock files produced by Composer define packages; this protects malformed lock files.
-        if (!isset($composerData['packages'])) {
-            throw new \Exception('Packages are not defined in the composer.lock file');
-        }
-        // @codeCoverageIgnoreEnd
+        $packages      = static::lockedComposerPackages();
 
         $foundPackages = [];
-        $packages      = array_values($composerData['packages']);
 
         // Loop through packages.
         foreach ($packages as $package) {
@@ -2246,9 +2370,9 @@ class Utils
 
         foreach ($packages as $packageName => $package) {
             // Derive the seeds directory path
-            $seedsDirectory = base_path('vendor/' . $packageName . '/server/seeders');
+            $seedsDirectory = static::composerPackagePath($packageName, 'server/seeders');
             if (!is_dir($seedsDirectory)) {
-                $seedsDirectory = base_path('vendor/' . $packageName . '/seeders');
+                $seedsDirectory = static::composerPackagePath($packageName, 'seeders');
             }
 
             // Check if the seeds directory exists
@@ -2295,11 +2419,11 @@ class Utils
 
         foreach ($packages as $packageName => $package) {
             // Derive the seeds directory path
-            $seedsDirectory = base_path('vendor/' . $packageName . '/server/seeders');
+            $seedsDirectory = static::composerPackagePath($packageName, 'server/seeders');
 
             // Try without /server/ segment
             if (!is_dir($seedsDirectory)) {
-                $seedsDirectory = base_path('vendor/' . $packageName . '/seeders');
+                $seedsDirectory = static::composerPackagePath($packageName, 'seeders');
             }
 
             // Check if the seeds directory exists
@@ -2367,12 +2491,12 @@ class Utils
         $directories = [];
 
         foreach ($packages as $packageName => $package) {
-            $migrationDirectory = base_path('vendor/' . $packageName . '/server/migrations/');
+            $migrationDirectory = static::composerPackagePath($packageName, 'server/migrations/');
             if (is_dir($migrationDirectory)) {
                 $directories[] = $migrationDirectory;
             }
 
-            $migrationDirectory = base_path('vendor/' . $packageName . '//migrations/');
+            $migrationDirectory = static::composerPackagePath($packageName, 'migrations/');
             if (is_dir($migrationDirectory)) {
                 $directories[] = $migrationDirectory;
             }
@@ -2404,9 +2528,9 @@ class Utils
                 continue;
             }
 
-            $migrationDirectory = base_path('vendor/' . $packageName . '/server/migrations/');
+            $migrationDirectory = static::composerPackagePath($packageName, 'server/migrations/');
             if (!is_dir($migrationDirectory)) {
-                $migrationDirectory = base_path('vendor/' . $packageName . '//migrations/');
+                $migrationDirectory = static::composerPackagePath($packageName, 'migrations/');
             }
             break;
         }
@@ -2441,9 +2565,9 @@ class Utils
         }
 
         foreach ($packages as $packageName => $package) {
-            $srcDirectory = base_path('vendor/' . $packageName . '/server/src/');
+            $srcDirectory = static::composerPackagePath($packageName, 'server/src/');
             if (!is_dir($srcDirectory)) {
-                $srcDirectory = base_path('vendor/' . $packageName . '//src/');
+                $srcDirectory = static::composerPackagePath($packageName, 'src/');
             }
 
             // @codeCoverageIgnoreStart
