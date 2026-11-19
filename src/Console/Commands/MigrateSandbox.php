@@ -51,12 +51,19 @@ class MigrateSandbox extends Command
         }
 
         foreach ($paths as $path) {
-            $this->call($command, [
+            $arguments = [
                 '--seed'     => $seed,
                 '--force'    => $force,
                 '--database' => config('fleetbase.connection.sandbox'),
                 '--path'     => $path,
-            ]);
+            ];
+
+            // A path outside the app (a path-linked package in development) can't be made relative to it.
+            if (str_starts_with($path, '/')) {
+                $arguments['--realpath'] = true;
+            }
+
+            $this->call($command, $arguments);
         }
     }
 
@@ -93,16 +100,16 @@ class MigrateSandbox extends Command
     }
 
     /**
-     * Converts an array of absolute paths to relative paths.
+     * Converts absolute migration paths to paths relative to the application base path.
      *
-     * This function maps over an array of paths and for each path, it creates a substring
-     * from the position of 'vendor' to the end of the string, effectively creating a relative path.
-     * The trailing slash is also removed from each path. If the provided input is not an array,
-     * the function will return an empty array.
+     * Extensions may live in core's vendor directory or in the extensions project (api/extensions/vendor), so a
+     * path is made relative by stripping the base path rather than by cutting at the first "vendor" segment, which
+     * pointed extensions-project migrations at core's vendor directory. A path outside the base path is returned
+     * absolute (and migrated with --realpath). Trailing slashes are removed.
      *
-     * @param array|null $paths an array of absolute paths that will be converted to relative paths
+     * @param array|null $paths absolute migration paths
      *
-     * @return array an array of relative paths
+     * @return array the normalized paths
      */
     protected function makePathsRelative(?array $paths = []): array
     {
@@ -110,18 +117,18 @@ class MigrateSandbox extends Command
             return [];
         }
 
-        $relativePaths = array_map(function ($path) {
-            // Find the position of "vendor" in the string
-            $startPosition = strpos($path, 'vendor');
-            // Create a substring from the position of "vendor" to the end of the string
-            $relativePath = substr($path, $startPosition);
-            // Remove the trailing slash
-            $relativePath = rtrim($relativePath, '/');
+        $base = rtrim($this->applicationBasePath(), '/') . '/';
 
-            return $relativePath;
+        return array_map(function ($path) use ($base) {
+            $path = rtrim($path, '/');
+
+            return str_starts_with($path, $base) ? substr($path, strlen($base)) : $path;
         }, $paths);
+    }
 
-        return $relativePaths;
+    protected function applicationBasePath(): string
+    {
+        return base_path();
     }
 
     protected function getInstalledFleetbaseExtensions(): array
