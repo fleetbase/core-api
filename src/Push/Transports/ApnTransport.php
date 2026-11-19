@@ -2,8 +2,8 @@
 
 namespace Fleetbase\Push\Transports;
 
-use Fleetbase\Push\PushCredentials;
 use Fleetbase\Push\ApnClientFactory;
+use Fleetbase\Push\PushCredentials;
 use Fleetbase\Push\PushMessage;
 use Fleetbase\Push\PushOutcome;
 use Pushok\Notification;

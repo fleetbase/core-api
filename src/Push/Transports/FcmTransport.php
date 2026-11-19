@@ -2,8 +2,8 @@
 
 namespace Fleetbase\Push\Transports;
 
-use Fleetbase\Push\PushCredentials;
 use Fleetbase\Push\FirebaseMessagingFactory;
+use Fleetbase\Push\PushCredentials;
 use Fleetbase\Push\PushMessage;
 use Fleetbase\Push\PushOutcome;
 use Kreait\Firebase\Exception\Messaging\AuthenticationError;

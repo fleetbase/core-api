@@ -91,7 +91,7 @@ function push_apps_container(): void
 
 function push_apps_apn(array $overrides = []): array
 {
-    return array_replace(['key_id' => 'KEY123', 'team_id' => 'TEAM123', 'app_bundle_id' => 'com.operator.passenger', 'private_key_content' => "-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----"], $overrides);
+    return array_replace(['key_id' => 'KEY123', 'team_id' => 'TEAM123', 'app_bundle_id' => 'com.operator.passenger', 'private_key_content' => '-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----'], $overrides);
 }
 
 function push_apps_fcm(array $overrides = []): array
@@ -120,7 +120,7 @@ class PushAppsFakeApnTransport extends ApnTransport
 
 class PushAppsFakeFcmTransport extends FcmTransport
 {
-    public array $calls = [];
+    public array $calls      = [];
     public ?Throwable $throw = null;
 
     public function __construct()
@@ -168,7 +168,7 @@ test('a push app makes credentials only for the platforms it has keys for', func
 
 test('the summaries show the settings but never the keys', function () {
     push_apps_container();
-    $app = new PushApp();
+    $app      = new PushApp();
     $app->apn = push_apps_apn(['environment' => 'sandbox']);
     $app->fcm = push_apps_fcm(['android_channel_id' => 'trips']);
 
