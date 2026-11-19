@@ -1,6 +1,13 @@
-> v2.0.3 ~ "Foreign keys point at unique keys"
+> v2.0.3 ~ "Foreign keys point at unique keys, and push apps"
 
-# v2.0.3 — Foreign keys point at unique keys
+# v2.0.3 — Foreign keys point at unique keys, and push apps
+
+## Added
+
+- **Push apps: an organization's own apps send pushes with their own credentials.** A push app (`push_apps`) holds one app's APNs key, team and bundle ID and its Firebase service account, stored encrypted and never returned. It has a key (`push_app_…`) that the app sends when it registers a device, which links the device to the app (`user_devices.push_app_uuid`, plus `company_uuid`).
+  - Notifications that add `Fleetbase\Push\PushAppChannel` to `via()` and use the `PushesToApps` trait send to those devices with their app's credentials. iOS devices go to the APNs environment they registered with, or production then sandbox, and tokens rejected in every environment are removed.
+  - Devices registered without a push app are unchanged: the install-wide APNs and FCM settings under Admin › Config still send to them, and `routeNotificationForApn/Fcm` now leave out push-app devices, so no device gets a push twice.
+  - The sender is Storefront's per-channel sender, moved into core and made app-agnostic.
 
 ## Fixed
 
@@ -9,5 +16,6 @@
 
 ## Upgrade Steps
 
+- `2026_11_19_000001_create_push_apps_table` creates `push_apps` and adds `push_app_uuid` and `company_uuid` to `user_devices`.
 - Run `php artisan migrate` and `php artisan sandbox:migrate`. If a table is reported as having duplicate values, it is skipped. Remove the duplicates, then run the `php artisan migrate:refresh --force --path=…` command the message gives. It rolls back and re-runs only that migration, and lists every other migration as "Migration not found" without touching them.
 - Create migrations for new tables should declare `uuid` as `->unique()`, so foreign keys to it work on MySQL 8.4 without the migration hook.

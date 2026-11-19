@@ -31,7 +31,7 @@ class UserDevice extends Model
      *
      * @var array
      */
-    protected $fillable = ['user_uuid', 'platform', 'app_identifier', 'environment', 'token', 'status', 'last_seen_at'];
+    protected $fillable = ['user_uuid', 'company_uuid', 'push_app_uuid', 'platform', 'app_identifier', 'environment', 'token', 'status', 'last_seen_at'];
 
     /**
      * The attributes that should be cast to native types.
@@ -55,4 +55,39 @@ class UserDevice extends Model
      * @var array
      */
     protected $hidden = [];
+
+    /**
+     * The push app the device registered with, if any.
+     */
+    public function pushApp()
+    {
+        return $this->belongsTo(PushApp::class, 'push_app_uuid', 'uuid');
+    }
+
+    /**
+     * `ios` or `android` for the platform names apps send, or null.
+     */
+    public static function normalizePlatform(?string $platform): ?string
+    {
+        return match (strtolower(trim((string) $platform))) {
+            'ios', 'iphone', 'ipad', 'ipados', 'apple', 'apn', 'apns' => 'ios',
+            'android', 'fcm'                                          => 'android',
+            default                                                   => null,
+        };
+    }
+
+    /**
+     * The tokens of the install-wide APNs or FCM channel: devices on the platform that
+     * didn't register with a push app, which the PushAppChannel sends to instead.
+     *
+     * @param iterable<UserDevice> $devices
+     */
+    public static function installTokens(iterable $devices, string $platform): array
+    {
+        return collect($devices)
+            ->filter(fn ($device) => $device->platform === $platform && empty($device->push_app_uuid))
+            ->map(fn ($device) => $device->token)
+            ->values()
+            ->toArray();
+    }
 }
