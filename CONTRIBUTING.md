@@ -16,6 +16,7 @@ Please review these guidelines before submitting any pull requests.
 * Send a coherent commit history, making sure each individual commit in your pull request is meaningful.
 * You may need to [rebase](https://git-scm.com/book/en/v2/Git-Branching-Rebasing) to avoid merge conflicts.
 * Please remember that we follow [SemVer](http://semver.org/).
+* In a migration that creates a table, declare its `uuid` as `->unique()`, not `->index()`, and make any other column a foreign key points at unique too. MySQL 8.4 refuses foreign keys to a non-unique key, and refuses to alter a table such a key points at.
 
 ## Setup
 

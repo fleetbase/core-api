@@ -763,11 +763,7 @@ class User extends Authenticatable
     {
         $this->loadMissing('devices');
 
-        return $this->devices->where('platform', 'android')->map(
-            function ($userDevice) {
-                return $userDevice->token;
-            }
-        )->toArray();
+        return UserDevice::installTokens($this->devices, 'android');
     }
 
     /**
@@ -777,11 +773,17 @@ class User extends Authenticatable
     {
         $this->loadMissing('devices');
 
-        return $this->devices->where('platform', 'ios')->map(
-            function ($userDevice) {
-                return $userDevice->token;
-            }
-        )->toArray();
+        return UserDevice::installTokens($this->devices, 'ios');
+    }
+
+    /**
+     * The user's devices that registered with a push app, for the PushAppChannel.
+     */
+    public function routeNotificationForPushApp()
+    {
+        $this->loadMissing('devices');
+
+        return $this->devices->filter(fn ($device) => !empty($device->push_app_uuid))->values();
     }
 
     /**

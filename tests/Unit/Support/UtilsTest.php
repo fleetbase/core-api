@@ -1217,10 +1217,10 @@ test('utils discovers extension seeders migrations and auth schemas from install
                 'path'  => $fallbackRoot . '/seeders/FallbackSeeder.php',
             ])
             ->and($migrationDirs)->toContain($demoRoot . '/server/migrations/')
-            ->and($migrationDirs)->toContain($demoRoot . '//migrations/')
-            ->and($migrationDirs)->toContain($fallbackRoot . '//migrations/')
+            ->and($migrationDirs)->toContain($demoRoot . '/migrations/')
+            ->and($migrationDirs)->toContain($fallbackRoot . '/migrations/')
             ->and(UtilsInstalledExtensionsFake::getMigrationDirectoryForExtension('acme/fleetbase-demo'))->toBe($demoRoot . '/server/migrations/')
-            ->and(UtilsInstalledExtensionsFake::getMigrationDirectoryForExtension('acme/fleetbase-root-only'))->toBe($fallbackRoot . '//migrations/')
+            ->and(UtilsInstalledExtensionsFake::getMigrationDirectoryForExtension('acme/fleetbase-root-only'))->toBe($fallbackRoot . '/migrations/')
             ->and(UtilsInstalledExtensionsFake::getMigrationDirectoryForExtension('acme/missing'))->toBeNull()
             ->and($authSchemas)->toContain('Acme\\Demo\\Auth\\Schemas\\Demo')
             ->and($authSchemas)->toContain('Acme\\Fallback\\Auth\\Schemas\\Fallback')
@@ -1295,4 +1295,79 @@ test('utils country lookup works when the cache store is unavailable', function 
     Utils::flushCountryLookup();
     Illuminate\Support\Facades\Cache::clearResolvedInstances();
     bind_test_container();
+});
+
+test('utils discovers extensions installed in a separate extensions composer project', function () {
+    $project = sys_get_temp_dir() . '/fleetbase-extensions-project-' . uniqid();
+    $package = $project . '/vendor/acme/fleetbase-separate';
+
+    mkdir($package . '/server/migrations', 0777, true);
+    mkdir($package . '/server/seeders', 0777, true);
+    mkdir($project . '/vendor/composer', 0777, true);
+    file_put_contents($project . '/composer.json', json_encode(['name' => 'fleetbase/extensions']));
+
+    $definition = [
+        'name'     => 'acme/fleetbase-separate',
+        'keywords' => ['fleetbase-extension'],
+        'autoload' => ['psr-4' => ['Acme\\Separate\\' => 'server/src/']],
+        'extra'    => ['fleetbase' => ['db-connection' => 'acme_separate']],
+    ];
+    // A package core already has must not be shadowed by the extensions project.
+    $shadow = ['name' => 'aws/aws-sdk-php', 'keywords' => ['fleetbase-extension']];
+
+    file_put_contents($project . '/composer.lock', json_encode(['packages' => [$definition, $shadow]]));
+    file_put_contents($project . '/vendor/composer/installed.json', json_encode(['packages' => [$definition]]));
+
+    try {
+        Utils::useExtensionsProjectPath($project);
+
+        expect(Utils::composerProjectPaths())->toBe([base_path(), $project])
+            ->and(Utils::getInstalledFleetbaseExtensions())->toHaveKey('acme/fleetbase-separate')
+            ->and(Utils::getInstalledFleetbaseExtensions())->not->toHaveKey('aws/aws-sdk-php')
+            ->and(Utils::fromFleetbaseExtensions('db-connection'))->toContain('acme_separate')
+            ->and(Utils::getFleetbaseExtensionProperty('acme/fleetbase-separate', 'db-connection'))->toBe('acme_separate')
+            ->and(Utils::composerPackagePath('acme/fleetbase-separate', 'server/migrations/'))->toBe($package . '/server/migrations/')
+            ->and(Utils::getMigrationDirectoryForExtension('acme/fleetbase-separate'))->toBe($package . '/server/migrations/')
+            ->and(Utils::getMigrationDirectories())->toContain($package . '/server/migrations/')
+            ->and(Utils::composerPackagePath('acme/not-installed', 'src'))->toBe(base_path('vendor/acme/not-installed') . '/src');
+
+        Utils::useExtensionsProjectPath($project . '-missing');
+        expect(Utils::composerProjectPaths())->toBe([base_path()])
+            ->and(Utils::getInstalledFleetbaseExtensions())->not->toHaveKey('acme/fleetbase-separate');
+    } finally {
+        Utils::useExtensionsProjectPath(null);
+        Utils::deleteDirectory($project);
+    }
+});
+
+test('utils skips an extensions project with nothing installed or a malformed lock, and survives a broken path binding', function () {
+    $project = sys_get_temp_dir() . '/fleetbase-extensions-empty-' . uniqid();
+    mkdir($project, 0777, true);
+    file_put_contents($project . '/composer.json', json_encode(['name' => 'fleetbase/extensions']));
+    $core = Utils::lockedComposerPackages();
+
+    try {
+        Utils::useExtensionsProjectPath($project);
+
+        // Nothing installed and no composer.lock yet: only core's packages.
+        expect(Utils::composerProjectPaths())->toBe([base_path(), $project])
+            ->and(count(Utils::installedComposerPackages()))->toBeGreaterThan(0)
+            ->and(Utils::lockedComposerPackages())->toBe($core);
+
+        // A lock file without packages is skipped too.
+        file_put_contents($project . '/composer.lock', json_encode(['content-hash' => 'x']));
+        expect(Utils::lockedComposerPackages())->toBe($core);
+    } finally {
+        Utils::useExtensionsProjectPath(null);
+        Utils::deleteDirectory($project);
+    }
+
+    // A path.extensions binding that throws falls back to base_path('extensions').
+    $container = app();
+    $container->bind('path.extensions', fn () => throw new RuntimeException('not configured'));
+    try {
+        expect(Utils::composerProjectPaths())->toBe(is_file(base_path('extensions/composer.json')) ? [base_path(), base_path('extensions')] : [base_path()]);
+    } finally {
+        $container->offsetUnset('path.extensions');
+    }
 });
