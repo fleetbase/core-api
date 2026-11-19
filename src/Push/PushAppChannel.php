@@ -4,26 +4,27 @@ namespace Fleetbase\Push;
 
 use Fleetbase\Models\PushApp;
 use Fleetbase\Models\UserDevice;
+use Fleetbase\Push\Contracts\PushProvider;
 use Fleetbase\Push\Contracts\SendsToPushApps;
-use Fleetbase\Push\Transports\ApnTransport;
-use Fleetbase\Push\Transports\FcmTransport;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
 /**
  * Sends a notification to the notifiable's devices that registered with a push app, each
- * with its own app's APNs or FCM credentials.
+ * through the provider that issued its token (see PushProviders::forDevice), with its own
+ * app's settings for that provider. An iOS app that gets its token from Firebase is sent
+ * through FCM, not APNs.
  *
  * Devices registered without a push app are left to the install-wide `ApnChannel` and
  * `FcmChannel`, whose routes leave out push-app devices, so no device gets a push twice.
- * For iOS a device that registered its APNs environment is sent to it, otherwise
- * production then sandbox. Dead tokens are pruned and every failure is logged; nothing is
- * thrown, so a push failure never stops the notification's other channels.
+ * An APNs device that registered its environment is sent to it, otherwise production then
+ * sandbox. Dead tokens are pruned and every failure is logged; nothing is thrown, so a push
+ * failure never stops the notification's other channels.
  */
 class PushAppChannel
 {
-    public function __construct(protected FcmTransport $fcm, protected ApnTransport $apn)
+    public function __construct(protected PushProviders $providers)
     {
     }
 
@@ -57,26 +58,19 @@ class PushAppChannel
                 continue;
             }
 
-            foreach ($appDevices->groupBy(fn ($device) => UserDevice::normalizePlatform($device->platform) ?? '') as $platform => $group) {
-                $scheme      = $platform === 'ios' ? 'apn' : ($platform === 'android' ? 'fcm' : null);
-                $credentials = $scheme ? $app->credentials($scheme) : null;
+            foreach ($appDevices->groupBy(fn ($device) => $this->providers->forDevice($device) ?? '') as $key => $group) {
+                $provider    = $this->providers->get($key);
+                $credentials = $provider ? $app->credentials($key) : null;
                 if (!$credentials) {
-                    static::log('warning', 'The push app has no credentials for this platform; skipping its devices.', ['push_app' => $app->public_id, 'platform' => $platform, 'devices' => $group->count()]);
+                    static::log('warning', 'The push app isn\'t set up for the provider of these devices; skipping them.', ['push_app' => $app->public_id, 'provider' => $key ?: null, 'devices' => $group->count()]);
                     continue;
                 }
 
-                $outcomes += $scheme === 'apn' ? $this->sendToIos($credentials, $group, $message) : $this->deliver($credentials, $group, [null], $message);
+                // One batch per order of environments to try; a provider without environments sends one batch.
+                foreach ($group->groupBy(fn ($device) => implode(',', $provider->environments($credentials, $device->environment ?? null))) as $batch) {
+                    $outcomes += $this->deliver($provider, $credentials, $batch, $provider->environments($credentials, $batch->first()->environment ?? null), $message);
+                }
             }
-        }
-
-        return $outcomes;
-    }
-
-    protected function sendToIos(PushCredentials $credentials, Collection $devices, PushMessage $message): array
-    {
-        $outcomes = [];
-        foreach ($devices->groupBy(fn ($device) => $device->environment ?? '') as $environment => $group) {
-            $outcomes += $this->deliver($credentials, $group, ApnClientFactory::environments($credentials, $environment ?: null), $message);
         }
 
         return $outcomes;
@@ -88,7 +82,7 @@ class PushAppChannel
      *
      * @param array<int, string|null> $environments
      */
-    protected function deliver(PushCredentials $credentials, Collection $devices, array $environments, PushMessage $message): array
+    protected function deliver(PushProvider $provider, PushCredentials $credentials, Collection $devices, array $environments, PushMessage $message): array
     {
         $byToken  = $devices->keyBy('token');
         $pending  = $byToken->keys()->all();
@@ -100,9 +94,9 @@ class PushAppChannel
             }
 
             try {
-                $results = $credentials->scheme === 'apn' ? $this->apn->send($credentials, $environment, $message, $pending) : $this->fcm->send($credentials, $message, $pending);
+                $results = $provider->send($credentials, $message, $pending, $environment);
             } catch (\Throwable $e) {
-                static::log('error', 'The push provider request failed.', ['push_app' => $credentials->id, 'scheme' => $credentials->scheme, 'environment' => $environment, 'error' => $e->getMessage()]);
+                static::log('error', 'The push provider request failed.', ['push_app' => $credentials->id, 'provider' => $credentials->provider, 'environment' => $environment, 'error' => $e->getMessage()]);
                 foreach ($pending as $token) {
                     $outcomes[$token] = PushOutcome::error($e->getMessage());
                 }
@@ -130,7 +124,7 @@ class PushAppChannel
             if ($outcome->is(PushOutcome::DEAD)) {
                 static::prune($device, $outcome->reason);
             } elseif (!$outcome->is(PushOutcome::SENT)) {
-                static::log('warning', 'A push was not delivered.', ['device' => $device?->public_id, 'push_app' => $credentials->id, 'status' => $outcome->status, 'reason' => $outcome->reason]);
+                static::log('warning', 'A push was not delivered.', ['device' => $device->public_id ?? null, 'push_app' => $credentials->id, 'status' => $outcome->status, 'reason' => $outcome->reason]);
             }
         }
 

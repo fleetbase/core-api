@@ -4,20 +4,23 @@ namespace Fleetbase\Models;
 
 use Fleetbase\Casts\Json;
 use Fleetbase\Push\PushCredentials;
+use Fleetbase\Push\PushProviders;
 use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasUuid;
 use Illuminate\Support\Str;
 
 /**
- * One of an organization's own mobile apps, with the APNs (iOS) and FCM (Android)
- * credentials its pushes are sent with. Any app can be one: a customer app, a driver app, or
- * an app built through AppHelm. The app registers devices with the push app's `key`, and the
- * PushAppChannel then sends to those devices with these credentials.
+ * One of an organization's own mobile apps, with the settings of each push provider its pushes
+ * are sent through. Any app can be one: a customer app, a driver app, or an app built through
+ * AppHelm. The app registers devices with the push app's `key`, and the PushAppChannel then
+ * sends to those devices with these settings.
  *
- * `apn`: `key_id`, `team_id`, `app_bundle_id`, `private_key_content` (the .p8 key) and
- * optionally `environment`. `fcm`: `credentials` (the Firebase service account JSON) and
- * optionally `android_channel_id`. Both are stored encrypted and never serialized.
+ * `providers` holds the settings by provider key (see PushProviders): `apn` for Apple
+ * (`key_id`, `team_id`, `app_bundle_id`, `private_key_content`, `environment`) and `fcm` for
+ * Firebase (`credentials`, `android_channel_id`). One push app covers an app on both
+ * platforms, whatever its iOS bundle ID and Android package name. They're stored encrypted
+ * and never serialized; `summaries` shows them without their secrets.
  */
 class PushApp extends Model
 {
@@ -31,17 +34,16 @@ class PushApp extends Model
 
     protected $table = 'push_apps';
 
-    protected $fillable = ['company_uuid', 'created_by_uuid', 'name', 'apn', 'fcm', 'status', 'owner_uuid', 'owner_type', 'meta'];
+    protected $fillable = ['company_uuid', 'created_by_uuid', 'name', 'providers', 'status', 'owner_uuid', 'owner_type', 'meta'];
 
     protected $casts = [
-        'apn'  => 'encrypted:array',
-        'fcm'  => 'encrypted:array',
-        'meta' => Json::class,
+        'providers' => 'encrypted:array',
+        'meta'      => Json::class,
     ];
 
-    protected $hidden = ['apn', 'fcm'];
+    protected $hidden = ['providers'];
 
-    protected $appends = ['apn_summary', 'fcm_summary'];
+    protected $appends = ['summaries'];
 
     protected $searchableColumns = ['name', 'key'];
 
@@ -52,14 +54,17 @@ class PushApp extends Model
             $app->status ??= 'active';
         });
 
-        // Editing an app without re-entering its keys keeps the keys it has.
+        // Editing an app without re-entering its secrets keeps the secrets it has.
         static::saving(function (PushApp $app) {
-            if ($app->exists && $app->isDirty('apn')) {
-                $app->apn = static::keepSecrets($app->apn, $app->getOriginal('apn'), ['private_key_content']);
+            if (!$app->exists || !$app->isDirty('providers')) {
+                return;
             }
-            if ($app->exists && $app->isDirty('fcm')) {
-                $app->fcm = static::keepSecrets($app->fcm, $app->getOriginal('fcm'), ['credentials']);
-            }
+            $saved          = (array) $app->getOriginal('providers');
+            $providers      = app(PushProviders::class);
+            $app->providers = collect((array) $app->providers)
+                ->map(fn ($config, $key) => static::keepSecrets($config, $saved[$key] ?? null, $providers->get($key)?->secrets() ?? []))
+                ->filter(fn ($config) => $config !== null)
+                ->all();
         });
     }
 
@@ -120,55 +125,67 @@ class PushApp extends Model
     }
 
     /**
-     * The credentials for `apn` or `fcm`, or null when that platform isn't set up.
+     * The saved settings of one provider, or null when it isn't set up.
      */
-    public function credentials(string $scheme): ?PushCredentials
+    public function provider(string $key): ?array
     {
-        $config = $scheme === 'apn' ? $this->apn : ($scheme === 'fcm' ? $this->fcm : null);
-        $secret = $scheme === 'apn' ? 'private_key_content' : 'credentials';
-        if (!is_array($config) || empty($config[$secret])) {
-            return null;
-        }
+        $config = ((array) $this->providers)[PushProviders::normalize($key)] ?? null;
 
-        return new PushCredentials((string) ($this->public_id ?? $this->uuid), (string) $this->name, $scheme, $config);
+        return is_array($config) ? $config : null;
     }
 
     /**
-     * What the console shows of the APNs settings: everything but the key.
+     * The app with one provider's settings replaced, or removed when `$config` is null.
      */
-    public function getApnSummaryAttribute(): ?array
+    public function setProvider(string $key, ?array $config): static
     {
-        $apn = $this->apn;
-        if (!is_array($apn)) {
-            return null;
+        $providers = (array) $this->providers;
+        $key       = PushProviders::normalize($key);
+        if ($config === null) {
+            unset($providers[$key]);
+        } else {
+            $providers[$key] = $config;
         }
+        $this->providers = $providers;
 
-        return [
-            'key_id'        => $apn['key_id'] ?? null,
-            'team_id'       => $apn['team_id'] ?? null,
-            'app_bundle_id' => $apn['app_bundle_id'] ?? null,
-            'environment'   => $apn['environment'] ?? null,
-            'has_key'       => !empty($apn['private_key_content']),
-        ];
+        return $this;
     }
 
     /**
-     * What the console shows of the FCM settings: the service account's project and email.
+     * The credentials for a provider, or null when it isn't set up or is missing its secrets.
      */
-    public function getFcmSummaryAttribute(): ?array
+    public function credentials(string $key): ?PushCredentials
     {
-        $fcm = $this->fcm;
-        if (!is_array($fcm)) {
+        $key      = PushProviders::normalize($key);
+        $provider = app(PushProviders::class)->get($key);
+        $config   = $this->provider((string) $key);
+        if (!$provider || !$config) {
             return null;
         }
-        $account = $fcm['credentials'] ?? null;
-        $account = is_string($account) ? json_decode($account, true) : $account;
+        foreach ($provider->secrets() as $secret) {
+            if (empty($config[$secret])) {
+                return null;
+            }
+        }
 
-        return [
-            'project_id'         => data_get($account, 'project_id'),
-            'client_email'       => data_get($account, 'client_email'),
-            'android_channel_id' => $fcm['android_channel_id'] ?? null,
-            'has_credentials'    => !empty($fcm['credentials']),
-        ];
+        return new PushCredentials((string) ($this->public_id ?? $this->uuid), (string) $this->name, $key, $config);
+    }
+
+    /**
+     * What the console shows of each provider's settings, by provider key: everything but
+     * the secrets.
+     */
+    public function getSummariesAttribute(): array
+    {
+        $providers = app(PushProviders::class);
+        $summaries = [];
+        foreach ((array) $this->providers as $key => $config) {
+            $provider = $providers->get($key);
+            if ($provider && is_array($config)) {
+                $summaries[$key] = $provider->summary($config);
+            }
+        }
+
+        return $summaries;
     }
 }

@@ -6,9 +6,9 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration {
     /**
-     * Push apps: an organization's own mobile apps, each with the APNs and FCM credentials
-     * its pushes are sent with (stored encrypted). A device that registers with an app's key
-     * is linked to it in `user_devices.push_app_uuid`.
+     * Push apps: an organization's own mobile apps, each with its settings for every push
+     * provider it sends through, by provider key (`providers`, stored encrypted). A device that
+     * registers with an app's key is linked to it in `user_devices.push_app_uuid`.
      */
     public function up(): void
     {
@@ -21,8 +21,7 @@ return new class extends Migration {
                 $table->uuid('created_by_uuid')->nullable();
                 $table->string('name');
                 $table->string('key')->unique();
-                $table->text('apn')->nullable();
-                $table->text('fcm')->nullable();
+                $table->text('providers')->nullable();
                 $table->string('status', 32)->default('active');
                 $table->uuid('owner_uuid')->nullable();
                 $table->string('owner_type')->nullable();

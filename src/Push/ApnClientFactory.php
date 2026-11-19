@@ -19,28 +19,6 @@ class ApnClientFactory
     }
 
     /**
-     * The APNs environments to try, in order. A device that registered its environment is
-     * sent to that one only, as is an app with a fixed environment. Otherwise production is
-     * tried first and a token rejected with BadDeviceToken is retried in sandbox, so
-     * development and App Store builds of one app share its credentials.
-     *
-     * @return string[]
-     */
-    public static function environments(PushCredentials $credentials, ?string $deviceEnvironment = null): array
-    {
-        if (in_array($deviceEnvironment, [self::PRODUCTION, self::SANDBOX], true)) {
-            return [$deviceEnvironment];
-        }
-
-        $environment = $credentials->config['environment'] ?? null;
-        if (in_array($environment, [self::PRODUCTION, self::SANDBOX], true)) {
-            return [$environment];
-        }
-
-        return [self::PRODUCTION, self::SANDBOX];
-    }
-
-    /**
      * @throws PushConfigurationException
      */
     public static function credentials(PushCredentials $credentials): array

@@ -3,15 +3,13 @@
 namespace Fleetbase\Push;
 
 /**
- * The APNs or FCM credentials of one app, as the push transports need them.
- *
- * `config` for APNs: `key_id`, `team_id`, `app_bundle_id`, `private_key_content` (the .p8 key)
- * and optionally `environment` (`production` or `sandbox`). For FCM: `credentials`, the
- * Firebase service account (JSON string or array), and optionally `android_channel_id`.
+ * One push app's settings for one push provider, as the provider needs them to send.
+ * `provider` is the provider's key (`apn`, `fcm`, …) and `config` its saved settings,
+ * secrets included; see each provider for what they are.
  */
 final class PushCredentials
 {
-    public function __construct(public string $id, public string $name, public string $scheme, public array $config)
+    public function __construct(public string $id, public string $name, public string $provider, public array $config)
     {
     }
 }

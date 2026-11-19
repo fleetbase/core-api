@@ -6,6 +6,12 @@ use Fleetbase\Traits\HasApiModelBehavior;
 use Fleetbase\Traits\HasPublicId;
 use Fleetbase\Traits\HasUuid;
 
+/**
+ * A device a user's app registered for pushes. `platform` is the device's OS; `push_provider`
+ * is the service that issued its token (`apn` or `fcm`, see PushProviders), which differs
+ * from the platform's usual one when an iOS app gets its token from Firebase. Left empty, it's
+ * worked out from the token and platform.
+ */
 class UserDevice extends Model
 {
     use HasUuid;
@@ -31,7 +37,7 @@ class UserDevice extends Model
      *
      * @var array
      */
-    protected $fillable = ['user_uuid', 'company_uuid', 'push_app_uuid', 'platform', 'app_identifier', 'environment', 'token', 'status', 'last_seen_at'];
+    protected $fillable = ['user_uuid', 'company_uuid', 'push_app_uuid', 'platform', 'push_provider', 'app_identifier', 'environment', 'token', 'status', 'last_seen_at'];
 
     /**
      * The attributes that should be cast to native types.
