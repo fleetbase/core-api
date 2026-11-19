@@ -9,6 +9,15 @@ namespace Fleetbase\Support {
     }
 }
 
+namespace Fleetbase\Console\Commands {
+    if (!function_exists(__NAMESPACE__ . '\\base_path')) {
+        function base_path(string $path = ''): string
+        {
+            return $path ? getcwd() . DIRECTORY_SEPARATOR . ltrim($path, DIRECTORY_SEPARATOR) : getcwd();
+        }
+    }
+}
+
 namespace {
     use Fleetbase\Console\Commands\MigrateSandbox;
     use Fleetbase\Support\Utils;
@@ -79,6 +88,11 @@ namespace {
         public function migrationDirectory(string $packageName): ?string
         {
             return $this->getMigrationDirectoryForExtension($packageName);
+        }
+
+        public function basePath(): string
+        {
+            return $this->applicationBasePath();
         }
     }
 
@@ -215,5 +229,9 @@ namespace {
         expect($command->installedExtensions())->toBe(Utils::getInstalledFleetbaseExtensions())
             ->and($command->extensionProperty('fleetbase/missing-extension', 'sandbox-migrations'))->toBeNull()
             ->and($command->migrationDirectory('fleetbase/missing-extension'))->toBeNull();
+    });
+
+    it('makes paths relative to the application base path', function () {
+        expect((new MigrateSandboxCommandProbe())->basePath())->toBe(getcwd());
     });
 }
