@@ -158,7 +158,7 @@ function app_review_console_request(string $company, array $input = [], string $
 }
 
 afterEach(function () {
-    foreach (['test-store', 'test-network', 'test-navigator', 'test-guarded', 'test-resolved', 'test-unreachable'] as $type) {
+    foreach (['test-store', 'test-network', 'test-navigator', 'test-guarded', 'test-resolved', 'test-unreachable', 'test-customer'] as $type) {
         AppReview::forget($type);
     }
     EloquentModel::unsetConnectionResolver();
@@ -247,6 +247,70 @@ test('a company can be the subject, with its own review number', function () {
         ->and(ReviewAccess::first()->company_uuid)->toBe('company-a')
         ->and(AppReview::resolveSubject('test-navigator', 'company_a', 'company-a')?->uuid)->toBe('company-a')
         ->and(AppReview::resolveSubject('test-navigator', 'company_b', 'company-a'))->toBeNull();
+});
+
+test('two types on the same model each have their own number, code and access', function () {
+    app_review_database();
+    AppReview::register('test-customer', ['model' => Company::class, 'phone' => '+12025550145', 'name' => 'Customer apps']);
+    $company = Company::where('uuid', 'company-a')->first();
+    $other   = Company::where('uuid', 'company-b')->first();
+
+    // Without a type, a company is still the first type registered for it.
+    expect(AppReview::typeOf($company))->toBe('test-navigator')
+        ->and(AppReview::resolveType($company, 'test-customer'))->toBe('test-customer')
+        // A type registered for another model never applies to a company.
+        ->and(AppReview::resolveType($company, 'test-store'))->toBeNull()
+        ->and(AppReview::resolveType($company, 'nothing'))->toBeNull()
+        ->and(AppReview::isEnabledFor($company, 'test-customer'))->toBeFalse();
+
+    [, $customerCode] = AppReview::update($company, true, false, null, 'test-customer');
+
+    expect(AppReview::isEnabledFor($company, 'test-customer'))->toBeTrue()
+        ->and(AppReview::isEnabledFor($company))->toBeFalse()
+        ->and(AppReview::status($company, 'test-customer'))->toMatchArray(['type' => 'test-customer', 'phone' => '+12025550145', 'phone_display' => '+1 202 555 0145', 'enabled' => true, 'has_code' => true])
+        ->and(AppReview::status($company))->toMatchArray(['type' => 'test-navigator', 'phone' => '+12025550144', 'enabled' => false, 'has_code' => false])
+        ->and(AppReview::acceptsCode($company, '+12025550145', $customerCode, 'test-customer'))->toBeTrue()
+        // The other type's number, the other type, and another company's access refuse it.
+        ->and(AppReview::acceptsCode($company, '+12025550144', $customerCode, 'test-customer'))->toBeFalse()
+        ->and(AppReview::acceptsCode($company, '+12025550145', $customerCode))->toBeFalse()
+        ->and(AppReview::acceptsCode($other, '+12025550145', $customerCode, 'test-customer'))->toBeFalse()
+        ->and(AppReview::acceptsCode($company, '+12025550145', $customerCode, 'test-store'))->toBeFalse();
+
+    do {
+        [, $navigatorCode] = AppReview::update($company, true, true, null, 'test-navigator');
+    } while ($navigatorCode === $customerCode);
+
+    expect(AppReview::acceptsCode($company, '+12025550144', $navigatorCode))->toBeTrue()
+        ->and(AppReview::acceptsCode($company, '+12025550145', $navigatorCode, 'test-customer'))->toBeFalse()
+        ->and(AppReview::acceptsCode($company, '+12025550145', $customerCode, 'test-customer'))->toBeTrue()
+        ->and(ReviewAccess::where('subject_uuid', 'company-a')->orderBy('subject_type')->pluck('subject_type')->all())->toBe(['test-customer', 'test-navigator']);
+
+    // Turning one off leaves the other on.
+    AppReview::update($company, false, false, null, 'test-customer');
+    expect(AppReview::isEnabledFor($company, 'test-customer'))->toBeFalse()
+        ->and(AppReview::isEnabledFor($company, 'test-navigator'))->toBeTrue()
+        ->and(fn () => AppReview::update($company, true, false, null, 'test-store'))->toThrow(InvalidArgumentException::class);
+});
+
+test('the Console endpoint changes the type in its route, not the model\'s first type', function () {
+    app_review_database();
+    AppReview::register('test-customer', ['model' => Company::class, 'phone' => '+12025550145']);
+    app()->instance('validator', new Illuminate\Validation\Factory(new Illuminate\Translation\Translator(new Illuminate\Translation\ArrayLoader(), 'en'), app()));
+    Request::macro('validate', function (array $rules) {
+        return app('validator')->make($this->all(), $rules)->validate();
+    });
+    $controller = new ReviewAccessController();
+
+    $on      = $controller->update('test-customer', 'company_a', app_review_console_request('company-a', ['enabled' => true]))->getData(true)['review_access'];
+    $show    = $controller->show('test-customer', 'company_a', app_review_console_request('company-a', [], 'GET'))->getData(true)['review_access'];
+    $nav     = $controller->show('test-navigator', 'company_a', app_review_console_request('company-a', [], 'GET'))->getData(true)['review_access'];
+    $company = Company::where('uuid', 'company-a')->first();
+
+    expect($on)->toMatchArray(['type' => 'test-customer', 'phone' => '+12025550145', 'enabled' => true])
+        ->and($show)->toMatchArray(['type' => 'test-customer', 'enabled' => true, 'has_code' => true])
+        ->and($nav)->toMatchArray(['type' => 'test-navigator', 'enabled' => false, 'has_code' => false])
+        ->and(AppReview::acceptsCode($company, '+12025550145', $on['code'], 'test-customer'))->toBeTrue()
+        ->and(ReviewAccess::first()->subject_type)->toBe('test-customer');
 });
 
 test('a subject is found by uuid or public id in the signed-in company only', function () {

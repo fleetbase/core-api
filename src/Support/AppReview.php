@@ -98,6 +98,10 @@ class AppReview
 
     /**
      * The registered type of a subject: the first type whose model it is.
+     *
+     * Two types can share a model (an organization's Navigator app and its customer apps are
+     * both a Company), and this only ever finds the first. Code working with any other type
+     * passes it to accessFor(), isEnabledFor(), acceptsCode(), update() and status().
      */
     public static function typeOf(?Model $subject): ?string
     {
@@ -195,11 +199,33 @@ class AppReview
     }
 
     /**
-     * The App Review access record of a subject, if it has one.
+     * The registered type a subject is checked as: the given type when its model is the
+     * subject's, otherwise the subject's first type (typeOf()). A type registered for another
+     * model gives null, so a Store can never be read or changed as a Company's type.
      */
-    public static function accessFor(?Model $subject): ?ReviewAccess
+    public static function resolveType(?Model $subject, ?string $type = null): ?string
     {
-        $type = static::typeOf($subject);
+        if (!$subject) {
+            return null;
+        }
+
+        if ($type === null) {
+            return static::typeOf($subject);
+        }
+
+        $definition = static::definition($type);
+
+        return $definition && $subject instanceof $definition['model'] ? $type : null;
+    }
+
+    /**
+     * The App Review access record of a subject, if it has one.
+     *
+     * @param ?string $type the subject's type; defaults to typeOf($subject)
+     */
+    public static function accessFor(?Model $subject, ?string $type = null): ?ReviewAccess
+    {
+        $type = static::resolveType($subject, $type);
         if (!$type || blank($subject->uuid)) {
             return null;
         }
@@ -212,23 +238,23 @@ class AppReview
         }
     }
 
-    public static function isEnabledFor(?Model $subject): bool
+    public static function isEnabledFor(?Model $subject, ?string $type = null): bool
     {
-        return (bool) static::accessFor($subject)?->isUsable();
+        return (bool) static::accessFor($subject, $type)?->isUsable();
     }
 
     /**
      * Whether a code signs the subject type's review number in to this subject: its access is
      * on and the code is the one it generated. Another subject's code never matches.
      */
-    public static function acceptsCode(?Model $subject, ?string $identity, mixed $code): bool
+    public static function acceptsCode(?Model $subject, ?string $identity, mixed $code, ?string $type = null): bool
     {
-        $type = static::typeOf($subject);
+        $type = static::resolveType($subject, $type);
         if (!$type || !static::isReviewPhone($identity, $type) || blank($code) || !is_scalar($code)) {
             return false;
         }
 
-        $access = static::accessFor($subject);
+        $access = static::accessFor($subject, $type);
         if (!$access || !$access->isUsable() || !$access->checkCode((string) $code)) {
             return false;
         }
@@ -248,14 +274,15 @@ class AppReview
      *
      * @return array{0: ReviewAccess, 1: ?string} the access and the new plain code, if one was generated
      */
-    public static function update(Model $subject, ?bool $enabled, bool $regenerate = false, ?string $updatedByUuid = null): array
+    public static function update(Model $subject, ?bool $enabled, bool $regenerate = false, ?string $updatedByUuid = null, ?string $type = null): array
     {
-        $type = static::typeOf($subject);
-        if (!$type) {
-            throw new \InvalidArgumentException('No App Review type is registered for ' . get_class($subject) . '.');
+        $resolved = static::resolveType($subject, $type);
+        if (!$resolved) {
+            throw new \InvalidArgumentException($type === null ? 'No App Review type is registered for ' . get_class($subject) . '.' : "App Review type [{$type}] is not registered for " . get_class($subject) . '.');
         }
+        $type = $resolved;
 
-        $access = static::accessFor($subject) ?? new ReviewAccess([
+        $access = static::accessFor($subject, $type) ?? new ReviewAccess([
             'company_uuid' => $subject instanceof Company ? $subject->uuid : $subject->company_uuid,
             'subject_type' => $type,
             'subject_uuid' => $subject->uuid,
@@ -285,10 +312,10 @@ class AppReview
      * What the Console and the API show about a subject's access. Never the code or its hash;
      * a caller adds `code` only to the response that generated it.
      */
-    public static function status(Model $subject): array
+    public static function status(Model $subject, ?string $type = null): array
     {
-        $type   = static::typeOf($subject);
-        $access = static::accessFor($subject);
+        $type   = static::resolveType($subject, $type);
+        $access = $type ? static::accessFor($subject, $type) : null;
         $phone  = $type ? static::phoneFor($type) : null;
 
         return [

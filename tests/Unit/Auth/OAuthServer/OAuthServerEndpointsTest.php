@@ -45,6 +45,7 @@ beforeEach(function () {
 
 afterEach(function () {
     AppReview::forget('test-navigator');
+    AppReview::forget('test-customer');
     oauth_test_teardown();
 });
 
@@ -162,6 +163,19 @@ describe('review access', function () {
         $response = oauth_endpoint_call($request, [], fn ($request) => (new ResourceController())->reviewAccess($request, 'unknown', 'company_a'));
 
         expect($response->getStatusCode())->toBe(404);
+    });
+
+    it('changes the type in the route when another type shares the model', function () {
+        AppReview::register('test-customer', ['model' => Company::class, 'phone' => '+12025550145', 'name' => 'Customer apps']);
+        OAuthScopes::register('customer:review-access', ['description' => 'Turn App Review sign-in on or off', 'organization' => true, 'review_access_types' => ['test-customer']]);
+        $token   = oauth_endpoint_token('openid customer:review-access');
+        $request = Request::create('/oauth/v1/review-access/test-customer/company_a', 'PUT', [], [], [], ['HTTP_AUTHORIZATION' => 'Bearer ' . $token]);
+
+        $on = oauth_endpoint_call($request, [], fn ($request) => (new ResourceController())->reviewAccess($request, 'test-customer', 'company_a'))->getData(true)['review_access'];
+
+        expect($on)->toMatchArray(['type' => 'test-customer', 'phone' => '+12025550145', 'enabled' => true])
+            ->and($on['code'])->toMatch('/^\d{6}$/')
+            ->and(ReviewAccess::pluck('subject_type')->all())->toBe(['test-customer']);
     });
 
     it('cannot reach another organization', function () {
