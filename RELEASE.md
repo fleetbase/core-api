@@ -1,15 +1,15 @@
-> v2.0.4 ~ "Sandbox migrations for extensions outside core's vendor"
+> v2.0.5 ~ "App Review types that share a model"
 
-# v2.0.4 — Sandbox migrations for extensions outside core's vendor
+# v2.0.5 — App Review types that share a model
 
 ## Fixed
 
-- **`sandbox:migrate` runs the migrations of extensions installed outside core's `vendor` directory.** It made each extension's migration path relative by cutting it at the first `vendor` segment. Two layouts broke:
-  - **Extensions project** (`api/extensions/vendor/...`, fleetbase/fleetbase#754): the path pointed at core's `vendor` instead, so those sandbox migrations never ran.
-  - **Path-linked package in development** (`packages/<name>`): the absolute path was passed as `--path`, which Laravel resolves against the base path.
-
-  Paths inside the app are now made relative by stripping the base path, and paths outside it are migrated with `--realpath`.
+- **A second App Review type on the same model is read and changed as itself.** `AppReview::typeOf()` returns the first registered type whose model matches. Fleet-Ops registers an organization's Navigator app on `Company`, so any other type on `Company` (such as Fleet-Ops' customer apps) was always read, changed and checked as Navigator's.
+  - `accessFor()`, `isEnabledFor()`, `acceptsCode()`, `update()` and `status()` take an optional `?string $type` as their last argument. Left out, it is `typeOf($subject)`, so existing callers behave as before.
+  - A type registered for a different model never applies: `acceptsCode()` and `isEnabledFor()` answer false, `status()` reports no type, and `update()` throws.
+  - New `AppReview::resolveType($subject, $type)` gives the type a subject is checked as.
+  - The Console endpoint (`/int/v1/review-access/{type}/{id}`) and the OAuth endpoint (`/oauth/v1/review-access/{type}/{id}`) pass the route's `{type}` through, so each type keeps its own number, code and access row.
 
 ## Upgrade Steps
 
-- Run `php artisan sandbox:migrate` to apply any extension sandbox migrations that were skipped before.
+- No migration. Extensions that register more than one type on the same model must pass the type to the calls above.
