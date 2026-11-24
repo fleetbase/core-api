@@ -33,7 +33,7 @@ class ReviewAccessController extends Controller
             return response()->authorizationError();
         }
 
-        return response()->json(['review_access' => AppReview::status($subject)]);
+        return response()->json(['review_access' => AppReview::status($subject, $type)]);
     }
 
     public function update(string $type, string $id, Request $request): JsonResponse
@@ -54,9 +54,9 @@ class ReviewAccessController extends Controller
 
         $enabled = $request->has('enabled') ? $request->boolean('enabled') : null;
 
-        [, $code] = AppReview::update($subject, $enabled, $request->boolean('regenerate_code'), $request->session()->get('user'));
+        [, $code] = AppReview::update($subject, $enabled, $request->boolean('regenerate_code'), $request->session()->get('user'), $type);
 
-        $status = AppReview::status($subject);
+        $status = AppReview::status($subject, $type);
         if ($code !== null) {
             $status['code'] = $code;
         }

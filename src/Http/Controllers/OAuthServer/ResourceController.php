@@ -186,12 +186,12 @@ class ResourceController extends Controller
         }
 
         if ($request->isMethod('GET')) {
-            return new JsonResponse(['review_access' => AppReview::status($subject)], 200, ['Cache-Control' => 'no-store']);
+            return new JsonResponse(['review_access' => AppReview::status($subject, $type)], 200, ['Cache-Control' => 'no-store']);
         }
 
         $enabled               = !$request->isMethod('DELETE');
-        [, $plainCode]         = AppReview::update($subject, $enabled, $enabled && $request->boolean('regenerate_code'), $token->user_uuid);
-        $status                = AppReview::status($subject);
+        [, $plainCode]         = AppReview::update($subject, $enabled, $enabled && $request->boolean('regenerate_code'), $token->user_uuid, $type);
+        $status                = AppReview::status($subject, $type);
         if ($plainCode !== null) {
             $status['code'] = $plainCode;
         }
