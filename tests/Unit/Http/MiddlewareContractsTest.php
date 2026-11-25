@@ -1144,6 +1144,36 @@ namespace {
             ->not->toBe($signature->invoke($middleware, $request(null, '10.0.0.6')));
     });
 
+    test('throttle requests gives each address presenting the platform token its own bucket', function () {
+        middleware_contracts_fixture([
+            'api.throttle.enabled'        => true,
+            'api.throttle.max_attempts'   => 1,
+            'api.throttle.unlimited_keys' => [],
+        ]);
+
+        $middleware = middleware_contracts_throttle();
+        $signature  = new ReflectionMethod($middleware, 'resolveRequestSignature');
+        $signature->setAccessible(true);
+        $describe = new ReflectionMethod($middleware, 'describeConsumer');
+        $describe->setAccessible(true);
+        $request = function (string $bearer, string $ip) {
+            $request = Request::create('/v1/drivers/login', 'POST', [], [], [], ['REMOTE_ADDR' => $ip]);
+            $request->headers->set('Authorization', 'Bearer ' . $bearer);
+
+            return $request;
+        };
+
+        // Every installed app sends the same token: the address tells them apart.
+        expect($signature->invoke($middleware, $request('flb_platform_shared', '10.0.0.5')))
+            ->toBe($signature->invoke($middleware, $request('flb_platform_shared', '10.0.0.5')))
+            ->not->toBe($signature->invoke($middleware, $request('flb_platform_shared', '10.0.0.6')))
+            // An API key is still one bucket wherever it is sent from.
+            ->and($signature->invoke($middleware, $request('flb_live_key', '10.0.0.5')))
+            ->toBe($signature->invoke($middleware, $request('flb_live_key', '10.0.0.6')))
+            ->and($describe->invoke($middleware, $request('flb_platform_shared', '10.0.0.5')))
+            ->toBe(['type' => 'platform', 'label' => 'Platform token', 'detail' => '10.0.0.5', 'company_uuid' => null]);
+    });
+
     test('basic auth middleware rejects requests without bearer credentials before continuing', function () {
         middleware_contracts_fixture();
 

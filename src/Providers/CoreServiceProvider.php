@@ -75,6 +75,15 @@ class CoreServiceProvider extends ServiceProvider
             \Fleetbase\Http\Middleware\AuthenticatePlatformApiToken::class,
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
         ],
+        // "fleetbase.api" that also accepts the platform token: for the routes an app
+        // calls before its user has signed in.
+        'fleetbase.api-or-platform' => [
+            \Fleetbase\Http\Middleware\ThrottleRequests::class,
+            \Illuminate\Session\Middleware\StartSession::class,
+            \Fleetbase\Http\Middleware\AuthenticateApiOrPlatformToken::class,
+            \Illuminate\Routing\Middleware\SubstituteBindings::class,
+            \Fleetbase\Http\Middleware\LogApiRequests::class,
+        ],
     ];
 
     /**
