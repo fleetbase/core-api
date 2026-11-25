@@ -5,6 +5,7 @@ namespace Fleetbase\Support;
 use Fleetbase\Models\Setting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
@@ -13,6 +14,7 @@ class PlatformApi
     public const TOKEN_HASH_KEY       = 'platform_api.token_hash';
     public const TOKEN_ROTATED_AT_KEY = 'platform_api.token_rotated_at';
     public const TOKEN_LAST_USED_KEY  = 'platform_api.token_last_used_at';
+    public const TOKEN_ENCRYPTED_KEY  = 'platform_api.token_encrypted';
     public const TOKEN_PREFIX         = 'flb_platform_';
 
     /**
@@ -35,6 +37,10 @@ class PlatformApi
         $now   = Carbon::now()->toISOString();
 
         Setting::configureSystem(static::TOKEN_HASH_KEY, Hash::make($token));
+        // Kept encrypted as well, so the instance can hand the token to an app it is
+        // linking (see token()). The token only opens the sign-in routes and already
+        // ships inside every app built for the instance.
+        Setting::configureSystem(static::TOKEN_ENCRYPTED_KEY, Crypt::encryptString($token));
         Setting::configureSystem(static::TOKEN_ROTATED_AT_KEY, $now);
         Setting::configureSystem(static::TOKEN_LAST_USED_KEY, null);
 
@@ -44,8 +50,31 @@ class PlatformApi
     public static function revokeToken(): void
     {
         Setting::configureSystem(static::TOKEN_HASH_KEY, null);
+        Setting::configureSystem(static::TOKEN_ENCRYPTED_KEY, null);
         Setting::configureSystem(static::TOKEN_ROTATED_AT_KEY, null);
         Setting::configureSystem(static::TOKEN_LAST_USED_KEY, null);
+    }
+
+    /**
+     * The current token in plain text, for handing to an app that is being linked to
+     * this instance. Null when no token is configured, or when the current one was
+     * issued before tokens were kept retrievable: rotating it once makes it so.
+     */
+    public static function token(): ?string
+    {
+        $encrypted = Setting::system(static::TOKEN_ENCRYPTED_KEY);
+        if (!is_string($encrypted) || $encrypted === '') {
+            return null;
+        }
+
+        try {
+            $token = Crypt::decryptString($encrypted);
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        // Only ever the token that is in force: a copy left behind by an older one is not returned.
+        return static::validateToken($token) ? $token : null;
     }
 
     public static function isConfigured(): bool
@@ -111,6 +140,7 @@ class PlatformApi
     {
         return [
             'configured'   => static::isConfigured(),
+            'retrievable'  => static::token() !== null,
             'rotated_at'   => Setting::system(static::TOKEN_ROTATED_AT_KEY),
             'last_used_at' => Setting::system(static::TOKEN_LAST_USED_KEY),
         ];
