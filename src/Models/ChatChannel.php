@@ -16,6 +16,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Spatie\Sluggable\HasSlug;
 use Spatie\Sluggable\SlugOptions;
@@ -79,6 +80,32 @@ class ChatChannel extends Model
     protected $casts = [
         'meta'          => Json::class,
     ];
+
+    /**
+     * How many feed entries the public list call embeds in each channel. A list of fifty
+     * channels used to carry every message ever sent in all of them.
+     */
+    public const LIST_FEED_LIMIT = 30;
+
+    /**
+     * The most feed entries one request may ask for.
+     */
+    public const MAX_FEED_LIMIT = 100;
+
+    /**
+     * The window `resource_feed` is cut to, set with `limitFeed()`. Null means the whole feed.
+     */
+    protected ?int $feedLimit = null;
+
+    /**
+     * Only entries older than this are in the feed. Null means up to now.
+     */
+    protected ?Carbon $feedBefore = null;
+
+    /**
+     * Whether the last feed built left older entries out.
+     */
+    protected bool $feedTruncated = false;
 
     /**
      * @var SlugOptions
@@ -283,28 +310,100 @@ class ChatChannel extends Model
      * transforms them into their respective HTTP resources, and returns them as a unified feed.
      * Each item in the feed is an array containing the type (message, attachment, log),
      * the corresponding HTTP resource, and the creation timestamp. The feed is sorted in
-     * descending order of creation time, ensuring the most recent activities are listed first.
+     * ascending order of creation time, so the most recent activities are listed last.
      * This method is particularly useful for generating standardized API responses
      * that encapsulate the diverse activities within a chat channel.
+     *
+     * The whole feed unless `limitFeed()` was called first.
      *
      * @return Collection the aggregated and resource-formatted feed of chat activities
      */
     public function getResourceFeedAttribute(): Collection
     {
-        $messages = $this->messages()->get()->map(function ($message) {
+        $records = $this->feedRecords();
+
+        $messages = $records['messages']->map(function ($message) {
             return ['type' => 'message', 'data' => new ChatMessageResource($message), 'created_at' => $message->created_at];
         });
 
-        $attachments = $this->attachments()->get()->map(function ($attachment) {
+        $attachments = $records['attachments']->map(function ($attachment) {
             return ['type' => 'attachment', 'data' => new ChatAttachmentResource($attachment), 'created_at' => $attachment->created_at];
         });
 
-        $logs = $this->logs()->get()->map(function ($log) {
+        $logs = $records['logs']->map(function ($log) {
             return ['type' => 'log', 'data' => new ChatLogResource($log), 'created_at' => $log->created_at];
         });
 
         $feed = collect([...$messages, ...$attachments, ...$logs])->sortBy('created_at')->values();
 
         return $feed;
+    }
+
+    /**
+     * Cut `resource_feed` to the most recent `$limit` entries, optionally only those older than
+     * `$before`. Passing neither puts the whole feed back.
+     */
+    public function limitFeed(?int $limit, ?Carbon $before = null): static
+    {
+        $this->feedLimit  = $limit === null ? null : max(1, min($limit, self::MAX_FEED_LIMIT));
+        $this->feedBefore = $before;
+
+        return $this;
+    }
+
+    /**
+     * Whether the feed last built by `resource_feed` left older entries out, so a client
+     * knows there is more to ask for.
+     */
+    public function feedWasTruncated(): bool
+    {
+        return $this->feedTruncated;
+    }
+
+    /**
+     * The messages, attachments and logs that make up the feed, inside the window set by
+     * `limitFeed()`.
+     *
+     * A cut never lands inside a second: timestamps are whole seconds, so entries written in
+     * the same second as the oldest one kept are kept too (a page can run a little over the
+     * limit). That is what lets a client ask for "older than the oldest entry I have" without
+     * losing the ones that shared its timestamp.
+     *
+     * @return array<string, Collection>
+     */
+    protected function feedRecords(): array
+    {
+        $relations           = ['messages', 'attachments', 'logs'];
+        $before              = $this->feedBefore;
+        $this->feedTruncated = false;
+
+        $window = function (string $relation) use ($before) {
+            $query = $this->{$relation}();
+
+            return $before ? $query->where('created_at', '<', $before) : $query;
+        };
+
+        $since = null;
+        if ($this->feedLimit !== null) {
+            // Read only the timestamps first, so the cut is found without loading messages
+            // that will not be sent.
+            $timestamps = collect();
+            foreach ($relations as $relation) {
+                $timestamps = $timestamps->concat($window($relation)->latest()->limit($this->feedLimit + 1)->pluck('created_at'));
+            }
+
+            if ($timestamps->count() > $this->feedLimit) {
+                $this->feedTruncated = true;
+                $since               = $timestamps->sortDesc()->values()->get($this->feedLimit - 1);
+            }
+        }
+
+        $records = [];
+        foreach ($relations as $relation) {
+            $query              = $window($relation);
+            $records[$relation] = ($since ? $query->where('created_at', '>=', $since) : $query)->get();
+        }
+
+        return $records;
     }
 }

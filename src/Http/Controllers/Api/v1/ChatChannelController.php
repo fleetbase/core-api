@@ -19,6 +19,7 @@ use Fleetbase\Models\ChatReceipt;
 use Fleetbase\Models\File;
 use Fleetbase\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 
 class ChatChannelController extends Controller
 {
@@ -42,7 +43,15 @@ class ChatChannelController extends Controller
 
         // If participants provided add them
         foreach ($participants as $userId) {
-            $user = User::where('public_id', $userId)->first();
+            // Only people of this organisation: a public id from another one must not pull
+            // its user into the channel, where they would be sent every message.
+            $user = User::where('public_id', $userId)
+                ->where(function ($query) {
+                    $query->where('company_uuid', session('company'))->orWhereHas('companyUsers', function ($query) {
+                        $query->where('company_uuid', session('company'));
+                    });
+                })
+                ->first();
             if ($user) {
                 ChatParticipant::create([
                     'company_uuid'      => session('company'),
@@ -67,7 +76,7 @@ class ChatChannelController extends Controller
     {
         // find for the chat channel
         try {
-            $chatChannel = ChatChannel::findRecordOrFail($id);
+            $chatChannel = $this->findChannelForCaller($id);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $exception) {
             return response()->json(
                 [
@@ -75,6 +84,11 @@ class ChatChannelController extends Controller
                 ],
                 404
             );
+        }
+
+        // Renaming is for whoever created the channel
+        if (!$this->callerCreatedChannel($chatChannel)) {
+            return response()->apiError('Only the creator of this chat channel can change it.', 403);
         }
 
         // get request input
@@ -96,19 +110,29 @@ class ChatChannelController extends Controller
     {
         $results = ChatChannel::queryWithRequest($request);
 
+        // Each channel carries only its latest entries; the rest is fetched per channel with
+        // `GET chat-channels/{id}`, which says so through `feed_truncated`.
+        foreach ($results as $chatChannel) {
+            $chatChannel->limitFeed(ChatChannel::LIST_FEED_LIMIT);
+        }
+
         return ChatChannelResource::collection($results);
     }
 
     /**
      * Finds a single Fleetbase Chat Channel resources.
      *
+     * The whole feed comes back unless the request pages it: `limit` keeps the most recent
+     * entries (up to ChatChannel::MAX_FEED_LIMIT), and `before` (a chat message id or a time)
+     * keeps only what is older, for loading earlier history a page at a time.
+     *
      * @return \Fleetbase\Http\Resources\ChatChannelCollection
      */
-    public function find($id)
+    public function find($id, Request $request)
     {
         // find for the chat channel
         try {
-            $chatChannel = ChatChannel::findRecordOrFail($id);
+            $chatChannel = $this->findChannelForCaller($id);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $exception) {
             return response()->json(
                 [
@@ -116,6 +140,19 @@ class ChatChannelController extends Controller
                 ],
                 404
             );
+        }
+
+        // Page the feed when asked to
+        if ($request->filled('limit') || $request->filled('before')) {
+            $before = null;
+            if ($request->filled('before')) {
+                $before = $this->feedCursor($chatChannel, (string) $request->input('before'));
+                if (!$before) {
+                    return response()->apiError('The `before` value must be a message id from this chat channel or a valid time.', 422);
+                }
+            }
+
+            $chatChannel->limitFeed((int) $request->input('limit', ChatChannel::LIST_FEED_LIMIT), $before);
         }
 
         // response the chat channel resource
@@ -131,7 +168,7 @@ class ChatChannelController extends Controller
     {
         // find for the chat channel
         try {
-            $chatChannel = ChatChannel::findRecordOrFail($id);
+            $chatChannel = $this->findChannelForCaller($id);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $exception) {
             return response()->json(
                 [
@@ -139,6 +176,11 @@ class ChatChannelController extends Controller
                 ],
                 404
             );
+        }
+
+        // Deleting is for whoever created the channel
+        if (!$this->callerCreatedChannel($chatChannel)) {
+            return response()->apiError('Only the creator of this chat channel can delete it.', 403);
         }
 
         // delete the chat channel
@@ -156,7 +198,15 @@ class ChatChannelController extends Controller
     public function getAvailablePartificants(Request $request)
     {
         $chatChannelId = $request->input('channel');
-        $chatChannel   = $chatChannelId ? ChatChannel::where('public_id', $chatChannelId)->first() : null;
+        $chatChannel   = null;
+        if ($chatChannelId) {
+            // A channel the caller cannot see filters nothing, the same as no channel
+            try {
+                $chatChannel = $this->findChannelForCaller($chatChannelId);
+            } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $exception) {
+                $chatChannel = null;
+            }
+        }
         $users         = User::where('company_uuid', session('company'))->get();
 
         if ($chatChannel) {
@@ -181,7 +231,7 @@ class ChatChannelController extends Controller
 
         // find for the chat channel
         try {
-            $chatChannel = ChatChannel::findRecordOrFail($id);
+            $chatChannel = $this->findChannelForCaller($id);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $exception) {
             return response()->json(
                 [
@@ -232,6 +282,27 @@ class ChatChannelController extends Controller
             );
         }
 
+        $callerUserUuid = $this->callerUserUuid();
+        if ($callerUserUuid !== null) {
+            // A participant of a channel the caller is not in is answered as not found
+            $chatChannel = $this->callerParticipatesIn($chatParticipant->chat_channel_uuid)
+                ? ChatChannel::where('uuid', $chatParticipant->chat_channel_uuid)->first()
+                : null;
+            if (!$chatChannel) {
+                return response()->json(
+                    [
+                        'error' => 'Chat participant resource not found.',
+                    ],
+                    422
+                );
+            }
+
+            // Anyone may leave; removing someone else is for whoever created the channel
+            if ($chatParticipant->user_uuid !== $callerUserUuid && $chatChannel->created_by_uuid !== $callerUserUuid) {
+                return response()->apiError('Only the creator of this chat channel can remove other participants.', 403);
+            }
+        }
+
         // Delete the chat participant
         $chatParticipant->delete();
 
@@ -249,7 +320,7 @@ class ChatChannelController extends Controller
 
         // Find for the chat channel
         try {
-            $chatChannel = ChatChannel::findRecordOrFail($id);
+            $chatChannel = $this->findChannelForCaller($id);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $exception) {
             return response()->json(
                 [
@@ -259,9 +330,16 @@ class ChatChannelController extends Controller
             );
         }
 
-        // Find for the chat participant sender
+        // An order's chat ends with the order: once closed it can be read but not written to
+        if (data_get($chatChannel, 'meta.closed_at')) {
+            return response()->apiError('This conversation has ended.', 422);
+        }
+
+        // Find for the chat participant sender, who has to be in this channel
         try {
-            $sender = ChatParticipant::findRecordOrFail($senderId);
+            $sender = ChatParticipant::findRecordOrFail($senderId, [], ['*'], function ($query) use ($chatChannel) {
+                $query->where('chat_channel_uuid', $chatChannel->uuid);
+            });
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $exception) {
             return response()->json(
                 [
@@ -269,6 +347,12 @@ class ChatChannelController extends Controller
                 ],
                 422
             );
+        }
+
+        // A person can only speak as themselves
+        $callerUserUuid = $this->callerUserUuid();
+        if ($callerUserUuid !== null && $sender->user_uuid !== $callerUserUuid) {
+            return response()->apiError('You can only send messages as yourself.', 403);
         }
 
         // Get the message contents and attachment file id
@@ -329,6 +413,19 @@ class ChatChannelController extends Controller
             return response()->apiError('Chat message resource not found.', 404);
         }
 
+        $callerUserUuid = $this->callerUserUuid();
+        if ($callerUserUuid !== null) {
+            // A message in a channel the caller is not in is answered as not found
+            if (!$this->callerParticipatesIn($chatMessage->chat_channel_uuid)) {
+                return response()->apiError('Chat message resource not found.', 404);
+            }
+
+            // Only the person who wrote a message can delete it
+            if (data_get($chatMessage, 'sender.user_uuid') !== $callerUserUuid) {
+                return response()->apiError('Only the author of this message can delete it.', 403);
+            }
+        }
+
         // Delete the chat message
         $chatMessage->delete();
 
@@ -351,13 +448,25 @@ class ChatChannelController extends Controller
         $chatParticipantId = $request->input('participant');
         $companyUuid       = session('company');
 
-        // Load models
-        $chatMessage     = ChatMessage::where('public_id', $chatMessageId)->first();
-        $chatParticipant = ChatParticipant::where('public_id', $chatParticipantId)->first();
+        // Load models, from this organisation only
+        $chatMessage     = ChatMessage::where('public_id', $chatMessageId)->where('company_uuid', $companyUuid)->first();
+        $chatParticipant = ChatParticipant::where('public_id', $chatParticipantId)->where('company_uuid', $companyUuid)->first();
 
         // Guard clauses for invalid references
         if (!$chatMessage || !$chatParticipant) {
             return response()->apiError('Invalid message or participant reference.', 404);
+        }
+
+        // A message in a channel the caller is not in is answered as not found, and so is a
+        // reader who is not in the message's channel
+        $callerUserUuid = $this->callerUserUuid();
+        if (($callerUserUuid !== null && !$this->callerParticipatesIn($chatMessage->chat_channel_uuid)) || $chatParticipant->chat_channel_uuid !== $chatMessage->chat_channel_uuid) {
+            return response()->apiError('Invalid message or participant reference.', 404);
+        }
+
+        // A person can only mark messages read for themselves
+        if ($callerUserUuid !== null && $chatParticipant->user_uuid !== $callerUserUuid) {
+            return response()->apiError('You can only mark messages as read for yourself.', 403);
         }
 
         // Check for existing receipt
@@ -383,6 +492,93 @@ class ChatChannelController extends Controller
             $message = app()->hasDebugModeEnabled() ? $e->getMessage() : 'Unable to create read receipt.';
 
             return response()->apiError($message);
+        }
+    }
+
+    /**
+     * The user making the request with their own token, or null when it was made with the
+     * organisation's API key.
+     *
+     * Both kinds of request have a session user (a key runs as the user who created it), so
+     * the token is what tells them apart: an organisation key is the one credential whose key
+     * or secret is the bearer token itself. A personal token, such as the one a driver or
+     * customer signs in with, never is, and so is held to that person's own channels. A
+     * request that cannot be shown to come from an organisation key is treated as a person's.
+     */
+    protected function callerUserUuid(): ?string
+    {
+        $token = request()->bearerToken();
+        if (is_string($token) && $token !== '') {
+            foreach ([session('api_key'), session('api_secret')] as $credential) {
+                if (is_string($credential) && $credential !== '' && hash_equals($credential, $token)) {
+                    return null;
+                }
+            }
+        }
+
+        return (string) session('user');
+    }
+
+    /**
+     * Whether the calling user is a participant of the channel. Always true for a request
+     * made with the organisation's API key.
+     */
+    protected function callerParticipatesIn(?string $chatChannelUuid): bool
+    {
+        $callerUserUuid = $this->callerUserUuid();
+        if ($callerUserUuid === null) {
+            return true;
+        }
+
+        return ChatParticipant::where(['chat_channel_uuid' => $chatChannelUuid, 'user_uuid' => $callerUserUuid])->exists();
+    }
+
+    /**
+     * Whether the caller may rename or delete the channel: the user who created it, or the
+     * organisation's API key.
+     */
+    protected function callerCreatedChannel(ChatChannel $chatChannel): bool
+    {
+        $callerUserUuid = $this->callerUserUuid();
+
+        return $callerUserUuid === null || $chatChannel->created_by_uuid === $callerUserUuid;
+    }
+
+    /**
+     * Finds a chat channel of this organisation by its public id, as the caller sees it: a
+     * user only finds the channels they participate in, so every other channel is not found.
+     *
+     * @throws \Illuminate\Database\Eloquent\ModelNotFoundException
+     */
+    protected function findChannelForCaller($id): ChatChannel
+    {
+        $callerUserUuid = $this->callerUserUuid();
+
+        return ChatChannel::findRecordOrFail($id, [], ['*'], function ($query) use ($callerUserUuid) {
+            if ($callerUserUuid !== null) {
+                $query->whereHas('participants', function ($query) use ($callerUserUuid) {
+                    $query->where('user_uuid', $callerUserUuid);
+                });
+            }
+        });
+    }
+
+    /**
+     * The time a `before` value points at: when the message with that id in this channel was
+     * sent, or the time itself. Null when it is neither.
+     */
+    protected function feedCursor(ChatChannel $chatChannel, string $before): ?Carbon
+    {
+        $chatMessage = ChatMessage::where(['public_id' => $before, 'chat_channel_uuid' => $chatChannel->uuid])->first();
+        if ($chatMessage) {
+            return $chatMessage->created_at;
+        }
+
+        try {
+            // Stored timestamps are in the application's timezone
+            return Carbon::parse($before)->setTimezone(date_default_timezone_get());
+        } catch (\Throwable $exception) {
+            return null;
         }
     }
 }
