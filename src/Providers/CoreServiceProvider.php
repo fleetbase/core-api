@@ -145,6 +145,9 @@ class CoreServiceProvider extends ServiceProvider
      */
     public function register()
     {
+        // Apple pushes go to each device through the service its token belongs to (sandbox or production).
+        $this->app->bind(\NotificationChannels\Apn\ApnChannel::class, \Fleetbase\Notifications\Channels\ApnChannel::class);
+
         $this->mergeConfigFrom(__DIR__ . '/../../config/database.connections.php', 'database.connections');
         $this->mergeConfigFrom(__DIR__ . '/../../config/database.redis.php', 'database.redis');
         $this->mergeConfigFrom(__DIR__ . '/../../config/broadcasting.connections.php', 'broadcasting.connections');
