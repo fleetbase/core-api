@@ -1,5 +1,7 @@
 <?php
 
+use Fleetbase\Http\Middleware\AuthenticateApiOrPlatformToken;
+use Fleetbase\Http\Middleware\AuthenticateOnceWithBasicAuth;
 use Fleetbase\Http\Middleware\AuthenticatePlatformApiToken;
 use Fleetbase\Support\PlatformApi;
 use Illuminate\Database\Capsule\Manager as Capsule;
@@ -238,6 +240,95 @@ test('platform api middleware rejects missing invalid tokens and marks valid tok
     expect($valid->getStatusCode())->toBe(200)
         ->and($valid->getData(true))->toBe(['ok' => true])
         ->and(PlatformApi::status()['last_used_at'])->toBe('2026-07-17T11:15:00.000000Z');
+
+    Carbon::setTestNow();
+});
+
+test('platform api writes a use down at most once per interval', function () {
+    $cache = platform_api_fixture();
+    Carbon::setTestNow(Carbon::parse('2026-07-17 12:00:00'));
+    PlatformApi::rotateToken();
+
+    PlatformApi::markUsed();
+    expect(PlatformApi::status()['last_used_at'])->toBe('2026-07-17T12:00:00.000000Z');
+
+    // Within the interval nothing is written, so the settings cache is left alone.
+    $cache->forgotten = [];
+    Carbon::setTestNow(Carbon::parse('2026-07-17 12:04:59'));
+    PlatformApi::markUsed();
+    expect(PlatformApi::status()['last_used_at'])->toBe('2026-07-17T12:00:00.000000Z')
+        ->and($cache->forgotten)->toBe([]);
+
+    Carbon::setTestNow(Carbon::parse('2026-07-17 12:05:00'));
+    PlatformApi::markUsed();
+    expect(PlatformApi::status()['last_used_at'])->toBe('2026-07-17T12:05:00.000000Z');
+
+    Carbon::setTestNow();
+});
+
+test('platform api recognises its own tokens and the requests they authenticated', function () {
+    platform_api_fixture();
+    $request = Request::create('/v1/drivers/login', 'POST');
+
+    expect(PlatformApi::isPlatformToken(PlatformApi::generateToken()))->toBeTrue()
+        ->and(PlatformApi::isPlatformToken('flb_platform_'))->toBeTrue()
+        ->and(PlatformApi::isPlatformToken('flb_live_abc'))->toBeFalse()
+        ->and(PlatformApi::isPlatformToken('12|plaintext'))->toBeFalse()
+        ->and(PlatformApi::isPlatformToken(null))->toBeFalse()
+        ->and(PlatformApi::authenticated($request))->toBeFalse();
+
+    PlatformApi::markAuthenticated($request);
+
+    expect(PlatformApi::authenticated($request))->toBeTrue()
+        ->and(PlatformApi::authenticated(Request::create('/v1/drivers/login', 'POST')))->toBeFalse();
+});
+
+test('api or platform middleware accepts the platform token and hands every other credential to api authentication', function () {
+    platform_api_fixture();
+    Carbon::setTestNow(Carbon::parse('2026-07-17 13:00:00'));
+    $token      = PlatformApi::rotateToken();
+    $middleware = new AuthenticateApiOrPlatformToken();
+    $send       = function (?string $bearer) use ($middleware) {
+        $request = Request::create('/v1/drivers/login', 'POST');
+        if ($bearer !== null) {
+            $request->headers->set('Authorization', 'Bearer ' . $bearer);
+        }
+
+        return [$middleware->handle($request, fn () => new JsonResponse(['ok' => true])), $request];
+    };
+
+    // Everything that isn't a platform token is the API middleware's to judge.
+    $delegated = [];
+    app()->instance(AuthenticateOnceWithBasicAuth::class, new class($delegated) {
+        public function __construct(private array &$seen)
+        {
+        }
+
+        public function handle($request, Closure $next)
+        {
+            $this->seen[] = $request->bearerToken();
+
+            return new JsonResponse(['delegated' => true]);
+        }
+    });
+
+    [$valid, $validRequest] = $send($token);
+    expect($valid->getData(true))->toBe(['ok' => true])
+        ->and(PlatformApi::authenticated($validRequest))->toBeTrue()
+        ->and(PlatformApi::status()['last_used_at'])->toBe('2026-07-17T13:00:00.000000Z');
+
+    // A platform-shaped token that is wrong is refused here, never tried as an API key.
+    [$wrong, $wrongRequest] = $send('flb_platform_wrong');
+    expect($wrong->getStatusCode())->toBe(401)
+        ->and($wrong->getData(true)['errors'])->toBe(['Invalid platform API token.'])
+        ->and(PlatformApi::authenticated($wrongRequest))->toBeFalse();
+
+    [$apiKey, $apiKeyRequest] = $send('flb_live_key');
+    [$none]                   = $send(null);
+    expect($apiKey->getData(true))->toBe(['delegated' => true])
+        ->and($none->getData(true))->toBe(['delegated' => true])
+        ->and(PlatformApi::authenticated($apiKeyRequest))->toBeFalse()
+        ->and($delegated)->toBe(['flb_live_key', null]);
 
     Carbon::setTestNow();
 });

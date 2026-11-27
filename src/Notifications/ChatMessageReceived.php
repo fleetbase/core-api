@@ -96,7 +96,7 @@ class ChatMessageReceived extends Notification implements ShouldQueue
      */
     public function via($notifiable)
     {
-        return ['broadcast', FcmChannel::class, ApnChannel::class];
+        return \Fleetbase\Support\NotificationPreferences::channels($notifiable, 'messages', ['broadcast', FcmChannel::class, ApnChannel::class]);
     }
 
     /**

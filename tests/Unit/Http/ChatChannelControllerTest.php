@@ -545,6 +545,37 @@ function public_chat_channel_query_request(array $query = []): Request
     return $request;
 }
 
+function public_chat_channel_find_request(array $query = []): Request
+{
+    return Request::create('/v1/chat-channels/chat_current', 'GET', $query);
+}
+
+/**
+ * Makes the request one authenticated with the organisation's API key, run as the given user.
+ */
+function public_chat_channel_as_organisation_key(string $userUuid): void
+{
+    session(['user' => $userUuid, 'api_key' => 'flb_live_organisation']);
+
+    $request = Request::create('/v1/chat-channels', 'GET');
+    $request->headers->set('Authorization', 'Bearer flb_live_organisation');
+    Container::getInstance()->instance('request', $request);
+}
+
+function public_chat_channel_insert_message(Capsule $capsule, string $key, string $sender, string $createdAt, string $channel = 'channel-current'): void
+{
+    $capsule->getConnection('mysql')->table('chat_messages')->insert([
+        'uuid'              => 'message-' . $key,
+        'public_id'         => 'message_' . $key,
+        'company_uuid'      => 'company-1',
+        'chat_channel_uuid' => $channel,
+        'sender_uuid'       => $sender,
+        'content'           => 'Message ' . $key,
+        'created_at'        => $createdAt,
+        'updated_at'        => $createdAt,
+    ]);
+}
+
 function chat_channel_controller_reflect(string $method, string $id): mixed
 {
     $reflection = new ReflectionMethod(ChatChannelController::class, $method);
@@ -869,7 +900,7 @@ test('public chat channel creates channel with creator and valid participants on
     expect(public_chat_channel_controller_payload($response)['name'])->toBe('Public Dispatch')
         ->and($channel->company_uuid)->toBe('company-1')
         ->and($channel->created_by_uuid)->toBe('user-current')
-        ->and($participantUserUuids)->toBe(['user-active', 'user-current', 'user-other-company'])
+        ->and($participantUserUuids)->toBe(['user-active', 'user-current'])
         ->and($capsule->getConnection('mysql')->table('chat_channels')->where('public_id', 'chat_other')->value('company_uuid'))->toBe('company-2');
 });
 
@@ -882,10 +913,10 @@ test('public chat channel updates finds queries and deletes records with not fou
     $missingUpdate = public_chat_channel_controller()->update('missing_chat', public_chat_channel_update_request([
         'name' => 'Missing Channel',
     ]));
-    $found         = public_chat_channel_controller()->find('chat_current');
+    $found         = public_chat_channel_controller()->find('chat_current', public_chat_channel_find_request());
     $queried       = public_chat_channel_controller()->query(public_chat_channel_query_request());
     $deleted       = public_chat_channel_controller()->delete('chat_current');
-    $missing       = public_chat_channel_controller()->find('chat_current');
+    $missing       = public_chat_channel_controller()->find('chat_current', public_chat_channel_find_request());
     $missingDelete = public_chat_channel_controller()->delete('missing_chat');
 
     expect(public_chat_channel_controller_payload($updated)['name'])->toBe('Renamed Channel')
@@ -1061,4 +1092,238 @@ test('public chat channel read receipt reports insert failures with debug detail
 
     expect($response->getStatusCode())->toBe(400)
         ->and($response->getData(true)['error'])->toContain('receipt insert blocked');
+});
+
+test('public chat channel hides channels from users who are not participants', function () {
+    $capsule = chat_channel_controller_database();
+    public_chat_channel_insert_message($capsule, 'hidden', 'participant-current', '2026-07-18 00:30:00');
+
+    // A signed-in user of the same company who is not in the channel
+    session(['user' => 'user-extra']);
+    $capsule->getConnection('mysql')->table('chat_channels')->insert([
+        'uuid' => 'channel-extra', 'public_id' => 'chat_extra', 'company_uuid' => 'company-1', 'created_by_uuid' => 'user-extra', 'name' => 'Extra Channel', 'created_at' => '2026-07-18 00:00:00', 'updated_at' => '2026-07-18 00:00:00',
+    ]);
+    $capsule->getConnection('mysql')->table('chat_participants')->insert([
+        'uuid' => 'participant-extra', 'public_id' => 'participant_extra', 'company_uuid' => 'company-1', 'chat_channel_uuid' => 'channel-extra', 'user_uuid' => 'user-extra', 'created_at' => '2026-07-18 00:00:00', 'updated_at' => '2026-07-18 00:00:00',
+    ]);
+
+    $found       = public_chat_channel_controller()->find('chat_current', public_chat_channel_find_request());
+    $queried     = public_chat_channel_controller()->query(public_chat_channel_query_request());
+    $updated     = public_chat_channel_controller()->update('chat_current', public_chat_channel_update_request(['name' => 'Taken Over']));
+    $deleted     = public_chat_channel_controller()->delete('chat_current');
+    $added       = public_chat_channel_controller()->addParticipant('chat_current', Request::create('/v1/chat-channels/chat_current/add-participant', 'POST', ['user' => 'user_extra']));
+    $removed     = public_chat_channel_controller()->removeParticipant('participant_active');
+    $sentAsOther = public_chat_channel_controller()->sendMessage('chat_current', Request::create('/v1/chat-channels/chat_current/send-message', 'POST', [
+        'sender'  => 'participant_current',
+        'content' => 'Not mine to send',
+    ]));
+    $sentAsSelf = public_chat_channel_controller()->sendMessage('chat_current', Request::create('/v1/chat-channels/chat_current/send-message', 'POST', [
+        'sender'  => 'participant_extra',
+        'content' => 'From another channel',
+    ]));
+    $deletedMessage = public_chat_channel_controller()->deleteMessage('message_hidden');
+    $read           = public_chat_channel_controller()->createReadReceipt('message_hidden', Request::create('/v1/chat-channels/read-message/message_hidden', 'POST', ['participant' => 'participant_extra']));
+    $readAsOther    = public_chat_channel_controller()->createReadReceipt('message_hidden', Request::create('/v1/chat-channels/read-message/message_hidden', 'POST', ['participant' => 'participant_active']));
+    $available      = public_chat_channel_controller()->getAvailablePartificants(Request::create('/v1/chat-channels/available-participants', 'GET', ['channel' => 'chat_current']));
+
+    expect($found->getStatusCode())->toBe(404)
+        ->and($queried->collection->pluck('public_id')->all())->toBe(['chat_extra'])
+        ->and($updated->getStatusCode())->toBe(404)
+        ->and($deleted->getStatusCode())->toBe(404)
+        ->and($added->getStatusCode())->toBe(404)
+        ->and($removed->getStatusCode())->toBe(422)
+        ->and($removed->getData(true))->toBe(['error' => 'Chat participant resource not found.'])
+        ->and($sentAsOther->getStatusCode())->toBe(404)
+        ->and($sentAsSelf->getStatusCode())->toBe(404)
+        ->and($deletedMessage->getStatusCode())->toBe(404)
+        ->and($read->getStatusCode())->toBe(404)
+        ->and($readAsOther->getStatusCode())->toBe(404)
+        // The channel filter is ignored, so nothing is learnt about who is in it
+        ->and($available->collection->pluck('uuid')->all())->toBe(['user-current', 'user-active', 'user-extra'])
+        ->and(ChatChannel::where('public_id', 'chat_current')->value('name'))->toBe('Current Channel')
+        ->and(ChatParticipant::where('public_id', 'participant_active')->exists())->toBeTrue()
+        ->and(ChatMessage::where('chat_channel_uuid', 'channel-current')->pluck('public_id')->all())->toBe(['message_hidden'])
+        ->and(ChatReceipt::query()->count())->toBe(0);
+});
+
+test('public chat channel keeps a participant to their own identity and leaves the rest to the creator', function () {
+    $capsule = chat_channel_controller_database();
+    public_chat_channel_insert_message($capsule, 'creator', 'participant-current', '2026-07-18 00:30:00');
+    public_chat_channel_insert_message($capsule, 'own', 'participant-active', '2026-07-18 00:31:00');
+
+    // A participant who did not create the channel
+    session(['user' => 'user-active']);
+
+    $found       = public_chat_channel_controller()->find('chat_current', public_chat_channel_find_request());
+    $updated     = public_chat_channel_controller()->update('chat_current', public_chat_channel_update_request(['name' => 'Renamed By Member']));
+    $deleted     = public_chat_channel_controller()->delete('chat_current');
+    $added       = public_chat_channel_controller()->addParticipant('chat_current', Request::create('/v1/chat-channels/chat_current/add-participant', 'POST', ['user' => 'user_extra']));
+    $removed     = public_chat_channel_controller()->removeParticipant('participant_current');
+    $sentAsOther = public_chat_channel_controller()->sendMessage('chat_current', Request::create('/v1/chat-channels/chat_current/send-message', 'POST', [
+        'sender'  => 'participant_current',
+        'content' => 'Speaking for someone else',
+    ]));
+    $sent = public_chat_channel_controller()->sendMessage('chat_current', Request::create('/v1/chat-channels/chat_current/send-message', 'POST', [
+        'sender'  => 'participant_active',
+        'content' => 'Speaking for myself',
+    ]));
+    $deletedOther = public_chat_channel_controller()->deleteMessage('message_creator');
+    $deletedOwn   = public_chat_channel_controller()->deleteMessage('message_own');
+    $readAsOther  = public_chat_channel_controller()->createReadReceipt('message_creator', Request::create('/v1/chat-channels/read-message/message_creator', 'POST', ['participant' => 'participant_current']));
+    $read         = public_chat_channel_controller()->createReadReceipt('message_creator', Request::create('/v1/chat-channels/read-message/message_creator', 'POST', ['participant' => 'participant_active']));
+    $left         = public_chat_channel_controller()->removeParticipant('participant_active');
+
+    expect(public_chat_channel_controller_payload($found)['id'])->toBe('chat_current')
+        ->and($updated->getStatusCode())->toBe(403)
+        ->and($updated->getData(true))->toBe(['error' => 'Only the creator of this chat channel can change it.'])
+        ->and($deleted->getStatusCode())->toBe(403)
+        ->and($deleted->getData(true))->toBe(['error' => 'Only the creator of this chat channel can delete it.'])
+        ->and($added->resource->user_uuid)->toBe('user-extra')
+        ->and($removed->getStatusCode())->toBe(403)
+        ->and($removed->getData(true))->toBe(['error' => 'Only the creator of this chat channel can remove other participants.'])
+        ->and($sentAsOther->getStatusCode())->toBe(403)
+        ->and($sentAsOther->getData(true))->toBe(['error' => 'You can only send messages as yourself.'])
+        ->and($sent->resource->sender_uuid)->toBe('participant-active')
+        ->and($deletedOther->getStatusCode())->toBe(403)
+        ->and($deletedOther->getData(true))->toBe(['error' => 'Only the author of this message can delete it.'])
+        ->and($deletedOwn->resource->public_id)->toBe('message_own')
+        ->and($readAsOther->getStatusCode())->toBe(403)
+        ->and($readAsOther->getData(true))->toBe(['error' => 'You can only mark messages as read for yourself.'])
+        ->and($read->resource->participant_uuid)->toBe('participant-active')
+        ->and($left->resource->public_id)->toBe('participant_active')
+        ->and(ChatChannel::where('public_id', 'chat_current')->value('name'))->toBe('Current Channel')
+        ->and(ChatParticipant::where('public_id', 'participant_current')->exists())->toBeTrue()
+        ->and(ChatMessage::where('public_id', 'message_creator')->exists())->toBeTrue();
+});
+
+test('public chat channel lets the creator remove another participant', function () {
+    chat_channel_controller_database();
+
+    $removed = public_chat_channel_controller()->removeParticipant('participant_active');
+
+    expect($removed->resource->public_id)->toBe('participant_active')
+        ->and(ChatParticipant::where('public_id', 'participant_active')->exists())->toBeFalse();
+});
+
+test('public chat channel requests made with the organisation key are not held to participation', function () {
+    $capsule = chat_channel_controller_database();
+    public_chat_channel_insert_message($capsule, 'creator', 'participant-current', '2026-07-18 00:30:00');
+
+    // The key runs as a user who is in none of the channels
+    public_chat_channel_as_organisation_key('user-extra');
+
+    $found   = public_chat_channel_controller()->find('chat_current', public_chat_channel_find_request());
+    $updated = public_chat_channel_controller()->update('chat_current', public_chat_channel_update_request(['name' => 'Renamed By Integration']));
+    $sent    = public_chat_channel_controller()->sendMessage('chat_current', Request::create('/v1/chat-channels/chat_current/send-message', 'POST', [
+        'sender'  => 'participant_current',
+        'content' => 'Sent by the integration',
+    ]));
+    $read           = public_chat_channel_controller()->createReadReceipt('message_creator', Request::create('/v1/chat-channels/read-message/message_creator', 'POST', ['participant' => 'participant_active']));
+    $deletedMessage = public_chat_channel_controller()->deleteMessage('message_creator');
+    $removed        = public_chat_channel_controller()->removeParticipant('participant_active');
+    $otherCompany   = public_chat_channel_controller()->find('chat_other', public_chat_channel_find_request());
+    $deleted        = public_chat_channel_controller()->delete('chat_current');
+
+    expect(public_chat_channel_controller_payload($found)['id'])->toBe('chat_current')
+        ->and(public_chat_channel_controller_payload($updated)['name'])->toBe('Renamed By Integration')
+        ->and($sent->resource->sender_uuid)->toBe('participant-current')
+        ->and($read->resource->participant_uuid)->toBe('participant-active')
+        ->and($deletedMessage->resource->public_id)->toBe('message_creator')
+        ->and($removed->resource->public_id)->toBe('participant_active')
+        ->and($otherCompany->getStatusCode())->toBe(404)
+        ->and($deleted->resource->public_id)->toBe('chat_current');
+});
+
+test('public chat channel does not treat a personal token as the organisation key', function () {
+    chat_channel_controller_database();
+
+    // The session holds the company's key, as it does for a driver's token, but the token sent is not that key
+    session(['user' => 'user-extra', 'api_key' => 'flb_live_organisation']);
+    $request = Request::create('/v1/chat-channels/chat_current', 'GET');
+    $request->headers->set('Authorization', 'Bearer 12|personal-token');
+    Container::getInstance()->instance('request', $request);
+
+    expect(public_chat_channel_controller()->find('chat_current', $request)->getStatusCode())->toBe(404);
+});
+
+test('public chat channel refuses senders and readers from another channel', function () {
+    $capsule = chat_channel_controller_database();
+    $now     = '2026-07-18 00:00:00';
+    $capsule->getConnection('mysql')->table('chat_channels')->insert([
+        'uuid' => 'channel-second', 'public_id' => 'chat_second', 'company_uuid' => 'company-1', 'created_by_uuid' => 'user-current', 'name' => 'Second Channel', 'created_at' => $now, 'updated_at' => $now,
+    ]);
+    $capsule->getConnection('mysql')->table('chat_participants')->insert([
+        'uuid' => 'participant-second', 'public_id' => 'participant_second', 'company_uuid' => 'company-1', 'chat_channel_uuid' => 'channel-second', 'user_uuid' => 'user-current', 'created_at' => $now, 'updated_at' => $now,
+    ]);
+    public_chat_channel_insert_message($capsule, 'first', 'participant-active', '2026-07-18 00:30:00');
+
+    $sent = public_chat_channel_controller()->sendMessage('chat_current', Request::create('/v1/chat-channels/chat_current/send-message', 'POST', [
+        'sender'  => 'participant_second',
+        'content' => 'Wrong room',
+    ]));
+    $read = public_chat_channel_controller()->createReadReceipt('message_first', Request::create('/v1/chat-channels/read-message/message_first', 'POST', ['participant' => 'participant_second']));
+
+    expect($sent->getStatusCode())->toBe(422)
+        ->and($sent->getData(true))->toBe(['error' => 'Sender of chat message not found.'])
+        ->and($read->getStatusCode())->toBe(404)
+        ->and($read->getData(true))->toBe(['error' => 'Invalid message or participant reference.'])
+        ->and(ChatMessage::where('content', 'Wrong room')->exists())->toBeFalse()
+        ->and(ChatReceipt::query()->count())->toBe(0);
+});
+
+test('public chat channel refuses messages into a closed conversation', function () {
+    $capsule = chat_channel_controller_database();
+    $capsule->getConnection('mysql')->table('chat_channels')->where('uuid', 'channel-current')->update([
+        'meta' => json_encode(['closed_at' => '2026-07-18T01:00:00.000000Z']),
+    ]);
+
+    $sent = public_chat_channel_controller()->sendMessage('chat_current', Request::create('/v1/chat-channels/chat_current/send-message', 'POST', [
+        'sender'  => 'participant_current',
+        'content' => 'Too late',
+    ]));
+    $found = public_chat_channel_controller()->find('chat_current', public_chat_channel_find_request());
+
+    expect($sent->getStatusCode())->toBe(422)
+        ->and($sent->getData(true))->toBe(['error' => 'This conversation has ended.'])
+        ->and(ChatMessage::where('content', 'Too late')->exists())->toBeFalse()
+        // It can still be read
+        ->and(public_chat_channel_controller_payload($found)['id'])->toBe('chat_current');
+});
+
+test('public chat channel list caps each feed and find pages through the rest', function () {
+    $capsule = chat_channel_controller_database();
+    // Resources tell a public request from the route of the current request
+    Container::getInstance()->instance('request', public_chat_channel_query_request());
+
+    // 35 messages a minute apart, then two more sharing the oldest minute
+    for ($i = 1; $i <= 35; $i++) {
+        public_chat_channel_insert_message($capsule, sprintf('%02d', $i), 'participant-active', sprintf('2026-07-18 01:%02d:00', $i));
+    }
+    public_chat_channel_insert_message($capsule, 'tie-a', 'participant-active', '2026-07-18 01:06:00');
+    public_chat_channel_insert_message($capsule, 'tie-b', 'participant-active', '2026-07-18 01:06:00');
+
+    $ids = fn (array $payload) => collect($payload['feed'])->map(fn ($entry) => $entry['data']->resource->public_id)->all();
+
+    $listed  = public_chat_channel_controller()->query(public_chat_channel_query_request());
+    $channel = public_chat_channel_controller_payload($listed->collection->first());
+    $whole   = public_chat_channel_controller_payload(public_chat_channel_controller()->find('chat_current', public_chat_channel_find_request()));
+    $recent  = public_chat_channel_controller_payload(public_chat_channel_controller()->find('chat_current', public_chat_channel_find_request(['limit' => 5])));
+    $older   = public_chat_channel_controller_payload(public_chat_channel_controller()->find('chat_current', public_chat_channel_find_request(['limit' => 5, 'before' => 'message_31'])));
+    $oldest  = public_chat_channel_controller_payload(public_chat_channel_controller()->find('chat_current', public_chat_channel_find_request(['before' => '2026-07-18T01:07:00Z'])));
+    $invalid = public_chat_channel_controller()->find('chat_current', public_chat_channel_find_request(['before' => 'not a time']));
+
+    // The cut falls on 01:06, so all three messages of that minute are kept
+    expect($channel['feed_truncated'])->toBeTrue()
+        ->and($ids($channel))->toHaveCount(32)
+        ->and($ids($channel)[31])->toBe('message_35')
+        ->and(array_slice($ids($channel), 0, 3))->toEqualCanonicalizing(['message_06', 'message_tie-a', 'message_tie-b'])
+        ->and($whole['feed_truncated'])->toBeFalse()
+        ->and($ids($whole))->toHaveCount(37)
+        ->and($recent['feed_truncated'])->toBeTrue()
+        ->and($ids($recent))->toBe(['message_31', 'message_32', 'message_33', 'message_34', 'message_35'])
+        ->and($older['feed_truncated'])->toBeTrue()
+        ->and($ids($older))->toBe(['message_26', 'message_27', 'message_28', 'message_29', 'message_30'])
+        ->and($oldest['feed_truncated'])->toBeFalse()
+        ->and($ids($oldest))->toHaveCount(8)
+        ->and($invalid->getStatusCode())->toBe(422);
 });

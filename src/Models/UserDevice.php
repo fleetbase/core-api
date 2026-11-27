@@ -37,7 +37,7 @@ class UserDevice extends Model
      *
      * @var array
      */
-    protected $fillable = ['user_uuid', 'company_uuid', 'push_app_uuid', 'platform', 'push_provider', 'app_identifier', 'environment', 'token', 'status', 'last_seen_at'];
+    protected $fillable = ['user_uuid', 'company_uuid', 'push_app_uuid', 'platform', 'push_provider', 'app_identifier', 'environment', 'token', 'status', 'last_seen_at', 'name', 'model', 'manufacturer', 'os_version', 'app_version', 'app_build', 'locale', 'timezone', 'signed_out_at'];
 
     /**
      * The attributes that should be cast to native types.
@@ -45,7 +45,8 @@ class UserDevice extends Model
      * @var array
      */
     protected $casts = [
-        'last_seen_at' => 'datetime',
+        'last_seen_at'  => 'datetime',
+        'signed_out_at' => 'datetime',
     ];
 
     /**
@@ -91,7 +92,8 @@ class UserDevice extends Model
     public static function installTokens(iterable $devices, string $platform): array
     {
         return collect($devices)
-            ->filter(fn ($device) => $device->platform === $platform && empty($device->push_app_uuid))
+            // Only devices still signed in and whose token the push service still accepts.
+            ->filter(fn ($device) => $device->platform === $platform && empty($device->push_app_uuid) && !in_array($device->status, ['signed_out', 'invalid'], true))
             ->map(fn ($device) => $device->token)
             ->values()
             ->toArray();

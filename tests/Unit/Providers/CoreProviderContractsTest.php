@@ -602,6 +602,13 @@ namespace {
             )
             ->and($provider->middleware['fleetbase.api'])->toContain(LogApiRequests::class)
             ->and($provider->middleware['fleetbase.platform-api'])->toContain(AuthenticatePlatformApiToken::class)
+            ->and($provider->middleware['fleetbase.api-or-platform'])->toBe([
+                Fleetbase\Http\Middleware\ThrottleRequests::class,
+                Illuminate\Session\Middleware\StartSession::class,
+                Fleetbase\Http\Middleware\AuthenticateApiOrPlatformToken::class,
+                Illuminate\Routing\Middleware\SubstituteBindings::class,
+                LogApiRequests::class,
+            ])
             ->and($provider->commands)->toContain(
                 Fleetbase\Console\Commands\Recovery::class,
                 Fleetbase\Console\Commands\ForceResetDatabase::class,

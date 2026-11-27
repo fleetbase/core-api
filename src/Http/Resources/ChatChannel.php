@@ -32,6 +32,8 @@ class ChatChannel extends FleetbaseResource
             'unread_count'                       => $this->when($user, fn () => $this->getUnreadMessageCountForUser($user)),
             'slug'                               => $this->slug,
             'feed'                               => $this->resource_feed,
+            // Read after `feed`, which is what works it out. True when older entries were left out.
+            'feed_truncated'                     => $this->when(Http::isPublicRequest(), fn () => method_exists($this->resource, 'feedWasTruncated') && $this->resource->feedWasTruncated()),
             'participants'                       => ChatParticipant::collection($this->participants),
             'meta'                               => data_get($this, 'meta', Utils::createObject()),
             'updated_at'                         => $this->updated_at,

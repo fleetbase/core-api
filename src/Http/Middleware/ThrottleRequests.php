@@ -4,6 +4,7 @@ namespace Fleetbase\Http\Middleware;
 
 use Fleetbase\Support\ApiConsumerMetrics;
 use Fleetbase\Support\ApiRateLimits;
+use Fleetbase\Support\PlatformApi;
 use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Routing\Middleware\ThrottleRequests as ThrottleRequestsMiddleware;
 use Illuminate\Support\Facades\Log;
@@ -119,6 +120,10 @@ class ThrottleRequests extends ThrottleRequestsMiddleware
      */
     protected function describeConsumer($request): array
     {
+        if ($this->presentsPlatformToken($request)) {
+            return ['type' => 'platform', 'label' => 'Platform token', 'detail' => $request->ip(), 'company_uuid' => null];
+        }
+
         if ($credential = $this->extractApiKey($request)) {
             return ApiRateLimits::identify($credential);
         }
@@ -156,6 +161,13 @@ class ThrottleRequests extends ThrottleRequestsMiddleware
     {
         $scope = 'fleetbase-throttle|' . ($request->segment(1) ?? '');
 
+        // Every installed app presents the same platform token, so the token alone would
+        // put them all in one bucket: one busy or hostile client would lock every user
+        // out of signing in. Each address gets its own.
+        if ($this->presentsPlatformToken($request)) {
+            return sha1($scope . '|platform|' . $request->ip());
+        }
+
         if ($credential = $this->extractApiKey($request)) {
             return sha1($scope . '|credential|' . $credential);
         }
@@ -165,6 +177,16 @@ class ThrottleRequests extends ThrottleRequestsMiddleware
         }
 
         return sha1($scope . '|ip|' . $request->ip());
+    }
+
+    /**
+     * Whether the request carries a platform token (valid or not) as its bearer token.
+     *
+     * @param \Illuminate\Http\Request $request
+     */
+    protected function presentsPlatformToken($request): bool
+    {
+        return PlatformApi::isPlatformToken($request->bearerToken());
     }
 
     /**

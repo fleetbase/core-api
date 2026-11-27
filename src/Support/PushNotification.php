@@ -76,8 +76,12 @@ class PushNotification
             ->usingClient(static::getFcmMessagingClient());
     }
 
-    public static function getApnClient(): PushOkClient
+    /**
+     * @param bool|null $production which of Apple's services to use; the configured one when null
+     */
+    public static function getApnClient(?bool $production = null): PushOkClient
     {
+        $forced = $production;
         $config = config('broadcasting.connections.apn');
 
         // Get the APN key file and it's contents and store to config
@@ -98,7 +102,7 @@ class PushNotification
         if ($production === null) {
             $production = app()->isProduction();
         }
-        $isProductionEnv = Utils::castBoolean($production);
+        $isProductionEnv = $forced ?? Utils::castBoolean($production);
 
         return new PushOkClient(PuskOkToken::create($config), $isProductionEnv);
     }
